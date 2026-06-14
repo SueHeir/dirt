@@ -7,5 +7,5 @@ repository.workspace = true
 description = "Shared test utilities for DIRT crates"
 
 [dependencies]
-soil_core = { git = "https://github.com/SueHeir/soil.git", rev = "eb90c179be7bb8f37aa9fbd2cac5eb8457302958", default-features = false }
+soil_core = { git = "https://github.com/SueHeir/soil.git", branch = "master", default-features = false }
 dirt_atom = { path = "../dirt_atom", version = "0.1.3" }

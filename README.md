@@ -44,18 +44,13 @@ fn main() {
 
 ## Building
 
-DIRT path-depends on [soil](https://github.com/SueHeir/soil) and
-[grass](https://github.com/SueHeir/grass) as siblings; clone all three side by
-side:
-
-```
-GitHub/
-  grass/
-  soil/
-  dirt/   ← here
-```
+Clone DIRT and build — its [soil](https://github.com/SueHeir/soil) and
+[grass](https://github.com/SueHeir/grass) dependencies are pulled from GitHub
+automatically, so you don't need to check them out yourself:
 
 ```bash
+git clone https://github.com/SueHeir/dirt
+cd dirt
 cargo run --release --example hopper --no-default-features -- examples/hopper/config.toml
 ```
 

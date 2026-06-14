@@ -10,10 +10,10 @@ keywords = ["dem", "atom", "material", "simulation"]
 categories = ["simulation", "science"]
 
 [dependencies]
-soil_core = { git = "https://github.com/SueHeir/soil.git", rev = "eb90c179be7bb8f37aa9fbd2cac5eb8457302958", default-features = false }
+soil_core = { git = "https://github.com/SueHeir/soil.git", branch = "master", default-features = false }
 grass_app = { git = "https://github.com/SueHeir/grass.git", rev = "ea21ea3629de990a717cc1421747901e5d64a66b" }
 grass_scheduler = { git = "https://github.com/SueHeir/grass.git", rev = "ea21ea3629de990a717cc1421747901e5d64a66b" }
-soil_derive = { git = "https://github.com/SueHeir/soil.git", rev = "eb90c179be7bb8f37aa9fbd2cac5eb8457302958" }
+soil_derive = { git = "https://github.com/SueHeir/soil.git", branch = "master" }
 serde = { version = "1", features = ["derive"] }
 rand = "0.9"
 rand_distr = "0.5.1"
