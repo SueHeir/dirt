@@ -90,6 +90,10 @@ path = "examples/bench_column_collapse/main.rs"
 name = "bench_hopper_beverloo"
 path = "examples/bench_hopper_beverloo/main.rs"
 
+[[example]]
+name = "perf_mpi_scaling"
+path = "examples/perf_mpi_scaling/main.rs"
+
 [profile.release]
 opt-level = 3
 lto = "fat"
@@ -101,8 +105,8 @@ dirt_core = { path = "./crates/dirt_core", default-features = false }
 serde = { version = "1", features = ["derive"] }
 dirt_clump = { path = "./crates/dirt_clump" }
 dirt_measure_plane = { path = "./crates/dirt_measure_plane" }
-soil_derive = { path = "../soil/crates/soil_derive" }
-soil_deform = { path = "../soil/crates/soil_deform" }
+soil_derive = { git = "https://github.com/SueHeir/soil.git", branch = "master" }
+soil_deform = { git = "https://github.com/SueHeir/soil.git", branch = "master" }
 grass_scheduler = { git = "https://github.com/SueHeir/grass.git", rev = "ea21ea3629de990a717cc1421747901e5d64a66b" }
 # Force libffi-sys to use system libffi (via pkg-config) instead of building
 # from source. libffi-sys 2.3.0 has a broken aarch64 macOS assembler; Homebrew
