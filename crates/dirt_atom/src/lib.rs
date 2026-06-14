@@ -59,8 +59,7 @@ use soil_core::{register_atom_data, Atom, AtomData, AtomPlugin, Config, Schedule
 
 // ── Shared physics constants ────────────────────────────────────────────────
 
-/// √(5/3) — viscoelastic damping coefficient used in Hertz contact models.
-pub const SQRT_5_3: f64 = 0.9128709291752768;
+pub const SQRT_5_6: f64 = 0.9128709291752768;
 
 // ── Config structs ──────────────────────────────────────────────────────────
 

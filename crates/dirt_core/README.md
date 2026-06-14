@@ -48,7 +48,7 @@ Use `dirt_core::prelude::*` to import the most common types: the `CorePlugins`
 group, the framework (`App`, `Plugin`, `PluginGroup`), core types (`Atom`,
 `Config`, `RunState`), and the major DEM plugins (`DemAtomPlugin`,
 `GranularDefaultPlugins`, `DemBondPlugin`, `ClumpPlugin`, `WallPlugin`,
-`ThermalPlugin`, `ContactAnalysisPlugin`, `MeasurePlanePlugin`, `FixesPlugin`,
+`ContactAnalysisPlugin`, `MeasurePlanePlugin`, `FixesPlugin`,
 `DeformPlugin`).
 
 ## Crate Organization
@@ -69,7 +69,6 @@ integration, output, box deformation
 | `dirt_bond` | Inter-particle bonds: normal/tangential/bending, auto-bonding, breakage |
 | `dirt_clump` | Rigid clump (multisphere) composites for non-spherical particles |
 | `dirt_wall` | Walls: plane, cylinder, sphere, cone, region surfaces; wall motion |
-| `dirt_thermal` | Heat conduction between contacting particles |
 | `dirt_contact_analysis` | Coordination number, fabric tensor, rattler detection, per-contact CSV |
 | `dirt_measure_plane` | Measurement planes for flux and profile sampling |
 | `dirt_fixes` | General-purpose fixes: gravity, addforce, setforce, freeze, movelinear, viscous |

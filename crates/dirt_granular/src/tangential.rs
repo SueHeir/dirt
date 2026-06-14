@@ -14,7 +14,7 @@
 //! 4. Tangential force: `F_t = k_t s - γ_t v_t`, capped at `μ |F_n|`
 //!
 //! where `k_t = 8 G* √(R* δ)` is the tangential stiffness, `G*` is the effective
-//! shear modulus, and `γ_t = 2 β √(5/3) √(k_t m_r)` is the tangential damping.
+//! shear modulus, and `γ_t = 2 β √(5/6) √(k_t m_r)` is the tangential damping.
 //!
 //! Spring displacements are stored in **canonical form** (from the perspective of the
 //! particle with the lower tag) so that both particles in a pair see a consistent history
