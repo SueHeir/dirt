@@ -61,11 +61,11 @@
 //! | Crate | Description |
 //! |---|---|
 //! | [`dirt_atom`] | DEM per-atom data (`DemAtom`), material table, particle insertion, size distributions |
-//! | [`dirt_fixes`] | General-purpose fixes: gravity, addforce, setforce, freeze, movelinear, viscous |
+//! | [`dirt_fixes`] | General-purpose fixes: gravity, addforce, setforce, freeze (full immobilization), movelinear, viscous |
+//! | [`soil_fixes`] | Method-agnostic translational position constraint: pin |
 //! | [`dirt_granular`] | Hertz normal, Mindlin tangential, rotational dynamics, granular temperature |
 //! | [`dirt_bond`] | Inter-particle bonds: normal/tangential/bending, auto-bonding, breakage |
 //! | [`dirt_wall`] | Wall definitions: plane, cylinder, sphere, cone, region surfaces; wall motion |
-//! | [`dirt_thermal`] | Heat conduction between contacting particles |
 //! | [`dirt_contact_analysis`] | Contact statistics: coordination number, fabric tensor, rattlers, per-contact CSV |
 //! | [`dirt_measure_plane`] | Measurement planes for flux and profile sampling |
 //!
@@ -104,9 +104,6 @@ pub use dirt_measure_plane;
 /// DEM granular contact models: Hertz normal, Mindlin tangential, rotational dynamics.
 pub use dirt_granular;
 
-/// Heat conduction between contacting DEM particles.
-pub use dirt_thermal;
-
 /// Wall definitions (plane, cylinder, sphere, cone, region surfaces) and wall motion.
 pub use dirt_wall;
 
@@ -120,6 +117,9 @@ pub use soil_deform;
 
 /// General-purpose fixes: gravity, addforce, setforce, freeze, movelinear, viscous.
 pub use dirt_fixes;
+
+/// Method-agnostic translational position constraint: pin.
+pub use soil_fixes;
 
 /// Thermo output, dump files (CSV/binary/VTP), and restart file I/O.
 pub use soil_print;
@@ -196,7 +196,6 @@ impl PluginGroup for CorePlugins {
 /// - [`DemAtomInsertPlugin`], [`ParticlesConfig`] — particle insertion
 /// - [`DemBondPlugin`] — inter-particle bonds
 /// - [`WallPlugin`], [`Walls`], [`WallDef`], [`WallPlane`] — wall definitions
-/// - [`ThermalPlugin`], [`ThermalConfig`] — heat conduction
 /// - [`ContactAnalysisPlugin`], [`ContactAnalysisConfig`] — contact statistics
 /// - [`MeasurePlanePlugin`], [`MeasurePlanes`], [`MeasurePlaneDef`] — measurement planes
 ///
@@ -222,14 +221,14 @@ pub mod prelude {
     pub use dirt_bond::DemBondPlugin;
     pub use dirt_clump::{ClumpPlugin, ClumpRegistry, ClumpAtom, ClumpDef, MultisphereBody, MultisphereBodyStore};
     pub use dirt_granular::{GranularDefaultPlugins, HertzMindlinContactPlugin, RotationalDynamicsPlugin, GranularTempPlugin};
-    pub use dirt_thermal::{ThermalConfig, ThermalPlugin};
     pub use dirt_contact_analysis::{ContactAnalysisConfig, ContactAnalysisPlugin};
     pub use dirt_measure_plane::{MeasurePlaneDef, MeasurePlanePlugin, MeasurePlanes};
     pub use dirt_wall::{WallDef, WallMotion, WallPlane, WallPlugin, Walls};
 
     // Shared infrastructure plugins
     pub use soil_deform::{DeformConfig, DeformPlugin, DeformState};
-    pub use dirt_fixes::{AddForceDef, FixesPlugin, FixesRegistry, FreezeDef, GravityConfig, GravityPlugin, MoveLinearDef, PinDef, PinState, SetForceDef, ViscousDef};
+    pub use dirt_fixes::{AddForceDef, FixesPlugin, FixesRegistry, FreezeDef, GravityConfig, GravityPlugin, MoveLinearDef, SetForceDef, ViscousDef};
+    pub use soil_fixes::{PinDef, PinRegistry, PinState, SoilFixesPlugin};
 
     // Derive macros
     pub use grass_derive::{ScheduleSet, StageEnum};

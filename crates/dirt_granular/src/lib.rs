@@ -14,7 +14,7 @@
 //! ## Tangential contact
 //! - **Mindlin** — incremental spring-history model with Coulomb friction cap `μ |F_n|`.
 //!   Spring displacement is stored per-contact and rotated to stay in the tangent plane
-//!   each step. Damping: `γ_t = 2 β √(5/3) √(k_t m_r)`.
+//!   each step. Damping: `γ_t = 2 β √(5/6) √(k_t m_r)`.
 //!
 //! ## Rolling resistance
 //! - **Constant torque** (default) — `τ_r = μ_r |F_n| R*` opposing relative rolling
@@ -83,7 +83,7 @@ use soil_verlet::VelocityVerletPlugin;
 pub use contact::HertzMindlinContactPlugin;
 
 /// Re-export from [`dirt_atom`] for convenience.
-pub use dirt_atom::SQRT_5_3;
+pub use dirt_atom::SQRT_5_6;
 /// Small epsilon to avoid division by zero when normalizing tangential,
 /// rolling, or twisting spring displacements.
 pub const TANGENTIAL_EPSILON: f64 = 1e-30;
@@ -112,7 +112,10 @@ pub const MAX_OVERLAP_WARNINGS: usize = 500;
 /// - [`DemAtomInsertPlugin`] — random particle insertion from `[[particles.insert]]` config
 /// - [`RotationalDynamicsPlugin`] — quaternion Velocity Verlet for angular degrees of freedom
 ///   (I = 2/5 m r² for solid spheres)
-/// - [`GranularTempPlugin`] — granular temperature output to file
+///
+/// Granular temperature output ([`GranularTempPlugin`], which writes
+/// `data/GranularTemp.txt`) is **not** bundled — add it explicitly only in the
+/// examples that consume that file, so ordinary runs don't emit it.
 ///
 /// Does **not** include infrastructure plugins (input, comm, domain, neighbor,
 /// run, print). Use [`CorePlugins`] to get all infrastructure.
@@ -135,6 +138,5 @@ impl PluginGroup for GranularDefaultPlugins {
             .add(VelocityVerletPlugin::new())
             .add(HertzMindlinContactPlugin)
             .add(RotationalDynamicsPlugin)
-            .add(GranularTempPlugin)
     }
 }

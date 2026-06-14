@@ -107,7 +107,7 @@ use grass_app::prelude::*;
 use grass_scheduler::prelude::*;
 use serde::Deserialize;
 
-use dirt_atom::{DemAtom, MaterialTable, SQRT_5_3};
+use dirt_atom::{DemAtom, MaterialTable, SQRT_5_6};
 use soil_core::region::Region;
 use soil_core::{Atom, AtomDataRegistry, Config, ParticleSimScheduleSet};
 
@@ -471,6 +471,15 @@ pub struct Walls {
     pub region_active: Vec<bool>,
     /// Elapsed simulation time (seconds), used for oscillation phase tracking.
     pub time: f64,
+    /// Per-contact Mindlin tangential-spring history for wall friction, keyed by
+    /// `(wall_kind, wall_index, particle_tag)` where wall_kind is
+    /// 0=plane, 1=cylinder, 2=sphere, 3=region. Rebuilt each step so contacts
+    /// that end are pruned automatically.
+    pub tangential_springs: std::collections::HashMap<(u8, usize, u32), [f64; 3]>,
+    /// Per-contact rolling-displacement history for the SDS rolling-resistance
+    /// model (same key scheme as `tangential_springs`). Empty under the default
+    /// `constant` rolling model, which is stateless.
+    pub rolling_springs: std::collections::HashMap<(u8, usize, u32), [f64; 3]>,
 }
 
 impl Walls {
@@ -747,6 +756,8 @@ impl Plugin for WallPlugin {
                 regions,
                 region_active: vec![true; nr],
                 time: 0.0,
+                tangential_springs: std::collections::HashMap::new(),
+                rolling_springs: std::collections::HashMap::new(),
             }
         };
 
@@ -839,12 +850,166 @@ pub fn wall_zero_force_accumulators(mut walls: ResMut<Walls>) {
 /// 1. Computes the signed distance and contact normal
 /// 2. Determines the overlap `delta = radius - gap`
 /// 3. Applies Hertz elastic force: `F_n = (4/3) * E_eff * sqrt(R_eff * delta) * delta`
-/// 4. Adds viscous damping: `F_diss = 2 * beta * sqrt(5/3) * sqrt(S_n * m) * v_n`
+/// 4. Adds viscous damping: `F_diss = 2 * beta * sqrt(5/6) * sqrt(S_n * m) * v_n`
 /// 5. Optionally adds adhesion (JKR, DMT, or SJKR cohesion)
 /// 6. Applies twisting friction torque (plane walls only)
 /// 7. Accumulates the scalar contact force for servo control
 ///
 /// Runs in [`ParticleSimScheduleSet::Force`].
+fn wall_cross(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
+    [
+        a[1] * b[2] - a[2] * b[1],
+        a[2] * b[0] - a[0] * b[2],
+        a[0] * b[1] - a[1] * b[0],
+    ]
+}
+
+/// Mindlin tangential (sliding) friction for a single particle–wall contact,
+/// mirroring the particle–particle Hertz–Mindlin model in `dirt_granular`.
+///
+/// `n` is the unit contact normal pointing from the wall surface toward the
+/// particle center; `v_rel` is the particle velocity minus the wall velocity;
+/// `old_spring` is the accumulated tangential displacement from the previous
+/// step. Returns `(force_on_particle, torque_on_particle, new_spring)`. Returns
+/// zeros when `mu <= 0` or `delta <= 0`, so frictionless walls are byte-for-byte
+/// unchanged and a purely normal impact yields no tangential force.
+#[allow(clippy::too_many_arguments)]
+fn wall_tangential_force(
+    n: [f64; 3],
+    v_rel: [f64; 3],
+    omega: [f64; 3],
+    radius: f64,
+    delta: f64,
+    f_n: f64,
+    m_r: f64,
+    g_eff: f64,
+    mu: f64,
+    beta: f64,
+    dt: f64,
+    old_spring: [f64; 3],
+) -> ([f64; 3], [f64; 3], [f64; 3]) {
+    if mu <= 0.0 || delta <= 0.0 {
+        return ([0.0; 3], [0.0; 3], [0.0; 3]);
+    }
+    // Particle surface velocity relative to the wall at the contact point
+    // (contact point is at r_c = -radius * n from the particle center).
+    let oxn = wall_cross(omega, n);
+    let vs = [
+        v_rel[0] - radius * oxn[0],
+        v_rel[1] - radius * oxn[1],
+        v_rel[2] - radius * oxn[2],
+    ];
+    let vsn = vs[0] * n[0] + vs[1] * n[1] + vs[2] * n[2];
+    let vt = [vs[0] - vsn * n[0], vs[1] - vsn * n[1], vs[2] - vsn * n[2]];
+
+    // Mindlin tangential stiffness; R* = radius (wall is flat / infinite radius).
+    let k_t = 8.0 * g_eff * (radius * delta).sqrt();
+
+    // Advance the stored spring: project out the normal component, then
+    // accumulate the tangential relative displacement vt*dt.
+    let mut s = old_spring;
+    let sn = s[0] * n[0] + s[1] * n[1] + s[2] * n[2];
+    s = [
+        s[0] - sn * n[0] + vt[0] * dt,
+        s[1] - sn * n[1] + vt[1] * dt,
+        s[2] - sn * n[2] + vt[2] * dt,
+    ];
+
+    let ft_max = mu * f_n.abs();
+    let s_mag = (s[0] * s[0] + s[1] * s[1] + s[2] * s[2]).sqrt();
+    if k_t * s_mag > ft_max && k_t * s_mag > 1e-30 {
+        let c = ft_max / (k_t * s_mag);
+        s = [s[0] * c, s[1] * c, s[2] * c];
+    }
+
+    let gamma_t = 2.0 * SQRT_5_6 * beta * (k_t * m_r).sqrt();
+    // Friction opposes the particle's relative tangential surface motion.
+    let mut ft = [
+        -(k_t * s[0] + gamma_t * vt[0]),
+        -(k_t * s[1] + gamma_t * vt[1]),
+        -(k_t * s[2] + gamma_t * vt[2]),
+    ];
+    let ft_mag = (ft[0] * ft[0] + ft[1] * ft[1] + ft[2] * ft[2]).sqrt();
+    if ft_mag > ft_max && ft_mag > 1e-30 {
+        let c = ft_max / ft_mag;
+        ft = [ft[0] * c, ft[1] * c, ft[2] * c];
+    }
+
+    // Torque about the particle center: r_c × ft with r_c = -radius * n.
+    let nxf = wall_cross(n, ft);
+    let tau = [-radius * nxf[0], -radius * nxf[1], -radius * nxf[2]];
+    (ft, tau, s)
+}
+
+/// Rolling-resistance torque for a particle–wall contact, mirroring the
+/// particle–particle rolling model in `dirt_granular` with the wall as a
+/// zero-spin second body (so the rolling angular velocity is just the
+/// particle's spin with its normal/twisting component removed).
+///
+/// Supports both the `constant` (fixed-magnitude couple opposing the roll) and
+/// `sds` (spring–dashpot–slider, Coulomb-capped) models. `r_eff = radius` for a
+/// flat wall. Returns `(torque_on_particle, new_rolling_displacement)`; the
+/// displacement is only meaningful (and stored) for the `sds` model. Returns
+/// zeros when `mu_r <= 0`.
+#[allow(clippy::too_many_arguments)]
+fn wall_rolling_torque(
+    n: [f64; 3],
+    omega: [f64; 3],
+    radius: f64,
+    f_n: f64,
+    mu_r: f64,
+    k_roll: f64,
+    gamma_roll: f64,
+    sds: bool,
+    dt: f64,
+    old_roll_disp: [f64; 3],
+) -> ([f64; 3], [f64; 3]) {
+    if mu_r <= 0.0 {
+        return ([0.0; 3], [0.0; 3]);
+    }
+    // Rolling angular velocity = particle spin minus its normal (twisting) part.
+    let odn = omega[0] * n[0] + omega[1] * n[1] + omega[2] * n[2];
+    let roll = [omega[0] - odn * n[0], omega[1] - odn * n[1], omega[2] - odn * n[2]];
+    let tau_max = mu_r * f_n.abs() * radius;
+
+    if sds {
+        let mut rd = old_roll_disp;
+        let rdn = rd[0] * n[0] + rd[1] * n[1] + rd[2] * n[2];
+        rd = [
+            rd[0] - rdn * n[0] + roll[0] * dt,
+            rd[1] - rdn * n[1] + roll[1] * dt,
+            rd[2] - rdn * n[2] + roll[2] * dt,
+        ];
+        let mut tr = [
+            -k_roll * rd[0] - gamma_roll * roll[0],
+            -k_roll * rd[1] - gamma_roll * roll[1],
+            -k_roll * rd[2] - gamma_roll * roll[2],
+        ];
+        let tr_mag = (tr[0] * tr[0] + tr[1] * tr[1] + tr[2] * tr[2]).sqrt();
+        if tr_mag > tau_max && tr_mag > 1e-30 {
+            let s = tau_max / tr_mag;
+            tr = [tr[0] * s, tr[1] * s, tr[2] * s];
+            if k_roll > 1e-30 {
+                rd = [
+                    (tr[0] + gamma_roll * roll[0]) / (-k_roll),
+                    (tr[1] + gamma_roll * roll[1]) / (-k_roll),
+                    (tr[2] + gamma_roll * roll[2]) / (-k_roll),
+                ];
+            }
+        }
+        (tr, rd)
+    } else {
+        // Constant-torque model: fixed magnitude opposing the rolling direction.
+        let roll_mag = (roll[0] * roll[0] + roll[1] * roll[1] + roll[2] * roll[2]).sqrt();
+        if roll_mag > 1e-30 {
+            let inv = tau_max / roll_mag;
+            ([-inv * roll[0], -inv * roll[1], -inv * roll[2]], [0.0; 3])
+        } else {
+            ([0.0; 3], [0.0; 3])
+        }
+    }
+}
+
 pub fn wall_contact_force(
     mut atoms: ResMut<Atom>,
     mut walls: ResMut<Walls>,
@@ -854,6 +1019,17 @@ pub fn wall_contact_force(
     let mut dem = registry.expect_mut::<DemAtom>("wall_contact_force");
 
     let nlocal = atoms.nlocal as usize;
+    let dt = atoms.dt;
+
+    // Take the tangential-spring history out so the per-wall-list immutable
+    // borrows below don't conflict with mutating it; rebuild it fresh this step
+    // (contacts that ended are pruned by not being re-inserted).
+    let old_springs = std::mem::take(&mut walls.tangential_springs);
+    let mut new_springs: std::collections::HashMap<(u8, usize, u32), [f64; 3]> =
+        std::collections::HashMap::new();
+    let old_rolling = std::mem::take(&mut walls.rolling_springs);
+    let mut new_rolling: std::collections::HashMap<(u8, usize, u32), [f64; 3]> =
+        std::collections::HashMap::new();
 
     // Collect per-wall forces to accumulate after the loop
     let nwalls = walls.planes.len();
@@ -948,7 +1124,7 @@ pub fn wall_contact_force(
             let f_net = if surface_energy > 0.0 && use_dmt {
                 // DMT model: pure Hertz contact + constant attractive force
                 let f_dmt = 2.0 * std::f64::consts::PI * surface_energy * r_eff;
-                let f_diss = 2.0 * beta * SQRT_5_3 * (s_n * m_r).sqrt() * v_n;
+                let f_diss = 2.0 * beta * SQRT_5_6 * (s_n * m_r).sqrt() * v_n;
                 k_n * delta - f_diss - f_dmt
             } else if surface_energy > 0.0 {
                 // JKR simplified explicit model
@@ -956,16 +1132,16 @@ pub fn wall_contact_force(
                 if jkr_adhesion_only {
                     -f_adhesion
                 } else {
-                    let f_diss = 2.0 * beta * SQRT_5_3 * (s_n * m_r).sqrt() * v_n;
+                    let f_diss = 2.0 * beta * SQRT_5_6 * (s_n * m_r).sqrt() * v_n;
                     k_n * delta - f_diss - f_adhesion
                 }
             } else if cohesion_energy > 0.0 {
-                let f_diss = 2.0 * beta * SQRT_5_3 * (s_n * m_r).sqrt() * v_n;
+                let f_diss = 2.0 * beta * SQRT_5_6 * (s_n * m_r).sqrt() * v_n;
                 let f_cohesion =
                     cohesion_energy * std::f64::consts::PI * delta * r_eff;
                 k_n * delta - f_diss - f_cohesion
             } else {
-                let f_diss = 2.0 * beta * SQRT_5_3 * (s_n * m_r).sqrt() * v_n;
+                let f_diss = 2.0 * beta * SQRT_5_6 * (s_n * m_r).sqrt() * v_n;
                 (k_n * delta - f_diss).max(0.0)
             };
 
@@ -988,6 +1164,46 @@ pub fn wall_contact_force(
                         dem.torque[i][1] += sign_tw * tau * wall.normal_y;
                         dem.torque[i][2] += sign_tw * tau * wall.normal_z;
                     }
+                }
+            }
+
+            // Tangential (Mindlin) sliding friction.
+            let mu = material_table.friction_ij[mat_i][wall_mat];
+            if mu > 0.0 && delta > 0.0 {
+                let g_eff = material_table.g_eff_ij[mat_i][wall_mat];
+                let n = [wall.normal_x, wall.normal_y, wall.normal_z];
+                let v_rel = [v_rel_x, v_rel_y, v_rel_z];
+                let key = (0u8, wall_idx, atoms.tag[i]);
+                let old = old_springs.get(&key).copied().unwrap_or([0.0; 3]);
+                let (ft, tau, ns) = wall_tangential_force(
+                    n, v_rel, dem.omega[i], radius, delta, f_net, m_r, g_eff, mu, beta, dt, old,
+                );
+                atoms.force[i][0] += ft[0];
+                atoms.force[i][1] += ft[1];
+                atoms.force[i][2] += ft[2];
+                dem.torque[i][0] += tau[0];
+                dem.torque[i][1] += tau[1];
+                dem.torque[i][2] += tau[2];
+                new_springs.insert(key, ns);
+            }
+
+            // Rolling-resistance torque.
+            let mu_r = material_table.rolling_friction_ij[mat_i][wall_mat];
+            if mu_r > 0.0 && delta > 0.0 {
+                let sds = material_table.rolling_model == "sds";
+                let k_roll = material_table.rolling_stiffness_ij[mat_i][wall_mat];
+                let gamma_roll = material_table.rolling_damping_ij[mat_i][wall_mat];
+                let key = (0u8, wall_idx, atoms.tag[i]);
+                let old_rd = old_rolling.get(&key).copied().unwrap_or([0.0; 3]);
+                let (tr, new_rd) = wall_rolling_torque(
+                    [wall.normal_x, wall.normal_y, wall.normal_z], dem.omega[i], radius, f_net,
+                    mu_r, k_roll, gamma_roll, sds, dt, old_rd,
+                );
+                dem.torque[i][0] += tr[0];
+                dem.torque[i][1] += tr[1];
+                dem.torque[i][2] += tr[2];
+                if sds {
+                    new_rolling.insert(key, new_rd);
                 }
             }
 
@@ -1080,17 +1296,57 @@ pub fn wall_contact_force(
             let cohesion_energy = material_table.cohesion_energy_ij[mat_i][wall_mat];
 
             let f_net = if cohesion_energy > 0.0 {
-                let f_diss = 2.0 * beta * SQRT_5_3 * (s_n * m_r).sqrt() * v_n;
+                let f_diss = 2.0 * beta * SQRT_5_6 * (s_n * m_r).sqrt() * v_n;
                 let f_cohesion = cohesion_energy * std::f64::consts::PI * delta * r_eff;
                 k_n * delta - f_diss - f_cohesion
             } else {
-                let f_diss = 2.0 * beta * SQRT_5_3 * (s_n * m_r).sqrt() * v_n;
+                let f_diss = 2.0 * beta * SQRT_5_6 * (s_n * m_r).sqrt() * v_n;
                 (k_n * delta - f_diss).max(0.0)
             };
 
             atoms.force[i][0] += f_net * nx;
             atoms.force[i][1] += f_net * ny;
             atoms.force[i][2] += f_net * nz;
+
+            // Tangential (Mindlin) sliding friction (cylinder wall is static).
+            let mu = material_table.friction_ij[mat_i][wall_mat];
+            if mu > 0.0 {
+                let g_eff = material_table.g_eff_ij[mat_i][wall_mat];
+                let key = (1u8, cyl_idx, atoms.tag[i]);
+                let old = old_springs.get(&key).copied().unwrap_or([0.0; 3]);
+                let (ft, tau, ns) = wall_tangential_force(
+                    [nx, ny, nz], atoms.vel[i], dem.omega[i], radius, delta, f_net, m_r, g_eff,
+                    mu, beta, dt, old,
+                );
+                atoms.force[i][0] += ft[0];
+                atoms.force[i][1] += ft[1];
+                atoms.force[i][2] += ft[2];
+                dem.torque[i][0] += tau[0];
+                dem.torque[i][1] += tau[1];
+                dem.torque[i][2] += tau[2];
+                new_springs.insert(key, ns);
+            }
+
+            // Rolling-resistance torque (cylinder wall is static).
+            let mu_r = material_table.rolling_friction_ij[mat_i][wall_mat];
+            if mu_r > 0.0 {
+                let sds = material_table.rolling_model == "sds";
+                let k_roll = material_table.rolling_stiffness_ij[mat_i][wall_mat];
+                let gamma_roll = material_table.rolling_damping_ij[mat_i][wall_mat];
+                let key = (1u8, cyl_idx, atoms.tag[i]);
+                let old_rd = old_rolling.get(&key).copied().unwrap_or([0.0; 3]);
+                let (tr, new_rd) = wall_rolling_torque(
+                    [nx, ny, nz], dem.omega[i], radius, f_net, mu_r, k_roll, gamma_roll, sds, dt,
+                    old_rd,
+                );
+                dem.torque[i][0] += tr[0];
+                dem.torque[i][1] += tr[1];
+                dem.torque[i][2] += tr[2];
+                if sds {
+                    new_rolling.insert(key, new_rd);
+                }
+            }
+
             cyl_forces[cyl_idx] += f_net;
         }
     }
@@ -1148,17 +1404,57 @@ pub fn wall_contact_force(
             let cohesion_energy = material_table.cohesion_energy_ij[mat_i][wall_mat];
 
             let f_net = if cohesion_energy > 0.0 {
-                let f_diss = 2.0 * beta * SQRT_5_3 * (s_n * m_r).sqrt() * v_n;
+                let f_diss = 2.0 * beta * SQRT_5_6 * (s_n * m_r).sqrt() * v_n;
                 let f_cohesion = cohesion_energy * std::f64::consts::PI * delta * r_eff;
                 k_n * delta - f_diss - f_cohesion
             } else {
-                let f_diss = 2.0 * beta * SQRT_5_3 * (s_n * m_r).sqrt() * v_n;
+                let f_diss = 2.0 * beta * SQRT_5_6 * (s_n * m_r).sqrt() * v_n;
                 (k_n * delta - f_diss).max(0.0)
             };
 
             atoms.force[i][0] += f_net * nx;
             atoms.force[i][1] += f_net * ny;
             atoms.force[i][2] += f_net * nz;
+
+            // Tangential (Mindlin) sliding friction (sphere wall is static).
+            let mu = material_table.friction_ij[mat_i][wall_mat];
+            if mu > 0.0 {
+                let g_eff = material_table.g_eff_ij[mat_i][wall_mat];
+                let key = (2u8, sph_idx, atoms.tag[i]);
+                let old = old_springs.get(&key).copied().unwrap_or([0.0; 3]);
+                let (ft, tau, ns) = wall_tangential_force(
+                    [nx, ny, nz], atoms.vel[i], dem.omega[i], radius, delta, f_net, m_r, g_eff,
+                    mu, beta, dt, old,
+                );
+                atoms.force[i][0] += ft[0];
+                atoms.force[i][1] += ft[1];
+                atoms.force[i][2] += ft[2];
+                dem.torque[i][0] += tau[0];
+                dem.torque[i][1] += tau[1];
+                dem.torque[i][2] += tau[2];
+                new_springs.insert(key, ns);
+            }
+
+            // Rolling-resistance torque (sphere wall is static).
+            let mu_r = material_table.rolling_friction_ij[mat_i][wall_mat];
+            if mu_r > 0.0 {
+                let sds = material_table.rolling_model == "sds";
+                let k_roll = material_table.rolling_stiffness_ij[mat_i][wall_mat];
+                let gamma_roll = material_table.rolling_damping_ij[mat_i][wall_mat];
+                let key = (2u8, sph_idx, atoms.tag[i]);
+                let old_rd = old_rolling.get(&key).copied().unwrap_or([0.0; 3]);
+                let (tr, new_rd) = wall_rolling_torque(
+                    [nx, ny, nz], dem.omega[i], radius, f_net, mu_r, k_roll, gamma_roll, sds, dt,
+                    old_rd,
+                );
+                dem.torque[i][0] += tr[0];
+                dem.torque[i][1] += tr[1];
+                dem.torque[i][2] += tr[2];
+                if sds {
+                    new_rolling.insert(key, new_rd);
+                }
+            }
+
             sph_forces[sph_idx] += f_net;
         }
     }
@@ -1221,23 +1517,67 @@ pub fn wall_contact_force(
             let cohesion_energy = material_table.cohesion_energy_ij[mat_i][wall_mat];
 
             let f_net = if cohesion_energy > 0.0 {
-                let f_diss = 2.0 * beta * SQRT_5_3 * (s_n * m_r).sqrt() * v_n;
+                let f_diss = 2.0 * beta * SQRT_5_6 * (s_n * m_r).sqrt() * v_n;
                 let f_cohesion = cohesion_energy * std::f64::consts::PI * delta * r_eff;
                 k_n * delta - f_diss - f_cohesion
             } else {
-                let f_diss = 2.0 * beta * SQRT_5_3 * (s_n * m_r).sqrt() * v_n;
+                let f_diss = 2.0 * beta * SQRT_5_6 * (s_n * m_r).sqrt() * v_n;
                 (k_n * delta - f_diss).max(0.0)
             };
 
             atoms.force[i][0] += f_net * nx;
             atoms.force[i][1] += f_net * ny;
             atoms.force[i][2] += f_net * nz;
+
+            // Tangential (Mindlin) sliding friction (region wall is static).
+            let mu = material_table.friction_ij[mat_i][wall_mat];
+            if mu > 0.0 {
+                let g_eff = material_table.g_eff_ij[mat_i][wall_mat];
+                let key = (3u8, reg_idx, atoms.tag[i]);
+                let old = old_springs.get(&key).copied().unwrap_or([0.0; 3]);
+                let (ft, tau, ns) = wall_tangential_force(
+                    [nx, ny, nz], atoms.vel[i], dem.omega[i], radius, delta, f_net, m_r, g_eff,
+                    mu, beta, dt, old,
+                );
+                atoms.force[i][0] += ft[0];
+                atoms.force[i][1] += ft[1];
+                atoms.force[i][2] += ft[2];
+                dem.torque[i][0] += tau[0];
+                dem.torque[i][1] += tau[1];
+                dem.torque[i][2] += tau[2];
+                new_springs.insert(key, ns);
+            }
+
+            // Rolling-resistance torque (region wall is static).
+            let mu_r = material_table.rolling_friction_ij[mat_i][wall_mat];
+            if mu_r > 0.0 {
+                let sds = material_table.rolling_model == "sds";
+                let k_roll = material_table.rolling_stiffness_ij[mat_i][wall_mat];
+                let gamma_roll = material_table.rolling_damping_ij[mat_i][wall_mat];
+                let key = (3u8, reg_idx, atoms.tag[i]);
+                let old_rd = old_rolling.get(&key).copied().unwrap_or([0.0; 3]);
+                let (tr, new_rd) = wall_rolling_torque(
+                    [nx, ny, nz], dem.omega[i], radius, f_net, mu_r, k_roll, gamma_roll, sds, dt,
+                    old_rd,
+                );
+                dem.torque[i][0] += tr[0];
+                dem.torque[i][1] += tr[1];
+                dem.torque[i][2] += tr[2];
+                if sds {
+                    new_rolling.insert(key, new_rd);
+                }
+            }
+
             reg_forces[reg_idx] += f_net;
         }
     }
     for (idx, &f) in reg_forces.iter().enumerate() {
         walls.regions[idx].force_accumulator += f;
     }
+
+    // Persist the rebuilt tangential- and rolling-spring history for next step.
+    walls.tangential_springs = new_springs;
+    walls.rolling_springs = new_rolling;
 }
 
 #[cfg(test)]
@@ -1292,6 +1632,8 @@ mod tests {
             regions: Vec::new(),
             region_active: Vec::new(),
             time: 0.0,
+            tangential_springs: std::collections::HashMap::new(),
+            rolling_springs: std::collections::HashMap::new(),
         }
     }
 
@@ -1659,6 +2001,8 @@ mod tests {
             regions: Vec::new(),
             region_active: Vec::new(),
             time: 0.0,
+            tangential_springs: std::collections::HashMap::new(),
+            rolling_springs: std::collections::HashMap::new(),
         }
     }
 
@@ -1673,6 +2017,8 @@ mod tests {
             regions: Vec::new(),
             region_active: Vec::new(),
             time: 0.0,
+            tangential_springs: std::collections::HashMap::new(),
+            rolling_springs: std::collections::HashMap::new(),
         }
     }
 
@@ -1687,6 +2033,8 @@ mod tests {
             regions: vec![reg],
             region_active: vec![true],
             time: 0.0,
+            tangential_springs: std::collections::HashMap::new(),
+            rolling_springs: std::collections::HashMap::new(),
         }
     }
 

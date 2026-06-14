@@ -27,7 +27,7 @@ dirt_granular = { path = "../dirt_granular", version = "0.1.3" }
 dirt_wall = { path = "../dirt_wall", version = "0.1.3" }
 soil_derive = { path = "../../../soil/crates/soil_derive", version = "0.1.3" }
 soil_deform = { path = "../../../soil/crates/soil_deform", version = "0.1.3" }
+soil_fixes = { path = "../../../soil/crates/soil_fixes", version = "0.1.3" }
 dirt_fixes = { path = "../dirt_fixes", version = "0.1.3" }
-dirt_thermal = { path = "../dirt_thermal", version = "0.1.3" }
 dirt_measure_plane = { path = "../dirt_measure_plane", version = "0.1.3" }
 dirt_contact_analysis = { path = "../dirt_contact_analysis", version = "0.1.3" }

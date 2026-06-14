@@ -41,7 +41,7 @@ use soil_core::{register_atom_data, Atom, AtomDataRegistry, BondStore, ParticleS
 use soil_core::Neighbor;
 
 use crate::tangential::ContactHistoryStore;
-use crate::{LARGE_OVERLAP_WARN_THRESHOLD, MAX_OVERLAP_WARNINGS, SQRT_5_3, TANGENTIAL_EPSILON};
+use crate::{LARGE_OVERLAP_WARN_THRESHOLD, MAX_OVERLAP_WARNINGS, SQRT_5_6, TANGENTIAL_EPSILON};
 
 /// Fused Hertz normal + Mindlin tangential contact force plugin.
 ///
@@ -295,7 +295,7 @@ pub fn hertz_mindlin_contact_force(
         let f_n_mag = if surface_energy > 0.0 && use_dmt {
             // DMT: Hertz contact + constant adhesive force F_dmt = 2π γ R*
             let f_dmt = 2.0 * std::f64::consts::PI * surface_energy * r_eff;
-            let f_diss_n = 2.0 * beta * SQRT_5_3 * (s_n * m_r).sqrt() * v_n;
+            let f_diss_n = 2.0 * beta * SQRT_5_6 * (s_n * m_r).sqrt() * v_n;
             k_n * delta - f_diss_n - f_dmt
         } else if surface_energy > 0.0 {
             // JKR: adhesion force F_adh = 3/2 π γ R* (simplified explicit model)
@@ -305,17 +305,17 @@ pub fn hertz_mindlin_contact_force(
                 -f_adhesion
             } else {
                 // Contact regime (δ > 0): Hertz repulsion + damping − adhesion
-                let f_diss_n = 2.0 * beta * SQRT_5_3 * (s_n * m_r).sqrt() * v_n;
+                let f_diss_n = 2.0 * beta * SQRT_5_6 * (s_n * m_r).sqrt() * v_n;
                 k_n * delta - f_diss_n - f_adhesion
             }
         } else if cohesion_energy > 0.0 {
             // SJKR: cohesion proportional to contact area A = π δ R*
-            let f_diss_n = 2.0 * beta * SQRT_5_3 * (s_n * m_r).sqrt() * v_n;
+            let f_diss_n = 2.0 * beta * SQRT_5_6 * (s_n * m_r).sqrt() * v_n;
             let f_cohesion = cohesion_energy * std::f64::consts::PI * delta * r_eff;
             k_n * delta - f_diss_n - f_cohesion // can go negative (attractive)
         } else {
             // Standard Hertz: repulsive only (clamped to ≥ 0)
-            let f_diss_n = 2.0 * beta * SQRT_5_3 * (s_n * m_r).sqrt() * v_n;
+            let f_diss_n = 2.0 * beta * SQRT_5_6 * (s_n * m_r).sqrt() * v_n;
             (k_n * delta - f_diss_n).max(0.0)
         };
 
@@ -384,11 +384,11 @@ pub fn hertz_mindlin_contact_force(
             sx *= scale; sy *= scale; sz *= scale;
         }
 
-        // Tangential damping coefficient: γ_t = 2 β √(5/3) √(k_t m_r)
-        let gamma_t = 2.0 * SQRT_5_3 * beta * (k_t * m_r).sqrt();
-        let mut ft_x = k_t * sx - gamma_t * vt_x;
-        let mut ft_y = k_t * sy - gamma_t * vt_y;
-        let mut ft_z = k_t * sz - gamma_t * vt_z;
+        // Tangential damping coefficient: γ_t = 2 β √(5/6) √(k_t m_r)
+        let gamma_t = 2.0 * SQRT_5_6 * beta * (k_t * m_r).sqrt();
+        let mut ft_x = k_t * sx + gamma_t * vt_x;
+        let mut ft_y = k_t * sy + gamma_t * vt_y;
+        let mut ft_z = k_t * sz + gamma_t * vt_z;
 
         // Coulomb cap on total tangential force
         let f_t_mag = (ft_x * ft_x + ft_y * ft_y + ft_z * ft_z).sqrt();
@@ -800,10 +800,10 @@ pub fn hooke_contact_force(
             sz *= scale;
         }
 
-        let gamma_t = 2.0 * SQRT_5_3 * beta * (kt * m_r).sqrt();
-        let mut ft_x = kt * sx - gamma_t * vt_x;
-        let mut ft_y = kt * sy - gamma_t * vt_y;
-        let mut ft_z = kt * sz - gamma_t * vt_z;
+        let gamma_t = 2.0 * SQRT_5_6 * beta * (kt * m_r).sqrt();
+        let mut ft_x = kt * sx + gamma_t * vt_x;
+        let mut ft_y = kt * sy + gamma_t * vt_y;
+        let mut ft_z = kt * sz + gamma_t * vt_z;
 
         let f_t_mag = (ft_x * ft_x + ft_y * ft_y + ft_z * ft_z).sqrt();
         if f_t_mag > f_t_max && f_t_mag > TANGENTIAL_EPSILON {
