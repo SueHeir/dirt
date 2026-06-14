@@ -13,8 +13,8 @@ use std::fs;
 use std::io::Write;
 use std::sync::OnceLock;
 
-use mddem::prelude::*;
-use mddem::dem_atom::DemAtom;
+use dirt_core::prelude::*;
+use dirt_core::dirt_atom::DemAtom;
 
 fn main() {
     let mut app = App::new();

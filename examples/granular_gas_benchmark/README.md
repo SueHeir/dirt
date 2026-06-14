@@ -15,7 +15,7 @@ The cooling curve should span ~2 decades in temperature and ~2 decades in time, 
 ## Files
 
 - `main.rs` -- Compiled example entry point
-- `config.toml` -- MDDEM input
+- `config.toml` -- DIRT input
 - `in.lammps` -- Equivalent LAMMPS input using `pair_style granular` with `hertz/material`
 - `haff_analysis.py` -- Analysis script (reads `GranularTemp.txt`, produces `haff_comparison.png`)
 - `validate.py` -- Automated physics validation (no NaN, cooling trend, no energy explosion)

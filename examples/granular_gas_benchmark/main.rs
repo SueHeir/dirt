@@ -5,7 +5,7 @@
 //! cargo run --example granular_gas_benchmark --no-default-features -- examples/granular_gas_benchmark/run_debug.toml
 //! ```
 
-use mddem::prelude::*;
+use dirt_core::prelude::*;
 
 fn main() {
     let mut app = App::new();

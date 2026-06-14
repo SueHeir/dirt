@@ -17,7 +17,7 @@ use std::fs;
 use std::io::Write;
 use std::sync::OnceLock;
 
-use mddem::prelude::*;
+use dirt_core::prelude::*;
 
 fn main() {
     let mut app = App::new();
@@ -115,10 +115,10 @@ fn measure_cooling(
     for body in &bodies.bodies {
         let q = body.quaternion;
         let qc = [q[0], -q[1], -q[2], -q[3]];
-        let omega_body = dem_clump::quat_rotate(qc, body.omega);
+        let omega_body = dirt_clump::quat_rotate(qc, body.omega);
         let qp = body.principal_axes;
         let qpc = [qp[0], -qp[1], -qp[2], -qp[3]];
-        let omega_p = dem_clump::quat_rotate(qpc, omega_body);
+        let omega_p = dirt_clump::quat_rotate(qpc, omega_body);
         ke_rot_2 += body.principal_moments[0] * omega_p[0] * omega_p[0]
             + body.principal_moments[1] * omega_p[1] * omega_p[1]
             + body.principal_moments[2] * omega_p[2] * omega_p[2];

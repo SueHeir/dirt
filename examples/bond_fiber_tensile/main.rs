@@ -10,11 +10,11 @@
 //!     examples/bond_fiber_tensile/config.toml
 //! ```
 
-use mddem::prelude::*;
-use mddem::dem_atom::DemAtom;
-use mddem::dem_bond::BondConfig;
-use mddem::mddem_core::BondStore;
-use mddem::mddem_fixes::FixesPlugin;
+use dirt_core::prelude::*;
+use dirt_core::dirt_atom::DemAtom;
+use dirt_core::dirt_bond::BondConfig;
+use dirt_core::soil_core::BondStore;
+use dirt_core::dirt_fixes::FixesPlugin;
 use std::f64::consts::PI;
 use std::fs::{self, File};
 use std::io::{BufWriter, Write as IoWrite};

@@ -1,0 +1,108 @@
+# ── Fiber bond breakage: AxialStress + Weibull thresholds ────────────────────
+# 11-sphere fiber pulled axially. Each of the 10 bonds gets its own tensile
+# threshold sampled from a length-scaled 2-parameter Weibull distribution:
+#
+#     σ_break,i = (σ̄_exp / Γ(1 + 1/m)) · (L_calib / max(L_bond, L_min))^{1/m}
+#                · (−ln(1 − u_i))^{1/m}
+#
+# with `u_i = per_bond_uniform_samples(min(tag_a,tag_b), max(...), seed)[0]`.
+# Since the per-bond `u_i` are deterministic in `(tag pair, seed)` and
+# **independent of MPI decomposition**, the breakage pattern is bit-
+# reproducible across single-rank vs multi-rank runs.
+#
+# What happens: the bond with the LOWEST sampled threshold breaks first,
+# at strain `ε = σ_break,min / E`. After that break the chain disconnects;
+# the surviving sub-chains carry zero stress and stay intact.
+#
+# The validator reads `bond_thresholds.csv` (written by the binary at setup),
+# picks `min(thr[0])` across all bonds, predicts `t_break = σ_min / (E · v) · L₀`,
+# and compares to the actual time when `bond_count` first drops below 10.
+
+[comm]
+processors_x = 1
+processors_y = 1
+processors_z = 1
+
+[domain]
+x_low  = -0.005
+x_high =  0.025
+y_low  = -0.005
+y_high =  0.005
+z_low  = -0.005
+z_high =  0.005
+boundary_x = "fixed"
+boundary_y = "fixed"
+boundary_z = "fixed"
+
+[neighbor]
+skin_fraction = 1.1
+bin_size = 0.005
+every = 1
+
+[dem]
+contact_model = "hertz"
+
+[[dem.materials]]
+name = "bpm"
+youngs_mod = 1.0e9
+poisson_ratio = 0.25
+restitution = 0.9
+friction = 0.0
+
+[[particles.insert]]
+source = "file"
+file = "examples/fiber_bond_breakage/fiber_11.csv"
+format = "csv"
+material = "bpm"
+radius = 0.001
+density = 2500.0
+columns = { x = 0, y = 1, z = 2 }
+
+[bonds]
+auto_bond = true
+bond_tolerance = 1.001
+bond_radius_ratio = 1.0
+youngs_modulus = 1.0e9
+shear_modulus  = 4.0e8
+beta_normal  = 1.0
+beta_shear   = 1.0
+beta_twist   = 1.0
+beta_bending = 1.0
+# Fixed seed → MPI-stable, bit-reproducible per-bond thresholds.
+seed = 12345
+
+# ── Breakage criterion: Weibull-sampled tensile thresholds ──────────────────
+# Mean ≈ 5 MPa (so the typical break strain is ~0.5 %, well inside the run).
+# Modulus m = 5 (broad spread — strength CoV ≈ 0.23).
+# L_calib = L_bond = 0.002 m so the size-effect factor is unity here and
+# each bond's threshold is just `(σ̄ / Γ(1+1/m)) · (−ln(1−u))^{1/m}`.
+[bonds.breakage]
+kind    = "axial_stress"
+tensile = { kind = "weibull", mean = 5.0e6, m = 5.0, l_calib = 0.002 }
+
+[[group]]
+name = "left_end"
+region = { type = "block", min = [-5e-4, -5e-4, -5e-4], max = [5e-4, 5e-4, 5e-4] }
+dynamic = false
+
+[[group]]
+name = "right_end"
+region = { type = "block", min = [0.0195, -5e-4, -5e-4], max = [0.0205, 5e-4, 5e-4] }
+dynamic = false
+
+[[freeze]]
+group = "left_end"
+
+[[move_linear]]
+group = "right_end"
+vx = 0.1
+
+[output]
+dir = "examples/fiber_bond_breakage/axial_stress_weibull"
+
+[run]
+# 30 000 steps · dt = 1e-7 = 3 ms ⇒ ε_global up to ~1.5 % — well past the
+# weakest bond's expected break strain (a few times σ̄/E ≈ 0.5 %).
+steps = 30000
+thermo = 1000
+dt = 1e-7

@@ -7,7 +7,7 @@
 //! cargo run --example hopper --no-default-features -- examples/hopper/config.toml
 //! ```
 
-use mddem::prelude::*;
+use dirt_core::prelude::*;
 
 #[derive(Clone, Debug, PartialEq, Default, StageEnum)]
 enum Phase {

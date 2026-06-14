@@ -8,8 +8,8 @@
 //! cargo run --release --example bench_hertz_rebound --no-default-features -- examples/bench_hertz_rebound/config.toml
 //! ```
 
-use mddem::prelude::*;
-use mddem::dem_atom::DemAtom;
+use dirt_core::prelude::*;
+use dirt_core::dirt_atom::DemAtom;
 use std::fs;
 use std::io::Write as IoWrite;
 

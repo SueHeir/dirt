@@ -1,0 +1,113 @@
+# ── Fiber bond validation: bending vibration ────────────────────────────────
+# Same 11-sphere spaced fiber as `cantilever_bending.toml`, but with the
+# global viscous damping REMOVED. The tip is loaded with a constant
+# transverse force from t = 0 — the chain oscillates undamped about its
+# static deflection point and rings at its natural bending frequency.
+#
+# Guo 2018 Eq. 18 gives the first-mode flexural period for a clamped-free
+# Euler-Bernoulli beam:
+#
+#   T_bend = 2π / ω_1 = 1.7868 · L² · √(ρ_l / (E_b·I))
+#
+# with ρ_l = ρ · A the mass per unit length. For our parameters:
+#
+#   ρ_l = 2500 · π · (1 mm)² ≈ 7.854 × 10⁻³ kg/m
+#   E_b·I ≈ 7.854 × 10⁻⁴ N·m²
+#   L = 40 mm
+#   T_bend ≈ 1.7868 · 1.6 × 10⁻³ · √10 ≈ 9.04 ms
+#
+# The undamped tip trajectory is `z(t) = y_static · (1 − cos(ω_1·t))`,
+# oscillating between 0 and 2·y_static with period T_bend. The validator
+# fits the period from local maxima (returns to z ≈ 0) and compares to the
+# Guo prediction.
+#
+# Run:
+#   cargo run --release --example fiber_bond --no-default-features -- \
+#       examples/fiber_bond/bending_vibration.toml
+#
+# Validate:
+#   python3 examples/fiber_bond/validate.py \
+#       examples/fiber_bond/bending_vibration/data/fiber_bond.csv
+
+[comm]
+processors_x = 1
+processors_y = 1
+processors_z = 1
+
+[domain]
+x_low  = -0.005
+x_high =  0.045
+y_low  = -0.005
+y_high =  0.005
+# Tip oscillates between 0 and 2·y_static ≈ −5.4 mm — need ≥ 8 mm of
+# headroom in −z.
+z_low  = -0.025
+z_high =  0.005
+boundary_x = "fixed"
+boundary_y = "fixed"
+boundary_z = "fixed"
+
+[neighbor]
+skin_fraction = 1.1
+bin_size = 0.008
+every = 1
+
+[dem]
+contact_model = "hertz"
+
+[[dem.materials]]
+name = "bpm"
+youngs_mod = 1.0e9
+poisson_ratio = 0.25
+restitution = 0.9
+friction = 0.0
+
+[[particles.insert]]
+source = "file"
+file = "examples/fiber_bond/fiber_11_spaced.csv"
+format = "csv"
+material = "bpm"
+radius = 0.001
+density = 2500.0
+columns = { x = 0, y = 1, z = 2 }
+
+[bonds]
+auto_bond = true
+bond_tolerance = 2.1
+bond_radius_ratio = 1.0
+youngs_modulus = 1.0e9
+shear_modulus  = 4.0e8
+# Critical per-channel bond damping = 0.0 so the chain rings freely.
+beta_normal  = 0.0
+beta_shear   = 0.0
+beta_twist   = 0.0
+beta_bending = 0.0
+
+[[group]]
+name = "anchor"
+region = { type = "block", min = [-5e-4, -5e-4, -5e-4], max = [5e-4, 5e-4, 5e-4] }
+dynamic = false
+
+[[group]]
+name = "tip"
+region = { type = "block", min = [0.0395, -5e-4, -5e-4], max = [0.0405, 5e-4, 5e-4] }
+dynamic = false
+
+[[pin]]
+group = "anchor"
+
+# No [[viscous]] here — the system needs to ring.
+
+[[addforce]]
+group = "tip"
+fz = -0.1
+
+[output]
+dir = "examples/fiber_bond/bending_vibration"
+
+[run]
+# 100 ms ≈ 11 bending periods at T_bend ≈ 9 ms — plenty for a clean fit.
+# dt = 5e-7 (still ~8% of axial-wave stability limit on a 4 mm bond).
+steps = 200000
+thermo = 20000
+dt = 5e-7

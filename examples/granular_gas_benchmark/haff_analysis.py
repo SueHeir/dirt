@@ -1,7 +1,7 @@
 """
-Haff's Cooling Law Validation for MDDEM Granular Gas Benchmark
+Haff's Cooling Law Validation for DIRT Granular Gas Benchmark
 ==============================================================
-Reads data/GranularTemp.txt produced by MDDEM and compares granular
+Reads data/GranularTemp.txt produced by DIRT and compares granular
 temperature decay against:
   1. Haff's law (inelastic hard spheres, constant e):
          T(t) = T0 / (1 + t/tc)^2
@@ -16,7 +16,7 @@ Usage:
     python haff_analysis.py [GranularTemp.txt]
 
 File format expected: three columns — step  time(s)  temperature(m^2/s^2)
-(produced by MDDEM with the updated print_granular_temperature system)
+(produced by DIRT with the updated print_granular_temperature system)
 """
 
 import sys
@@ -136,7 +136,7 @@ T_fit_curve = haffs_law(t_fine, T0_fit, tc_fit)
 
 # ── Panel 1: linear scale ────────────────────────────────────────────────────
 # ax = axes[0]
-# ax.scatter(times, T_arr, s=4, color="steelblue", label="MDDEM data", zorder=5)
+# ax.scatter(times, T_arr, s=4, color="steelblue", label="DIRT data", zorder=5)
 # if fit_ok:
 #     ax.plot(t_fine + t0_data, T_fit_curve, "r-", linewidth=2,
 #             label=f"Haff fit  $t_c$={tc_fit:.3e} s")
@@ -160,7 +160,7 @@ T_norm = T_pos / T_pos[0]
 t_norm = t_pos / t_pos[0]
 
 ax.loglog(t_norm, T_norm, "o", markersize=3, color="steelblue",
-          label="MDDEM data  (normalised)", zorder=5)
+          label="DIRT data  (normalised)", zorder=5)
 
 # Fit curve (normalised)
 if fit_ok:

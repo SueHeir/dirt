@@ -21,7 +21,7 @@ Cross-section (x-z plane, periodic in y):
 
 **Flowing stage:** Once the total kinetic energy drops below 1e-5 J (particles nearly stationary), the blocker wall is automatically removed and particles flow through the funnel exit to the floor. The state transition also triggers `StageAdvancePlugin` to advance the `[[run]]` stage, so the flowing stage gets its own step count and thermo interval.
 
-This example demonstrates MDDEM's Tier 2 (Rust API) by adding a custom system alongside the standard TOML-configured plugins.
+This example demonstrates DIRT's Tier 2 (Rust API) by adding a custom system alongside the standard TOML-configured plugins.
 
 ### How `main.rs` works
 
@@ -66,7 +66,7 @@ The `check_settled` function itself is a regular system that declares its depend
 
 Every 100 steps (after an initial 1000-step warmup), it computes the total kinetic energy across all MPI ranks via `comm.all_reduce_sum_f64()`. When KE drops below the threshold, it deactivates the named `"blocker"` wall and transitions to `Phase::Flowing` — all in 6 lines of physics logic.
 
-This pattern — TOML config for standard physics, custom Rust systems for runtime logic — is the core design of MDDEM.
+This pattern — TOML config for standard physics, custom Rust systems for runtime logic — is the core design of DIRT.
 
 ### Config: Named `[[run]]` stages
 

@@ -1,24 +1,19 @@
-/target
-.gitignore
-/src/.gitignore
+target/
+Cargo.lock
+**/*.rs.bk
 .DS_Store
-*/.DS_Store
-**/.DS_Store
-.cargo
 .claude
+
+# Generated simulation artifacts
 **/vtp/
 *.vtp
 **/data/
+**/out/
 *.csv
-agents/
-
-# Generated artifacts
-log.lammps
-**/log.lammps
 schedule.dot
 schedule.png
 *.svg
 **/profile*.json
-**/sample_output.txt
 **/*.log
-
+log.lammps
+**/log.lammps

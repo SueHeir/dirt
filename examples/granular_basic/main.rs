@@ -6,7 +6,7 @@
 //! cargo run --example granular_basic --no-default-features -- examples/granular_basic/config.toml
 //! ```
 
-use mddem::prelude::*;
+use dirt_core::prelude::*;
 
 fn main() {
     let mut app = App::new();

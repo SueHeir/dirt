@@ -1,0 +1,109 @@
+# ── Fiber bond validation: axial piecewise plasticity ───────────────────────
+# 11-sphere fiber pulled monotonically past three plastic breakpoints. The
+# axial channel uses the `bending_piecewise`-style envelope (specified in
+# [bonds.plasticity.axial]):
+#
+#     elastic K_e   for ε < 1 %
+#     slope  K_e/2  for 1 % ≤ ε < 2 %
+#     slope  K_e/10 for 2 % ≤ ε < 3 %
+#     flat   (0)    for ε ≥ 3 %
+#
+# That is the user's example envelope from earlier in this thread, expressed
+# directly in axial-strain breakpoints.
+#
+# The validator compares the measured bond force F(ε) against the theoretical
+# envelope, plots both on the same axes, and verifies they agree within 5 %.
+#
+# Run:
+#   cargo run --release --example fiber_bond --no-default-features -- \
+#       examples/fiber_bond/axial_plastic_piecewise.toml
+#
+# Validate:
+#   python3 examples/fiber_bond/validate.py \
+#       examples/fiber_bond/axial_plastic_piecewise/data/fiber_bond.csv
+
+[comm]
+processors_x = 1
+processors_y = 1
+processors_z = 1
+
+[domain]
+# Fiber stretches to ε ≈ 4 % (4·0.02 = 0.8 mm growth) — give the +x side
+# plenty of headroom.
+x_low  = -0.005
+x_high =  0.025
+y_low  = -0.005
+y_high =  0.005
+z_low  = -0.005
+z_high =  0.005
+boundary_x = "fixed"
+boundary_y = "fixed"
+boundary_z = "fixed"
+
+[neighbor]
+skin_fraction = 1.1
+bin_size = 0.005
+every = 1
+
+[dem]
+contact_model = "hertz"
+
+[[dem.materials]]
+name = "bpm"
+youngs_mod = 1.0e9
+poisson_ratio = 0.25
+restitution = 0.9
+friction = 0.0
+
+[[particles.insert]]
+source = "file"
+file = "examples/fiber_bond/fiber_11.csv"
+format = "csv"
+material = "bpm"
+radius = 0.001
+density = 2500.0
+columns = { x = 0, y = 1, z = 2 }
+
+[bonds]
+auto_bond = true
+bond_tolerance = 1.001
+bond_radius_ratio = 1.0
+youngs_modulus = 1.0e9
+shear_modulus  = 4.0e8
+beta_normal  = 1.0
+beta_shear   = 1.0
+beta_twist   = 1.0
+beta_bending = 1.0
+
+# ── Piecewise axial plasticity (the user's example envelope) ────────────────
+[bonds.plasticity.axial]
+kind                = "piecewise"
+breakpoint_strains  = [0.01, 0.02, 0.03]
+slope_multipliers   = [0.5, 0.1, 0.0]
+
+[[group]]
+name = "left_end"
+region = { type = "block", min = [-5e-4, -5e-4, -5e-4], max = [5e-4, 5e-4, 5e-4] }
+dynamic = false
+
+[[group]]
+name = "right_end"
+region = { type = "block", min = [0.0195, -5e-4, -5e-4], max = [0.0205, 5e-4, 5e-4] }
+dynamic = false
+
+[[freeze]]
+group = "left_end"
+
+# Pull at v = 0.1 m/s on a 20-mm fiber → ε̇ = 5 /s. To reach ε ≈ 4 %, run
+# 80 000 steps · dt = 1e-7 = 8 ms → ΔL = 0.8 mm → ε ≈ 0.8/20 = 4 %.
+[[move_linear]]
+group = "right_end"
+vx = 0.1
+
+[output]
+dir = "examples/fiber_bond/axial_plastic_piecewise"
+
+[run]
+steps = 80000
+thermo = 4000
+dt = 1e-7

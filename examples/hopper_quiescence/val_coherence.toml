@@ -1,0 +1,145 @@
+# Hopper fill/discharge quiescence benchmark — COHERENCE variant (short run).
+# The val_*.toml pair is identical except for the [quiescence] section, so
+# wall-time differences are attributable to the optimization.
+
+[comm]
+processors_x = 1
+processors_y = 1
+processors_z = 1
+
+[domain]
+x_low = 0.0
+x_high = 0.08
+y_low = 0.0
+y_high = 0.02
+z_low = 0.0
+z_high = 0.20
+boundary_x = "fixed"
+boundary_y = "periodic"       # periodic slice in y
+boundary_z = "fixed"
+
+[neighbor]
+skin_fraction = 1.2
+bin_size = 0.004
+
+[gravity]
+gz = -90.81
+
+[[dem.materials]]
+name = "glass"
+youngs_mod = 1.0e7            # softened (common DEM practice) for a larger stable dt
+poisson_ratio = 0.3
+restitution = 0.3
+friction = 0.5
+rolling_friction = 0.1
+
+# Rain particles in from a block near the ceiling: 250 every 1500 steps,
+# capped at 5000 total (last insertion at step 28500).
+[[particles.insert]]
+material = "glass"
+radius = 0.001
+density = 2500.0
+velocity_z = -0.5
+region = { type = "block", min = [0.005, 0.0, 0.140], max = [0.075, 0.02, 0.170] }
+rate = 200
+rate_interval = 800
+rate_start = 0
+rate_limit = 1200
+
+# ── Container walls ──────────────────────────────────────────────────────────
+[[wall]]                       # left side (x = 0)
+point_x = 0.0
+point_y = 0.0
+point_z = 0.0
+normal_x = 1.0
+normal_y = 0.0
+normal_z = 0.0
+material = "glass"
+
+[[wall]]                       # right side (x = 0.08)
+point_x = 0.08
+point_y = 0.0
+point_z = 0.0
+normal_x = -1.0
+normal_y = 0.0
+normal_z = 0.0
+material = "glass"
+
+[[wall]]                       # floor (z = 0) — discharged particles pile here
+point_x = 0.0
+point_y = 0.0
+point_z = 0.0
+normal_x = 0.0
+normal_y = 0.0
+normal_z = 1.0
+material = "glass"
+
+[[wall]]                       # ceiling (z = 0.20)
+point_x = 0.0
+point_y = 0.0
+point_z = 0.20
+normal_x = 0.0
+normal_y = 0.0
+normal_z = -1.0
+material = "glass"
+
+# Left funnel wall: from (0, z=0.13) down to (0.03, z=0.06).
+# Wall direction (0.03, 0, -0.07); inward normal (0.07, 0, 0.03).
+[[wall]]
+point_x = 0.0
+point_y = 0.0
+point_z = 0.13
+normal_x = 0.07
+normal_y = 0.0
+normal_z = 0.03
+material = "glass"
+bound_z_low = 0.058
+bound_z_high = 0.132
+
+# Right funnel wall: mirror — from (0.08, z=0.13) down to (0.05, z=0.06).
+[[wall]]
+point_x = 0.08
+point_y = 0.0
+point_z = 0.13
+normal_x = -0.07
+normal_y = 0.0
+normal_z = 0.03
+material = "glass"
+bound_z_low = 0.058
+bound_z_high = 0.132
+
+# Blocker covering the outlet at z = 0.06 — removed at the start of "flowing".
+[[wall]]
+point_x = 0.0
+point_y = 0.0
+point_z = 0.06
+normal_x = 0.0
+normal_y = 0.0
+normal_z = 1.0
+material = "glass"
+name = "blocker"
+
+[vtp]
+interval = 10000
+
+[quiescence]
+region_coherence = true
+check_every = 25
+still_checks = 3
+force_ratio_tol = 0.1       # freeze when window unbalanced-force ratio < 0.1
+wake_force_rel = 0.3
+buffer_layers = 3          # forced-on (green) shells around active particles
+
+# Stage 1: rain + settle onto the blocker (fixed length for determinism).
+[[run]]
+name = "filling"
+steps = 60000
+thermo = 2000
+dt = 2e-6
+
+# Stage 2: blocker removed on the first step — discharge and re-settle.
+[[run]]
+name = "flowing"
+steps = 80000
+thermo = 2000
+dt = 2e-6

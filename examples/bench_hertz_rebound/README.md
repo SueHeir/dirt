@@ -87,7 +87,7 @@ python3 examples/bench_hertz_rebound/plot.py
 - **No friction** (friction = 0) for clean normal-only rebound
 - **No gravity** effect on contact (gravity is off; particle given direct velocity)
 - **Monodisperse** — single particle size
-- **Hertz–Mindlin** contact model with viscoelastic damping (MDDEM default)
+- **Hertz–Mindlin** contact model with viscoelastic damping (DIRT default)
 - Wall is treated as **infinitely massive and rigid** (standard DEM wall)
 
 ## References

@@ -13,9 +13,9 @@
 //!     examples/bond_cantilever/config.toml
 //! ```
 
-use mddem::prelude::*;
-use mddem::dem_bond::BondMetrics;
-use mddem::mddem_core::BondStore;
+use dirt_core::prelude::*;
+use dirt_core::dirt_bond::BondMetrics;
+use dirt_core::soil_core::BondStore;
 use std::fs::{self, File};
 use std::io::{BufWriter, Write as IoWrite};
 

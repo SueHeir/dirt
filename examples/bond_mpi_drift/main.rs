@@ -23,8 +23,8 @@
 //!     examples/bond_mpi_drift/config.toml
 //! ```
 
-use mddem::prelude::*;
-use mddem::dem_bond::BondMetrics;
+use dirt_core::prelude::*;
+use dirt_core::dirt_bond::BondMetrics;
 use std::fs::{self, File};
 use std::io::{BufWriter, Write as IoWrite};
 

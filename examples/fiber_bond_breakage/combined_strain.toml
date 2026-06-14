@@ -1,0 +1,99 @@
+# ── Fiber bond breakage: CombinedStrain (migration-doc Eq. 1.7-1) ────────
+# Same cantilever-bend setup as `combined_stress.toml`, but with the
+# strain-based criterion:
+#     ε_combined = ε_axial + r_b · |κ_bend| > ε_max
+#
+# With pure transverse loading, ε_axial ≈ 0 and `r_b · κ_bend = r_b · M/EI =
+# 3·r_b·y_tip / L_c²` at the anchor bond. The predicted break tip
+# displacement is identical to the stress case (since `ε_max = σ_max/E`):
+#
+#     y_break = ε_max · L_c² / (3·r_b)  ≈  2.67 mm  for ε_max = 0.005.
+#
+# This config verifies that the CombinedStrain criterion produces
+# the right break event from purely kinematic state (no force/moment
+# dependence on `E_b`), which is the property the migration doc designed
+# the criterion for — so it stays correct past plastic yield.
+
+[comm]
+processors_x = 1
+processors_y = 1
+processors_z = 1
+
+[domain]
+x_low  = -0.005
+x_high =  0.045
+y_low  = -0.005
+y_high =  0.005
+z_low  = -0.015
+z_high =  0.005
+boundary_x = "fixed"
+boundary_y = "fixed"
+boundary_z = "fixed"
+
+[neighbor]
+skin_fraction = 1.1
+bin_size = 0.008
+every = 1
+
+[dem]
+contact_model = "hertz"
+
+[[dem.materials]]
+name = "bpm"
+youngs_mod = 1.0e9
+poisson_ratio = 0.25
+restitution = 0.9
+friction = 0.0
+
+[[particles.insert]]
+source = "file"
+file = "examples/fiber_bond_breakage/fiber_11_spaced.csv"
+format = "csv"
+material = "bpm"
+radius = 0.001
+density = 2500.0
+columns = { x = 0, y = 1, z = 2 }
+
+[bonds]
+auto_bond = true
+bond_tolerance = 2.1
+bond_radius_ratio = 1.0
+youngs_modulus = 1.0e9
+shear_modulus  = 4.0e8
+beta_normal  = 1.0
+beta_shear   = 1.0
+beta_twist   = 1.0
+beta_bending = 1.0
+
+[bonds.breakage]
+kind    = "combined_strain"
+tensile = { kind = "constant", value = 0.005 }
+
+[[group]]
+name = "anchor"
+region = { type = "block", min = [-5e-4, -5e-4, -5e-4], max = [5e-4, 5e-4, 5e-4] }
+dynamic = false
+
+[[group]]
+name = "tip"
+region = { type = "block", min = [0.0395, -5e-4, -5e-4], max = [0.0405, 5e-4, 5e-4] }
+dynamic = false
+
+[[pin]]
+group = "anchor"
+
+[[viscous]]
+group = "all"
+gamma = 0.1
+
+[[move_linear]]
+group = "tip"
+vz = -0.5
+
+[output]
+dir = "examples/fiber_bond_breakage/combined_strain"
+
+[run]
+steps = 100000
+thermo = 5000
+dt = 1e-7
