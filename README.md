@@ -13,8 +13,7 @@ riding the [SOIL](https://github.com/SueHeir/soil) substrate for all the
 method-agnostic machinery (atom data, domain decomposition, halo exchange,
 neighbor lists). It adds the granular physics: Hertz–Mindlin contact, rotational
 dynamics, parallel bonds, walls, multisphere clumps, heat conduction, and
-contact analysis. Target applications: fiber/yarn/weave, regolith, and
-fluid–solid coupling.
+contact analysis. 
 
 ## Layout
 
