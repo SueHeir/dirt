@@ -7,6 +7,8 @@ use std::io::{BufRead, BufReader};
 
 use grass_app::prelude::*;
 use grass_scheduler::prelude::*;
+use rand::SeedableRng;
+use rand::rngs::StdRng;
 use rand_distr::{Distribution, Normal};
 use serde::Deserialize;
 
@@ -116,6 +118,15 @@ pub struct InsertConfig {
     /// LAMMPS data file atom style: `"atomic"`, `"sphere"`, `"bpm/sphere"`.
     /// Auto-detected from `Atoms # style` header if not specified.
     pub atom_style: Option<String>,
+    /// Seed for the deterministic insertion RNG. Defaults to 0.
+    ///
+    /// Insertion runs on every MPI rank with the SAME seed so each rank
+    /// generates the identical candidate stream (positions, radii, velocities,
+    /// tags) and therefore the identical global packing; a rank only stores the
+    /// atoms whose position falls inside its own subdomain. A fixed default
+    /// makes packings reproducible across runs and across rank counts.
+    #[serde(default)]
+    pub seed: Option<u64>,
 }
 
 /// TOML `[particles]` — contains a list of insertion blocks.
@@ -307,7 +318,13 @@ density = 2500.0
 
     fn build(&self, app: &mut App) {
         app.add_resource(RateInsertState::default());
-        app.add_setup_system(dem_insert_atoms, ScheduleSetupSet::Setup)
+        // Insertion must run AFTER domain decomposition so each rank's subdomain
+        // bounds (sub_domain_low/high) are populated before atoms are placed —
+        // parallel insertion filters candidates against those bounds.
+        app.add_setup_system(
+            dem_insert_atoms.after("domain_read_input"),
+            ScheduleSetupSet::Setup,
+        )
             .add_setup_system(calculate_delta_time, ScheduleSetupSet::PostSetup)
             .add_update_system(dem_rate_insert, ParticleSimScheduleSet::PreInitialIntegration);
     }
@@ -352,6 +369,17 @@ fn insert_single_particle(
     dem_data.ang_mom.push([0.0; 3]);
     dem_data.torque.push([0.0; 3]);
     dem_data.body_id.push(0.0);
+}
+
+// ── Helper: subdomain ownership ─────────────────────────────────────────────
+
+/// Whether `pos` lies inside this rank's subdomain, using a half-open interval
+/// `[sub_domain_low, sub_domain_high)` per axis — consistent with how
+/// `exchange()` defines ownership (an atom is sent low if `pos < low`, sent high
+/// if `pos >= high`). The half-open convention guarantees every position is
+/// claimed by exactly one rank, never two and never none.
+fn owns_position(domain: &Domain, pos: &[f64; 3]) -> bool {
+    (0..3).all(|d| pos[d] >= domain.sub_domain_low[d] && pos[d] < domain.sub_domain_high[d])
 }
 
 // ── Helper: resolve material index ──────────────────────────────────────────
@@ -439,12 +467,22 @@ pub fn dem_insert_atoms(
         ParticlesConfig::default()
     };
 
-    // Insert particles per insert block
+    // Insert particles per insert block.
+    //
+    // Insertion runs on EVERY rank. Random insertion is fully deterministic
+    // (seeded RNG): every rank generates the identical global packing, but only
+    // stores the atoms whose position lies inside its own subdomain. This means
+    // each atom is born inside its owner's subdomain, so the per-step `exchange()`
+    // only ever needs a single hop. File-based insertion is parsed on every rank
+    // and likewise filtered to the local subdomain.
     if let Some(ref inserts) = particles_config.insert {
-        if comm.rank() == 0 {
+        {
             let mut dem_data = registry.expect_mut::<DemAtom>("dem_insert_atoms");
-            let mut rng = rand::rng();
-            let mut max_tag = atom.get_max_tag();
+            // Tags must be globally unique and identical across ranks, so seed the
+            // running tag from the global max (reduced) rather than the local max.
+            // (No all_reduce_max in the backend, so reduce -max with min and negate.)
+            let local_max_tag = atom.get_max_tag() as f64;
+            let mut max_tag = (-comm.all_reduce_min_f64(-local_max_tag)) as u32;
 
             for insert in inserts {
                 if insert.source == "file" {
@@ -454,6 +492,7 @@ pub fn dem_insert_atoms(
                         &mut atom,
                         &mut dem_data,
                         &material_table,
+                        &domain,
                         &mut max_tag,
                     );
                 } else if insert.rate.is_some() {
@@ -483,7 +522,7 @@ pub fn dem_insert_atoms(
                         total_inserted: 0,
                     });
                 } else {
-                    // ── Immediate random insertion ──
+                    // ── Immediate random insertion (deterministic, born-in-owner) ──
                     let mat_name = insert.material.as_deref().unwrap_or_else(|| {
                         eprintln!(
                             "ERROR: [[particles.insert]] requires 'material' for random insertion"
@@ -509,15 +548,17 @@ pub fn dem_insert_atoms(
                     });
 
                     let max_r = radius_spec.max_radius();
-                    println!(
-                        "DemAtomInsert: inserting {} particles of material '{}' (r={}, rho={}, E={}, nu={})",
-                        count,
-                        mat_name,
-                        max_r,
-                        density,
-                        material_table.youngs_mod[mat_idx as usize],
-                        material_table.poisson_ratio[mat_idx as usize]
-                    );
+                    if comm.rank() == 0 {
+                        println!(
+                            "DemAtomInsert: inserting {} particles of material '{}' (r={}, rho={}, E={}, nu={})",
+                            count,
+                            mat_name,
+                            max_r,
+                            density,
+                            material_table.youngs_mod[mat_idx as usize],
+                            material_table.poisson_ratio[mat_idx as usize]
+                        );
+                    }
 
                     // Use explicit region or default to domain bounds inset by max radius.
                     let region = insert.region.clone().unwrap_or_else(|| Region::Block {
@@ -533,79 +574,97 @@ pub fn dem_insert_atoms(
                         ],
                     });
 
+                    // Velocity setup (drawn deterministically per accepted atom).
+                    let rand_vel = insert.velocity.unwrap_or(0.0);
+                    if rand_vel < 0.0 {
+                        eprintln!(
+                            "ERROR: velocity in [[particles.insert]] must be non-negative, got {}",
+                            rand_vel
+                        );
+                        std::process::exit(1);
+                    }
+                    let normal = (rand_vel > 0.0).then(|| {
+                        Normal::new(0.0, rand_vel)
+                            .expect("velocity must be non-negative for Normal distribution")
+                    });
+                    let vx = insert.velocity_x.unwrap_or(0.0);
+                    let vy = insert.velocity_y.unwrap_or(0.0);
+                    let vz = insert.velocity_z.unwrap_or(0.0);
+
+                    // Seeded RNG: identical candidate stream on every rank.
+                    let seed = insert.seed.unwrap_or(0);
+                    let mut rng = StdRng::seed_from_u64(seed);
+
+                    // Replicated scratch of ALL accepted (position, radius) — every
+                    // rank maintains the full packing for globally-correct overlap
+                    // checks. A spatial hash keeps the cost O(N)/rank instead of
+                    // P×O(N²). Cell size ~ 2× max diameter so the 3×3×3 neighborhood
+                    // covers every possible overlap.
                     let pbc = PeriodicBox::from_domain(&domain);
-                    let start_idx = atom.len();
+                    let cell_size = (2.0 * max_r * 1.1).max(1e-10);
+                    let mut spatial_hash = SpatialHash::new(cell_size);
+                    let mut all_pos: Vec<[f64; 3]> = Vec::with_capacity(count as usize);
+                    let mut all_rad: Vec<f64> = Vec::with_capacity(count as usize);
+
                     let mut inserted = 0u32;
                     let mut attempts = 0u64;
                     let max_attempts = count as u64 * 1_000_000;
                     while inserted < count && attempts < max_attempts {
                         attempts += 1;
+                        // Advance the shared RNG identically on every rank.
                         let [x, y, z] = region.random_point_inside(&mut rng);
                         let radius = radius_spec.sample(&mut rng);
-
-                        let mut no_overlap = true;
                         let candidate = [x, y, z];
-                        for i in 0..atom.len() {
-                            let dist_sq = pbc.min_image_dist_sq(&candidate, &atom.pos[i]);
-                            let min_dist = (radius + dem_data.radius[i]) * 1.1;
-                            if dist_sq <= min_dist * min_dist {
-                                no_overlap = false;
-                                break;
-                            }
+
+                        if spatial_hash.has_overlap(
+                            &candidate,
+                            radius,
+                            &all_pos,
+                            &all_rad,
+                            &pbc,
+                        ) {
+                            continue;
                         }
 
-                        if no_overlap {
+                        // Accepted: draw velocity + assign tag in GLOBAL order so the
+                        // RNG advances identically on every rank.
+                        let mut vel = [vx, vy, vz];
+                        if let Some(ref n) = normal {
+                            vel[0] += n.sample(&mut rng);
+                            vel[1] += n.sample(&mut rng);
+                            vel[2] += n.sample(&mut rng);
+                        }
+                        let tag = max_tag;
+                        max_tag += 1;
+
+                        // Replicate into the global packing scratch (all ranks).
+                        let new_idx = all_pos.len();
+                        spatial_hash.insert(new_idx, &candidate);
+                        all_pos.push(candidate);
+                        all_rad.push(radius);
+
+                        // Materialize into the Atom arrays only if this rank owns the
+                        // position (half-open interval, matching exchange() ownership).
+                        if owns_position(&domain, &candidate) {
                             insert_single_particle(
                                 &mut atom,
                                 &mut dem_data,
-                                [x, y, z],
-                                [0.0; 3],
+                                candidate,
+                                vel,
                                 radius,
                                 density,
                                 mat_idx,
-                                max_tag,
+                                tag,
                             );
-                            max_tag += 1;
-                            inserted += 1;
                         }
+                        inserted += 1;
                     }
-                    if inserted < count {
+                    if inserted < count && comm.rank() == 0 {
                         eprintln!(
                             "WARNING: Could only insert {}/{} particles after {} attempts. \
                              Increase domain size or reduce particle count.",
                             inserted, count, max_attempts
                         );
-                    }
-
-                    // Apply per-insert velocity to this batch
-                    let total_len = atom.vel.len();
-                    let start = start_idx;
-                    if let Some(rand_vel) = insert.velocity {
-                        if rand_vel < 0.0 {
-                            eprintln!(
-                                "ERROR: velocity in [[particles.insert]] must be non-negative, got {}",
-                                rand_vel
-                            );
-                            std::process::exit(1);
-                        }
-                        let normal = Normal::new(0.0, rand_vel)
-                            .expect("velocity must be non-negative for Normal distribution");
-                        for i in start..total_len {
-                            atom.vel[i][0] = normal.sample(&mut rng);
-                            atom.vel[i][1] = normal.sample(&mut rng);
-                            atom.vel[i][2] = normal.sample(&mut rng);
-                        }
-                    }
-                    // Apply directional velocity components (additive with random)
-                    let vx = insert.velocity_x.unwrap_or(0.0);
-                    let vy = insert.velocity_y.unwrap_or(0.0);
-                    let vz = insert.velocity_z.unwrap_or(0.0);
-                    if vx != 0.0 || vy != 0.0 || vz != 0.0 {
-                        for i in start..total_len {
-                            atom.vel[i][0] += vx;
-                            atom.vel[i][1] += vy;
-                            atom.vel[i][2] += vz;
-                        }
                     }
                 }
             }
@@ -620,6 +679,7 @@ fn insert_from_file(
     atom: &mut Atom,
     dem_data: &mut DemAtom,
     material_table: &MaterialTable,
+    domain: &Domain,
     max_tag: &mut u32,
 ) {
     let file_path = insert.file.as_deref().unwrap_or_else(|| {
@@ -632,12 +692,12 @@ fn insert_from_file(
     });
 
     match format {
-        "csv" => read_csv_particles(insert, file_path, atom, dem_data, material_table, max_tag),
+        "csv" => read_csv_particles(insert, file_path, atom, dem_data, material_table, domain, max_tag),
         "lammps_dump" => {
-            read_lammps_dump_particles(insert, file_path, atom, dem_data, material_table, max_tag)
+            read_lammps_dump_particles(insert, file_path, atom, dem_data, material_table, domain, max_tag)
         }
         "lammps_data" => {
-            read_lammps_data_particles(insert, file_path, atom, dem_data, material_table, max_tag)
+            read_lammps_data_particles(insert, file_path, atom, dem_data, material_table, domain, max_tag)
         }
         other => {
             eprintln!(
@@ -655,6 +715,7 @@ fn read_csv_particles(
     atom: &mut Atom,
     dem_data: &mut DemAtom,
     material_table: &MaterialTable,
+    domain: &Domain,
     max_tag: &mut u32,
 ) {
     let mat_name = insert.material.as_deref().unwrap_or_else(|| {
@@ -755,22 +816,26 @@ fn read_csv_particles(
             None => mat_idx,
         };
 
-        insert_single_particle(
-            atom,
-            dem_data,
-            [x, y, z],
-            [vx, vy, vz],
-            radius,
-            density,
-            row_mat_idx,
-            *max_tag,
-        );
+        // Tag advances for every file particle (keeps tags globally consistent
+        // across ranks); the atom is only stored if it lies in this subdomain.
+        if owns_position(domain, &[x, y, z]) {
+            insert_single_particle(
+                atom,
+                dem_data,
+                [x, y, z],
+                [vx, vy, vz],
+                radius,
+                density,
+                row_mat_idx,
+                *max_tag,
+            );
+            count += 1;
+        }
         *max_tag += 1;
-        count += 1;
     }
 
     println!(
-        "DemAtomInsert: loaded {} particles from CSV '{}'",
+        "DemAtomInsert: loaded {} local particles from CSV '{}'",
         count, file_path
     );
 }
@@ -781,6 +846,7 @@ fn read_lammps_dump_particles(
     atom: &mut Atom,
     dem_data: &mut DemAtom,
     material_table: &MaterialTable,
+    domain: &Domain,
     max_tag: &mut u32,
 ) {
     let mat_name = insert.material.as_deref().unwrap_or_else(|| {
@@ -887,24 +953,26 @@ fn read_lammps_dump_particles(
                 None => mat_idx,
             };
 
-            insert_single_particle(
-                atom,
-                dem_data,
-                [x, y, z],
-                [vx, vy, vz],
-                radius,
-                density,
-                row_mat_idx,
-                *max_tag,
-            );
+            if owns_position(domain, &[x, y, z]) {
+                insert_single_particle(
+                    atom,
+                    dem_data,
+                    [x, y, z],
+                    [vx, vy, vz],
+                    radius,
+                    density,
+                    row_mat_idx,
+                    *max_tag,
+                );
+                count += 1;
+            }
             *max_tag += 1;
-            count += 1;
         }
     }
 
     let _ = n_atoms; // used for format validation if needed
     println!(
-        "DemAtomInsert: loaded {} particles from LAMMPS dump '{}'",
+        "DemAtomInsert: loaded {} local particles from LAMMPS dump '{}'",
         count, file_path
     );
 }
@@ -929,6 +997,7 @@ fn read_lammps_data_particles(
     atom: &mut Atom,
     dem_data: &mut DemAtom,
     material_table: &MaterialTable,
+    domain: &Domain,
     max_tag: &mut u32,
 ) {
     let mat_name = insert.material.as_deref().unwrap_or_else(|| {
@@ -1137,26 +1206,29 @@ fn read_lammps_data_particles(
         }
     }
 
-    // Insert all parsed atoms
-    let count = parsed_atoms.len();
+    // Insert all parsed atoms (only those owned by this subdomain).
+    let mut count = 0usize;
     for pa in parsed_atoms {
         let vel = velocity_map.get(&pa.id).copied().unwrap_or([0.0; 3]);
         let row_mat_idx = lookup_material_for_type(pa.atom_type, type_index_map.as_ref(), mat_idx);
-        insert_single_particle(
-            atom,
-            dem_data,
-            pa.pos,
-            vel,
-            pa.radius,
-            pa.density,
-            row_mat_idx,
-            *max_tag,
-        );
+        if owns_position(domain, &pa.pos) {
+            insert_single_particle(
+                atom,
+                dem_data,
+                pa.pos,
+                vel,
+                pa.radius,
+                pa.density,
+                row_mat_idx,
+                *max_tag,
+            );
+            count += 1;
+        }
         *max_tag += 1;
     }
 
     println!(
-        "DemAtomInsert: loaded {} particles from LAMMPS data file '{}' (style: {})",
+        "DemAtomInsert: loaded {} local particles from LAMMPS data file '{}' (style: {})",
         count, file_path, atom_style
     );
 }
@@ -1178,7 +1250,11 @@ pub fn dem_rate_insert(
     mut rate_state: ResMut<RateInsertState>,
     mut comm_state: ResMut<CurrentState<CommState>>,
 ) {
-    if rate_state.entries.is_empty() || comm.rank() != 0 {
+    // Rate insertion runs on EVERY rank (born-in-owner): each rank generates the
+    // identical candidate stream from a step-derived seed and stores only the
+    // candidates that fall inside its own subdomain, so a new atom is born inside
+    // its owner and never needs a multi-hop exchange.
+    if rate_state.entries.is_empty() {
         return;
     }
 
@@ -1225,12 +1301,13 @@ pub fn dem_rate_insert(
     }
 
     let mut dem_data = registry.expect_mut::<DemAtom>("dem_rate_insert");
-    let mut rng = rand::rng();
-    let mut next_tag = if atom.tag.is_empty() {
-        0
-    } else {
-        atom.get_max_tag() + 1
-    };
+    // Base tag must be globally consistent across ranks. (No all_reduce_max in
+    // the backend, so reduce -max with min and negate.) Each attempt this step
+    // consumes one tag slot regardless of acceptance so tags stay unique across
+    // ranks without any extra collective.
+    let local_max_tag = if atom.tag.is_empty() { -1.0 } else { atom.get_max_tag() as f64 };
+    let base_tag = (-comm.all_reduce_min_f64(-local_max_tag)) as i64 + 1;
+    let mut tag_cursor: u32 = base_tag.max(0) as u32;
 
     for entry_idx in 0..rate_state.entries.len() {
         let interval = rate_state.entries[entry_idx]
@@ -1300,80 +1377,104 @@ pub fn dem_rate_insert(
                 ],
             });
 
-        // Build spatial hash from all existing atoms
+        // Velocity parameters (drawn deterministically per accepted candidate).
+        let config_seed = rate_state.entries[entry_idx].config.seed.unwrap_or(0);
+        let rand_vel = rate_state.entries[entry_idx].config.velocity.unwrap_or(0.0);
+        let vel_normal = (rand_vel > 0.0)
+            .then(|| Normal::new(0.0, rand_vel).expect("velocity must be non-negative"));
+        let vx = rate_state.entries[entry_idx].config.velocity_x.unwrap_or(0.0);
+        let vy = rate_state.entries[entry_idx].config.velocity_y.unwrap_or(0.0);
+        let vz = rate_state.entries[entry_idx].config.velocity_z.unwrap_or(0.0);
+
+        // Seed the candidate stream from (config seed, step, entry) so it is
+        // identical on every rank yet varies between insertion events.
+        let mut rng = StdRng::seed_from_u64(
+            config_seed
+                ^ (step as u64).wrapping_mul(0x9E3779B97F4A7C15)
+                ^ (entry_idx as u64).wrapping_mul(0xD1B54A32D192ED03),
+        );
+
+        // Replicated overlap scratch: ONLY the positions/radii accepted THIS step
+        // (the global set of new atoms). It is identical on every rank because the
+        // candidate stream is seeded identically and the scratch is the same on
+        // all ranks. This is what keeps accept/reject — and therefore the RNG
+        // advancement and the global accept count `inserted` — in lock-step across
+        // ranks, so the collective borders()/exchange() triggered below stay
+        // synchronized.
+        //
+        // NOTE: existing local atoms are deliberately NOT added to the scratch.
+        // They differ per rank, so including them would make accept/reject (and
+        // the RNG stream) diverge across ranks and desync the collectives. New
+        // atoms may therefore be born overlapping already-present particles; the
+        // contact model resolves that initial overlap via repulsion. Rate-insert
+        // regions are normally placed in free space (e.g. above a settled bed),
+        // so this is rare in practice.
         let cell_size = (2.0 * max_r * 1.1).max(1e-10);
         let pbc = PeriodicBox::from_domain(&domain);
         let mut spatial_hash = SpatialHash::new(cell_size);
-        for i in 0..atom.len() {
-            spatial_hash.insert(i, &atom.pos[i]);
-        }
+        let mut all_pos: Vec<[f64; 3]> = Vec::new();
+        let mut all_rad: Vec<f64> = Vec::new();
 
-        let start_len = atom.len();
-        let mut inserted = 0u32;
+        let mut inserted = 0u32;       // accepted globally
+        let mut local_inserted = 0u32; // stored on this rank
         let mut attempts = 0u32;
         let max_attempts = to_insert * 100;
 
         while inserted < to_insert && attempts < max_attempts {
+            // Every attempt consumes one tag slot so tags stay globally unique.
+            let tag = tag_cursor;
+            tag_cursor = tag_cursor.wrapping_add(1);
             attempts += 1;
+
             let [x, y, z] = region.random_point_inside(&mut rng);
             let radius = radius_spec.sample(&mut rng);
+            let candidate = [x, y, z];
 
-            if !spatial_hash.has_overlap(
-                &[x, y, z],
-                radius,
-                &atom.pos,
-                &dem_data.radius,
-                &pbc,
-            ) {
-                let new_idx = atom.len();
+            if spatial_hash.has_overlap(&candidate, radius, &all_pos, &all_rad, &pbc) {
+                continue;
+            }
+
+            // Accepted: draw velocity (advances RNG identically on every rank).
+            let mut vel = [vx, vy, vz];
+            if let Some(ref n) = vel_normal {
+                vel[0] += n.sample(&mut rng);
+                vel[1] += n.sample(&mut rng);
+                vel[2] += n.sample(&mut rng);
+            }
+
+            // Replicate into the global new-atom scratch on every rank.
+            let scratch_idx = all_pos.len();
+            spatial_hash.insert(scratch_idx, &candidate);
+            all_pos.push(candidate);
+            all_rad.push(radius);
+
+            // Store only if this rank owns the position.
+            if owns_position(&domain, &candidate) {
                 insert_single_particle(
                     &mut atom,
                     &mut dem_data,
-                    [x, y, z],
-                    [0.0; 3],
+                    candidate,
+                    vel,
                     radius,
                     density,
                     mat_idx,
-                    next_tag,
+                    tag,
                 );
-                spatial_hash.insert(new_idx, &atom.pos[new_idx]);
-                next_tag += 1;
-                inserted += 1;
+                local_inserted += 1;
             }
+            inserted += 1;
         }
 
         rate_state.entries[entry_idx].total_inserted += inserted;
-
-        // Apply velocity to newly inserted particles
-        let total_len = atom.vel.len();
-        let config = &rate_state.entries[entry_idx].config;
-        if let Some(rand_vel) = config.velocity {
-            if rand_vel > 0.0 {
-                let normal = Normal::new(0.0, rand_vel)
-                    .expect("velocity must be non-negative for Normal distribution");
-                for i in start_len..total_len {
-                    atom.vel[i][0] = normal.sample(&mut rng);
-                    atom.vel[i][1] = normal.sample(&mut rng);
-                    atom.vel[i][2] = normal.sample(&mut rng);
-                }
-            }
-        }
-        let vx = config.velocity_x.unwrap_or(0.0);
-        let vy = config.velocity_y.unwrap_or(0.0);
-        let vz = config.velocity_z.unwrap_or(0.0);
-        if vx != 0.0 || vy != 0.0 || vz != 0.0 {
-            for i in start_len..total_len {
-                atom.vel[i][0] += vx;
-                atom.vel[i][1] += vy;
-                atom.vel[i][2] += vz;
-            }
-        }
+        let _ = local_inserted;
 
         if inserted > 0 {
-            // Force full ghost rebuild since atom count changed
+            // Force full ghost rebuild on EVERY rank if any rank inserted, so the
+            // collective borders()/exchange() stay in lock-step. `inserted` is the
+            // global accept count and is identical on all ranks (replicated stream).
             comm_state.0 = CommState::FullRebuild;
         }
-        if inserted > 0 && attempts >= max_attempts {
+        if inserted > 0 && attempts >= max_attempts && comm.rank() == 0 {
             eprintln!(
                 "WARNING: Rate insertion at step {} only placed {}/{} particles (max attempts reached)",
                 step, inserted, to_insert

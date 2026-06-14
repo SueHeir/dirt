@@ -10,7 +10,7 @@ keywords = ["dem", "wall", "contact", "simulation"]
 categories = ["simulation", "science"]
 
 [dependencies]
-soil_core = { git = "https://github.com/SueHeir/soil.git", rev = "eb90c179be7bb8f37aa9fbd2cac5eb8457302958", default-features = false }
+soil_core = { git = "https://github.com/SueHeir/soil.git", branch = "master", default-features = false }
 grass_app = { git = "https://github.com/SueHeir/grass.git", rev = "ea21ea3629de990a717cc1421747901e5d64a66b" }
 grass_scheduler = { git = "https://github.com/SueHeir/grass.git", rev = "ea21ea3629de990a717cc1421747901e5d64a66b" }
 dirt_atom = { path = "../dirt_atom", version = "0.1.3" }
