@@ -108,7 +108,7 @@ name = "anchor"
 region = { type = "block", min = [-5e-4, -5e-4, -5e-4], max = [5e-4, 5e-4, 5e-4] }
 dynamic = false
 
-[[pin]]
+[[freeze]]
 group = "anchor"
 
 # Heavier global viscous damping to settle within ~2 ms — each schedule cycle

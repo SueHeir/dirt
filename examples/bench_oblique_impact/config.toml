@@ -1,0 +1,80 @@
+# Oblique-impact benchmark — tangential (Mindlin + Coulomb) contact validation.
+#
+# A projectile sphere strikes a FROZEN target sphere obliquely. Contact normal
+# is +z at impact; the projectile carries a +x tangential velocity. Parameters
+# are chosen in the gross-sliding regime so the rebound has an exact rigid-body
+# impulse reference (see validate.py).
+#
+# Run:
+#   cargo run --release --example bench_oblique_impact --no-default-features -- examples/bench_oblique_impact/config.toml
+
+[comm]
+processors_x = 1
+processors_y = 1
+processors_z = 1
+
+[domain]
+x_low = -0.2
+x_high = 0.2
+y_low = -0.02
+y_high = 0.02
+z_low = 0.0
+z_high = 0.2
+boundary_x = "fixed"
+boundary_y = "fixed"
+boundary_z = "fixed"
+
+[neighbor]
+skin_fraction = 1.1
+bin_size = 0.02
+every = 1
+
+[dem]
+contact_model = "hertz"
+
+[[dem.materials]]
+name = "glass"
+youngs_mod = 70.0e9       # Pa — soda-lime glass
+poisson_ratio = 0.22
+restitution = 0.9         # e — normal coefficient of restitution
+friction = 0.3            # μ — sliding (Coulomb) friction coefficient
+
+# Target sphere: frozen, center (0, 0, 0.05).
+[[particles.insert]]
+material = "glass"
+count = 1
+radius = 0.005
+density = 2500.0
+region = { type = "block", min = [-1.0e-6, -1.0e-6, 0.049999], max = [1.0e-6, 1.0e-6, 0.050001] }
+
+# Projectile sphere: launched from (-0.015, 0, 0.065) with v = (+3, 0, -1) m/s.
+# The -x offset is chosen so the projectile drifts +x as it descends and arrives
+# nearly *above* the target (impact normal ≈ +z), while starting far enough away
+# (center distance 0.021 m > insertion skin 0.011 m) to insert cleanly. The
+# tracker decomposes velocities in the actual impact frame, so the residual tilt
+# is handled exactly.
+[[particles.insert]]
+material = "glass"
+count = 1
+radius = 0.005
+density = 2500.0
+velocity_x = 3.0
+velocity_z = -1.0
+region = { type = "block", min = [-0.015001, -1.0e-6, 0.064999], max = [-0.014999, 1.0e-6, 0.065001] }
+
+# Freeze the target. The region spans only z ∈ [0.045, 0.055], which contains
+# the target (z=0.05) but never the projectile (whose center stays ≥ 0.0599
+# throughout contact), so it cannot accidentally freeze the projectile.
+[[group]]
+name = "target"
+region = { type = "block", min = [-0.002, -0.002, 0.045], max = [0.002, 0.002, 0.055] }
+
+[[freeze]]
+group = "target"
+
+[output]
+dir = "examples/bench_oblique_impact"
+
+[run]
+steps = 80000
+thermo = 10000

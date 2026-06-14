@@ -1,20 +1,19 @@
-# DIRT — Discrete Interaction-Resolved Toolkit
+# DIRT — Discrete-element Interaction-Resolved Toolkit
 
 Discrete Element Method (DEM) physics in the **GRASS → SOIL → DIRT** stack.
 
 ```
 GRASS    framework: App, Plugin, Scheduler, IO, coupling
   └─ SOIL   substrate: Atom, domain decomposition, comm, neighbor lists
-       └─ DIRT   DEM physics: contact, bonds, walls, clumps, thermal   ← you are here
+       └─ DIRT   DEM physics: contact, bonds, walls, clumps   ← you are here
 ```
 
-DIRT resolves every inter-particle contact individually (vs continuum models),
+DIRT resolves every inter-particle contact individually,
 riding the [SOIL](https://github.com/SueHeir/soil) substrate for all the
 method-agnostic machinery (atom data, domain decomposition, halo exchange,
 neighbor lists). It adds the granular physics: Hertz–Mindlin contact, rotational
-dynamics, parallel bonds, walls, multisphere clumps, heat conduction, and
-contact analysis. Target applications: fiber/yarn/weave, regolith, and
-fluid–solid coupling.
+dynamics, parallel bonds, walls, multisphere clumps, and contact analysis.
+Target applications: fiber/yarn/weave, regolith, and fluid–solid coupling.
 
 ## Layout
 
@@ -32,17 +31,16 @@ fn main() {
 
 | crate | role |
 |---|---|
-| `dirt_core` | umbrella: `CorePlugins`, `GranularDefaultPlugins`, prelude |
-| `dirt_atom` | per-atom DEM data (`DemAtom`), materials, particle insertion |
-| `dirt_granular` | Hertz/Mindlin contact, rolling/twisting, adhesion, rotational dynamics |
-| `dirt_wall` | plane/cylinder/sphere/cone/region-surface walls |
-| `dirt_bond` | bonded-particle model: normal/shear/twist/bending beam, breakage, plasticity |
-| `dirt_clump` | multisphere/clump rigid composites |
-| `dirt_thermal` | contact heat conduction |
-| `dirt_contact_analysis` | coordination number, fabric tensor, rattlers |
-| `dirt_measure_plane` | measurement planes for flux/profiles |
-| `dirt_fixes` | group fixes: addforce, setforce, move_linear, freeze, pin, viscous, nve_limit, gravity |
-| `dirt_test_utils` | shared test helpers |
+| [`dirt_core`](crates/dirt_core/README.md) | umbrella: `CorePlugins`, `GranularDefaultPlugins`, prelude |
+| [`dirt_atom`](crates/dirt_atom/README.md) | per-atom DEM data (`DemAtom`), materials, particle insertion |
+| [`dirt_granular`](crates/dirt_granular/README.md) | Hertz/Mindlin contact, rolling/twisting, adhesion, rotational dynamics |
+| [`dirt_wall`](crates/dirt_wall/README.md) | plane/cylinder/sphere/cone/region-surface walls, with Mindlin wall friction |
+| [`dirt_bond`](crates/dirt_bond/README.md) | bonded-particle model: normal/shear/twist/bending beam, breakage, plasticity |
+| [`dirt_clump`](crates/dirt_clump/README.md) | multisphere/clump rigid composites |
+| [`dirt_contact_analysis`](crates/dirt_contact_analysis/README.md) | coordination number, fabric tensor, rattlers |
+| [`dirt_measure_plane`](crates/dirt_measure_plane/README.md) | measurement planes for flux/profiles |
+| [`dirt_fixes`](crates/dirt_fixes/README.md) | DEM group fixes: add/set force, freeze, pin, prescribed motion, viscous damping, gravity |
+| [`dirt_test_utils`](crates/dirt_test_utils/README.md) | shared test helpers |
 
 ## Building
 

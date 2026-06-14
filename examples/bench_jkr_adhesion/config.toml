@@ -1,0 +1,82 @@
+# JKR Adhesion Pull-off Benchmark
+# Two identical glass spheres. The left sphere is frozen; the right sphere is
+# launched at it with a small inward velocity. The spheres make adhesive
+# contact, compress, then separate — and during separation the contact resists
+# with a tensile (attractive) normal force whose peak is the pull-off force
+# F = (3/2)*pi*w*R*. The recorder captures that peak.
+#
+# (The spheres must start >= 1.1 diameters apart to satisfy the insertion
+# overlap check, so they are launched into contact rather than placed touching.)
+#
+# Run: cargo run --release --example bench_jkr_adhesion --no-default-features -- examples/bench_jkr_adhesion/config.toml
+
+[comm]
+processors_x = 1
+processors_y = 1
+processors_z = 1
+
+[domain]
+x_low = -0.05
+x_high = 0.05
+y_low = -0.02
+y_high = 0.02
+z_low = -0.02
+z_high = 0.02
+boundary_x = "fixed"
+boundary_y = "fixed"
+boundary_z = "fixed"
+
+[neighbor]
+skin_fraction = 1.1
+bin_size = 0.02
+every = 1
+
+[dem]
+contact_model = "hertz"
+adhesion_model = "jkr"        # "jkr" (default) -> F_pulloff = 1.5*pi*gamma*R*
+
+[[dem.materials]]
+name = "glass"
+youngs_mod = 70.0e9           # Pa — soda-lime glass
+poisson_ratio = 0.22
+restitution = 0.5             # some dissipation so the rebound is slow & the
+                              # separation (pull-off) phase is well resolved
+friction = 0.0                # no friction — pure normal pull-off
+surface_energy = 0.5          # w = work of adhesion [J/m^2]
+
+# Left sphere — frozen. Center at x = 0.
+[[particles.insert]]
+material = "glass"
+count = 1
+radius = 0.005
+density = 2500.0
+region = { type = "block", min = [-1.0e-6, -1.0e-6, -1.0e-6], max = [1.0e-6, 1.0e-6, 1.0e-6] }
+
+# Right sphere — free, launched inward (-x). Center at x = 0.01105 (center
+# separation 0.01105 > 1.1*diameter = 0.011, so it inserts cleanly), surface gap
+# 0.00105 m. Slow inward velocity so the ~10 nm JKR adhesion window is sampled
+# with many steps on both approach and separation (the gap-regime force is the
+# clean pull-off plateau −F_adh).
+[[particles.insert]]
+material = "glass"
+count = 1
+radius = 0.005
+density = 2500.0
+velocity_x = -0.002
+region = { type = "block", min = [0.0110499, -1.0e-6, -1.0e-6], max = [0.0110501, 1.0e-6, 1.0e-6] }
+
+# Freeze the left sphere. dynamic = false pins membership at start.
+[[group]]
+name = "frozen"
+dynamic = false
+region = { type = "block", min = [-0.002, -0.002, -0.002], max = [0.002, 0.002, 0.002] }
+
+[[freeze]]
+group = "frozen"
+
+[output]
+dir = "examples/bench_jkr_adhesion"
+
+[run]
+steps = 1500000
+thermo = 200000

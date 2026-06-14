@@ -53,21 +53,18 @@ spheres = [
     { offset = [ 0.0,    0.0,   -0.0006], radius = 0.0005 },
 ]
 
-# --- Insert 200 clumps with random initial velocity ---
+# --- Insert clumps with random initial velocity ---
 [[clump.insert]]
 definition = "sphere7"
-count = 200
+count = 500                # denser than the original 200 → shorter cooling time
 density = 2500.0
 material = "glass"
-velocity = 0.5              # [m/s] random velocity per component
+velocity = 0.5             # [m/s] random velocity per component
 region = { type = "block", min = [0.002, 0.002, 0.002], max = [0.038, 0.038, 0.038] }
 
 [output]
 dir = "examples/bench_clump_haff_cooling/data"
 
-[vtp]
-interval = 10000
-
 [run]
-steps = 2000000
-thermo = 10000
+steps = 700000           # ~8 cooling times → ~2 decades of decay, slope approaching -2
+thermo = 20000

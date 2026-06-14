@@ -1,0 +1,103 @@
+# bench_plate_sinkage — terramechanics pressure–sinkage (Bekker) validation.
+#
+# A granular bed settles under (enhanced) gravity inside a rigid container, then a
+# flat plate — a downward-facing plane wall clipped to a finite footprint via
+# bound_x_low/high — is driven straight down at a constant slow velocity. The wall
+# plugin accumulates the vertical reaction force on the plate (WallPlane::
+# force_accumulator), which the recorder reads each step together with the plate
+# depth (sinkage). p = F/A vs sinkage z is fit to the Bekker power law p ∝ z^n in
+# sweep.py.
+#
+# Particles are inserted LOOSE (low packing) so rejection-sampling insertion is
+# fast; they settle into a deep bed (~5-6 cm) before the plate arrives. The plate
+# starts above the loose cloud and descends; the recorder latches the sinkage
+# datum at first bed contact, so the free descent is irrelevant.
+#
+# This single config is the b = 0.04 m representative case. sweep.py varies the
+# plate footprint width b (and bed friction) across cases.
+#
+# Run:
+#   cargo run --release --example bench_plate_sinkage --no-default-features -- examples/bench_plate_sinkage/config.toml
+
+[comm]
+processors_x = 1
+processors_y = 1
+processors_z = 1
+
+[domain]
+x_low = -0.06
+x_high = 0.06
+y_low = 0.0
+y_high = 0.04
+z_low = 0.0
+z_high = 0.26
+boundary_x = "fixed"
+boundary_y = "periodic"   # slice periodic in y to mimic a wide bed
+boundary_z = "fixed"
+
+[neighbor]
+skin_fraction = 1.2
+bin_size = 0.007
+every = 1
+
+[gravity]
+gz = -49.05               # 5x g for faster settling (quasi-static bearing test)
+
+[dem]
+contact_model = "hertz"
+
+[[dem.materials]]
+name = "soil"
+youngs_mod = 5.0e6        # Pa — softened sphere (standard for quasi-static DEM terramechanics)
+poisson_ratio = 0.3
+restitution = 0.3         # heavy damping so the bed settles quickly
+friction = 0.5            # inter-particle Coulomb friction (shear strength of the bed)
+
+# Bed particles: a LOOSE cloud (packing ~0.25 at insertion, so insertion is fast)
+# that settles into a ~5-6 cm deep bed over the container floor.
+[[particles.insert]]
+material = "soil"
+count = 2400
+radius = { distribution = "uniform", min = 0.0023, max = 0.0027 }  # ~2.5 mm, slight polydispersity
+density = 2500.0
+region = { type = "block", min = [-0.058, 0.001, 0.01], max = [0.058, 0.039, 0.16] }
+
+# ── Container walls ───────────────────────────────────────────────────────────
+# Floor (z = 0, normal +z).
+[[wall]]
+point_z = 0.0
+normal_z = 1.0
+material = "soil"
+
+# Left side wall (x = -0.06, normal +x).
+[[wall]]
+point_x = -0.06
+normal_x = 1.0
+material = "soil"
+
+# Right side wall (x = +0.06, normal -x).
+[[wall]]
+point_x = 0.06
+normal_x = -1.0
+material = "soil"
+
+# ── Plate ─────────────────────────────────────────────────────────────────────
+# Downward-facing plane (normal -z) clipped to the central footprint x ∈ [-b/2, b/2]
+# with b = 0.04 m. It starts above the loose cloud (z = 0.17) and descends at a
+# constant 0.08 m/s. Particles in the footprint that lie below the plate plane are
+# pushed down; force_accumulator sums that reaction (the load the bed supports).
+[[wall]]
+name = "plate"
+point_z = 0.17
+normal_z = -1.0
+material = "soil"
+velocity = [0.0, 0.0, -0.08]
+bound_x_low = -0.02
+bound_x_high = 0.02
+
+[output]
+dir = "examples/bench_plate_sinkage"
+
+[run]
+steps = 45000
+thermo = 10000

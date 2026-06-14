@@ -106,9 +106,9 @@ region = { type = "block", min = [0.0395, -5e-4, -5e-4], max = [0.0405, 5e-4, 5e
 dynamic = false
 
 # ── Fixes ────────────────────────────────────────────────────────────────────
-# Hard-pin the anchor: position, velocity, force, omega, torque all restored
-# every step.
-[[pin]]
+# Fully immobilize the anchor: velocity, force, omega, torque all zeroed every
+# step (so it neither drifts nor spins under bond torque).
+[[freeze]]
 group = "anchor"
 
 # Global viscous damping (Guo 2018 Eq. 7 style) on every atom — per-channel

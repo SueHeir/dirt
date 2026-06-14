@@ -1,11 +1,12 @@
-//! BPM cantilever test — demonstrates `[[pin]]` as a hard constraint.
+//! BPM cantilever test — demonstrates `[[freeze]]` as a rigid anchor.
 //!
-//! A 10-sphere bonded chain is anchored at one end by a `[[pin]]` group.
-//! Gravity bends the free end down; critical bond damping settles the chain
-//! to its static deflection. The recorder tracks tip z-position, max bond
-//! strain, and `bond_missing` every 100 steps — a PASS run shows
-//! `bond_missing = 0` throughout and the tip converging to a stable
-//! deflection (no blowup in the bond adjacent to the pin).
+//! A 10-sphere bonded chain is anchored at one end by a `[[freeze]]` group,
+//! which fully immobilizes the anchor (zero velocity, force, and rotation), so
+//! it neither drifts nor spins under bond torque. Gravity bends the free end
+//! down; critical bond damping settles the chain toward its static deflection.
+//! The recorder tracks tip z-position, max bond strain, and `bond_missing`
+//! every 100 steps — a PASS run shows `bond_missing = 0` throughout and the tip
+//! staying bounded (no blowup in the bond adjacent to the anchor).
 //!
 //! Run:
 //! ```bash
@@ -160,7 +161,7 @@ fn record_cantilever(
 
         println!("=== BPM Cantilever Test ===");
         println!("  chain length   : 10 atoms, 9 bonds");
-        println!("  anchor         : tag 0 (pinned via [[pin]])");
+        println!("  anchor         : tag 0 (immobilized via [[freeze]])");
         println!("  tip tag        : {}", TIP_TAG);
         println!("  MPI ranks      : {}", comm.size());
     }

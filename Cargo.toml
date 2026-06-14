@@ -39,6 +39,14 @@ name = "bench_hertz_rebound"
 path = "examples/bench_hertz_rebound/main.rs"
 
 [[example]]
+name = "bench_oblique_impact"
+path = "examples/bench_oblique_impact/main.rs"
+
+[[example]]
+name = "bench_rolling_decay"
+path = "examples/bench_rolling_decay/main.rs"
+
+[[example]]
 name = "bench_clump_haff_cooling"
 path = "examples/bench_clump_haff_cooling/main.rs"
 
@@ -67,8 +75,20 @@ name = "fiber_bond"
 path = "examples/fiber_bond/main.rs"
 
 [[example]]
+name = "bench_fiber_crossover"
+path = "examples/bench_fiber_crossover/main.rs"
+
+[[example]]
 name = "hopper_quiescence"
 path = "examples/hopper_quiescence/main.rs"
+
+[[example]]
+name = "bench_column_collapse"
+path = "examples/bench_column_collapse/main.rs"
+
+[[example]]
+name = "bench_hopper_beverloo"
+path = "examples/bench_hopper_beverloo/main.rs"
 
 [profile.release]
 opt-level = 3

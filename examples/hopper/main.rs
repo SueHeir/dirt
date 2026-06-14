@@ -22,6 +22,7 @@ fn main() {
     let mut app = App::new();
     app.add_plugins(CorePlugins)
         .add_plugins(GranularDefaultPlugins)
+        .add_plugins(GranularTempPlugin) // hopper/validate.py reads data/GranularTemp.txt
         .add_plugins(GravityPlugin)
         .add_plugins(WallPlugin)
         .add_plugins(StatesPlugin::new(Phase::Filling, ParticleSimScheduleSet::PostFinalIntegration))
