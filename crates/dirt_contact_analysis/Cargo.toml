@@ -9,11 +9,11 @@ keywords = ["dem", "contact", "force-chain", "fabric-tensor"]
 categories = ["simulation", "science"]
 
 [dependencies]
-soil_core = { path = "../../../soil/crates/soil_core", version = "0.1.3", default-features = false }
+soil_core = { git = "https://github.com/SueHeir/soil.git", rev = "eb90c179be7bb8f37aa9fbd2cac5eb8457302958", default-features = false }
 grass_app = { git = "https://github.com/SueHeir/grass.git", rev = "ea21ea3629de990a717cc1421747901e5d64a66b" }
 grass_scheduler = { git = "https://github.com/SueHeir/grass.git", rev = "ea21ea3629de990a717cc1421747901e5d64a66b" }
-soil_print = { path = "../../../soil/crates/soil_print", version = "0.1.3" }
-soil_derive = { path = "../../../soil/crates/soil_derive", version = "0.1.3" }
+soil_print = { git = "https://github.com/SueHeir/soil.git", rev = "eb90c179be7bb8f37aa9fbd2cac5eb8457302958" }
+soil_derive = { git = "https://github.com/SueHeir/soil.git", rev = "eb90c179be7bb8f37aa9fbd2cac5eb8457302958" }
 dirt_atom = { path = "../dirt_atom", version = "0.1.3" }
 serde = { version = "1", features = ["derive"] }
 
