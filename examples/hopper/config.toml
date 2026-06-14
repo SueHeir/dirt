@@ -1,0 +1,137 @@
+# Hopper/funnel discharge simulation.
+# Particles fill a funnel under gravity, then a blocker wall is removed to allow flow.
+
+[comm]
+processors_x = 1
+processors_y = 1
+processors_z = 1
+
+[domain]
+# Simulation box extents [m]
+x_low = 0.0
+x_high = 0.04
+y_low = 0.0
+y_high = 0.02
+z_low = 0.0
+z_high = 0.08
+boundary_x = "fixed"
+boundary_y = "periodic"       # Periodic in y to simulate a 2D-like slice
+boundary_z = "fixed"
+
+[neighbor]
+# skin_fraction: neighbor search radius multiplier [dimensionless, typically 1.0–1.5]
+skin_fraction = 1.1
+# bin_size: neighbor-list bin width [m] — should be >= largest particle diameter
+bin_size = 0.005
+
+[gravity]
+gz = -90.81              # Gravitational acceleration [m/s²] — enhanced 10x for faster settling
+
+[[dem.materials]]
+name = "glass"
+youngs_mod = 8.7e9       # Young's modulus [Pa]
+poisson_ratio = 0.3      # Poisson's ratio [dimensionless, 0–0.5]
+restitution = 0.3        # Coefficient of restitution [0–1] — low value for heavy damping
+friction = 0.5           # Sliding friction coefficient [dimensionless]
+
+[[particles.insert]]
+material = "glass"       # Must match a [[dem.materials]] name
+count = 200              # Number of particles to insert
+radius = 0.001           # Particle radius [m]
+density = 2500.0         # Particle density [kg/m³]
+velocity_z = -1.0        # Initial downward velocity [m/s]
+# region: insertion volume — particles placed randomly within this block [m]
+region = { type = "block", min = [0.005, 0.0, 0.055], max = [0.035, 0.02, 0.075] }
+
+# Left side wall (x = 0, normal +x)
+[[wall]]
+point_x = 0.0
+point_y = 0.0
+point_z = 0.0
+normal_x = 1.0
+normal_y = 0.0
+normal_z = 0.0
+material = "glass"
+
+# Right side wall (x = 0.04, normal -x)
+[[wall]]
+point_x = 0.04
+point_y = 0.0
+point_z = 0.0
+normal_x = -1.0
+normal_y = 0.0
+normal_z = 0.0
+material = "glass"
+
+# Ceiling (z = 0.08, normal -z)
+[[wall]]
+point_x = 0.0
+point_y = 0.0
+point_z = 0.08
+normal_x = 0.0
+normal_y = 0.0
+normal_z = -1.0
+material = "glass"
+
+# Floor (z = 0, normal +z)
+[[wall]]
+point_x = 0.0
+point_y = 0.0
+point_z = 0.0
+normal_x = 0.0
+normal_y = 0.0
+normal_z = 1.0
+material = "glass"
+
+# Left funnel wall: from (0, 0, 0.05) toward (0.015, 0, 0.015)
+# Direction along wall: (0.015, 0, -0.035), inward normal: (0.035, 0, 0.015)
+# z bounds clip the wall to its physical extent; distance check handles x
+[[wall]]
+point_x = 0.0
+point_y = 0.0
+point_z = 0.05
+normal_x = 0.035
+normal_y = 0.0
+normal_z = 0.015
+material = "glass"
+bound_z_low = 0.014
+bound_z_high = 0.052
+
+# Right funnel wall: mirror of left
+# Inward normal: (-0.035, 0, 0.015)
+[[wall]]
+point_x = 0.04
+point_y = 0.0
+point_z = 0.05
+normal_x = -0.035
+normal_y = 0.0
+normal_z = 0.015
+material = "glass"
+bound_z_low = 0.014
+bound_z_high = 0.052
+
+# Blocker wall — horizontal at z = 0.015 covering the exit hole (removed when settled)
+[[wall]]
+point_x = 0.0
+point_y = 0.0
+point_z = 0.015
+normal_x = 0.0
+normal_y = 0.0
+normal_z = 1.0
+material = "glass"
+name = "blocker"
+
+[vtp]
+interval = 1000          # Write VTP visualization files every N steps
+
+# Stage 1: fill the hopper — particles settle under gravity onto the blocker
+[[run]]
+name = "filling"
+steps = 1000000
+thermo = 2000
+
+# Stage 2: blocker removed — particles discharge through the funnel opening
+[[run]]
+name = "flowing"
+steps = 1000000
+thermo = 2000

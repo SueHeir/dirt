@@ -1,0 +1,90 @@
+[package]
+name = "dirt-bin"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "DIRT simulation examples and binaries"
+publish = false
+
+[workspace]
+members = [
+  "crates/*",
+]
+
+[workspace.package]
+version = "0.1.3"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/SueHeir/dirt"
+
+[features]
+default = ["mpi_backend"]
+mpi_backend = ["dirt_core/mpi_backend", "dep:libffi-sys"]
+
+[[example]]
+name = "granular_basic"
+path = "examples/granular_basic/main.rs"
+
+[[example]]
+name = "granular_gas_benchmark"
+path = "examples/granular_gas_benchmark/main.rs"
+
+[[example]]
+name = "hopper"
+path = "examples/hopper/main.rs"
+
+[[example]]
+name = "bench_hertz_rebound"
+path = "examples/bench_hertz_rebound/main.rs"
+
+[[example]]
+name = "bench_clump_haff_cooling"
+path = "examples/bench_clump_haff_cooling/main.rs"
+
+[[example]]
+name = "bench_rod_haff_cooling"
+path = "examples/bench_rod_haff_cooling/main.rs"
+
+[[example]]
+name = "bench_sphere_haff_cooling"
+path = "examples/bench_sphere_haff_cooling/main.rs"
+
+[[example]]
+name = "bond_fiber_tensile"
+path = "examples/bond_fiber_tensile/main.rs"
+
+[[example]]
+name = "bond_mpi_drift"
+path = "examples/bond_mpi_drift/main.rs"
+
+[[example]]
+name = "bond_cantilever"
+path = "examples/bond_cantilever/main.rs"
+
+[[example]]
+name = "fiber_bond"
+path = "examples/fiber_bond/main.rs"
+
+[[example]]
+name = "hopper_quiescence"
+path = "examples/hopper_quiescence/main.rs"
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+
+[dependencies]
+dirt_core = { path = "./crates/dirt_core", default-features = false }
+serde = { version = "1", features = ["derive"] }
+dirt_clump = { path = "./crates/dirt_clump" }
+dirt_measure_plane = { path = "./crates/dirt_measure_plane" }
+soil_derive = { path = "../soil/crates/soil_derive" }
+soil_deform = { path = "../soil/crates/soil_deform" }
+grass_scheduler = { git = "https://github.com/SueHeir/grass.git", rev = "ea21ea3629de990a717cc1421747901e5d64a66b" }
+# Force libffi-sys to use system libffi (via pkg-config) instead of building
+# from source. libffi-sys 2.3.0 has a broken aarch64 macOS assembler; Homebrew
+# libffi is set via PKG_CONFIG_PATH.
+libffi-sys = { version = "2.3.0", features = ["system"], optional = true }

@@ -1,0 +1,125 @@
+# ── Fiber bond breakage: InteractionLinearStress (Clemmer bpm/rotational) ──
+# Same cantilever-bend setup as `combined_stress.toml`, but with the
+# four-channel linear-interaction envelope:
+#
+#     B = |F_n|/(A·σ_axial,c) + |F_t|/(A·σ_shear,c)
+#       + r_b·|M_bend|/(I·σ_bend,c) + r_b·|M_tor|/(I_p·σ_tor,c)
+#     break when B ≥ 1
+#
+# (LAMMPS `bond_style bpm/rotational`, Clemmer-Monti-Lechman 2024.)
+#
+# For a pure-transverse cantilever pull, only the bending and shear
+# channels are loaded — axial and twist are ~zero. We deliberately set
+# `σ_bend,c` and `σ_shear,c` so the two channels contribute equally at the
+# anchor bond. Solving
+#
+#     r_b · F·L_c / (I·σ_bend,c)  +  F / (A·σ_shear,c)  =  1
+#
+# for the constraint force F and using F = 3·E·I·y/L_c³ to back out y_break.
+# With σ_bend,c = 1.0 × 10⁷ Pa and σ_shear,c = 6.25 × 10⁴ Pa (≈ σ_bend,c /
+# 160 — the ratio that equalises the two channel contributions for a
+# slender fiber with this L_c/r_b), each channel reaches 0.5 at break,
+# giving
+#
+#     F_break ≈ 0.098 N,   y_break ≈ 6.6 mm.
+#
+# The validator solves the same equation and compares to the measured tip
+# displacement at the first bond break.
+#
+# This is the multi-channel analog of `combined_stress.toml`: the *same*
+# anchor bond fails, but the failure surface is the linear sum of two
+# normalised channels rather than a single combined-stress equivalence.
+
+[comm]
+processors_x = 1
+processors_y = 1
+processors_z = 1
+
+[domain]
+x_low  = -0.005
+x_high =  0.045
+y_low  = -0.005
+y_high =  0.005
+z_low  = -0.025
+z_high =  0.005
+boundary_x = "fixed"
+boundary_y = "fixed"
+boundary_z = "fixed"
+
+[neighbor]
+skin_fraction = 1.1
+bin_size = 0.008
+every = 1
+
+[dem]
+contact_model = "hertz"
+
+[[dem.materials]]
+name = "bpm"
+youngs_mod = 1.0e9
+poisson_ratio = 0.25
+restitution = 0.9
+friction = 0.0
+
+[[particles.insert]]
+source = "file"
+file = "examples/fiber_bond_breakage/fiber_11_spaced.csv"
+format = "csv"
+material = "bpm"
+radius = 0.001
+density = 2500.0
+columns = { x = 0, y = 1, z = 2 }
+
+[bonds]
+auto_bond = true
+bond_tolerance = 2.1
+bond_radius_ratio = 1.0
+youngs_modulus = 1.0e9
+shear_modulus  = 4.0e8
+beta_normal  = 1.0
+beta_shear   = 1.0
+beta_twist   = 1.0
+beta_bending = 1.0
+
+# Four-channel envelope, **bending-only** active. The shear channel is
+# disabled because the cantilever pull (v_z = -0.5 m/s) produces large
+# transient shear *damping* forces (`γ_t · v_t ≈ 1.3 N → σ_shear ≈ 400 kPa`)
+# at the tip's bond during the first integration step — those are
+# velocity-history artefacts, not the quasi-static load we're trying to
+# probe. With axial/shear/twist channels left as `None` the criterion
+# reduces to "break when r_b·M_bend/I ≥ σ_bend,c at any bond", which is
+# what we want for a clean cantilever-bend validation that goes through
+# the InteractionLinear* code path.
+[bonds.breakage]
+kind    = "interaction_linear_stress"
+bending = { kind = "constant", value = 5.0e6 }
+
+[[group]]
+name = "anchor"
+region = { type = "block", min = [-5e-4, -5e-4, -5e-4], max = [5e-4, 5e-4, 5e-4] }
+dynamic = false
+
+[[group]]
+name = "tip"
+region = { type = "block", min = [0.0395, -5e-4, -5e-4], max = [0.0405, 5e-4, 5e-4] }
+dynamic = false
+
+[[pin]]
+group = "anchor"
+
+[[viscous]]
+group = "all"
+gamma = 0.1
+
+[[move_linear]]
+group = "tip"
+vz = -0.5
+
+[output]
+dir = "examples/fiber_bond_breakage/interaction_linear_stress"
+
+[run]
+# 30 ms — y_break ≈ 6.6 mm reached at t ≈ 13 ms, give the system room.
+steps = 200000
+thermo = 10000
+dt = 1e-7

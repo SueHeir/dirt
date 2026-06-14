@@ -1,0 +1,133 @@
+# ── Fiber bond validation: Guo 2018 three-step plastic bending ──────────────
+# Spaced 11-sphere fiber, pinned at one end, transverse tip load cycled
+# through three ramp-hold-unload pulses (Guo 2018 Fig. 10). Bending channel
+# is configured with `kind = "guo_bending"` so the bond moment is capped
+# at M^p = (4/3)·σ_0·r_b³ (Guo Eq. 31) and `θ_p_bend` accumulates per cycle.
+#
+# Validation goals (matching Guo Figs. 12–13):
+#   * M(θ_bend) at the middle bond traces a hysteresis loop with an elastic
+#     loading slope K_e, a perfectly-plastic plateau at M^p, and a slope-K_e
+#     unloading line (Phase 1 elastic-perfectly-plastic; Guo's intermediate
+#     K_ep slope is left for Phase 2).
+#   * `θ_p_bend(t)` accumulates as a monotone staircase, jumping during the
+#     plastic phase of each cycle and holding flat through the settle window.
+#   * tip-z settles to a progressively more deflected residual position after
+#     each cycle's unload — Guo's "permanent bending" (Fig. 11).
+#
+# Parameters:
+#   σ_0 = 7.5 MPa  →  M^p = (4/3)·7.5e6·(1e-3)³ = 1.0e-2 N·m
+#   F_peak = -0.5 N (set in `main.rs::F_PEAK`)
+#   M at middle bond on first elastic-trial load ≈ F·L_c/2 = 1.0e-2 N·m
+#   → just at yield, so the cycle drives the middle bond modestly past M^p.
+#
+# The load schedule lives in the Rust binary
+# (`fiber_bond/main.rs::three_step_force_at`) and is gated by the output dir
+# containing "bending_plastic_guo" — no fix is needed in TOML.
+#
+# Run:
+#   cargo run --release --example fiber_bond --no-default-features -- \
+#       examples/fiber_bond/bending_plastic_guo.toml
+#
+# Validate:
+#   python3 examples/fiber_bond/validate.py \
+#       examples/fiber_bond/bending_plastic_guo/data/fiber_bond.csv
+
+[comm]
+processors_x = 1
+processors_y = 1
+processors_z = 1
+
+[domain]
+# Tip can ring well past the static deflection during cycles; give room.
+x_low  = -0.005
+x_high =  0.045
+y_low  = -0.005
+y_high =  0.005
+z_low  = -0.040
+z_high =  0.010
+boundary_x = "fixed"
+boundary_y = "fixed"
+boundary_z = "fixed"
+
+[neighbor]
+skin_fraction = 1.1
+bin_size = 0.008
+every = 1
+
+[dem]
+contact_model = "hertz"
+
+[[dem.materials]]
+name = "bpm"
+youngs_mod = 1.0e9
+poisson_ratio = 0.25
+restitution = 0.9
+friction = 0.0
+
+[[particles.insert]]
+source = "file"
+file = "examples/fiber_bond/fiber_11_spaced.csv"
+format = "csv"
+material = "bpm"
+radius = 0.001
+density = 2500.0
+columns = { x = 0, y = 1, z = 2 }
+
+[bonds]
+auto_bond = true
+bond_tolerance = 2.1
+# Plastic deflection is bigger than the elastic case; widen ghost cover for bonds.
+ghost_cutoff_multiplier = 4.0
+bond_radius_ratio = 1.0
+youngs_modulus = 1.0e9
+shear_modulus  = 4.0e8
+beta_normal  = 1.0
+beta_shear   = 1.0
+beta_twist   = 1.0
+beta_bending = 1.0
+
+# ── Bending plasticity: Guo 2018 trilinear (Phase 2) ────────────────────────
+# Full trilinear envelope per Guo Eqs. 27, 31, 32, 33, 35:
+#   * elastic up to M^e = σ_0·I/r_b  (slope K_e)
+#   * elasto-plastic with slope K_ep = K_e/2 up to M^p = (4/3)·σ_0·r_b³
+#   * perfectly plastic at M^p
+# In ε-space (extreme-fibre strain) the breakpoints are
+#   ε_e = σ_0/E_b,
+#   ε_p = ε_e · (32 − 3π)/(3π)  ≈ 2.3953·σ_0/E_b
+# both of which `BondPlasticityModel::from_config` derives automatically
+# from σ_0 and `[bonds].youngs_modulus`.
+#
+# With σ_0 = 3 MPa, E_b = 1 GPa:  M^e = 2.36e-3 N·m, M^p = 4.0e-3 N·m,
+# θ_e ≈ 6 mrad, θ_p ≈ 14.4 mrad.
+[bonds.plasticity.bending]
+kind         = "guo_trilinear"
+yield_stress = 3.0e6
+
+[[group]]
+name = "anchor"
+region = { type = "block", min = [-5e-4, -5e-4, -5e-4], max = [5e-4, 5e-4, 5e-4] }
+dynamic = false
+
+[[pin]]
+group = "anchor"
+
+# Heavier global viscous damping to settle within ~2 ms — each schedule cycle
+# has a 3-ms settle window for `θ_p` to stabilise before the next pulse.
+[[viscous]]
+group = "all"
+gamma = 0.1
+
+# No [[addforce]] here: the tip load is applied by the time-gated schedule
+# in `fiber_bond/main.rs::apply_three_step_load`.
+
+[output]
+dir = "examples/fiber_bond/bending_plastic_guo"
+
+[run]
+# Three 30-ms cycles + 10-ms final settle = 100 ms total.
+# dt = 1e-7: small enough for the bending-wave time scale on 4-mm bonds.
+# 5e-7 turned out to be unstable for the bending channel and disintegrated
+# the chain in the first 200 steps; 1e-7 runs cleanly.
+steps = 1000000
+thermo = 50000
+dt = 1e-7

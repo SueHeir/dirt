@@ -1,0 +1,96 @@
+# ── Fiber bond validation: elastic axial tension ─────────────────────────────
+# 11-sphere fiber (10 bonds) pulled along +x. Recovers Young's modulus from
+# σ(ε) slope (Guo 2018 Sec. 2.2 / Eq. 1).
+#
+# Run:
+#   cargo run --release --example fiber_bond --no-default-features -- \
+#       examples/fiber_bond/axial_elastic.toml
+#
+# Validate:
+#   python3 examples/fiber_bond/validate.py \
+#       examples/fiber_bond/axial_elastic/data/fiber_bond.csv
+
+[comm]
+processors_x = 1
+processors_y = 1
+processors_z = 1
+
+[domain]
+# Box wide enough for fiber + 10% stretch on the +x side.
+x_low  = -0.005
+x_high =  0.025
+y_low  = -0.005
+y_high =  0.005
+z_low  = -0.005
+z_high =  0.005
+boundary_x = "fixed"
+boundary_y = "fixed"
+boundary_z = "fixed"
+
+[neighbor]
+skin_fraction = 1.1
+bin_size = 0.005
+every = 1
+
+[dem]
+contact_model = "hertz"
+
+# CSV insertion needs a material; contact forces are skipped for bonded pairs.
+[[dem.materials]]
+name = "bpm"
+youngs_mod = 1.0e9
+poisson_ratio = 0.25
+restitution = 0.9
+friction = 0.0
+
+[[particles.insert]]
+source = "file"
+file = "examples/fiber_bond/fiber_11.csv"
+format = "csv"
+material = "bpm"
+radius = 0.001
+density = 2500.0
+columns = { x = 0, y = 1, z = 2 }
+
+# ── Bond parameters ──────────────────────────────────────────────────────────
+# Material mode: E = 1 GPa, G = 400 MPa (ν = 0.25). Critical damping on all
+# four channels for fast settling.
+[bonds]
+auto_bond = true
+bond_tolerance = 1.001
+bond_radius_ratio = 1.0
+youngs_modulus = 1.0e9
+shear_modulus  = 4.0e8
+beta_normal  = 1.0
+beta_shear   = 1.0
+beta_twist   = 1.0
+beta_bending = 1.0
+
+# ── Groups ───────────────────────────────────────────────────────────────────
+[[group]]
+name = "left_end"
+region = { type = "block", min = [-5e-4, -5e-4, -5e-4], max = [5e-4, 5e-4, 5e-4] }
+dynamic = false
+
+[[group]]
+name = "right_end"
+region = { type = "block", min = [0.0195, -5e-4, -5e-4], max = [0.0205, 5e-4, 5e-4] }
+dynamic = false
+
+# ── Fixes ────────────────────────────────────────────────────────────────────
+[[freeze]]
+group = "left_end"
+
+# Pull the right end at v = 0.1 m/s → ε̇ = 0.1/0.02 = 5 /s (quasi-static).
+[[move_linear]]
+group = "right_end"
+vx = 0.1
+
+[output]
+dir = "examples/fiber_bond/axial_elastic"
+
+[run]
+# 30 000 steps · dt = 1e-7 = 3 ms → final ε ≈ 1.5 %.
+steps = 30000
+thermo = 2000
+dt = 1e-7

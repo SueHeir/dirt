@@ -1,0 +1,94 @@
+# ── Mesh-dependent softening localization: 200-bond fiber (~2.86 mm) ────────
+# Companion to localization_{20,1mm,10mm}.toml — part of the length sweep.
+#
+# Run:
+#   cargo run --release --example fiber_bond --no-default-features -- \
+#       examples/fiber_bond_breakage/localization_200bonds.toml
+
+[comm]
+processors_x = 1
+processors_y = 1
+processors_z = 1
+
+[domain]
+x_low  = -0.001
+x_high =  0.004
+y_low  = -0.0001
+y_high =  0.0001
+z_low  = -0.0001
+z_high =  0.0001
+boundary_x = "fixed"
+boundary_y = "fixed"
+boundary_z = "fixed"
+
+[neighbor]
+skin_fraction = 1.1
+bin_size = 5.0e-5
+every = 1
+
+[dem]
+contact_model = "hertz"
+
+[[dem.materials]]
+name = "bpm"
+youngs_mod = 4.5e9
+poisson_ratio = 0.406
+restitution = 0.9
+friction = 0.0
+
+[[particles.insert]]
+source = "file"
+file = "examples/fiber_bond_breakage/fiber_201_200bonds.csv"
+format = "csv"
+material = "bpm"
+radius = 7.143e-6
+density = 1200.0
+columns = { x = 0, y = 1, z = 2 }
+
+[bonds]
+auto_bond = true
+bond_tolerance = 1.001
+bond_radius_ratio = 1.0
+youngs_modulus = 4.5e9
+shear_modulus  = 1.6e9
+beta_normal  = 0.001
+beta_shear   = 0.001
+beta_twist   = 0.001
+beta_bending = 0.001
+
+[bonds.plasticity.axial]
+kind                = "piecewise"
+breakpoint_strains  = [0.02, 0.04]
+slope_multipliers   = [0.3,  0.0]
+
+[bonds.breakage]
+kind    = "axial_strain"
+tensile = { kind = "constant", value = 0.06 }
+
+# Grip width = 2.5 % of fiber = 71.4 μm (5 beads each side).
+[[group]]
+name = "left_grip"
+region = { type = "block", min = [-1.0e-5, -1.0e-4, -1.0e-4], max = [7.2e-5, 1.0e-4, 1.0e-4] }
+dynamic = false
+
+[[group]]
+name = "right_grip"
+region = { type = "block", min = [2.785e-3, -1.0e-4, -1.0e-4], max = [2.86e-3, 1.0e-4, 1.0e-4] }
+dynamic = false
+
+[[move_linear]]
+group = "left_grip"
+vx = -0.1
+
+[[move_linear]]
+group = "right_grip"
+vx =  0.1
+
+[output]
+dir = "examples/fiber_bond_breakage/localization_200bonds"
+
+[run]
+# Time to ε_global = 0.07: 0.07 · 2.857 mm / 0.2 m/s = 1000 μs → 200 000 steps.
+steps  = 200000
+thermo = 2000
+dt     = 5e-9

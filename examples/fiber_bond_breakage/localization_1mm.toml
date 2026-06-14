@@ -1,0 +1,138 @@
+# ── Mesh-dependent softening localization: 1 mm plastic fiber, 70 bonds ─────
+# Companion to `localization_10mm.toml`. Both configs use **identical**
+# per-bond geometry (r_b = 7.143 μm, L₀ = 14.286 μm), material (E = 4.5 GPa,
+# G = 1.6 GPa, ρ = 1200 kg/m³), plasticity envelope and breakage threshold —
+# they differ only in fiber length and bond count. The intent is to expose
+# the energetic mesh-dependence of strain-softening plasticity in BPM: with
+# the same per-bond constitutive law, longer fibers (more bonds in series)
+# break at a smaller global strain because the post-yield work per bond
+# scales with bond length, while the elastic energy reservoir scales with
+# total fiber length.
+#
+# Plasticity envelope (piecewise, axial channel):
+#   elastic K_e          for ε < 2 %
+#   slope  0.3 K_e       for 2 % ≤ ε < 4 %
+#   perfectly plastic    for ε ≥ 4 %
+#
+# Breakage: axial-strain criterion, ε_break = 6 %.
+#
+# Loading: symmetric tensile pull, both grips at ±0.1 m/s. With L₀ = 14.286 μm
+# and wave speed c ≈ √(E/ρ) = 1936 m/s, this gives a per-bond strain rate
+# `v / L₀ = 7000 s⁻¹` at the grip-edge bond and a global strain rate of
+# 200 s⁻¹. The fiber wave-transit time is 0.52 μs, while time-to-grip-edge-
+# yield is ~2.9 μs and to-break is ~8.6 μs — many wave transits, so the
+# strain field equilibrates before any bond fails. (An earlier draft used
+# 8.2 m/s per grip; at that rate the grip-edge bond shocked past failure
+# in ~105 ns, before the strain wave had crossed the fiber — a grip-shock
+# artifact unrelated to the localization pathology this test exposes.)
+# Grips cover the outer 2.5 % at each end (2 beads each side); the middle
+# 95 % of the fiber is unconstrained.
+#
+# Run:
+#   cargo run --release --example fiber_bond --no-default-features -- \
+#       examples/fiber_bond_breakage/localization_1mm.toml
+
+[comm]
+processors_x = 1
+processors_y = 1
+processors_z = 1
+
+[domain]
+# Each grip moves ±8.2 m/s for 4000 · 2e-9 s = 8 μs → 65.6 μm per grip.
+# Fiber spans x ∈ [0, 1 mm]; leave ample headroom on both sides.
+x_low  = -0.0005
+x_high =  0.0015
+y_low  = -0.0001
+y_high =  0.0001
+z_low  = -0.0001
+z_high =  0.0001
+boundary_x = "fixed"
+boundary_y = "fixed"
+boundary_z = "fixed"
+
+[neighbor]
+skin_fraction = 1.1
+bin_size = 5.0e-5
+every = 1
+
+[dem]
+contact_model = "hertz"
+
+[[dem.materials]]
+name = "bpm"
+youngs_mod = 4.5e9
+poisson_ratio = 0.406
+restitution = 0.9
+friction = 0.0
+
+[[particles.insert]]
+source = "file"
+file = "examples/fiber_bond_breakage/fiber_71_1mm.csv"
+format = "csv"
+material = "bpm"
+radius = 7.143e-6
+density = 1200.0
+columns = { x = 0, y = 1, z = 2 }
+
+[bonds]
+auto_bond = true
+bond_tolerance = 1.001
+bond_radius_ratio = 1.0
+youngs_modulus = 4.5e9
+shear_modulus  = 1.6e9
+# Low bond damping. Wave decay length per bond is `L₀/β`; for the bond strain
+# field to equilibrate over a chain of N bonds, we need `β·N ≪ 1` (the wave
+# must survive many transits and reverberate). β = 0.141 is fine at mm-scale
+# beads in the paper calibration (10-bond chain, β·N ≈ 1), but at our μm-
+# scale beads with N = 70..700 it overdamps: waves die within ~7 bonds, the
+# grip's displacement stays trapped near the grip, and the fiber never
+# stretches uniformly. β = 0.01 gives L_decay ≈ 1.4 mm — wave traverses the
+# 1 mm fiber freely and equilibrates within ~10 transits ≈ 5 μs.
+beta_normal  = 0.001
+beta_shear   = 0.001
+beta_twist   = 0.001
+beta_bending = 0.001
+
+# Piecewise axial plasticity: yield at ε = 2 %, post-yield slope 30 % of K_e,
+# perfectly plastic past ε = 4 %.
+[bonds.plasticity.axial]
+kind                = "piecewise"
+breakpoint_strains  = [0.02, 0.04]
+slope_multipliers   = [0.3,  0.0]
+
+# Strain-based breakage at ε = 6 %.
+[bonds.breakage]
+kind    = "axial_strain"
+tensile = { kind = "constant", value = 0.06 }
+
+# Outer 2.5 % of fiber (≈ 25 μm) on each end → 2 beads per grip.
+[[group]]
+name = "left_grip"
+region = { type = "block", min = [-1.0e-5, -1.0e-4, -1.0e-4], max = [2.5e-5, 1.0e-4, 1.0e-4] }
+dynamic = false
+
+[[group]]
+name = "right_grip"
+region = { type = "block", min = [9.75e-4, -1.0e-4, -1.0e-4], max = [1.01e-3, 1.0e-4, 1.0e-4] }
+dynamic = false
+
+# Quasi-static symmetric tensile pull at 0.1 m/s on each grip.
+[[move_linear]]
+group = "left_grip"
+vx = -0.1
+
+[[move_linear]]
+group = "right_grip"
+vx =  0.1
+
+[output]
+dir = "examples/fiber_bond_breakage/localization_1mm"
+
+[run]
+# T_n ≈ 38 ns. Underdamped (β = 0.141) does not relax the explicit-Verlet
+# constraint `ω_n·dt < 2`; use dt = 5 ns (ω_n·dt = 0.83). 70 000 steps ·
+# 5 ns = 350 μs → nominal ε ≈ 0.07, just past ε_break = 0.06.
+# Time-to-uniform-break: ε_break · L_fiber / (2 v_grip) = 300 μs ≈ step 60 000.
+steps  = 70000
+thermo = 700
+dt     = 5e-9

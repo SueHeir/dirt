@@ -1,0 +1,133 @@
+# ── Fiber bond validation: elastic cantilever bending ───────────────────────
+# 11-sphere fiber pinned at x = 0, transverse force F_z applied at the tip
+# (x = 40 mm). Recovers `E_b·I` from the Euler-Bernoulli relation
+# `y_tip = F·L_c³ / (3·E_b·I)` (Guo 2018 Sec. 2.1, Fig. 3).
+#
+# ## Why the spheres are spaced apart (and not just touching)
+#
+# Touching-sphere chains (sphere centre-to-centre = 2·r) have bond aspect
+# ratio L_bond / (2·r_bond) = 1.0 — short, fat bonds. At AR ≈ 1, the bonded
+# particle model carries transverse load through a coupled shear / bending
+# pathway that adds extra stiffness vs. a continuum Euler-Bernoulli beam.
+# Experimentally, a touching-sphere chain at these parameters lands 5×
+# stiffer than EB theory.
+#
+# Spacing the spheres apart so bond AR = 2 (here: 1 mm radius spheres at
+# 4 mm centre-to-centre, with a 2 mm gap between sphere surfaces) makes the
+# bonds slender enough that they behave as Euler-Bernoulli beams. The chain
+# matches the analytical prediction to ~1 %.
+#
+# This is the bonded-sphere analog of Guo 2018's choice to use sphero-
+# cylinder elements: in both cases, the bond cylinder ends up "long and
+# thin" rather than "short and stubby". Mass is still lumped at sphere
+# centres (massless bonds), which slightly shifts vibration frequencies
+# but does not affect static deflection.
+#
+# ## Parameters
+#
+#   E_b·I  = 1 GPa · π·(1 mm)⁴/4 ≈ 7.854 × 10⁻⁴ N·m²
+#   L_c    = 40 mm
+#   F      = -0.1 N   (downward)
+#   F·L_c² / (E·I) ≈ 0.204 → small-deformation regime ✓
+#   Predicted EB y_tip = F·L_c³/(3·E·I) ≈ -2.72 mm
+#
+# Run:
+#   cargo run --release --example fiber_bond --no-default-features -- \
+#       examples/fiber_bond/cantilever_bending.toml
+#
+# Validate:
+#   python3 examples/fiber_bond/validate.py \
+#       examples/fiber_bond/cantilever_bending/data/fiber_bond.csv
+
+[comm]
+processors_x = 1
+processors_y = 1
+processors_z = 1
+
+[domain]
+x_low  = -0.005
+x_high =  0.045
+y_low  = -0.005
+y_high =  0.005
+z_low  = -0.025
+z_high =  0.005
+boundary_x = "fixed"
+boundary_y = "fixed"
+boundary_z = "fixed"
+
+[neighbor]
+skin_fraction = 1.1
+# Bin large enough to cover 4-mm bond reach + ghost skin.
+bin_size = 0.008
+every = 1
+
+[dem]
+contact_model = "hertz"
+
+[[dem.materials]]
+name = "bpm"
+youngs_mod = 1.0e9
+poisson_ratio = 0.25
+restitution = 0.9
+friction = 0.0
+
+[[particles.insert]]
+source = "file"
+file = "examples/fiber_bond/fiber_11_spaced.csv"
+format = "csv"
+material = "bpm"
+radius = 0.001
+density = 2500.0
+columns = { x = 0, y = 1, z = 2 }
+
+# bond_tolerance = 2.1 admits centre-to-centre distance up to 2.1·(R_i+R_j) ≈
+# 4.2 mm, covering our 4 mm spacing. Without this auto_bond would skip the
+# pairs because their surfaces are not in contact.
+[bonds]
+auto_bond = true
+bond_tolerance = 2.1
+bond_radius_ratio = 1.0
+youngs_modulus = 1.0e9
+shear_modulus  = 4.0e8
+beta_normal  = 1.0
+beta_shear   = 1.0
+beta_twist   = 1.0
+beta_bending = 1.0
+
+# ── Groups ───────────────────────────────────────────────────────────────────
+[[group]]
+name = "anchor"
+region = { type = "block", min = [-5e-4, -5e-4, -5e-4], max = [5e-4, 5e-4, 5e-4] }
+dynamic = false
+
+[[group]]
+name = "tip"
+region = { type = "block", min = [0.0395, -5e-4, -5e-4], max = [0.0405, 5e-4, 5e-4] }
+dynamic = false
+
+# ── Fixes ────────────────────────────────────────────────────────────────────
+# Hard-pin the anchor: position, velocity, force, omega, torque all restored
+# every step.
+[[pin]]
+group = "anchor"
+
+# Global viscous damping (Guo 2018 Eq. 7 style) on every atom — per-channel
+# bond damping alone leaves the lowest bending mode under-damped. With this,
+# the chain reaches steady deflection in a few periods.
+[[viscous]]
+group = "all"
+gamma = 0.05
+
+# Static transverse load on the tip atom: F_z = -0.1 N.
+[[addforce]]
+group = "tip"
+fz = -0.1
+
+[output]
+dir = "examples/fiber_bond/cantilever_bending"
+
+[run]
+# 500 000 steps · dt = 1e-7 = 50 ms ≈ many bending periods, fully settled.
+steps = 500000
+thermo = 20000
+dt = 1e-7

@@ -1,0 +1,103 @@
+# ── Mesh-dependent softening localization: 10 mm plastic fiber, 700 bonds ───
+# Companion to `localization_1mm.toml`. Identical per-bond geometry, material
+# and constitutive law as the 1 mm case — only the fiber length (and hence
+# the bond count) differs. See `localization_1mm.toml` for the physical
+# motivation and the envelope/breakage details.
+#
+# Run:
+#   cargo run --release --example fiber_bond --no-default-features -- \
+#       examples/fiber_bond_breakage/localization_10mm.toml
+
+[comm]
+processors_x = 1
+processors_y = 1
+processors_z = 1
+
+[domain]
+# Each grip moves ±0.1 m/s for 500 000 · 1e-8 s = 5 ms → 500 μm per grip
+# (nominal global ε ≈ 0.10). Fiber spans x ∈ [0, 10 mm].
+x_low  = -0.002
+x_high =  0.012
+y_low  = -0.0001
+y_high =  0.0001
+z_low  = -0.0001
+z_high =  0.0001
+boundary_x = "fixed"
+boundary_y = "fixed"
+boundary_z = "fixed"
+
+[neighbor]
+skin_fraction = 1.1
+bin_size = 5.0e-5
+every = 1
+
+[dem]
+contact_model = "hertz"
+
+[[dem.materials]]
+name = "bpm"
+youngs_mod = 4.5e9
+poisson_ratio = 0.406
+restitution = 0.9
+friction = 0.0
+
+[[particles.insert]]
+source = "file"
+file = "examples/fiber_bond_breakage/fiber_701_10mm.csv"
+format = "csv"
+material = "bpm"
+radius = 7.143e-6
+density = 1200.0
+columns = { x = 0, y = 1, z = 2 }
+
+[bonds]
+auto_bond = true
+bond_tolerance = 1.001
+bond_radius_ratio = 1.0
+youngs_modulus = 4.5e9
+shear_modulus  = 1.6e9
+beta_normal  = 0.001
+beta_shear   = 0.001
+beta_twist   = 0.001
+beta_bending = 0.001
+
+# Same envelope as the 1 mm case — that's the whole point of the comparison.
+[bonds.plasticity.axial]
+kind                = "piecewise"
+breakpoint_strains  = [0.02, 0.04]
+slope_multipliers   = [0.3,  0.0]
+
+[bonds.breakage]
+kind    = "axial_strain"
+tensile = { kind = "constant", value = 0.06 }
+
+# Outer 2.5 % of fiber (≈ 250 μm) on each end → ~18 beads per grip.
+[[group]]
+name = "left_grip"
+region = { type = "block", min = [-1.0e-5, -1.0e-4, -1.0e-4], max = [2.5e-4, 1.0e-4, 1.0e-4] }
+dynamic = false
+
+[[group]]
+name = "right_grip"
+region = { type = "block", min = [9.75e-3, -1.0e-4, -1.0e-4], max = [1.001e-2, 1.0e-4, 1.0e-4] }
+dynamic = false
+
+[[move_linear]]
+group = "left_grip"
+vx = -0.1
+
+[[move_linear]]
+group = "right_grip"
+vx =  0.1
+
+[output]
+dir = "examples/fiber_bond_breakage/localization_10mm"
+
+[run]
+# Same per-bond dynamics as the 1 mm case (identical dt and bond geometry).
+# Global strain rate is 10× lower because the fiber is 10× longer at the
+# same grip velocity. dt = 5 ns matches the 1 mm config; 700 000 steps
+# cover the same nominal ε_global = 0.07 in 10× more real time (3.5 ms).
+steps  = 700000
+thermo = 7000
+dt     = 5e-9

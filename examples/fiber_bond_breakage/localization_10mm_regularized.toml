@@ -1,0 +1,106 @@
+# ── 10 mm fiber WITH crack-band length-rescaling enabled ────────────────────
+# Identical to `localization_10mm.toml` except the plasticity envelope and
+# breakage threshold are tagged with `length_calibration = L_bond` (set to the
+# actual bond length here, so the rescaling factor α = 1 → no rescaling).
+# This is a smoke test: the output must match the unregularized 10 mm run.
+#
+# To USE the regularization for a real mesh-refinement test, build two configs
+# with different bond sizes (different `radius` in [[particles.insert]]),
+# point `length_calibration` at the same calibration length in both, and the
+# fix will rescale the envelope per-bond such that ε_break in global strain is
+# (approximately) invariant under refinement.
+#
+# Run:
+#   cargo run --release --example fiber_bond --no-default-features -- \
+#       examples/fiber_bond_breakage/localization_10mm_regularized.toml
+
+[comm]
+processors_x = 1
+processors_y = 1
+processors_z = 1
+
+[domain]
+x_low  = -0.002
+x_high =  0.012
+y_low  = -0.0001
+y_high =  0.0001
+z_low  = -0.0001
+z_high =  0.0001
+boundary_x = "fixed"
+boundary_y = "fixed"
+boundary_z = "fixed"
+
+[neighbor]
+skin_fraction = 1.1
+bin_size = 5.0e-5
+every = 1
+
+[dem]
+contact_model = "hertz"
+
+[[dem.materials]]
+name = "bpm"
+youngs_mod = 4.5e9
+poisson_ratio = 0.406
+restitution = 0.9
+friction = 0.0
+
+[[particles.insert]]
+source = "file"
+file = "examples/fiber_bond_breakage/fiber_701_10mm.csv"
+format = "csv"
+material = "bpm"
+radius = 7.143e-6
+density = 1200.0
+columns = { x = 0, y = 1, z = 2 }
+
+[bonds]
+auto_bond = true
+bond_tolerance = 1.001
+bond_radius_ratio = 1.0
+youngs_modulus = 4.5e9
+shear_modulus  = 1.6e9
+beta_normal  = 0.001
+beta_shear   = 0.001
+beta_twist   = 0.001
+beta_bending = 0.001
+
+# Plasticity with crack-band length calibration. With l_calib = L_bond
+# (14.286 μm) the rescaling factor is 1 → identical to the unregularized run.
+[bonds.plasticity.axial]
+kind                = "piecewise"
+breakpoint_strains  = [0.02, 0.04]
+slope_multipliers   = [0.3,  0.0]
+length_calibration  = 1.4286e-5
+
+# Breakage with crack-band: ε_break_eff = 0.02 + (0.06 − 0.02) · L_ref / L_bond.
+# Same idea — at l_ref = L_bond the rescaling is a no-op.
+[bonds.breakage]
+kind    = "axial_strain"
+tensile = { kind = "crack_band", value_ref = 0.06, l_ref = 1.4286e-5, eps_yield = 0.02 }
+
+[[group]]
+name = "left_grip"
+region = { type = "block", min = [-1.0e-5, -1.0e-4, -1.0e-4], max = [2.5e-4, 1.0e-4, 1.0e-4] }
+dynamic = false
+
+[[group]]
+name = "right_grip"
+region = { type = "block", min = [9.75e-3, -1.0e-4, -1.0e-4], max = [1.001e-2, 1.0e-4, 1.0e-4] }
+dynamic = false
+
+[[move_linear]]
+group = "left_grip"
+vx = -0.1
+
+[[move_linear]]
+group = "right_grip"
+vx =  0.1
+
+[output]
+dir = "examples/fiber_bond_breakage/localization_10mm_regularized"
+
+[run]
+steps  = 700000
+thermo = 7000
+dt     = 5e-9
