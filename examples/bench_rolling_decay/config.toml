@@ -1,0 +1,81 @@
+# Rolling-resistance decay benchmark — validates the constant-torque rolling
+# friction model against its EXACT pure-rolling deceleration.
+#
+# A single sphere rolls (v = ωR) on a flat frictional floor [[wall]] (z = 0,
+# normal +z) under gravity. dirt_wall now carries the full friction trio
+# (normal + Mindlin sliding + rolling resistance) on all wall types, so the
+# floor is a real wall plane — no giant frozen sphere is needed, and because a
+# flat wall has r_eff = R the theory a = (5/7)·μ_r·g is exact.
+#
+# The sphere's initial spin is set in main.rs (no omega knob in
+# [[particles.insert]]).
+#
+# Run:
+#   cargo run --release --example bench_rolling_decay --no-default-features -- examples/bench_rolling_decay/config.toml
+
+[comm]
+processors_x = 1
+processors_y = 1
+processors_z = 1
+
+[domain]
+# Small box; the sphere rolls in +x along the floor at z = 0.
+x_low = -0.05
+x_high = 0.10
+y_low = -0.02
+y_high = 0.02
+z_low = 0.0
+z_high = 0.05
+boundary_x = "fixed"
+boundary_y = "fixed"
+boundary_z = "fixed"
+
+[neighbor]
+skin_fraction = 1.1
+bin_size = 0.02
+every = 1
+
+[gravity]
+gz = -9.81
+
+[dem]
+contact_model = "hertz"
+rolling_model = "constant"   # constant-torque rolling resistance (the model under test)
+
+[[dem.materials]]
+name = "grain"
+youngs_mod = 1.0e8        # Pa — soft (keeps dt large; decay rate is E-independent)
+poisson_ratio = 0.3
+restitution = 0.5
+friction = 0.5            # μ — healthy, so static friction holds pure rolling (no sliding)
+rolling_friction = 0.05   # μ_r — swept by sweep.py
+
+# Mover: R = 5 mm, launched +x at 0.03 m/s. Inserted just above the floor;
+# main.rs::init_pure_rolling seats it on the wall (z = R) at step 0 and sets the
+# matching spin for pure rolling.
+[[particles.insert]]
+material = "grain"
+count = 1
+radius = 0.005
+density = 2500.0
+velocity_x = 0.03
+region = { type = "block", min = [-0.005, -0.005, 0.0055], max = [0.005, 0.005, 0.0065] }
+
+# Floor wall (z = 0, normal +z). Same material as the mover, so its friction and
+# rolling_friction apply at the contact.
+[[wall]]
+point_x = 0.0
+point_y = 0.0
+point_z = 0.0
+normal_x = 0.0
+normal_y = 0.0
+normal_z = 1.0
+material = "grain"
+
+[output]
+dir = "examples/bench_rolling_decay"
+
+[run]
+steps = 40000
+thermo = 5000
+dt = 1.0e-5

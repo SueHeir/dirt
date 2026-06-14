@@ -90,7 +90,7 @@ name = "tip"
 region = { type = "block", min = [0.0395, -5e-4, -5e-4], max = [0.0405, 5e-4, 5e-4] }
 dynamic = false
 
-[[pin]]
+[[freeze]]
 group = "anchor"
 
 # Heavy viscous damping so the chain follows quasi-static deflection.

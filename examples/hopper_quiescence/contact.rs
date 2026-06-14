@@ -11,7 +11,7 @@
 
 use dirt_core::prelude::*;
 use dirt_core::dirt_atom::{self, DemAtom, MaterialTable};
-use dirt_core::dirt_granular::{LARGE_OVERLAP_WARN_THRESHOLD, MAX_OVERLAP_WARNINGS, SQRT_5_3, TANGENTIAL_EPSILON};
+use dirt_core::dirt_granular::{LARGE_OVERLAP_WARN_THRESHOLD, MAX_OVERLAP_WARNINGS, SQRT_5_6, TANGENTIAL_EPSILON};
 use dirt_core::soil_core::{
     register_atom_data, Atom, AtomData, AtomDataRegistry, Neighbor, ParticleSimScheduleSet,
     VirialStress, VirialStressPlugin,
@@ -448,22 +448,22 @@ pub fn quiescent_contact_force(
         // ── Normal force ─────────────────────────────────────────────────
         let f_n_mag = if surface_energy > 0.0 && use_dmt {
             let f_dmt = 2.0 * std::f64::consts::PI * surface_energy * r_eff;
-            let f_diss_n = 2.0 * beta * SQRT_5_3 * (s_n * m_r).sqrt() * v_n;
+            let f_diss_n = 2.0 * beta * SQRT_5_6 * (s_n * m_r).sqrt() * v_n;
             k_n * delta - f_diss_n - f_dmt
         } else if surface_energy > 0.0 {
             let f_adhesion = 1.5 * std::f64::consts::PI * surface_energy * r_eff;
             if jkr_adhesion_only {
                 -f_adhesion
             } else {
-                let f_diss_n = 2.0 * beta * SQRT_5_3 * (s_n * m_r).sqrt() * v_n;
+                let f_diss_n = 2.0 * beta * SQRT_5_6 * (s_n * m_r).sqrt() * v_n;
                 k_n * delta - f_diss_n - f_adhesion
             }
         } else if cohesion_energy > 0.0 {
-            let f_diss_n = 2.0 * beta * SQRT_5_3 * (s_n * m_r).sqrt() * v_n;
+            let f_diss_n = 2.0 * beta * SQRT_5_6 * (s_n * m_r).sqrt() * v_n;
             let f_cohesion = cohesion_energy * std::f64::consts::PI * delta * r_eff;
             k_n * delta - f_diss_n - f_cohesion
         } else {
-            let f_diss_n = 2.0 * beta * SQRT_5_3 * (s_n * m_r).sqrt() * v_n;
+            let f_diss_n = 2.0 * beta * SQRT_5_6 * (s_n * m_r).sqrt() * v_n;
             (k_n * delta - f_diss_n).max(0.0)
         };
 
@@ -520,7 +520,7 @@ pub fn quiescent_contact_force(
             sz *= scale;
         }
 
-        let gamma_t = 2.0 * SQRT_5_3 * beta * (k_t * m_r).sqrt();
+        let gamma_t = 2.0 * SQRT_5_6 * beta * (k_t * m_r).sqrt();
         // NOTE: deliberate sign fix vs the stock implementation. With
         // vt = tangential velocity of j relative to i and +ft applied to i,
         // the dashpot must act ALONG vt to dissipate (P = -ft·vt < 0).

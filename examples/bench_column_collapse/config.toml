@@ -1,0 +1,118 @@
+# Granular column-collapse benchmark — single representative case (aspect a = 2).
+#
+# A quasi-2D rectangular column of glass beads (width L0 = 0.024 m) is held
+# against a vertical gate wall at x = L0 on a flat floor. Stage 1 ("settle")
+# packs the loosely-inserted column under gravity; stage 2 ("collapse") removes
+# the gate and the column spreads along +x until it comes to rest. The example
+# binary dumps the final deposit to data/column_collapse_results.csv.
+#
+# Run:
+#   cargo run --release --example bench_column_collapse --no-default-features -- examples/bench_column_collapse/config.toml
+
+[comm]
+processors_x = 1
+processors_y = 1
+processors_z = 1
+
+[domain]
+# Long in +x to hold the runout; thin in y (quasi-2D slab).
+x_low = -0.01
+x_high = 0.30
+y_low = -0.003
+y_high = 0.012
+z_low = 0.0
+z_high = 0.20
+boundary_x = "fixed"
+boundary_y = "fixed"
+boundary_z = "fixed"
+
+[neighbor]
+skin_fraction = 1.1
+bin_size = 0.005          # ~1.5 particle diameters
+every = 1
+
+[gravity]
+gx = 0.0
+gy = 0.0
+gz = -9.81
+
+[dem]
+contact_model = "hertz"
+
+[[dem.materials]]
+name = "glass"
+youngs_mod = 7.0e7        # softened modulus (1e7-1e8) keeps dt reasonable for a bed
+poisson_ratio = 0.25
+restitution = 0.5         # inelastic grains
+friction = 0.5            # frictional grains (controls the repose angle / runout)
+
+# Column of particles: inserted loosely into x in [0, L0], y in [0, W], settles
+# under gravity in stage 1. Count sets the settled height H (here ~2*L0, a = 2).
+[[particles.insert]]
+material = "glass"
+count = 440
+radius = 0.0015           # 1.5 mm (d = 3 mm)
+density = 2500.0
+region = { type = "block", min = [0.0015, 0.0015, 0.0015], max = [0.0225, 0.0075, 0.090] }
+
+# Floor (z = 0, normal +z).
+[[wall]]
+type = "plane"
+point_z = 0.0
+normal_z = 1.0
+material = "glass"
+name = "floor"
+
+# Back wall (x = 0, normal +x) — left confinement, stays for all stages.
+[[wall]]
+type = "plane"
+point_x = 0.0
+normal_x = 1.0
+material = "glass"
+name = "back"
+
+# Side walls in y (quasi-2D slab), stay for all stages.
+[[wall]]
+type = "plane"
+point_y = 0.0
+normal_y = 1.0
+material = "glass"
+name = "side_lo"
+
+[[wall]]
+type = "plane"
+point_y = 0.009
+normal_y = -1.0
+material = "glass"
+name = "side_hi"
+
+# Removable gate (x = L0 = 0.024, normal -x) — confines the column on its +x
+# face during "settle", removed on the first "collapse" step.
+[[wall]]
+type = "plane"
+point_x = 0.024
+normal_x = -1.0
+material = "glass"
+name = "gate"
+
+[output]
+dir = "examples/bench_column_collapse"
+
+[vtp]
+interval = 50000
+
+# Stage 1: settle the loosely-packed column into a static column.
+[[run]]
+name = "settle"
+steps = 80000
+thermo = 20000
+dt = 4e-6
+
+# Stage 2: remove the gate and let the column collapse and (intended to) come to
+# rest. NOTE: dirt_wall provides no particle–wall sliding friction, so the
+# basal floor cannot arrest the spreading deposit — see README "Known Limitation".
+[[run]]
+name = "collapse"
+steps = 200000
+thermo = 20000
+dt = 4e-6

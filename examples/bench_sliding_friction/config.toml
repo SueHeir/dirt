@@ -1,0 +1,82 @@
+# Coulomb sliding-friction benchmark — single representative case.
+#
+# A single glass sphere (R = 5 mm) is launched horizontally at v0 = 1 m/s with
+# ZERO initial spin onto a flat frictional floor under gravity. While the contact
+# point slides (v > omega*R), kinetic friction decelerates the center at a = mu*g
+# and spins the sphere up; sliding ends at t* = 2 v0 / (7 mu g), after which the
+# sphere rolls without slipping at v = (5/7) v0.
+#
+# FLOOR: a real dirt_wall z-plane at z = 0 (normal +z). dirt_wall applies Mindlin
+# tangential (sliding) friction with a Coulomb cap on plane walls, using the
+# material's `friction` coefficient. The wall decelerates the sliding sphere at
+# a = mu*g and spins it up. The floor is perfectly flat (no curvature systematic).
+#
+# Run:
+#   cargo run --release --example bench_sliding_friction --no-default-features -- examples/bench_sliding_friction/config.toml
+
+[comm]
+processors_x = 1
+processors_y = 1
+processors_z = 1
+
+[domain]
+x_low = -1.0
+x_high = 1.0
+y_low = -0.05
+y_high = 0.05
+z_low = 0.0
+z_high = 0.1
+boundary_x = "fixed"
+boundary_y = "fixed"
+boundary_z = "fixed"
+
+[neighbor]
+skin_fraction = 1.1
+bin_size = 0.015          # > particle diameter
+every = 1
+
+[gravity]
+gx = 0.0
+gy = 0.0
+gz = -9.81
+
+[dem]
+contact_model = "hertz"
+
+[[dem.materials]]
+name = "glass"
+youngs_mod = 70.0e9        # Pa — soda-lime glass
+poisson_ratio = 0.22
+restitution = 0.3          # low e: the vertical settling mode damps quickly
+friction = 0.5             # mu — sliding (Coulomb) friction coefficient
+
+# Projectile: R = 5 mm sphere, launched at +x = 1 m/s, ZERO spin (insertion sets
+# omega = 0). Placed with its center a sub-micron gap above z = R = 0.005 so it
+# starts at (essentially) zero overlap: it settles into the static Hertz overlap
+# (~24 nm) under gravity without a violent initial-penetration kick, then slides.
+# A wide insert band would randomize the initial overlap and launch the ball.
+[[particles.insert]]
+material = "glass"
+count = 1
+radius = 0.005
+density = 2500.0
+velocity_x = 1.0
+region = { type = "block", min = [-1.0e-6, -1.0e-6, 0.0050010], max = [1.0e-6, 1.0e-6, 0.0050012] }
+
+# Floor wall (z = 0, normal +z) — frictional Mindlin plane.
+[[wall]]
+point_x = 0.0
+point_y = 0.0
+point_z = 0.0
+normal_x = 0.0
+normal_y = 0.0
+normal_z = 1.0
+material = "glass"
+
+[output]
+dir = "examples/bench_sliding_friction"
+
+[run]
+steps = 45000             # ~0.09 s at dt = 2e-6 s — covers t* (~58 ms) + rolling plateau
+thermo = 5000
+dt = 2.0e-6

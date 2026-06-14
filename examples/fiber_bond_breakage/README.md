@@ -42,8 +42,8 @@ analytical prediction `y_break = σ_max·L_c²/(3·E·r_b)` to within ~30 %.
 The discrepancy is structural, not a bug:
 
 * The bonded-sphere chain has slightly higher relative bending angle at
-  the pinned end than the continuum cantilever (a discrete-chain
-  artefact at the [[pin]] boundary), so the anchor bond reaches its
+  the anchored end than the continuum cantilever (a discrete-chain
+  artefact at the [[freeze]] boundary), so the anchor bond reaches its
   yield threshold earlier than EB beam theory predicts.
 * At `v_z = -0.5 m/s` the pull is comparable to the natural bending
   period (T_bend ≈ 5.5 ms), so the chain is *not* perfectly

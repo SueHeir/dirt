@@ -1,6 +1,11 @@
 # Haff's Cooling — Single Rough Spheres
-# Matches clump benchmark: same box, material, count, velocity, restitution, friction.
-# Sphere radius = 1.1mm (matching clump effective radius).
+# A freely cooling granular gas of frictional spheres in a periodic box.
+# Because DIRT's contact has a velocity-independent restitution (constant e),
+# the gas obeys Haff's law:  T(t) = T0 / (1 + t/tc)^2   (late-time slope -2).
+#
+# Run via the driver:  python3 examples/bench_sphere_haff_cooling/run.py
+# Single run:          cargo run --release --example bench_sphere_haff_cooling \
+#                          --no-default-features -- examples/bench_sphere_haff_cooling/config.toml
 
 [comm]
 processors_x = 1
@@ -31,22 +36,21 @@ youngs_mod = 5.0e7
 poisson_ratio = 0.3
 restitution = 0.9
 friction = 0.3
-rolling_friction = 0.2
+# rolling_friction intentionally omitted (= 0): keeps the contact to normal +
+# tangential so the LAMMPS cross-check matches exactly. Sliding friction (0.3)
+# still makes the spheres rough → rotational temperature builds up.
 
 [[particles.insert]]
 material = "glass"
-count = 200
+count = 800                # bumped from 200 for smoother temperature statistics
 radius = 0.0011
 density = 2500.0
-velocity = 0.5
+velocity = 0.5             # Gaussian sigma per component → initial T_trans ≈ 0.25
 region = { type = "block", min = [0.002, 0.002, 0.002], max = [0.038, 0.038, 0.038] }
 
 [output]
 dir = "examples/bench_sphere_haff_cooling/data"
 
-[vtp]
-interval = 100000
-
 [run]
-steps = 2000000
+steps = 700000            # ~30 cooling times → ~3 decades of decay above the noise floor
 thermo = 10000

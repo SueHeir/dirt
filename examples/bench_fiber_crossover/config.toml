@@ -1,0 +1,116 @@
+# ── Fiber crossover Coulomb-friction test ────────────────────────────────────
+# Two perpendicular bonded-sphere fibers cross at one contact. The lower fiber
+# (along y, z = 0) is frozen. The upper fiber (along x, z ≈ 2r) is dragged along
+# +x at constant velocity with its height held fixed, imposing a known Hertzian
+# normal load N at the crossover. The tangential contact force rises, then
+# plateaus at the Coulomb limit F_slide = μ·N.
+#
+# Run: cargo run --release --example bench_fiber_crossover --no-default-features -- \
+#        examples/bench_fiber_crossover/config.toml
+
+[comm]
+processors_x = 1
+processors_y = 1
+processors_z = 1
+
+[domain]
+# Wide enough in x for the upper fiber to be dragged ~3 mm.
+x_low  = -0.012
+x_high =  0.012
+y_low  = -0.010
+y_high =  0.010
+z_low  = -0.004
+z_high =  0.006
+boundary_x = "fixed"
+boundary_y = "fixed"
+boundary_z = "fixed"
+
+[neighbor]
+skin_fraction = 1.2
+bin_size = 0.004
+every = 1
+
+[dem]
+contact_model = "hertz"
+
+[[dem.materials]]
+name = "polymer"
+youngs_mod = 1.0e7        # Pa — soft polymer fiber
+poisson_ratio = 0.3
+restitution = 0.5
+friction = 0.4            # μ — inter-fiber sliding (Coulomb) friction coefficient
+
+# Lower fiber: 7 spheres along y at z = 0 (frozen anchor).
+[[particles.insert]]
+source = "file"
+file = "examples/bench_fiber_crossover/lower_fiber.csv"
+format = "csv"
+material = "polymer"
+radius = 0.001
+density = 1200.0
+columns = { x = 0, y = 1, z = 2 }
+
+# Upper fiber: 7 spheres along x at z = 2r − 20 µm (initial crossover overlap).
+[[particles.insert]]
+source = "file"
+file = "examples/bench_fiber_crossover/upper_fiber.csv"
+format = "csv"
+material = "polymer"
+radius = 0.001
+density = 1200.0
+columns = { x = 0, y = 1, z = 2 }
+
+# ── Bonds ────────────────────────────────────────────────────────────────────
+# Bonds are loaded from an explicit list (intra-fiber only). auto_bond is OFF:
+# the two crossover spheres touch within the auto-bond tolerance, so auto-bonding
+# would weld the fibers together — defeating the contact-friction test. The
+# explicit list bonds only neighbouring spheres within each fiber, leaving the
+# crossover as a pure frictional contact.
+[bonds]
+auto_bond = false
+file = "examples/bench_fiber_crossover/bonds.data"
+format = "lammps_data"
+bond_radius_ratio = 1.0
+youngs_modulus = 1.0e7
+shear_modulus  = 3.8e6
+beta_normal  = 1.0
+beta_shear   = 1.0
+beta_twist   = 1.0
+beta_bending = 1.0
+
+# ── Groups ───────────────────────────────────────────────────────────────────
+# Static membership so the dragged fiber keeps its atoms after it moves.
+[[group]]
+name = "lower_fiber"
+region = { type = "block", min = [-0.0015, -0.008, -0.0015], max = [0.0015, 0.008, 0.0015] }
+dynamic = false
+
+[[group]]
+name = "upper_fiber"
+region = { type = "block", min = [-0.008, -0.0015, 0.0005], max = [0.008, 0.0015, 0.0035] }
+dynamic = false
+
+# ── Fixes ────────────────────────────────────────────────────────────────────
+# Anchor the lower fiber.
+[[freeze]]
+group = "lower_fiber"
+
+# Drag the upper fiber along +x at constant speed with its height (z) and
+# lateral position (y) held fixed. Holding z fixes the crossover overlap, so the
+# normal load N is a known constant; the tangential contact force is measured.
+[[move_linear]]
+group = "upper_fiber"
+vx = 0.001
+vy = 0.0
+vz = 0.0
+
+[output]
+dir = "examples/bench_fiber_crossover"
+
+[run]
+# 30 000 steps · dt = 2e-6 s = 0.06 s → drag distance v·t = 0.001·0.06 = 60 µm.
+# The crossover stays engaged (separates only past ~280 µm) and the Mindlin
+# spring saturates within ~7 µm, so the tangential force reaches its μN plateau.
+steps = 30000
+thermo = 5000
+dt = 2.0e-6

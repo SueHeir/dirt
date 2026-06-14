@@ -1,12 +1,14 @@
-# ── BPM cantilever test — validates [[pin]] as a hard constraint ────────────
-# 10-sphere bonded chain anchored at x = 0 by [[pin]]. The pinned atom's
-# position is captured at setup and restored every step, so bond forces on
-# its neighbour (tag 1) are evaluated against the exact initial position.
+# ── BPM cantilever test — validates [[freeze]] as a rigid anchor ───────────────
+# 10-sphere bonded chain anchored at x = 0 by [[freeze]]. The anchor's velocity
+# (and rotation) are held at zero every step, so it never drifts and never spins
+# under bond torque — bond forces on its neighbour (tag 1) are evaluated against
+# the exact initial position with zero rotation. (Freezing rotation is essential:
+# a free-spinning anchor lets the whole chain swing about it.)
 #
-# The chain bends and oscillates under gravity (-z) and settles to a
-# steady-state deflection via critical bond damping. A broken pin would
-# make the bond force on tag 1 feed back unstably; with [[pin]] this
-# converges smoothly.
+# The chain bends and oscillates under gravity (-z) and settles toward a
+# steady-state deflection via critical bond damping. A free or broken anchor
+# would make the bond force on tag 1 feed back unstably; with [[freeze]] this
+# stays bounded with all bonds intact.
 #
 # Single-process run:
 #   cargo run --release --example bond_cantilever --no-default-features -- \
@@ -81,11 +83,13 @@ name = "anchor"
 region = { type = "block", min = [-0.0011, -5e-4, -5e-4], max = [0.0011, 5e-4, 5e-4] }
 dynamic = false
 
-# [[pin]] is the hard constraint: pos, vel, force, AND (via DemAtom)
-# omega, torque, ang_mom are all restored every step at PreInitialIntegration
-# and PostForce. Bond force on the anchor's neighbour (tag 1) sees the
-# anchor at its exact starting position with zero rotation.
-[[pin]]
+# [[freeze]] is full immobilization: vel and force, AND (via DemAtom) omega,
+# torque, and ang_mom are zeroed every step at PostForce. With velocity held at
+# zero the anchor never drifts, and with rotation frozen it never spins under
+# bond torque — so its neighbour (tag 1) sees it at its exact starting position
+# with zero rotation. (For a translation-only constraint that leaves rotation
+# free, SOIL's [[pin]] fix is the counterpart.)
+[[freeze]]
 group = "anchor"
 
 [output]

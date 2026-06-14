@@ -1,0 +1,124 @@
+# bench_hopper_beverloo — quasi-2D slot hopper, Beverloo discharge law.
+#
+# Geometry (x-z plane, periodic in y so the slot has effectively infinite depth):
+# a rectangular bin (vertical side walls) feeds a symmetric wedge funnel that
+# converges to a central bottom SLOT of opening width D at z = orifice_z. A
+# horizontal "blocker" wall seals the slot during filling; the recorder removes
+# it once the bed settles, then logs cumulative discharge through z = orifice_z.
+#
+# This single-case config is a representative run (D = 0.024 m). The sweep over D
+# is driven by sweep.py, which templates this same layout.
+#
+#   cargo run --release --example bench_hopper_beverloo --no-default-features -- \
+#       examples/bench_hopper_beverloo/config.toml
+
+[comm]
+processors_x = 1
+processors_y = 1
+processors_z = 1
+
+[domain]
+x_low = 0.0
+x_high = 0.16
+y_low = 0.0
+y_high = 0.012
+z_low = 0.0
+z_high = 0.40
+boundary_x = "fixed"
+boundary_y = "periodic"     # periodic depth -> quasi-2D slot (per-unit-width flow)
+boundary_z = "fixed"
+
+[neighbor]
+skin_fraction = 1.2
+bin_size = 0.009            # >= largest particle diameter (d = 0.004 m)
+
+[gravity]
+gz = -9.81                  # m/s^2
+
+[[dem.materials]]
+name = "glass"
+youngs_mod = 5.0e7          # Pa — softened so dt can be larger (rigid-grain limit OK for Beverloo)
+poisson_ratio = 0.3
+restitution = 0.5
+friction = 0.5
+
+# Fill the bin above the funnel with a settled bed.
+[[particles.insert]]
+material = "glass"
+count = 1400
+radius = 0.002             # d = 0.004 m
+density = 2500.0           # kg/m^3
+velocity_z = -0.2
+region = { type = "block", min = [0.025, 0.0, 0.20], max = [0.135, 0.012, 0.38] }
+
+# ── Bin side walls (vertical) ────────────────────────────────────────────────
+[[wall]]                   # left bin wall (x = 0.02, normal +x)
+point_x = 0.02
+point_z = 0.0
+normal_x = 1.0
+material = "glass"
+
+[[wall]]                   # right bin wall (x = 0.14, normal -x)
+point_x = 0.14
+point_z = 0.0
+normal_x = -1.0
+material = "glass"
+
+[[wall]]                   # ceiling (z = 0.40, normal -z)
+point_z = 0.40
+normal_z = -1.0
+material = "glass"
+
+# ── Wedge funnel (converges to a slot of width D = 0.024 at z = 0.05) ─────────
+# Left funnel: from (0.02, 0.18) down to (0.068, 0.05). Inward normal (+x, +z).
+[[wall]]
+point_x = 0.02
+point_z = 0.18
+normal_x = 0.13
+normal_z = 0.048
+material = "glass"
+bound_z_low = 0.049
+bound_z_high = 0.181
+
+# Right funnel: mirror — from (0.14, 0.18) down to (0.092, 0.05). Inward normal (-x, +z).
+[[wall]]
+point_x = 0.14
+point_z = 0.18
+normal_x = -0.13
+normal_z = 0.048
+material = "glass"
+bound_z_low = 0.049
+bound_z_high = 0.181
+
+# ── Blocker: seals the slot during filling; removed when the bed settles ──────
+[[wall]]
+point_z = 0.05
+normal_z = 1.0
+material = "glass"
+name = "blocker"
+bound_z_low = 0.0
+bound_z_high = 0.051
+
+[hopper_beverloo]
+orifice_z = 0.045          # discharge counted when a grain center drops below this
+sample_interval = 2000
+
+[output]
+dir = "examples/bench_hopper_beverloo"
+
+[vtp]
+interval = 5000
+
+# Stage 1: fill — particles settle on the blocker under gravity.
+[[run]]
+name = "filling"
+steps = 60000
+thermo = 5000
+dt = 2.0e-5
+
+# Stage 2: flow — blocker removed, bed discharges through the slot.
+[[run]]
+name = "flowing"
+steps = 90000
+thermo = 5000
+dt = 2.0e-5
