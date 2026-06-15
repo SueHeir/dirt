@@ -2361,13 +2361,17 @@ mod tests {
 
     #[test]
     fn linear_momentum_conserved_during_elastic_contact() {
-        // Use a perfectly elastic material (restitution = 1.0 -> beta = 0 -> no damping)
+        // Perfectly elastic (restitution = 1.0) → ~no damping. The Hertz/Tsuji
+        // coefficient at e=1 is the polynomial's residual (~1.3e-4), not exactly 0
+        // (LAMMPS `damping tsuji` has the same residual), so momentum is conserved to
+        // that order rather than machine epsilon.
         let mut mt = MaterialTable::new();
         mt.add_material("elastic", 8.7e9, 0.3, 1.0, 0.0, 0.0, 0.0);
         mt.build_pair_tables();
         assert!(
-            mt.beta_ij[0][0].abs() < 1e-15,
-            "beta should be 0 for e=1.0"
+            mt.beta_ij[0][0].abs() < 1e-3,
+            "beta should be ~0 for e=1.0, got {}",
+            mt.beta_ij[0][0]
         );
 
         let radius = 0.001;
