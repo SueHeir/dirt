@@ -154,6 +154,18 @@ pub struct DemConfig {
     /// Twisting friction model: "constant" (default) or "sds".
     #[serde(default = "default_twisting_model")]
     pub twisting_model: String,
+    /// Track per-sphere orientation (quaternion). Default `false`.
+    ///
+    /// A sphere is rotationally symmetric, so its orientation never enters any
+    /// contact force law (those depend on angular velocity `ω`, not absolute
+    /// orientation). The per-sphere quaternion is therefore causally inert for
+    /// pure-sphere runs, and integrating it each step (sqrt + division + sin +
+    /// cos + Hamilton product per atom) is pure overhead. Leave this `false`
+    /// unless something downstream actually reads the orientation (e.g. a future
+    /// surface-marker visualization). Non-spherical bodies track orientation in
+    /// their own `BodyData`, not here, so this flag does not affect them.
+    #[serde(default)]
+    pub track_orientation: bool,
 }
 
 // ── MaterialTable — per-material and per-pair precomputed properties ────────
@@ -205,6 +217,8 @@ pub struct MaterialTable {
     pub rolling_model: String,
     /// Twisting friction model: "constant" or "sds".
     pub twisting_model: String,
+    /// Track per-sphere orientation (quaternion). Default `false`; see [`DemConfig::track_orientation`].
+    pub track_orientation: bool,
     /// Per-material rolling spring stiffness (SDS model).
     pub rolling_stiffness: Vec<f64>,
     /// Per-material rolling damping coefficient (SDS model).
@@ -258,6 +272,7 @@ impl MaterialTable {
             adhesion_model: "jkr".to_string(),
             rolling_model: "constant".to_string(),
             twisting_model: "constant".to_string(),
+            track_orientation: false,
             rolling_stiffness: Vec::new(),
             rolling_damping: Vec::new(),
             twisting_stiffness: Vec::new(),
@@ -633,6 +648,7 @@ friction = 0.4
         material_table.adhesion_model = dem_config.adhesion_model.clone();
         material_table.rolling_model = dem_config.rolling_model.clone();
         material_table.twisting_model = dem_config.twisting_model.clone();
+        material_table.track_orientation = dem_config.track_orientation;
 
         if let Some(ref materials) = dem_config.materials {
             for mat in materials {

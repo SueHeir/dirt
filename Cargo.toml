@@ -112,3 +112,18 @@ grass_scheduler = { git = "https://github.com/SueHeir/grass.git", rev = "ea21ea3
 # from source. libffi-sys 2.3.0 has a broken aarch64 macOS assembler; Homebrew
 # libffi is set via PKG_CONFIG_PATH.
 libffi-sys = { version = "2.3.0", features = ["system"], optional = true }
+
+[patch.'https://github.com/SueHeir/soil.git']
+soil_core = { path = "../soil/crates/soil_core" }
+soil_verlet = { path = "../soil/crates/soil_verlet" }
+soil_print = { path = "../soil/crates/soil_print" }
+soil_fixes = { path = "../soil/crates/soil_fixes" }
+soil_derive = { path = "../soil/crates/soil_derive" }
+soil_deform = { path = "../soil/crates/soil_deform" }
+
+[patch.'https://github.com/SueHeir/grass.git']
+grass_app = { path = "/tmp/grass-base/crates/grass_app" }
+grass_scheduler = { path = "/tmp/grass-base/crates/grass_scheduler" }
+grass_mpi = { path = "/tmp/grass-base/crates/grass_mpi" }
+grass_derive = { path = "/tmp/grass-base/crates/grass_derive" }
+grass_io = { path = "/tmp/grass-base/crates/grass_io" }
