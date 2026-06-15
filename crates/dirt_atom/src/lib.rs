@@ -446,7 +446,26 @@ impl MaterialTable {
                 // Geometric mean mixing for restitution
                 let e_ij = (self.restitution[i] * self.restitution[j]).sqrt();
                 let log_e = e_ij.ln();
-                self.beta_ij[i][j] = -log_e / (PI * PI + log_e * log_e).sqrt();
+                // Damping coefficient β from the restitution. The model differs by
+                // contact law because they're driven differently:
+                //   - Hooke (linear): β = -ln(e)/√(π²+ln²e) gives a velocity-INDEPENDENT
+                //     restitution for a constant-stiffness spring-dashpot.
+                //   - Hertz (nonlinear): that linear formula does NOT hold a constant
+                //     restitution and over-damps fast collisions. Use Tsuji (1992),
+                //     the polynomial LAMMPS `damping tsuji` uses, which IS built for
+                //     Hertz → velocity-independent restitution. DIRT applies damping as
+                //     2β√(5/6)√(S_n·m_r)·v_n while LAMMPS applies α√(m·F_n/δ)·v_n =
+                //     α√(2/3)√(S_n·m_r)·v_n (since F_n/δ = ⅔S_n for Hertz); equating the
+                //     coefficients gives β = α/√5.
+                self.beta_ij[i][j] = if self.contact_model == "hertz" {
+                    let e = e_ij;
+                    let alpha = 1.2728 - 4.2783 * e + 11.087 * e.powi(2)
+                        - 22.348 * e.powi(3) + 27.467 * e.powi(4)
+                        - 18.022 * e.powi(5) + 4.8218 * e.powi(6);
+                    alpha / 5.0_f64.sqrt()
+                } else {
+                    -log_e / (PI * PI + log_e * log_e).sqrt()
+                };
 
                 // Geometric mean mixing for friction
                 self.friction_ij[i][j] = (self.friction[i] * self.friction[j]).sqrt();
@@ -698,8 +717,10 @@ mod tests {
         mt.build_pair_tables();
 
         let e = 0.95_f64;
-        let log_e = e.ln();
-        let expected_beta = -log_e / (PI * PI + log_e * log_e).sqrt();
+        // default contact_model is "hertz" → Tsuji damping coefficient β = α(e)/√5
+        let alpha = 1.2728 - 4.2783 * e + 11.087 * e.powi(2) - 22.348 * e.powi(3)
+            + 27.467 * e.powi(4) - 18.022 * e.powi(5) + 4.8218 * e.powi(6);
+        let expected_beta = alpha / 5.0_f64.sqrt();
         assert!(
             (mt.beta_ij[0][0] - expected_beta).abs() < 1e-12,
             "beta should be {}, got {}",
@@ -739,10 +760,11 @@ mod tests {
             mt.friction_ij[0][1]
         );
 
-        // Geometric mean mixing for restitution -> beta
+        // Geometric mean mixing for restitution -> beta (hertz default → Tsuji)
         let e_mix = (0.95_f64 * 0.8).sqrt();
-        let log_e = e_mix.ln();
-        let expected_beta = -log_e / (PI * PI + log_e * log_e).sqrt();
+        let alpha = 1.2728 - 4.2783 * e_mix + 11.087 * e_mix.powi(2) - 22.348 * e_mix.powi(3)
+            + 27.467 * e_mix.powi(4) - 18.022 * e_mix.powi(5) + 4.8218 * e_mix.powi(6);
+        let expected_beta = alpha / 5.0_f64.sqrt();
         assert!(
             (mt.beta_ij[0][1] - expected_beta).abs() < 1e-12,
             "beta_ij should use geometric mean restitution"
