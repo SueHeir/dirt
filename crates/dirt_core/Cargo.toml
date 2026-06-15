@@ -14,9 +14,9 @@ default = ["mpi_backend"]
 mpi_backend = ["soil_core/mpi_backend", "dirt_clump/mpi_backend"]
 
 [dependencies]
-grass_scheduler = { git = "https://github.com/SueHeir/grass.git", rev = "ea21ea3629de990a717cc1421747901e5d64a66b" }
-grass_app = { git = "https://github.com/SueHeir/grass.git", rev = "ea21ea3629de990a717cc1421747901e5d64a66b" }
-grass_derive = { git = "https://github.com/SueHeir/grass.git", rev = "ea21ea3629de990a717cc1421747901e5d64a66b" }
+grass_scheduler = { git = "https://github.com/SueHeir/grass.git", branch = "main" }
+grass_app = { git = "https://github.com/SueHeir/grass.git", branch = "main" }
+grass_derive = { git = "https://github.com/SueHeir/grass.git", branch = "main" }
 soil_core = { git = "https://github.com/SueHeir/soil.git", branch = "master", default-features = false }
 soil_verlet = { git = "https://github.com/SueHeir/soil.git", branch = "master" }
 soil_print = { git = "https://github.com/SueHeir/soil.git", branch = "master" }
