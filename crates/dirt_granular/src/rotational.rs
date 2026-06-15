@@ -18,7 +18,7 @@
 use grass_app::prelude::*;
 use grass_scheduler::prelude::*;
 
-use dirt_atom::DemAtom;
+use dirt_atom::{DemAtom, MaterialTable};
 use soil_core::{Atom, AtomDataRegistry, ParticleSimScheduleSet};
 
 /// Construct a unit quaternion `[w, x, y, z]` from a unit rotation axis and angle (radians).
@@ -55,11 +55,23 @@ impl Plugin for RotationalDynamicsPlugin {
     }
 }
 
-/// Initial half-step: advance angular velocity and update quaternion orientation.
-pub fn initial_rotation(atoms: Res<Atom>, registry: Res<AtomDataRegistry>) {
+/// Initial half-step: advance angular velocity and (optionally) update quaternion orientation.
+///
+/// The angular-velocity half-kick is always applied — `ω` drives tangential,
+/// rolling, and twisting friction. The quaternion orientation update is applied
+/// only when [`MaterialTable::track_orientation`] is set. For pure-sphere runs
+/// (the default) orientation is causally inert — a sphere's contact mechanics
+/// don't depend on which way it "points" — so skipping it removes a per-atom
+/// sqrt + division + sin + cos + Hamilton product with no effect on the physics.
+pub fn initial_rotation(
+    atoms: Res<Atom>,
+    registry: Res<AtomDataRegistry>,
+    material_table: Res<MaterialTable>,
+) {
     let mut dem = registry.expect_mut::<DemAtom>("initial_rotation");
     let dt = atoms.dt;
     let nlocal = atoms.nlocal as usize;
+    let track_orientation = material_table.track_orientation;
 
     for i in 0..nlocal {
         let inv_inertia = dem.inv_inertia[i];
@@ -69,16 +81,18 @@ pub fn initial_rotation(atoms: Res<Atom>, registry: Res<AtomDataRegistry>) {
         dem.omega[i][1] += 0.5 * dt * dem.torque[i][1] * inv_inertia;
         dem.omega[i][2] += 0.5 * dt * dem.torque[i][2] * inv_inertia;
 
-        let ox = dem.omega[i][0];
-        let oy = dem.omega[i][1];
-        let oz = dem.omega[i][2];
-        let omega_mag = (ox*ox + oy*oy + oz*oz).sqrt();
-        let angle = omega_mag * dt;
-        if angle > 1e-14 {
-            let inv = 1.0 / omega_mag;
-            let axis = [ox * inv, oy * inv, oz * inv];
-            let dq = quat_from_axis_angle(axis, angle);
-            dem.quaternion[i] = quat_mul(dq, dem.quaternion[i]);
+        if track_orientation {
+            let ox = dem.omega[i][0];
+            let oy = dem.omega[i][1];
+            let oz = dem.omega[i][2];
+            let omega_mag = (ox*ox + oy*oy + oz*oz).sqrt();
+            let angle = omega_mag * dt;
+            if angle > 1e-14 {
+                let inv = 1.0 / omega_mag;
+                let axis = [ox * inv, oy * inv, oz * inv];
+                let dq = quat_from_axis_angle(axis, angle);
+                dem.quaternion[i] = quat_mul(dq, dem.quaternion[i]);
+            }
         }
     }
 }
@@ -102,7 +116,7 @@ pub fn final_rotation(atoms: Res<Atom>, registry: Res<AtomDataRegistry>) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dirt_atom::DemAtom;
+    use dirt_atom::{DemAtom, MaterialTable};
     use soil_core::{Atom, AtomDataRegistry};
     use dirt_test_utils::push_dem_test_atom;
 
@@ -129,6 +143,7 @@ mod tests {
 
         app.add_resource(atom);
         app.add_resource(registry);
+        app.add_resource(MaterialTable::new()); // track_orientation defaults false; only ω tested here
         app.add_update_system(initial_rotation, ParticleSimScheduleSet::InitialIntegration);
         app.organize_systems();
         app.run();
@@ -162,6 +177,9 @@ mod tests {
 
         app.add_resource(atom);
         app.add_resource(registry);
+        let mut mt = MaterialTable::new();
+        mt.track_orientation = true; // this test exercises the orientation update path
+        app.add_resource(mt);
         app.add_update_system(initial_rotation, ParticleSimScheduleSet::InitialIntegration);
         app.organize_systems();
         app.run();
