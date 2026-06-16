@@ -7,9 +7,9 @@ self-contained directory under `runs/` holding its config, its matched initial
 state, a `pbs_submit` script, and — after it runs — its `result.json`. The graph is
 built by reading those directories, so partial results plot fine.
 
-    runs/
-      _init/                         # shared, matched init (one per (regime, N))
-        dense_N157464.csv  .lmp
+    init/                            # tracked, committed matched init (one per (regime, N))
+      dense_N39304.csv  .lmp
+    runs/                            # gitignored, regenerable
       dirt_strong_dense_c4/          # one simulation
         meta.json  config.toml  pbs_submit  ->  perf_1.csv run_1.log ...
       lammps_strong_dense_c4/
@@ -43,7 +43,8 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.abspath(os.path.join(SCRIPT_DIR, "..", ".."))
 EXAMPLE = "perf_mpi_scaling"
 RUNS_DIR = os.path.join(SCRIPT_DIR, "runs")
-INIT_DIR = os.path.join(RUNS_DIR, "_init")
+INIT_DIR = os.path.join(SCRIPT_DIR, "init")   # tracked (NOT under gitignored runs/) so matched
+#                                               init can be committed and shared across machines
 PLOT_DIR = os.path.join(SCRIPT_DIR, "plots")
 START_ALL = os.path.join(SCRIPT_DIR, "start_all.sh")
 MPI = os.environ.get("PERF_MPI", "mpirun")           # launcher; used as: <MPI> -np <cores> <bin> …
@@ -151,19 +152,21 @@ def n_total(mode, cores):
     return NPC * cores if mode == "weak" else NPC * max(CORES)
 
 
+PHI = {"dense": 0.50, "dilute": 0.05}   # solid fraction per regime
+
+
 def build_atoms(regime, N, seed=42):
     """Deterministic atom list (x,y,z,vx,vy,vz) + box L + actual N, identical for both
-    codes. dense = sc lattice (φ=0.50); dilute = uniform random (φ=0.05)."""
+    codes. Both regimes are a cubic lattice sized to the regime's solid fraction —
+    dense = tight (φ=0.50), dilute = sparse (φ=0.05). A lattice is used (not random
+    placement) because random seeding of N~1e5 spheres produces overlapping pairs whose
+    contact force blows up the integrator ("excessive overlaps"); the gas comes from the
+    random Gaussian velocities, and a dilute gas legitimately starts with few contacts."""
     rng = random.Random(seed)
-    if regime == "dense":
-        s = D * (0.5235987756 / 0.50) ** (1 / 3)
-        ns = round(N ** (1 / 3)); L = ns * s
-        atoms = [((i + .5) * s, (j + .5) * s, (k + .5) * s, *[rng.gauss(0, SIG) for _ in range(3)])
-                 for i in range(ns) for j in range(ns) for k in range(ns)]
-    else:  # dilute
-        L = (N * VP / 0.05) ** (1 / 3); pad = 0.05 * L
-        atoms = [(rng.uniform(pad, L - pad), rng.uniform(pad, L - pad), rng.uniform(pad, L - pad),
-                  *[rng.gauss(0, SIG) for _ in range(3)]) for _ in range(N)]
+    s = D * (0.5235987756 / PHI[regime]) ** (1 / 3)   # lattice spacing for this φ (s>D always)
+    ns = round(N ** (1 / 3)); L = ns * s
+    atoms = [((i + .5) * s, (j + .5) * s, (k + .5) * s, *[rng.gauss(0, SIG) for _ in range(3)])
+             for i in range(ns) for j in range(ns) for k in range(ns)]
     return atoms, L, len(atoms)
 
 
@@ -407,16 +410,15 @@ def graph():
         ax.set_xlabel("cores"); ax.set_ylabel("DIRT throughput / LAMMPS")
         ax.set_title("DIRT vs LAMMPS\n(>1 = DIRT faster)"); ax.legend()
 
-        # 2. parallel efficiency (mode-appropriate)
+        # 2. parallel efficiency (mode-appropriate) — each code plots over whatever
+        #    points it has, so a missing point doesn't drop the whole curve.
         ax = axes[1]; ax.axhline(1.0, color="k", ls="--", lw=1, label="ideal")
         for regime, ls in (("dense", "-"), ("dilute", ":")):
-            recs = d.get(regime, [])
-            if len(recs) < 2:
-                continue
-            cs = [r["cores"] for r in recs]
             for who, col in (("dirt", "tab:red"), ("lmp", "tab:gray")):
-                if not all(who in r for r in recs):
+                recs = [r for r in d.get(regime, []) if who in r]
+                if len(recs) < 2:
                     continue
+                cs = [r["cores"] for r in recs]
                 t = [r[who] for r in recs]
                 if mode == "weak":
                     eff = [(t[i] / cs[i]) / (t[0] / cs[0]) for i in range(len(cs))]
@@ -456,7 +458,8 @@ def graph():
                 ax.set_title("Dense per-phase efficiency")
                 ax.legend(fontsize=9)
             ax.set_xlabel("cores")
-        fig.suptitle(f"{mode.capitalize()} scaling — dense/dilute gas, {NPC//1000}k/core, "
+        basis = "N fixed per regime" if mode == "strong" else f"{NPC//1000}k particles/core"
+        fig.suptitle(f"{mode.capitalize()} scaling — dense/dilute gas, {basis}, "
                      f"every={EVERY}, DIRT(opt) vs LAMMPS(native, newton on)", fontsize=13)
         fig.tight_layout()
         out = os.path.join(PLOT_DIR, f"{mode}_scaling.png")
