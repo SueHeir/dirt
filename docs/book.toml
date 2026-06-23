@@ -1,0 +1,20 @@
+[book]
+title = "DIRT — Discrete-element Interaction-Resolved Toolkit"
+description = "User guide and tutorials for the DIRT DEM physics engine"
+authors = ["Elizabeth Suehr"]
+language = "en"
+src = "src"
+
+[build]
+build-dir = "book"
+create-missing = false
+
+[output.html]
+default-theme = "rust"
+git-repository-url = "https://github.com/SueHeir/dirt"
+edit-url-template = "https://github.com/SueHeir/dirt/edit/master/docs/{path}"
+additional-css = []
+
+[output.html.fold]
+enable = true
+level = 1

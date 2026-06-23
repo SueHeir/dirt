@@ -57,19 +57,42 @@ force/stress/strain measures plus an `Unbreakable` default:
   damage envelope `Σ |X_i| / X_{i,c} ≥ 1` over the four channels (LAMMPS
   `bpm/rotational`)
 
-Each threshold is a `ThresholdDistribution`: `constant` or a length-scaled
-`weibull`. Per-bond thresholds are drawn once at creation from the bond's
-tag pair plus `seed`, so the breakage pattern is **MPI-decomposition
-independent and bit-reproducible**.
+Each threshold is a `ThresholdDistribution` (`kind = …`), one of three:
+
+- `constant` — the same `value` for every bond.
+- `weibull` — length-scaled 2-parameter Weibull (`mean`, `m`, `l_calib`,
+  optional `l_min`) giving the weakest-link size effect.
+- `crack_band` — deterministic, length-rescaled threshold (Bažant 1976 /
+  Hillerborg–Modéer–Petersson 1976): the part of the threshold above
+  `eps_yield` scales as `l_ref / max(l_bond, l_min)` so the per-bond plastic +
+  brittle energy budget × bond length stays invariant under mesh refinement.
+  Fields: `value_ref`, `l_ref`, optional `eps_yield` (use `0.0` for
+  force/stress criteria, `> 0` for strain criteria), optional `l_min`. This is
+  the correct regularization for the strain criteria (`axial_strain`,
+  `combined_strain`, `interaction_linear_strain`).
+
+Per-bond thresholds are drawn once at creation from the bond's tag pair plus
+`seed`, so the breakage pattern is **MPI-decomposition independent and
+bit-reproducible**.
 
 ## Plasticity
 
 The bending and axial channels are independently optional
-(`plasticity::PlasticityConfig`):
+(`plasticity::PlasticityConfig`); omit a channel to keep it purely elastic.
 
 - bending: `guo_bending` (elastic–perfectly-plastic cap at
-  `M^p = (4/3) σ_0 r_b³`), `guo_trilinear` (Guo Eq. 32), or `piecewise`
+  `M^p = (4/3) σ_0 r_b³`), `guo_trilinear` (Guo 2018 Eq. 32: elastic →
+  `K_ep = K_e/2` elasto-plastic → perfectly-plastic trilinear envelope;
+  expands at setup to a two-breakpoint `piecewise` and needs
+  `[bonds].youngs_modulus`), or `piecewise`
 - axial: `piecewise` (breakpoints in axial strain, slope multipliers)
+
+The `piecewise` variants (and `guo_trilinear`, via its expansion) accept an
+optional `length_calibration` (m): when set, the post-yield strain breakpoints
+rescale at runtime by `length_calibration / l_bond` (the elastic yield
+breakpoint is preserved), the crack-band regularization that keeps per-bond
+plastic dissipation × bond length invariant under mesh refinement. Omit it to
+recover the unregularized envelope.
 
 Plastic anchors and max-strain history are carried per bond in
 `BondHistoryStore` and survive MPI communication and atom reordering.
@@ -112,15 +135,22 @@ seed = 0   # per-bond threshold RNG seed
 kind    = "combined_stress"
 tensile = { kind = "weibull", mean = 5.0e7, m = 8.0, l_calib = 0.020 }
 shear   = { kind = "constant", value = 3.0e7 }
+# Threshold kinds: "constant", "weibull", or "crack_band" (length-rescaled).
+# Crack-band example (deterministic, mesh-invariant; use with a strain criterion):
+# tensile = { kind = "crack_band", value_ref = 0.05, l_ref = 0.020, eps_yield = 0.0, l_min = 0.0 }
 
 [bonds.plasticity.bending]
 kind         = "guo_bending"
 yield_stress = 1.23e8
+# Or the Guo 2018 trilinear envelope (needs [bonds].youngs_modulus):
+# kind         = "guo_trilinear"
+# yield_stress = 1.23e8
 
 [bonds.plasticity.axial]
 kind               = "piecewise"
 breakpoint_strains = [0.01, 0.02, 0.03]
 slope_multipliers  = [0.5, 0.1, 0.0]
+# length_calibration = 0.020   # optional crack-band length regularization (m)
 
 # Load explicit bonds instead of auto-bonding:
 # file = "bonds.lammps"
@@ -129,15 +159,62 @@ slope_multipliers  = [0.5, 0.1, 0.0]
 
 ## Usage
 
+This crate exports `DemBondPlugin` (and `BondConfig`, the breakage/plasticity
+menus, the history stores). It depends only on `dirt_atom`, `soil_core`, and
+the GRASS app/scheduler — **not** on `dirt_core`. A full DEM application is
+assembled through the `dirt_core` umbrella crate, which re-exports
+`DemBondPlugin` from its prelude alongside the core/granular plugin groups:
+
 ```rust
-use dirt_core::prelude::*;
+use dirt_core::prelude::*;          // re-exports DemBondPlugin, CorePlugins, GranularDefaultPlugins
 
 let mut app = App::new();
-app.add_plugins(CorePlugins)
-    .add_plugins(GranularDefaultPlugins)
-    .add_plugins(DemBondPlugin);
+app.add_plugins(CorePlugins)        // atom data, neighbor list, dump/thermo I/O
+    .add_plugins(GranularDefaultPlugins) // Hertz-Mindlin contact + Verlet integration
+    .add_plugins(DemBondPlugin);    // bond forces (suppresses contact on bonded pairs)
 app.start();
 ```
+
+If you depend on `dirt_bond` directly (without the umbrella), import the plugin
+from this crate instead — `use dirt_bond::DemBondPlugin;` — and supply your own
+core/granular plugins. `DemBondPlugin` needs the granular contact plugin present
+so non-bonded pairs still interact, and contact on bonded pairs is suppressed
+via `soil_core`'s `BondStore`.
+
+## Thermo output
+
+`BondMetrics` publishes three keys each thermo step:
+
+| Key | Meaning |
+|-----|---------|
+| `bond_strain` | Mean axial strain `δ/r₀` over all live bonds this step (0 if none) |
+| `bonds_broken` | Cumulative count of bonds broken since the run started |
+| `bond_missing` | Bonds skipped this step because the partner atom was not visible (ghost cutoff too small / MPI split through a bond) |
+
+## Concepts
+
+**Bond vs. contact.** A bonded pair is registered in `soil_core`'s `BondStore`,
+and the granular contact plugin skips any pair found there — so a bond is the
+*sole* interaction between its two particles until it breaks. On breakage the
+pair is removed from `BondStore` and normal Hertz/Hooke contact resumes
+automatically (relevant for overlapping bonded spheres, which would otherwise
+double-count force).
+
+**Sign convention.** Each bond is owned by the **lower-tag** atom. Forces are
+applied as `+F` on atom *i* (lower tag) and `−F` on atom *j* (higher tag) —
+Newton's third law by construction. Moments follow the same ownership.
+
+**Per-bond history lifecycle.** A bond is created at setup (auto-bond of
+touching pairs, or a loaded `Bonds` section). At creation its breakage
+thresholds are drawn once from `(tag_i, tag_j, seed)`, so the failure pattern is
+decomposition-independent and bit-reproducible. Each step the shear `Δs` and
+twist/bend `Δθ` accumulators (and any plastic anchors / max-strain history) are
+carried in `BondHistoryStore`, which survives MPI communication and atom
+reordering. When the active criterion trips, the bond is removed.
+
+> `bond_type` is parsed and stored on each bond entry but is **not currently
+> consumed** by the force model — it is reserved for future per-type bond
+> parameter sets.
 
 ## Examples
 

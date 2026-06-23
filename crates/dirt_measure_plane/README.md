@@ -45,10 +45,37 @@ Multiple `[[measure_plane]]` blocks can be defined; each plane tracks crossings 
 
 ## Thermo output keys
 
-For each plane named `<name>`:
+All results are exposed **only as thermo keys** — there is no public read API.
+The `MeasurePlanes` resource is opaque (its state is private with no accessors),
+so consumers must read the thermo columns, not the resource. For each plane
+named `<name>`:
 - `crossings_<name>` — total cumulative crossing count
 - `flow_rate_<name>` — mass flow rate (mass/time), averaged over `report_interval`
 - `cross_rate_<name>` — particle crossing rate (1/time), averaged over `report_interval`
+
+## Caveats
+
+This is a deliberately simple **directional gate**, not a flux meter:
+
+- **Directional, not net flux.** Only `≤ 0 → > 0` transitions are counted
+  (a crossing *with* the normal). Reverse crossings are ignored — neither
+  counted nor subtracted — so a particle oscillating across the plane is
+  recounted on every forward pass. The totals are *gross* positive crossings,
+  not net throughput. Place planes where flow is essentially one-way.
+- **`prev_signed_dist` grows without bound.** The per-plane state stores one map
+  entry per atom tag it has *ever* seen and never evicts them — a slow memory
+  growth proportional to the number of distinct tags seen near the plane (e.g.
+  with continuous rate-based insertion).
+- **MPI rank migration can mis/double-count.** Detection runs over local atoms
+  only, and the previous-distance map is per-rank. A particle that migrates
+  between subdomains does not carry its previous distance, so a crossing across
+  a migration step can be missed or counted on the wrong rank. The report-time
+  all-reduce sums totals but does not repair this.
+- **Variable `dt` makes the window time approximate.** `window_time` uses the
+  *current* `dt × window_steps`; if `dt` changes within a reporting window
+  (e.g. across run stages), that window's rates are only approximate.
+- **Degenerate normal silently falls back to `[1, 0, 0]`.** A normal with
+  magnitude `< 1e-30` is replaced by +x without warning.
 
 ## Usage
 

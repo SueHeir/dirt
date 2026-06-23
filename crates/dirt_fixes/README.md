@@ -2,7 +2,9 @@
 
 Group-based atom manipulation fixes and gravity for [DIRT](https://github.com/SueHeir/dirt).
 
-Per-atom fixes that modify forces and velocities each timestep. Each fix targets a named atom group and is configured via TOML arrays in the simulation config: add/set forces, freeze or pin atoms, prescribe motion, damp velocity, cap displacement, and apply gravity.
+Per-atom fixes that modify forces and velocities each timestep. Each fix targets a named atom group and is configured via TOML arrays in the simulation config: add/set forces, freeze atoms, prescribe motion, damp velocity, cap displacement, and apply gravity.
+
+> The hard *position* constraint `[[pin]]` is **not** part of this crate — it lives in SOIL's `soil_fixes` (`SoilFixesPlugin`, with `PinDef`/`PinRegistry`/`PinState`). See the `soil_fixes` README for its schema. `freeze` here is the full-immobilization counterpart; see the freeze-vs-pin contrast below.
 
 ## Key Types
 
@@ -11,13 +13,16 @@ Per-atom fixes that modify forces and velocities each timestep. Each fix targets
 | `AddForceDef` | `[[addforce]]` | Adds a constant force vector to group atoms |
 | `SetForceDef` | `[[setforce]]` | Overwrites the force vector on group atoms |
 | `MoveLinearDef` | `[[move_linear]]` | Moves atoms at a prescribed constant velocity |
-| `FreezeDef` | `[[freeze]]` | Zeros velocity and force (immobilizes atoms) |
-| `PinDef` | `[[pin]]` | Hard position constraint — captures pos at setup, restores it every step |
+| `FreezeDef` | `[[freeze]]` | Zeros velocity and force (immobilizes atoms; also angular vel/torque/momentum for DEM atoms) |
 | `ViscousDef` | `[[viscous]]` | Velocity-proportional damping (F = −γv) |
-| `NveLimitDef` | `[[nve_limit]]` | Caps max displacement per timestep by scaling velocity |
+| `NveLimitDef` | `[[nve_limit]]` | Caps per-step displacement by scaling velocity (`vmax = max_displacement/dt`), direction-preserving; writes `n_limited` to thermo |
 | `GravityConfig` | `[gravity]` | Gravitational body force (F = mg) |
 
-Plugins: `FixesPlugin` registers the group-based fixes; `GravityPlugin` registers the gravity body force. `FixesRegistry` holds all parsed fix definitions; `PinState` stores captured pin positions keyed by global atom tag.
+Plugins: `FixesPlugin` registers the group-based fixes; `GravityPlugin` registers the gravity body force. `FixesRegistry` holds all parsed fix definitions.
+
+### freeze vs. pin
+
+`freeze` (this crate) zeros an atom's *velocity and force* every step — for DEM atoms it also zeros angular velocity, torque, and angular momentum — so the atom stops accelerating but stays wherever the last integration step left it. `pin` (in `soil_fixes`) additionally captures each atom's position at setup and *restores* it every step, holding the atom at a fixed point regardless of accumulated drift. Use `freeze` to kill all motion in place; use `pin` to anchor atoms to an exact location (BPM anchors, reaction-force abutments).
 
 ## TOML Configuration
 
@@ -54,12 +59,7 @@ vz = -0.001
 group = "frozen"
 ```
 
-### pin — Hard position constraint
-```toml
-[[pin]]
-group = "anchor"
-```
-Unlike `freeze`, `pin` also restores each atom to its captured initial position every step, before the Verlet drift and after force computation. Position is captured lazily on the first step the group mask is populated and is keyed by global tag, so pinned atoms survive MPI migration. If `DemAtom` is registered, angular velocity, torque, and angular momentum are zeroed too — important for bonded-particle (BPM) anchors.
+> Looking for `[[pin]]`? It lives in `soil_fixes`, not here — see that crate's README.
 
 ### viscous — Velocity-proportional damping (F = −γv)
 ```toml
@@ -86,7 +86,6 @@ gz = -9.81
 ## Schedule Phases
 
 - **move_linear**: PreInitialIntegration (set velocity), PostForce (zero force)
-- **pin**: PreInitialIntegration and PostForce (restore pos, zero vel/force; capture on first populated-mask step)
 - **addforce, setforce, freeze, viscous**: PostForce
 - **nve_limit**: PostFinalIntegration
 - **gravity**: Force
