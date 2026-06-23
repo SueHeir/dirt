@@ -109,7 +109,7 @@ impl GpuGranular {
 }
 
 /// Extract the (single-material) plain Hertz-Mindlin scalars the GPU kernel uses.
-fn gpu_scalars(mt: &MaterialTable) -> (f32, f32, f32, f32) {
+pub(crate) fn gpu_scalars(mt: &MaterialTable) -> (f32, f32, f32, f32) {
     (
         mt.e_eff_ij[0][0] as f32,
         mt.beta_ij[0][0] as f32,
