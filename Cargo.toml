@@ -176,3 +176,7 @@ libffi-sys = { version = "2.3.0", features = ["system"], optional = true }
 [[example]]
 name = "mpi_gpu_validate"
 path = "examples/mpi_gpu_validate/main.rs"
+
+[[example]]
+name = "mpi_resident_validate"
+path = "examples/mpi_resident_validate/main.rs"

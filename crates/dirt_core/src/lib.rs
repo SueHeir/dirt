@@ -252,7 +252,7 @@ pub mod prelude {
     pub use dirt_atom::{DemAtomInsertPlugin, ParticlesConfig};
     pub use dirt_bond::DemBondPlugin;
     pub use dirt_clump::{ClumpPlugin, ClumpRegistry, ClumpAtom, ClumpDef, MultisphereBody, MultisphereBodyStore};
-    pub use dirt_granular::{GranularDefaultPlugins, GranularGpuPlugins, GpuGranularForcePlugin, HertzMindlinContactPlugin, RotationalDynamicsPlugin, GranularTempPlugin};
+    pub use dirt_granular::{GranularDefaultPlugins, GranularGpuPlugins, GpuGranularResidentMpiPlugin, Boundary, Plane, GpuGranularForcePlugin, HertzMindlinContactPlugin, RotationalDynamicsPlugin, GranularTempPlugin};
     pub use dirt_contact_analysis::{ContactAnalysisConfig, ContactAnalysisPlugin};
     pub use dirt_measure_plane::{MeasurePlaneDef, MeasurePlanePlugin, MeasurePlanes};
     pub use dirt_wall::{WallDef, WallMotion, WallPlane, WallPlugin, Walls};

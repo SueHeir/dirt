@@ -135,6 +135,7 @@ pub use contact::HertzMindlinContactPlugin;
 pub use gpu::GpuGranularForcePlugin;
 pub use gpu_resident::{gpu_granular_resident_step, GpuGranularResidentPlugin, ResidentGpu};
 pub use gpu_resident_mpi::{gpu_resident_mpi_step, GpuGranularResidentMpiPlugin, ResidentMpiGpu};
+pub use dirt_gpu::{Boundary, Plane};
 
 /// Re-export from [`dirt_atom`] for convenience.
 pub use dirt_atom::SQRT_5_6;
