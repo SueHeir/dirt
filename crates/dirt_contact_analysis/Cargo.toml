@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "DEM contact analysis: per-contact force output, coordination number, and fabric tensor"
+description = "DEM contact analysis: per-contact geometry output, coordination number, and fabric tensor"
 keywords = ["dem", "contact", "force-chain", "fabric-tensor"]
 categories = ["simulation", "science"]
 

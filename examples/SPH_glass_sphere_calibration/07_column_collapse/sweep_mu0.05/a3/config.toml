@@ -1,0 +1,100 @@
+# Auto-generated column-collapse config — aspect a = 3.0, N = 660
+# rolling_friction is a PLACEHOLDER pending the 03_angle_of_repose result.
+[comm]
+processors_x = 1
+processors_y = 1
+processors_z = 1
+
+[domain]
+x_low = -0.01
+x_high = 0.60
+y_low = -0.003
+y_high = 0.012
+z_low = 0.0
+z_high = 0.2000
+boundary_x = "fixed"
+boundary_y = "fixed"
+boundary_z = "fixed"
+
+[neighbor]
+skin_fraction = 1.1
+bin_size = 0.005
+every = 1
+
+[gravity]
+gx = 0.0
+gy = 0.0
+gz = -9.81
+
+[dem]
+contact_model = "hertz"
+
+[[dem.materials]]
+name = "glass"
+youngs_mod = 7.000000e+07
+poisson_ratio = 0.245
+restitution = 0.926
+friction = 0.16
+rolling_friction = 0.05
+# Canonical density = 2500.0 kg/m^3 is set on the particle insert (below);
+# DIRT carries grain density there, not on [[dem.materials]].
+
+[[particles.insert]]
+material = "glass"
+count = 660
+radius = { distribution = "uniform", min = 1.350000e-03, max = 1.650000e-03 }
+density = 2500.0
+region = { type = "block", min = [0.0015, 0.0015, 0.0015], max = [0.0225, 0.0075, 0.1152] }
+
+[[wall]]
+type = "plane"
+point_z = 0.0
+normal_z = 1.0
+material = "glass"
+name = "floor"
+
+[[wall]]
+type = "plane"
+point_x = 0.0
+normal_x = 1.0
+material = "glass"
+name = "back"
+
+[[wall]]
+type = "plane"
+point_y = 0.0
+normal_y = 1.0
+material = "glass"
+name = "side_lo"
+
+[[wall]]
+type = "plane"
+point_y = 0.009
+normal_y = -1.0
+material = "glass"
+name = "side_hi"
+
+[[wall]]
+type = "plane"
+point_x = 0.024
+normal_x = -1.0
+material = "glass"
+name = "gate"
+
+[output]
+dir = "/Users/suehr/Documents/GitHub/dirt/examples/SPH_glass_sphere_calibration/07_column_collapse/sweep_mu0.05/a3"
+
+[vtp]
+interval = 1000000
+
+[[run]]
+name = "settle"
+steps = 80000
+thermo = 20000
+dt = 4.000e-06
+
+[[run]]
+name = "collapse"
+steps = 200000
+thermo = 20000
+dt = 4.000e-06

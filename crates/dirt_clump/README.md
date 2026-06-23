@@ -17,6 +17,57 @@ spheres or by Monte Carlo for overlapping ones, then diagonalized into principal
 and a principal-axes quaternion. The plugin also handles ghost-cutoff extension, body
 exchange across MPI ranks, and periodic-boundary wrapping of body centers of mass.
 
+## Contact-exclusion contract
+
+Sub-spheres of the same body are rigid relative to each other and must not
+generate contact forces between themselves. This crate does not pre-filter the
+neighbor list; instead it exposes `same_body(&clump_data, i, j)`, and **every
+force plugin that walks the neighbor list must call it and skip same-body
+pairs**:
+
+```rust,ignore
+if same_body(&clump_data, i, j) {
+    continue; // sub-spheres of one rigid body do not interact
+}
+```
+
+`same_body` is `true` only when both atoms have a non-zero `body_id` and the ids
+match. The `dirt_granular` contact kernels already honor this; custom force
+plugins must too, or rigid bodies will self-repel and explode.
+
+## Rigid-body integration
+
+Body dynamics follow LIGGGHTS's `FixMultisphere` (the helper names
+`angmom_to_omega`, `richardson`, `vecquat` are mirrored):
+
+- **Angular momentum is the state.** The body stores space-frame `angmom`,
+  half-kicks it with the torque (`L += ½ dt τ`), and *derives* angular velocity
+  `omega` from it via `angmom_to_omega`. `omega` is never integrated directly —
+  this stays stable for the asymmetric inertia of non-spherical clumps.
+- **Richardson quaternion update.** The orientation is advanced with one full
+  step and two half-steps and extrapolated `q ← 2 q_half − q_full` for
+  second-order accuracy, then renormalized.
+- **Two quaternions.** `quaternion` is **body → space** (live orientation,
+  integrated each step); `principal_axes` is a fixed **body → principal**
+  rotation into the frame where the inertia tensor is diagonal. They are
+  composed as `quaternion * principal_axes` whenever a principal-frame mapping
+  is needed (e.g. inside `angmom_to_omega`).
+
+The overlapping-sphere inertia path uses a **hardcoded 100 000 Monte-Carlo
+samples** (≈ 5 % noise in the moments). The scalar helper `compute_clump_inertia`
+is **legacy** (trace/3 only) and is not used by the integrator — prefer the
+full-tensor functions.
+
+## Example
+
+A minimal end-to-end run — drop dimer clumps into a box under gravity — is in
+`examples/clump_dimer_drop/`:
+
+```bash
+cargo run --release --example clump_dimer_drop --no-default-features -- \
+    examples/clump_dimer_drop/config.toml
+```
+
 ## Key types
 
 | Item | Role |

@@ -1,0 +1,38 @@
+# Auto-generated LAMMPS input for the column-collapse sweep — aspect a = 3.0
+units           si
+atom_style      sphere
+dimension       3
+boundary        f f f
+newton          off
+comm_modify     vel yes
+
+region          simbox block -0.01 0.6 -0.003 0.012 0.0 0.2161 units box
+create_box      1 simbox
+
+region          colreg block 0.0015 0.0225 0.0015 0.0075 0.0015 0.1661 units box
+create_atoms    1 random 660 12345 colreg overlap 0.002550 maxtry 500 units box
+set             group all diameter 0.003
+set             group all density 2500.0
+
+pair_style      granular
+pair_coeff      1 1 hertz/material 7.000000e+07 0.926 0.245 tangential mindlin NULL 1.0 0.16 rolling sds 1.000000e+05 1.0 0.0 damping tsuji twisting none
+
+fix             grav all gravity 9.81 vector 0 0 -1
+fix             floor all wall/gran granular hertz/material 7.000000e+07 0.926 0.245 tangential mindlin NULL 1.0 0.16 rolling sds 1.000000e+05 1.0 0.0 damping tsuji twisting none zplane 0.0 NULL
+fix             back all wall/gran granular hertz/material 7.000000e+07 0.926 0.245 tangential mindlin NULL 1.0 0.16 rolling sds 1.000000e+05 1.0 0.0 damping tsuji twisting none xplane 0.0 NULL
+fix             sides all wall/gran granular hertz/material 7.000000e+07 0.926 0.245 tangential mindlin NULL 1.0 0.16 rolling sds 1.000000e+05 1.0 0.0 damping tsuji twisting none yplane 0.0 0.009
+fix             gate all wall/gran granular hertz/material 7.000000e+07 0.926 0.245 tangential mindlin NULL 1.0 0.16 rolling sds 1.000000e+05 1.0 0.0 damping tsuji twisting none xplane NULL 0.024
+fix             integrate all nve/sphere
+
+thermo_modify   lost warn flush yes
+timestep        4.000e-06
+thermo          40000
+
+# Stage 1: settle the loose column against the gate.
+run             80000
+
+# Stage 2: remove the gate; the column collapses and spreads to rest.
+unfix           gate
+run             200000
+
+write_dump      all custom /Users/suehr/Documents/GitHub/dirt/examples/SPH_glass_sphere_calibration/07_column_collapse/sweep_mu0/a3/lammps_deposit.txt id x y z radius modify sort id

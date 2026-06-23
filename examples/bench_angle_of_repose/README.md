@@ -6,7 +6,9 @@ calibration: θ_r is an emergent, many-body property of the contact model, so it
 is the right macroscopic check that friction, rolling resistance, and damping
 are wired correctly. The reference is **empirical** (θ_r has no closed form), so
 validation tests the qualitative laws a correct model must obey rather than a
-single analytical number.
+single analytical number. When a LAMMPS binary is available, the same protocol is
+also run in LAMMPS and overlaid for an informative cross-code comparison (it does
+**not** gate validation — see "Cross-code overlay").
 
 ## Physics
 
@@ -40,7 +42,9 @@ polydispersity, and the protocol. What is universal is the *behaviour*:
 | Young's modulus E | 1.0 × 10⁷ | Pa |
 | Poisson's ratio ν | 0.25 | — |
 | Restitution e | 0.4 | — |
-| Rolling friction μ_r | 0.1 | — |
+| Rolling Coulomb cap μ_roll | 0.1 | — |
+| Rolling stiffness k_roll | 1.0 × 10⁻² | N·m/rad |
+| Rolling damping γ_roll | 1.0 × 10⁻⁶ | N·m·s/rad |
 | Density ρ | 2500 | kg/m³ |
 | Radius R | 2.0 | mm |
 | Mobile heap particles | 1200 | — |
@@ -49,9 +53,36 @@ polydispersity, and the protocol. What is universal is the *behaviour*:
 
 E is softened to 10 MPa (a routine DEM practice) so the Rayleigh-criterion
 timestep the solver auto-selects (≈ 2.6 × 10⁻⁵ s at R = 2 mm) is large enough
-that each heap settles in a few seconds of wall-clock time. A small rolling
-friction is included because pure sliding friction alone gives weakly-held, low
-heaps; μ_r is held fixed while μ is swept, so θ_r(μ) is isolated.
+that each heap settles in a few seconds of wall-clock time. Rolling resistance is
+included because pure sliding friction alone gives weakly-held, low heaps; the
+rolling parameters are held fixed while μ is swept, so θ_r(μ) is isolated.
+
+### Rolling resistance — the `sds` spring–dashpot–slider model
+
+Rolling resistance uses the **`sds`** (spring–dashpot–slider) model, the same one
+LAMMPS's `pair_style granular … rolling sds k_roll γ_roll μ_roll` implements. The
+rolling torque is
+
+```
+τ_roll = −k_roll·δ − γ_roll·ω_roll,   capped at  |τ_roll| ≤ μ_roll·|F_n|·r_eff
+```
+
+where δ is the accumulated rolling-displacement spring (rescaled on slip), ω_roll
+the relative rolling angular velocity, and r_eff the reduced radius (the grain
+radius at a wall). DIRT exposes this through `rolling_model = "sds"` with
+`rolling_stiffness` (k_roll), `rolling_damping` (γ_roll), and `rolling_friction`
+(μ_roll, the Coulomb cap) in `[[dem.materials]]`, and `dirt_wall` applies the same
+sds rolling on the floor and confining walls.
+
+**Parameter choice** (Ai et al. 2011, *Comput. Geotech.* 38; Wensrich &
+Katterfeld 2012, *Powder Technol.* 217): the rolling spring stiffness is tied to
+the contact via k_roll ≈ k_t·r² (k_t the tangential stiffness ≈ 2 × 10³ N/m here,
+r = 2 mm the grain radius), giving **k_roll = 1.0 × 10⁻² N·m/rad**. The damping
+**γ_roll = 1.0 × 10⁻⁶ N·m·s/rad** is ≈ 0.4 of the critical rolling damping
+2·√(I·k_roll), enough to suppress rolling oscillation without overdamping; the
+rolling-oscillation period 2π·√(I/k_roll) ≈ 7 × 10⁻⁴ s is well resolved by the
+≈ 2.6 × 10⁻⁵ s timestep (~28 steps/period). The Coulomb cap **μ_roll = 0.1** sets
+the steady rolling resistance. These exact three values are used in **both** codes.
 
 ### Base friction from a real frictional floor wall
 
@@ -141,13 +172,57 @@ python3 examples/bench_angle_of_repose/sweep.py start       # build, run all cas
 python3 examples/bench_angle_of_repose/sweep.py graph        # fit θ_r, validate, write plots/
 ```
 
-`graph` re-reads `data/repose_sweep.csv`, so you can re-validate and re-plot
-without re-running the simulations.
+`graph` re-reads `data/repose_sweep.csv` (and `data/lammps_results.csv` if it
+exists), so you can re-validate and re-plot without re-running the simulations.
 
-This benchmark is **DIRT-only** — there is no LAMMPS overlay, because there is no
-analytical target to cross-check a second code against. The validation is the set
-of empirical laws above applied to DIRT's own settled heaps. (`sweep.py` still
-probes for a LAMMPS binary for structural parity and notes if one is present.)
+### Cross-code overlay (optional LAMMPS leg)
+
+If a LAMMPS binary (`lmp_serial` / `lmp` / `lmp_mpi` / `lammps`) is on `PATH`,
+`start` also runs the **same lift-the-cylinder protocol in LAMMPS** with a matched
+`pair_style granular` Hertz-Mindlin model **and the matched `sds` rolling model**,
+and overlays θ_r(μ) on the plot as open dashed markers:
+
+| DIRT | LAMMPS mapping |
+|------|----------------|
+| `contact_model = "hertz"`, E, ν, e | `pair_coeff … hertz/material E e ν damping coeff_restitution` |
+| Mindlin tangential friction μ | `tangential mindlin NULL 1.0 μ` |
+| `rolling_model = "sds"` (k_roll, γ_roll, μ_roll) | `rolling sds k_roll γ_roll μ_roll` — **identical values**, in `pair_coeff` AND every `fix wall/gran` |
+| floor plane wall (μ + sds rolling) | `fix wall/gran … rolling sds … zplane 0.0` |
+| confining cylinder wall, lifted by name | `fix wall/gran/region … region cyl`, `unfix`-ed at the lift |
+| outer catch cylinder (r = 70 mm) | `fix wall/gran/region … region catch` |
+| 1200 grains, random non-overlapping insert | `fix pour 1200 … region pourreg` (random, non-overlapping) |
+| fill → settle → lift → relax | `run` / `unfix cylwall` / `run` |
+
+The grains are introduced with `fix pour` (random, non-overlapping — the same
+packing style as DIRT's overlap-checked inserter). A lattice fill was tried first
+and rejected: a crystalline column is mechanically locked and stands as a rigid
+pillar that never collapses, so it yields no repose angle. The same heap-fit code
+is applied to LAMMPS's settled positions.
+
+**LAMMPS is strictly optional and never gates validation.** `validate()` checks
+DIRT against the empirical laws and returns PASS/FAIL on DIRT alone; the LAMMPS
+overlay is reported by `compare_codes()` for information only. With no LAMMPS on
+`PATH`, the example runs and validates exactly as before.
+
+#### A fair sds↔sds comparison
+
+Every contact-model parameter is matched, **including rolling resistance**. Both
+codes run the identical `sds` spring–dashpot–slider rolling model with the
+identical parameters — k_roll = 1.0 × 10⁻² N·m/rad, γ_roll = 1.0 × 10⁻⁶ N·m·s/rad,
+μ_roll = 0.1 — applied to both grain–grain contacts (`pair_coeff` / `rolling_model
+= "sds"`) and grain–wall contacts (every `fix wall/gran` / `dirt_wall`'s sds
+branch). DIRT's `sds` rolling and LAMMPS's `rolling sds k_roll γ_roll μ_roll` are
+the same model (torque −k_roll·δ − γ_roll·ω_roll, Coulomb-capped at
+μ_roll·|F_n|·r_eff, spring rescaled on slip), so the overlay is a genuine
+cross-code comparison rather than a comparison of two different rolling laws.
+
+With rolling resistance now matched, **both codes hold a pile** (θ_r > 0,
+monotonically rising with μ) instead of LAMMPS pancaking to ≈ 0° — confirming the
+earlier flat-LAMMPS result was an artifact of the unmatched rolling model, not a
+genuine bulk divergence. Any residual gap between the two curves reflects the
+remaining unavoidable differences (pour microstructure: DIRT's overlap-checked
+inserter vs LAMMPS's `fix pour`; collapse-protocol energetics), not a model
+mismatch. (Measured numbers below.)
 
 ### Single case (default config)
 
@@ -164,22 +239,28 @@ positions).
 ### θ_r vs μ
 ![theta vs mu](plots/theta_vs_mu.png)
 
-Mean θ_r (with ±1 std-dev error bars over the 3 packs) and the individual runs
-versus μ. The curve rises monotonically through the shaded sensible band and
-starts near 0° at μ = 0.
+Mean DIRT θ_r (filled, with ±1 std-dev error bars over the 3 packs) and the
+individual runs versus μ. The DIRT curve rises monotonically through the shaded
+sensible band and starts near 0° at μ = 0. If LAMMPS was available, its θ_r(μ) is
+overlaid as open dashed markers — with the matched sds rolling model it also holds
+a pile that rises with μ, tracking the DIRT curve (the fair sds↔sds comparison
+discussed above).
 
 ### Heap cross-section
 ![heap profile](plots/heap_profile.png)
 
-The settled surface envelope `h(r)` for each μ. Steeper flanks (higher θ_r) at
-larger μ are directly visible; the slope of each flank is what the fit converts
-to θ_r.
+The settled surface envelope `h(r)` for each μ (solid = DIRT; dashed open =
+LAMMPS, when present). Steeper flanks (higher θ_r) at larger μ are directly
+visible; the slope of each flank is what the fit converts to θ_r. With the matched
+sds rolling model both codes build a resolvable cone, so the DIRT and LAMMPS
+profiles overlay rather than the LAMMPS deposit collapsing to a flat disk.
 
 ## Assumptions
 
 - **3D simulation**, monodisperse spheres (single radius).
 - **Hertz–Mindlin** normal/tangential contact with viscoelastic damping (DIRT
-  default), plus a fixed rolling-friction term.
+  default), plus a fixed `sds` (spring–dashpot–slider) rolling-resistance term
+  (k_roll, γ_roll, μ_roll), matched 1:1 to LAMMPS.
 - **Softened stiffness** (E = 10 MPa) for a tractable timestep — repose angle is
   governed by friction, not by absolute stiffness, so this does not bias θ_r.
 - **Frictional base from a real floor wall.** The heap stands on a frictional

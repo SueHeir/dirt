@@ -1,0 +1,101 @@
+# μ_r PINNING sweep — REAL glass e=0.926, gentle viscous-damped settle,
+# POLYDISPERSE grains (±15%, like real glass beads — raises repose, breaks
+# crystallization). 0.2 / 2 / /Users/suehr/Documents/GitHub/dirt/examples/SPH_glass_sphere_calibration/03_angle_of_repose/data/pin_mu0.2_s2 substituted per case.
+
+[comm]
+processors_x = 1
+processors_y = 1
+processors_z = 1
+
+[domain]
+x_low = -0.08
+x_high = 0.08
+y_low = -0.08
+y_high = 0.08
+z_low = 0.0
+z_high = 0.16
+boundary_x = "fixed"
+boundary_y = "fixed"
+boundary_z = "fixed"
+
+[neighbor]
+skin_fraction = 1.2
+bin_size = 0.007
+every = 1
+
+[gravity]
+gz = -9.81
+
+[dem]
+contact_model = "hertz"
+rolling_model = "sds"
+
+[[dem.materials]]
+name = "glass"
+youngs_mod = 1.0e7
+poisson_ratio = 0.245
+restitution = 0.926
+friction = 0.16
+rolling_friction = 0.2
+rolling_stiffness = 1.0e-2
+rolling_damping = 1.0e-6
+
+[[viscous]]
+group = "all"
+gamma = 0.03
+
+[[wall]]
+type = "cylinder"
+axis = "z"
+center = [0.0, 0.0]
+radius = 0.015
+lo = 0.0
+hi = 0.16
+inside = true
+material = "glass"
+name = "cylinder"
+
+[[wall]]
+type = "plane"
+point_x = 0.0
+point_y = 0.0
+point_z = 0.0
+normal_x = 0.0
+normal_y = 0.0
+normal_z = 1.0
+material = "glass"
+
+[[wall]]
+type = "cylinder"
+axis = "z"
+center = [0.0, 0.0]
+radius = 0.07
+lo = 0.0
+hi = 0.16
+inside = true
+material = "glass"
+
+[[particles.insert]]
+material = "glass"
+count = 600
+radius = { distribution = "uniform", min = 0.0017, max = 0.0023 }
+density = 2500.0
+velocity_z = -0.1
+seed = 2
+region = { type = "cylinder", center = [0.0, 0.0], radius = 0.011, axis = "z", lo = 0.003, hi = 0.14 }
+
+[output]
+dir = "/Users/suehr/Documents/GitHub/dirt/examples/SPH_glass_sphere_calibration/03_angle_of_repose/data/pin_mu0.2_s2"
+
+[vtp]
+interval = 100000000
+
+[[run]]
+name = "fill"
+steps = 150000
+thermo = 2000
+
+[[run]]
+name = "lift"
+steps = 250000
+thermo = 2000

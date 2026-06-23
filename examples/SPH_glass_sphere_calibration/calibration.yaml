@@ -1,0 +1,74 @@
+# =============================================================================
+# DEM → SPH calibration for the MUD de-fluidization model
+# Material: canonical glass beads (ballotini), measured contact params.
+#   e=0.926, ν=0.245, μ_p=0.16, μ_r=0.10 (constant rolling model), ρ_s=2500,
+#   ±10% uniform polydispersity. Assembled 2026-06-18 from the DEM closures in
+#   examples/SPH_glass_sphere_calibration (one folder per closure).
+#
+# Consumed by mud_constitutive::MaterialParams (SPH_temp/crates/mud_constitutive).
+# Provenance + confidence are noted per value. Weakly-constrained values flagged.
+# =============================================================================
+
+material: glass_beads_dem
+
+# ---- mud_constitutive::MaterialParams fields ---------------------------------
+params:
+  # μ(I) rheology. μ_2 from the #1 inertial plateau (well-determined); μ_s from
+  # the macro (gentle-repose θ_r≈21°→tanθ≈0.38, and #8's μ(I) fit μ_s=0.38) —
+  # the #1 constant-volume sweep sampled only the inertial plateau (I∈[0.26,0.97]
+  # ≫ I_0) so it could not resolve μ_s directly (μ(I) was flat ≈0.48 there).
+  mu_s: 0.38          # macro-derived (repose + #8). [#1 plateau alone gave 0.48 flat]
+  mu_2: 0.48          # #1 inertial-plateau friction (solid)
+  i0:   0.05          # #1 fit — WEAKLY CONSTRAINED (no low-I data; treat as ~0.05–0.3)
+
+  rho_s: 2500.0       # canonical glass
+  rho_c: 1468.0       # #2 EOS jamming Φc=0.587 × ρ_s  (cf. #1 Φ_max=0.5685 → 1421)
+
+  # k_bulk/g_shear are the model's WEAK-COMPRESSIBILITY numerical choice (sound
+  # speed c_s=50 m/s ≈ 10·v_max, Mach≲0.1), NOT the stiff physical modulus — see
+  # the DEM-measured EOS under `aux.compressibility` for the real stiffness.
+  k_bulk: 3.67e6      # = ρ_c · c_s²  (c_s = 50 m/s)
+  g_shear: 2.25e6     # = 3(1−2ν)/(2(1+ν))·K,  ν=0.245
+
+  d: 0.0005           # reference grain diameter (rheometer, where μ(I) measured)
+  restitution: 0.926  # canonical glass COR (exact-COR damping; #5 Haff validates constant-e)
+
+  coop_amplitude: 1.069  # #8 ξ=A·d/√(μ−μ_s). FLAG: R²=0.34 (weak); lit. ≈0.4–0.5.
+                         # Consider 0.5 (Henann–Kamrin) or 0 (nonlocal off) if SPH-sensitive.
+
+# ---- Auxiliary DEM closures (KT branch, EOS, dissipation, conduction) --------
+# Not direct MaterialParams scalars, but the two-branch σ=σ_KT(T,Φ)+σ_contact(Φ)
+# and the granular-T transport equation consume these.
+aux:
+  compressibility:                 # #2 — EOS P = A(Φ−Φc)^α  (R²=1.000, PASS)
+    A: 1.241e7
+    phi_c: 0.587
+    alpha: 1.67
+    K_of_phi_Pa: { 0.60: 6.725e5, 0.62: 1.311e6, 0.63: 1.592e6 }
+
+  enduring_contact:                # #4 — σ_contact(Φ)=p_DEM−p_KT(Φ,T)  (PASS)
+    file: 04_enduring_contact/data/sigma_contact.csv
+    ratio_to_pDEM: { 0.286: 0.06, 0.569: 0.72 }   # dilute floor → branch opens near jamming
+
+  dissipation:                     # #5 — Haff cooling 1/√T = 1/√T0 + t/τ_H
+    tau_H_s: 2.840e-2              # R²=1.000 at e=0.926, production (frictional, ±10% poly)
+    note: "KT dissipation Γ ∝ (1−e²)ρ_s Φ² g0 T^{3/2}; e=0.926 sets the rate."
+
+  conductivity:                    # #6 — κ*(Φ) energy-balance (vibro-fluidized bed)
+    kappa_star_range: [0.10, 1965.81]
+    phi_range: [0.025, 0.571]
+    file: 06_conductivity/data  # κ(Φ) profile
+
+  cooperativity:                   # #8 — nonlocal (Zhang–Kamrin g=k√T)
+    k_gT: 5984.69                  # R²=0.992 (solid)
+    coop_amplitude: 1.069          # R²=0.34 (weak — see params.coop_amplitude flag)
+
+  flow_arrest:
+    phi_max: 0.5685                # #1 μ(I) Φ where flow stops
+
+# ---- Macro validation (not a closure input; the end-to-end gate) -------------
+validation:
+  column_collapse:                 # #7 — runout vs Lube/Lajeunesse (PASS, ~10–15%)
+    mu_r_pinned: 0.10              # pinned here; polydispersity fixed most over-runout
+    law: "(L_f−L0)/L0 ≈ 1.2a (a≲3), 1.6a^(2/3) (a≳3)"
+  repose: "qualitative only — protocol-sensitive (9–35°); θ_r≈21° at gentle settle → μ_s≈0.38"

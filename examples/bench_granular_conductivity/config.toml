@@ -1,0 +1,94 @@
+# Granular-temperature conductivity — gas-free vibro-fluidized bed.
+#
+# A bed of glass beads under gravity rests on an oscillating base wall (periodic
+# in x,z). The vibrating base injects granular-temperature energy at the bottom;
+# it conducts upward and is dissipated inelastically, giving steady Φ(y), T(y)
+# profiles. sweep.py extracts the KT conductivity κ(Φ) from the conduction–
+# dissipation balance. (Set the base amplitude to 0 for the de-fluidization test.)
+#
+# Run:
+#   cargo run --release --example bench_granular_conductivity --no-default-features -- examples/bench_granular_conductivity/config.toml
+
+[comm]
+processors_x = 1
+processors_y = 1
+processors_z = 1
+
+[domain]
+# Periodic in x (and z); the bed is bounded in y by the oscillating base and a
+# high static top wall. Tall enough that the fluidized bed never reaches the top.
+x_low = 0.0
+x_high = 0.006
+y_low = 0.0
+y_high = 0.045      # tall column: lets a T(y) gradient develop over height (needed at high e)
+z_low = 0.0
+z_high = 0.006
+boundary_x = "periodic"
+boundary_y = "fixed"
+boundary_z = "periodic"
+
+[neighbor]
+skin_fraction = 1.2
+bin_size = 0.0006
+every = 1
+
+[gravity]
+gx = 0.0
+gy = -9.81          # vertical = y
+gz = 0.0
+
+[dem]
+contact_model = "hertz"
+
+[[dem.materials]]
+name = "glass"
+youngs_mod = 7.0e7    # softened from ~65 GPa real glass
+poisson_ratio = 0.245 # glass
+restitution = 0.926   # measured glass–glass COR (canonical glass-bead material)
+friction = 0.16       # measured glass–glass μ_p — friction's extra dissipation also
+                      # steepens the T(y) gradient, making κ measurable (vs the
+                      # frictionless near-elastic bed, which stays isothermal)
+
+[[particles.insert]]
+material = "glass"
+count = 3000        # deep bed (~18-layer settled) → tall fluidized column for a T(y) gradient
+radius = { distribution = "uniform", min = 0.000225, max = 0.000275 }
+density = 2500.0
+# Insert LOOSE over most of the column so the bed settles gently (avoids the
+# excessive-overlap abort from cramming a deep pile under strong vibration).
+region = { type = "block", min = [0.0, 0.001, 0.0], max = [0.006, 0.040, 0.006] }
+seed = 12345
+
+# Oscillating base wall: injects fluctuation energy (the fluidization source).
+# Peak acceleration a(2πf)² ≈ 0.0002·(2π·150)² ≈ 178 m/s² → Γ_vib ≈ 18 (well fluidized).
+[[wall]]
+type = "plane"
+point_y = 0.0
+normal_y = 1.0
+material = "glass"
+name = "base"
+# Increased drive (up from Γ_vib≈18) but not violent: a(2πf)² ≈ 0.00025·(2π·160)²
+# ≈ 253 m/s² → Γ_vib ≈ 26. (Γ_vib≈48 squeezed the basal grains into overlap-abort.)
+oscillate = { amplitude = 0.00025, frequency = 160.0 }
+
+# Static top wall (contains stragglers; the bed should not reach it).
+[[wall]]
+type = "plane"
+point_y = 0.045
+normal_y = -1.0
+material = "glass"
+name = "top"
+
+[output]
+dir = "examples/bench_granular_conductivity/data"
+
+[vtp]
+interval = 200000
+
+# Fluidize to steady state (≈ 0.2 s ≈ 30 vibration cycles); profiles averaged
+# over the steady window by sweep.py.
+[[run]]
+name = "fluidize"
+steps = 4000000     # deep near-elastic bed equilibrates slowly; smaller dt → more steps
+thermo = 50000
+dt = 1.0e-7         # safety against vibration-driven overlaps in the deep bed
