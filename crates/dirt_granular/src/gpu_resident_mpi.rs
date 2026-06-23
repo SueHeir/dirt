@@ -110,22 +110,33 @@ pub fn gpu_resident_mpi_step(
     if res.gpu.is_none() || res.nall != nall {
         res.build(&atoms, &registry, &material_table);
     } else {
-        let inv_mass: Vec<f32> = (0..nall).map(|i| 1.0 / atoms.mass[i] as f32).collect();
+        // Step 2b (GPU-resident halos): the local bulk stays RESIDENT on-device and
+        // is NEVER re-uploaded — it's bit-identical to the host copy captured by last
+        // tick's download. Only the ghost slice [nlocal..nall], refreshed by the
+        // host's forward_comm this tick, is written to the device. The grid is
+        // computed CPU-side from the host positions (current locals + fresh ghosts);
+        // Grid::from_positions does no GPU upload.
         let posf = upload_vec3(&atoms.pos, nall);
-        let velf = upload_vec3(&atoms.vel, nall);
         let r_max = (0..nall)
             .map(|i| registry.expect::<DemAtom>("step").radius[i] as f32)
             .fold(0.0f32, f32::max)
             .max(f32::MIN_POSITIVE);
         let grid = Grid::from_positions(&posf, 2.0 * r_max);
         let omega_aux = res.omega_aux;
-        let omf = {
-            let dem = registry.expect::<DemAtom>("step");
-            upload_vec3(&dem.omega, nall)
-        };
         let gs = res.gpu.as_ref().unwrap();
-        gs.set_state(&posf, &velf, &inv_mass, grid);
-        gs.set_aux_state(omega_aux, &omf);
+        let nghost = nall - nlocal;
+        if nghost > 0 {
+            let gpos = upload_vec3(&atoms.pos[nlocal..nall], nghost);
+            let gvel = upload_vec3(&atoms.vel[nlocal..nall], nghost);
+            let gom = {
+                let dem = registry.expect::<DemAtom>("step");
+                upload_vec3(&dem.omega[nlocal..nall], nghost)
+            };
+            gs.write_pos_slice(nlocal, &gpos);
+            gs.write_vel_slice(nlocal, &gvel);
+            gs.write_aux_slice(omega_aux, nlocal, &gom);
+        }
+        gs.set_grid(grid);
     }
 
     let window = res.window;
