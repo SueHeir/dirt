@@ -229,6 +229,16 @@ impl ResidentMirrorBridge {
     }
 }
 
+/// Build a [`CoherenceRegistry`] preloaded with the resident GPU's `Atom` mirror
+/// (pos/vel + omega bridge). Used by [`GpuGranularResidentPlugin`] and exposed so
+/// examples/tests that wire the resident step manually can opt into coherence.
+#[cfg(feature = "gpu_coherence")]
+pub fn resident_coherence_registry() -> CoherenceRegistry {
+    let mut reg = CoherenceRegistry::new();
+    reg.register(TypeId::of::<Atom>(), Box::new(ResidentMirrorBridge::unresolved()));
+    reg
+}
+
 #[cfg(feature = "gpu_coherence")]
 impl MirrorBridge for ResidentMirrorBridge {
     fn resolve(&mut self, index: &std::collections::HashMap<TypeId, usize>) {
@@ -328,9 +338,7 @@ impl Plugin for GpuGranularResidentPlugin {
         // per-window download and this registry is never created.
         #[cfg(feature = "gpu_coherence")]
         {
-            let mut reg = CoherenceRegistry::new();
-            reg.register(TypeId::of::<Atom>(), Box::new(ResidentMirrorBridge::unresolved()));
-            app.add_resource(reg);
+            app.add_resource(resident_coherence_registry());
             println!("GpuGranularResident: host<->device coherence enabled (Atom mirror)");
         }
     }
