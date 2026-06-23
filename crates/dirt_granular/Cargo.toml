@@ -10,6 +10,11 @@ keywords = ["dem", "hertz", "granular", "contact"]
 categories = ["simulation", "science"]
 
 [features]
+# Scheduler-mediated host<->device coherence (coherence_plan.md). Default-off:
+# registers a CoherenceRegistry + the resident GPU mirror so CPU systems added to
+# a resident config sync transparently instead of silently dropping. Off => the
+# resident step uses the eager per-window download (unchanged behaviour).
+gpu_coherence = []
 precision-double = ["soil_core/precision-double", "dirt_gpu/precision-double"]
 precision-mixed = ["soil_core/precision-mixed", "dirt_gpu/precision-mixed"]
 precision-single = ["soil_core/precision-single", "dirt_gpu/precision-single"]
@@ -24,3 +29,9 @@ soil_verlet = { git = "https://github.com/SueHeir/soil.git", branch = "main", de
 
 [dev-dependencies]
 dirt_test_utils = { path = "../dirt_test_utils", version = "0.1.3" }
+
+# Coherence validation (coherence_plan.md Phase 4) — needs the gpu_coherence
+# feature for resident_coherence_registry. Skipped from default example builds.
+[[example]]
+name = "coherence_validate"
+required-features = ["gpu_coherence"]
