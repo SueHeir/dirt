@@ -123,6 +123,7 @@ pub use rotational::RotationalDynamicsPlugin;
 pub mod contact;
 pub mod gpu;
 pub mod gpu_resident;
+pub mod gpu_resident_mpi;
 
 use grass_app::prelude::*;
 
@@ -133,6 +134,7 @@ use soil_verlet::VelocityVerletPlugin;
 pub use contact::HertzMindlinContactPlugin;
 pub use gpu::GpuGranularForcePlugin;
 pub use gpu_resident::{gpu_granular_resident_step, GpuGranularResidentPlugin, ResidentGpu};
+pub use gpu_resident_mpi::{gpu_resident_mpi_step, GpuGranularResidentMpiPlugin, ResidentMpiGpu};
 
 /// Re-export from [`dirt_atom`] for convenience.
 pub use dirt_atom::SQRT_5_6;
