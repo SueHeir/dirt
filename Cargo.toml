@@ -31,6 +31,26 @@ name = "granular_gas_benchmark"
 path = "examples/granular_gas_benchmark/main.rs"
 
 [[example]]
+name = "hello_bed"
+path = "examples/hello_bed/main.rs"
+
+[[example]]
+name = "two_particle_collision"
+path = "examples/two_particle_collision/main.rs"
+
+[[example]]
+name = "measure_plane_throughput"
+path = "examples/measure_plane_throughput/main.rs"
+
+[[example]]
+name = "clump_dimer_drop"
+path = "examples/clump_dimer_drop/main.rs"
+
+[[example]]
+name = "wall_servo_lid"
+path = "examples/wall_servo_lid/main.rs"
+
+[[example]]
 name = "hopper"
 path = "examples/hopper/main.rs"
 
@@ -94,6 +114,51 @@ path = "examples/bench_hopper_beverloo/main.rs"
 name = "perf_mpi_scaling"
 path = "examples/perf_mpi_scaling/main.rs"
 
+[[example]]
+name = "bench_lebc_shear"
+path = "examples/bench_lebc_shear/main.rs"
+
+[[example]]
+name = "bench_granular_conductivity"
+path = "examples/bench_granular_conductivity/main.rs"
+
+[[example]]
+name = "contact_analysis_demo"
+path = "examples/contact_analysis_demo/main.rs"
+
+# ── SPH glass-sphere calibration suite (one example per DEM closure) ──
+[[example]]
+name = "sphcal_shear_rheology"
+path = "examples/SPH_glass_sphere_calibration/01_shear_rheology/main.rs"
+
+[[example]]
+name = "sphcal_compressibility"
+path = "examples/SPH_glass_sphere_calibration/02_compressibility/main.rs"
+
+[[example]]
+name = "sphcal_angle_of_repose"
+path = "examples/SPH_glass_sphere_calibration/03_angle_of_repose/main.rs"
+
+[[example]]
+name = "sphcal_enduring_contact"
+path = "examples/SPH_glass_sphere_calibration/04_enduring_contact/main.rs"
+
+[[example]]
+name = "sphcal_cooling_dissipation"
+path = "examples/SPH_glass_sphere_calibration/05_cooling_dissipation/main.rs"
+
+[[example]]
+name = "sphcal_conductivity"
+path = "examples/SPH_glass_sphere_calibration/06_conductivity/main.rs"
+
+[[example]]
+name = "sphcal_column_collapse"
+path = "examples/SPH_glass_sphere_calibration/07_column_collapse/main.rs"
+
+[[example]]
+name = "sphcal_cooperativity_length"
+path = "examples/SPH_glass_sphere_calibration/08_cooperativity_length/main.rs"
+
 [profile.release]
 opt-level = 3
 lto = "fat"
@@ -112,3 +177,25 @@ grass_scheduler = { git = "https://github.com/SueHeir/grass.git", branch = "main
 # from source. libffi-sys 2.3.0 has a broken aarch64 macOS assembler; Homebrew
 # libffi is set via PKG_CONFIG_PATH.
 libffi-sys = { version = "2.3.0", features = ["system"], optional = true }
+
+# TEMPORARY (local test, do not commit) — build against the local grass checkout to
+# pick up the SingleProcessComm::sendrecv_batch_f64_into serial-comm fix. Remove this
+# block once that fix is committed+pushed to grass main and the lock is bumped.
+[patch."https://github.com/SueHeir/grass.git"]
+grass_app = { path = "/Users/suehr/Documents/GitHub/grass/crates/grass_app" }
+grass_derive = { path = "/Users/suehr/Documents/GitHub/grass/crates/grass_derive" }
+grass_io = { path = "/Users/suehr/Documents/GitHub/grass/crates/grass_io" }
+grass_mpi = { path = "/Users/suehr/Documents/GitHub/grass/crates/grass_mpi" }
+grass_multi = { path = "/Users/suehr/Documents/GitHub/grass/crates/grass_multi" }
+grass_scheduler = { path = "/Users/suehr/Documents/GitHub/grass/crates/grass_scheduler" }
+
+# TEMPORARY (local dev, do not commit) — build against the local soil checkout to
+# pick up the triclinic-box / Lees–Edwards shear work in soil_core + soil_deform.
+# Remove once those changes are pushed to soil `master` and the lock is bumped.
+[patch."https://github.com/SueHeir/soil.git"]
+soil_core = { path = "/Users/suehr/Documents/GitHub/soil/crates/soil_core" }
+soil_deform = { path = "/Users/suehr/Documents/GitHub/soil/crates/soil_deform" }
+soil_derive = { path = "/Users/suehr/Documents/GitHub/soil/crates/soil_derive" }
+soil_fixes = { path = "/Users/suehr/Documents/GitHub/soil/crates/soil_fixes" }
+soil_print = { path = "/Users/suehr/Documents/GitHub/soil/crates/soil_print" }
+soil_verlet = { path = "/Users/suehr/Documents/GitHub/soil/crates/soil_verlet" }

@@ -1,0 +1,111 @@
+# μ_r-SENSITIVITY SMOKE (gate) — REAL glass e=0.926, gentle settle via viscous drag.
+# Template: 0.5 and /Users/suehr/Documents/GitHub/dirt/examples/SPH_glass_sphere_calibration/03_angle_of_repose/data/smoke_mu0.5 are substituted per case by run_smoke.sh.
+# Question this answers: does rolling friction μ_r MOVE the repose angle in a
+# gentle (viscous-damped) settle at the real restitution? If θ_r is flat in μ_r,
+# the gentle pour doesn't engage rolling resistance and spheres can't reach 22-26°.
+
+[comm]
+processors_x = 1
+processors_y = 1
+processors_z = 1
+
+[domain]
+x_low = -0.08
+x_high = 0.08
+y_low = -0.08
+y_high = 0.08
+z_low = 0.0
+z_high = 0.16
+boundary_x = "fixed"
+boundary_y = "fixed"
+boundary_z = "fixed"
+
+[neighbor]
+skin_fraction = 1.2
+bin_size = 0.006
+every = 1
+
+[gravity]
+gz = -9.81
+
+[dem]
+contact_model = "hertz"
+rolling_model = "sds"
+
+[[dem.materials]]
+name = "glass"
+youngs_mod = 1.0e7
+poisson_ratio = 0.245
+restitution = 0.926        # REAL glass COR (exact-COR damping → realized = nominal)
+friction = 0.16            # μ_p — FIXED measured glass sliding friction
+rolling_friction = 0.5 # μ_r — the swept variable
+rolling_stiffness = 1.0e-2
+rolling_damping = 1.0e-6
+
+# Viscous drag (F = −γv, ZERO at rest): bleeds the elastic grains' kinetic energy
+# so the column settles and the released column drains quasi-statically WITHOUT
+# changing the contact restitution. Translational only — rolling DOF untouched.
+[[viscous]]
+group = "all"
+gamma = 0.03
+
+# Confining cylinder (narrow, tall column) — deactivated at runtime ("lift").
+[[wall]]
+type = "cylinder"
+axis = "z"
+center = [0.0, 0.0]
+radius = 0.015
+lo = 0.0
+hi = 0.16
+inside = true
+material = "glass"
+name = "cylinder"
+
+# Frictional floor (z = 0, normal +z).
+[[wall]]
+type = "plane"
+point_x = 0.0
+point_y = 0.0
+point_z = 0.0
+normal_x = 0.0
+normal_y = 0.0
+normal_z = 1.0
+material = "glass"
+
+# Outer catch wall (keeps strays in-domain; does not touch the static heap).
+[[wall]]
+type = "cylinder"
+axis = "z"
+center = [0.0, 0.0]
+radius = 0.07
+lo = 0.0
+hi = 0.16
+inside = true
+material = "glass"
+
+# One-shot OVERLAP-CHECKED fill inside the cylinder (NOT a rate insert).
+[[particles.insert]]
+material = "glass"
+count = 600
+radius = 0.002
+density = 2500.0
+velocity_z = -0.1
+region = { type = "cylinder", center = [0.0, 0.0], radius = 0.012, axis = "z", lo = 0.003, hi = 0.14 }
+
+[output]
+dir = "/Users/suehr/Documents/GitHub/dirt/examples/SPH_glass_sphere_calibration/03_angle_of_repose/data/smoke_mu0.5"
+
+[vtp]
+interval = 100000000
+
+# Stage 1: fill — column settles (main.rs lifts the cylinder when vmax < 2 mm/s).
+[[run]]
+name = "fill"
+steps = 150000
+thermo = 2000
+
+# Stage 2: lift — heap drains/relaxes; main.rs records at rest (or lift+150k cap).
+[[run]]
+name = "lift"
+steps = 250000
+thermo = 2000

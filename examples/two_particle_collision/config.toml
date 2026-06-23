@@ -1,0 +1,62 @@
+# two_particle_collision — head-on collision of two spheres.
+#
+# Two glass spheres of radius 0.005 m are inserted on the x-axis, one near
+# x = 0.03 moving +x, one near x = 0.07 moving -x. They meet near the box
+# centre, collide once, and rebound with a relative speed ~restitution × the
+# approach speed. No gravity, no walls.
+
+[comm]
+processors_x = 1
+processors_y = 1
+processors_z = 1
+
+[domain]
+x_low = 0.0
+x_high = 0.1
+y_low = 0.0
+y_high = 0.02
+z_low = 0.0
+z_high = 0.02
+boundary_x = "fixed"
+boundary_y = "fixed"
+boundary_z = "fixed"
+
+[neighbor]
+skin_fraction = 1.2
+bin_size = 0.012          # >= largest particle diameter (0.01 m)
+
+[[dem.materials]]
+name = "glass"
+youngs_mod = 8.7e9        # Pa
+poisson_ratio = 0.3
+restitution = 0.9         # target coefficient of restitution
+friction = 0.0            # head-on: no tangential component
+
+# Left particle: placed near x = 0.03, launched toward +x.
+[[particles.insert]]
+material = "glass"
+count = 1
+radius = 0.005
+density = 2500.0
+velocity_x = 1.0
+region = { type = "block", min = [0.025, 0.005, 0.005], max = [0.035, 0.015, 0.015] }
+seed = 1
+
+# Right particle: placed near x = 0.07, launched toward -x.
+[[particles.insert]]
+material = "glass"
+count = 1
+radius = 0.005
+density = 2500.0
+velocity_x = -1.0
+region = { type = "block", min = [0.065, 0.005, 0.005], max = [0.075, 0.015, 0.015] }
+seed = 2
+
+[vtp]
+interval = 500            # write VTP visualization files every N steps
+
+[[run]]
+name = "collide"
+dt = 5.0e-6               # s
+steps = 20000
+thermo = 500

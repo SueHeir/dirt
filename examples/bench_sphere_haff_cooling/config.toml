@@ -32,10 +32,10 @@ contact_model = "hertz"
 
 [[dem.materials]]
 name = "glass"
-youngs_mod = 5.0e7
-poisson_ratio = 0.3
-restitution = 0.9
-friction = 0.3
+youngs_mod = 7.0e7    # softened from ~65 GPa real glass (canonical glass-bead material)
+poisson_ratio = 0.245 # glass
+restitution = 0.926   # measured glass–glass COR
+friction = 0.16       # measured glass–glass sliding μ_p
 # rolling_friction intentionally omitted (= 0): keeps the contact to normal +
 # tangential so the LAMMPS cross-check matches exactly. Sliding friction (0.3)
 # still makes the spheres rough → rotational temperature builds up.

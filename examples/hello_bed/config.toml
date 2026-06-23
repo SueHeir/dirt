@@ -1,0 +1,108 @@
+# hello_bed — drop a cloud of spheres into a closed box under gravity.
+#
+# The smallest complete DIRT config: one material, one insertion region, six
+# container walls, gravity, and a single run stage. Particles fall and settle
+# into a packed bed.
+
+[comm]
+processors_x = 1
+processors_y = 1
+processors_z = 1
+
+[domain]
+# Simulation box extents [m]
+x_low = 0.0
+x_high = 0.04
+y_low = 0.0
+y_high = 0.04
+z_low = 0.0
+z_high = 0.08
+boundary_x = "fixed"
+boundary_y = "fixed"
+boundary_z = "fixed"
+
+[neighbor]
+skin_fraction = 1.1
+bin_size = 0.005          # >= largest particle diameter
+
+[gravity]
+gz = -9.81                # m/s²
+
+[[dem.materials]]
+name = "glass"
+youngs_mod = 8.7e9        # Pa
+poisson_ratio = 0.3
+restitution = 0.3
+friction = 0.5
+
+[[particles.insert]]
+material = "glass"
+count = 200
+radius = 0.002            # m
+density = 2500.0          # kg/m³
+# Particles are placed randomly inside this block, near the top of the box.
+region = { type = "block", min = [0.005, 0.005, 0.05], max = [0.035, 0.035, 0.075] }
+
+# --- six container walls (inward normals) ---
+[[wall]]              # floor   (z = 0,    normal +z)
+point_x = 0.0
+point_y = 0.0
+point_z = 0.0
+normal_x = 0.0
+normal_y = 0.0
+normal_z = 1.0
+material = "glass"
+
+[[wall]]              # ceiling (z = 0.08, normal -z)
+point_x = 0.0
+point_y = 0.0
+point_z = 0.08
+normal_x = 0.0
+normal_y = 0.0
+normal_z = -1.0
+material = "glass"
+
+[[wall]]              # x_low   (x = 0,    normal +x)
+point_x = 0.0
+point_y = 0.0
+point_z = 0.0
+normal_x = 1.0
+normal_y = 0.0
+normal_z = 0.0
+material = "glass"
+
+[[wall]]              # x_high  (x = 0.04, normal -x)
+point_x = 0.04
+point_y = 0.0
+point_z = 0.0
+normal_x = -1.0
+normal_y = 0.0
+normal_z = 0.0
+material = "glass"
+
+[[wall]]              # y_low   (y = 0,    normal +y)
+point_x = 0.0
+point_y = 0.0
+point_z = 0.0
+normal_x = 0.0
+normal_y = 1.0
+normal_z = 0.0
+material = "glass"
+
+[[wall]]              # y_high  (y = 0.04, normal -y)
+point_x = 0.0
+point_y = 0.04
+point_z = 0.0
+normal_x = 0.0
+normal_y = -1.0
+normal_z = 0.0
+material = "glass"
+
+[vtp]
+interval = 2000           # write VTP visualization files every N steps
+
+[[run]]
+name = "settle"
+dt = 1.0e-5               # s — stable for these soft-glass contacts
+steps = 200000
+thermo = 2000
