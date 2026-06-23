@@ -172,3 +172,7 @@ grass_scheduler = { git = "https://github.com/SueHeir/grass.git", branch = "main
 # from source. libffi-sys 2.3.0 has a broken aarch64 macOS assembler; Homebrew
 # libffi is set via PKG_CONFIG_PATH.
 libffi-sys = { version = "2.3.0", features = ["system"], optional = true }
+
+[[example]]
+name = "mpi_gpu_validate"
+path = "examples/mpi_gpu_validate/main.rs"
