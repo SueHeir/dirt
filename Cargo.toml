@@ -180,3 +180,7 @@ path = "examples/mpi_gpu_validate/main.rs"
 [[example]]
 name = "mpi_resident_validate"
 path = "examples/mpi_resident_validate/main.rs"
+
+[[example]]
+name = "mpi_loadbalance_validate"
+path = "examples/mpi_loadbalance_validate/main.rs"
