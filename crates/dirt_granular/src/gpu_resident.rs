@@ -59,6 +59,13 @@ pub struct ResidentGpu {
 }
 
 impl ResidentGpu {
+    /// Construct an unbuilt resident-GPU resource (state is built lazily on the
+    /// first step from the host `Atom` set). Exposed so examples/tests can wire
+    /// the resident system into a minimal `App` without the full plugin group.
+    pub fn new(ctx: Option<GpuContext>, window: usize, gravity: [f32; 3], boundary: Boundary) -> Self {
+        Self { ctx, gpu: None, omega_aux: 0, primed: false, window: window.max(1), gravity, boundary, n: 0 }
+    }
+
     fn build(&mut self, atoms: &Atom, registry: &AtomDataRegistry, mt: &MaterialTable) {
         let Some(ctx) = self.ctx.clone() else { return };
         let n = atoms.nlocal as usize;
@@ -106,7 +113,7 @@ impl ResidentGpu {
 /// host `Atom`/`DemAtom` so I/O and diagnostics see the current state. The device
 /// state is authoritative across calls — host arrays are NOT re-uploaded (that
 /// would re-prime the force and corrupt the contact history).
-fn gpu_granular_resident_step(
+pub fn gpu_granular_resident_step(
     mut atoms: ResMut<Atom>,
     registry: Res<AtomDataRegistry>,
     material_table: Res<MaterialTable>,
