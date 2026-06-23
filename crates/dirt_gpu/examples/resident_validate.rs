@@ -156,7 +156,7 @@ fn main() {
     println!("  max |A - B| (single vs windowed)   : {ab:.3e}");
     println!("  max |A - C| (single vs per-step)   : {ac:.3e}");
     println!(
-        "\n  => windowing {} the trajectory. Re-priming at each run_steps() boundary\n     re-evaluates the stateful tangential contact history, so any host-sync\n     window (rebuild / MPI exchange) diverges unless soil's run_steps separates\n     the force-prime from history advance. This is the real step-1 blocker.",
+        "\n  => windowing {} the trajectory (A==B). `run_steps_continue` skips the\n     entry force-prime and trusts the resident force buffer, so a host-sync window\n     (rebuild / MPI exchange) no longer re-advances the tangential contact history.\n     Combined with the deterministic cell list, windowing is now bit-exact —\n     the correctness gate for residency and step-2b GPU-resident halos.",
         if ab < 1e-4 { "PRESERVES" } else { "CHANGES" }
     );
 }
