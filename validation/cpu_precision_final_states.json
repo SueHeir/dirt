@@ -1,0 +1,216 @@
+{
+  "bench_clump_haff_cooling": {
+    "precision-double": {
+      "step": "698000",
+      "time": "1.69209283e0",
+      "T_trans": "1.09805981e-3",
+      "T_rot": "1.14480686e-3",
+      "T_total": "2.24286667e-3",
+      "haff_smooth": "1.51832101e-5",
+      "haff_friction": "1.78629463e-6"
+    },
+    "precision-mixed": {
+      "step": "698000",
+      "time": "1.69209283e0",
+      "T_trans": "1.19581262e-3",
+      "T_rot": "1.14253287e-3",
+      "T_total": "2.33834548e-3",
+      "haff_smooth": "1.51934492e-5",
+      "haff_friction": "1.78670768e-6"
+    },
+    "precision-single": {
+      "step": "698000",
+      "time": "1.69209283e0",
+      "T_trans": "1.14367681e-3",
+      "T_rot": "1.12063554e-3",
+      "T_total": "2.26431235e-3",
+      "haff_smooth": "1.51949230e-5",
+      "haff_friction": "1.78676711e-6"
+    }
+  },
+  "bench_hertz_rebound": {
+    "precision-double": {
+      "v_impact": "1.0000000000e0",
+      "v_rebound": "9.0166213568e-1",
+      "cor_measured": "9.0166213568e-1",
+      "contact_time": "3.5063735322e-5",
+      "max_overlap": "1.1249383514e-5",
+      "dt": "7.6225511569e-7",
+      "radius": "5.0000000000e-3",
+      "density": "2.5000000000e3"
+    },
+    "precision-mixed": {
+      "v_impact": "1.0000000000e0",
+      "v_rebound": "9.0164524317e-1",
+      "cor_measured": "9.0164524317e-1",
+      "contact_time": "3.5063735322e-5",
+      "max_overlap": "1.1249557137e-5",
+      "dt": "7.6225511569e-7",
+      "radius": "5.0000000000e-3",
+      "density": "2.5000000000e3"
+    },
+    "precision-single": {
+      "v_impact": "1.0000000000e0",
+      "v_rebound": "9.0164524317e-1",
+      "cor_measured": "9.0164524317e-1",
+      "contact_time": "3.5063735322e-5",
+      "max_overlap": "1.1249557137e-5",
+      "dt": "7.6225511569e-7",
+      "radius": "5.0000000000e-3",
+      "density": "2.5000000000e3"
+    }
+  },
+  "bench_jkr_adhesion": {
+    "precision-double": {
+      "f_pulloff": "5.8904862255e-3",
+      "sep_at_pulloff": "9.0102353582e-9",
+      "r_eff": "2.5000000000e-3",
+      "radius": "5.0000000000e-3",
+      "density": "2.5000000000e3",
+      "dt": "7.6225511569e-7"
+    },
+    "precision-mixed": {
+      "f_pulloff": "5.8904862255e-3",
+      "sep_at_pulloff": "9.7301915501e-9",
+      "r_eff": "2.5000000000e-3",
+      "radius": "5.0000000000e-3",
+      "density": "2.5000000000e3",
+      "dt": "7.6225511569e-7"
+    },
+    "precision-single": {
+      "f_pulloff": "5.8904862963e-3",
+      "sep_at_pulloff": "9.7301915501e-9",
+      "r_eff": "2.5000000000e-3",
+      "radius": "5.0000000000e-3",
+      "density": "2.5000000000e3",
+      "dt": "7.6225511569e-7"
+    }
+  },
+  "bench_oblique_impact": {
+    "precision-double": {
+      "vn_impact": "9.9964577606e-1",
+      "vt_impact": "3.0001180514e0",
+      "vn_rebound": "9.0083024160e-1",
+      "vt_rebound": "2.4411191701e0",
+      "omega_y_rebound": "2.8461609329e2",
+      "contact_time": "3.9637266016e-5",
+      "max_overlap": "1.2962783603e-5",
+      "dt": "7.6225511569e-7",
+      "radius": "5.0000000000e-3",
+      "density": "2.5000000000e3"
+    },
+    "precision-mixed": {
+      "vn_impact": "9.9717714548e-1",
+      "vt_impact": "3.0009394763e0",
+      "vn_rebound": "8.9905789871e-1",
+      "vt_rebound": "2.4430887309e0",
+      "omega_y_rebound": "2.8398497961e2",
+      "contact_time": "3.9637266016e-5",
+      "max_overlap": "1.2939322214e-5",
+      "dt": "7.6225511569e-7",
+      "radius": "5.0000000000e-3",
+      "density": "2.5000000000e3"
+    },
+    "precision-single": {
+      "vn_impact": "9.9717714957e-1",
+      "vt_impact": "3.0009394750e0",
+      "vn_rebound": "8.9905807419e-1",
+      "vt_rebound": "2.4430887319e0",
+      "omega_y_rebound": "2.8398498308e2",
+      "contact_time": "3.9637266016e-5",
+      "max_overlap": "1.2939322308e-5",
+      "dt": "7.6225511569e-7",
+      "radius": "5.0000000000e-3",
+      "density": "2.5000000000e3"
+    }
+  },
+  "bench_rod_haff_cooling": {
+    "precision-double": {
+      "step": "698000",
+      "time": "1.69209283e0",
+      "T_trans": "1.12701845e-3",
+      "T_rot": "8.87494048e-4",
+      "T_total": "2.01451250e-3",
+      "haff_smooth": "3.57473894e-5",
+      "haff_friction": "4.24544317e-6"
+    },
+    "precision-mixed": {
+      "step": "698000",
+      "time": "1.69209283e0",
+      "T_trans": "1.07622129e-3",
+      "T_rot": "8.74824192e-4",
+      "T_total": "1.95104548e-3",
+      "haff_smooth": "3.57619022e-5",
+      "haff_friction": "4.24603704e-6"
+    },
+    "precision-single": {
+      "step": "698000",
+      "time": "1.69209283e0",
+      "T_trans": "1.02472913e-3",
+      "T_rot": "8.24187828e-4",
+      "T_total": "1.84891696e-3",
+      "haff_smooth": "3.57579082e-5",
+      "haff_friction": "4.24587362e-6"
+    }
+  },
+  "bench_rolling_decay": {
+    "precision-double": {
+      "# radius=5.0000000000e-3 dt=1.0000000000e-5": "8.5340000000e-2"
+    },
+    "precision-mixed": {
+      "# radius=5.0000000000e-3 dt=1.0000000000e-5": "8.5340000000e-2"
+    },
+    "precision-single": {
+      "# radius=5.0000000000e-3 dt=1.0000000000e-5": "8.5340000000e-2"
+    }
+  },
+  "bench_sliding_friction": {
+    "precision-double": {
+      "t": "8.9998000000e-2",
+      "vx": "7.1428571428e-1",
+      "omega_y": "1.4285714286e2",
+      "radius": "5.0000000000e-3",
+      "in_contact": "1"
+    },
+    "precision-mixed": {
+      "t": "8.9998000000e-2",
+      "vx": "7.1499371529e-1",
+      "omega_y": "1.4299874306e2",
+      "radius": "5.0000000000e-3",
+      "in_contact": "1"
+    },
+    "precision-single": {
+      "t": "8.9998000000e-2",
+      "vx": "7.1499371529e-1",
+      "omega_y": "1.4299874306e2",
+      "radius": "5.0000000000e-3",
+      "in_contact": "1"
+    }
+  },
+  "bench_sphere_haff_cooling": {
+    "precision-double": {
+      "step": "698000",
+      "time": "3.72260422e0",
+      "T_trans": "6.59185454e-5",
+      "T_rot": "2.75757094e-5",
+      "T_total": "9.34942547e-5",
+      "haff_smooth": "3.20249271e-6"
+    },
+    "precision-mixed": {
+      "step": "698000",
+      "time": "3.72260422e0",
+      "T_trans": "6.66385846e-5",
+      "T_rot": "2.86983651e-5",
+      "T_total": "9.53369497e-5",
+      "haff_smooth": "3.20249271e-6"
+    },
+    "precision-single": {
+      "step": "698000",
+      "time": "3.72260422e0",
+      "T_trans": "6.42988398e-5",
+      "T_rot": "2.76365141e-5",
+      "T_total": "9.19353538e-5",
+      "haff_smooth": "3.20249271e-6"
+    }
+  }
+}
