@@ -13,11 +13,12 @@
 //! | [`MoveLinearDef`] | `[[move_linear]]` | Moves atoms at a constant velocity |
 //! | [`FreezeDef`] | `[[freeze]]` | Full immobilization — zeros velocity, force, and (for DEM atoms) angular velocity and torque |
 //! | [`ViscousDef`] | `[[viscous]]` | Applies velocity-proportional damping (F = −γv) |
+//! | [`NveLimitDef`] | `[[nve_limit]]` | Caps per-step displacement (`vmax = max_displacement/dt`), direction-preserving; writes `n_limited` to thermo |
 //! | [`GravityConfig`] | `[gravity]` | Applies gravitational body force (F = mg) |
 //!
 //! # Plugins
 //!
-//! - [`FixesPlugin`] — registers all group-based fixes (addforce, setforce, move_linear, freeze, viscous)
+//! - [`FixesPlugin`] — registers all group-based fixes (addforce, setforce, move_linear, freeze, viscous, nve_limit)
 //! - [`GravityPlugin`] — registers the gravity body force
 //!
 //! # Schedule Ordering
@@ -25,6 +26,8 @@
 //! - `move_linear` runs in **PreInitialIntegration** (to set velocity before position update)
 //!   and **PostForce** (to zero force so FinalIntegration doesn't alter velocity).
 //! - `addforce`, `setforce`, `freeze`, and `viscous` all run in **PostForce**.
+//! - `nve_limit` runs in **PostFinalIntegration** (clamps velocity after the
+//!   timestep's final integration).
 //! - `gravity` runs in **Force**.
 //!
 //! The translational position constraint `[[pin]]` lives in SOIL's `soil_fixes`
@@ -187,10 +190,37 @@ pub struct ViscousDef {
     pub gamma: f64,
 }
 
+/// `[[nve_limit]]` — cap the per-timestep displacement of a group.
+///
+/// Each step, any atom whose speed would carry it more than
+/// `max_displacement` in one timestep has its velocity rescaled so that
+/// `|v| ≤ vmax`, where
+///
+/// ```text
+/// vmax = max_displacement / dt
+/// ```
+///
+/// The rescale is **direction-preserving** (all three velocity components are
+/// multiplied by the same `vmax / |v|` factor), so only the speed is clamped,
+/// not the heading. Runs in `PostFinalIntegration`. The number of atoms
+/// limited on the current step is written to [`Thermo`] as `n_limited`.
+///
+/// Typical use: stabilize the first few steps of a simulation seeded with
+/// overlapping particles, where huge contact forces would otherwise launch
+/// atoms across the box in a single step.
+///
+/// ```toml
+/// [[nve_limit]]
+/// group = "all"
+/// max_displacement = 0.0001
+/// ```
 #[derive(Deserialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct NveLimitDef {
+    /// Name of the atom group this fix applies to.
     pub group: String,
+    /// Maximum allowed displacement per timestep (length units). The velocity
+    /// cap is `vmax = max_displacement / dt`.
     pub max_displacement: f64,
 }
 
@@ -211,6 +241,7 @@ pub struct FixesRegistry {
     pub freezes: Vec<FreezeDef>,
     /// All `[[viscous]]` definitions.
     pub viscous: Vec<ViscousDef>,
+    /// All `[[nve_limit]]` definitions.
     pub nve_limit: Vec<NveLimitDef>,
 }
 

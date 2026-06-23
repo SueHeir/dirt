@@ -11,7 +11,7 @@
 //!
 //! ## DEM granular simulation
 //!
-//! ```rust,ignore
+//! ```no_run
 //! use dirt_core::prelude::*;
 //!
 //! fn main() {
@@ -34,7 +34,38 @@
 //! | Plugin Group | Purpose |
 //! |---|---|
 //! | [`CorePlugins`] | Infrastructure: input, communication, domain, neighbor lists, run loop, output |
-//! | [`GranularDefaultPlugins`](dirt_granular::GranularDefaultPlugins) | DEM: Hertz–Mindlin contact, rotational dynamics, particle insertion |
+//! | [`GranularDefaultPlugins`](dirt_granular::GranularDefaultPlugins) | DEM physics: atom data, insertion, Verlet integration, Hertz–Mindlin contact, rotational dynamics |
+//!
+//! ## Plugin-group membership
+//!
+//! The two groups are complementary — a typical run adds **both**. Membership:
+//!
+//! | Plugin | `CorePlugins` | `GranularDefaultPlugins` |
+//! |---|:---:|:---:|
+//! | `InputPlugin` (CLI + TOML config) | ✅ | |
+//! | `CommunicationPlugin` (MPI / single-process) | ✅ | |
+//! | `DomainPlugin` (decomposition, PBC, shrink-wrap) | ✅ | |
+//! | `NeighborPlugin` (bin-based neighbor lists) | ✅ | |
+//! | `GroupPlugin` (atom groups) | ✅ | |
+//! | `RunPlugin` (run/cycle loop) | ✅ | |
+//! | `PrintPlugin` (thermo, dump, restart) | ✅ | |
+//! | `DemAtomPlugin` (radius, density, `MaterialTable`) | | ✅ |
+//! | `DemAtomInsertPlugin` (`[[particles.insert]]`) | | ✅ |
+//! | `VelocityVerletPlugin` (**translational integration**) | | ✅ |
+//! | `HertzMindlinContactPlugin` (normal + tangential contact) | | ✅ |
+//! | `RotationalDynamicsPlugin` (quaternion angular integration) | | ✅ |
+//!
+//! > ⚠️ **Neither group alone integrates motion.** Velocity Verlet lives in
+//! > `GranularDefaultPlugins`, not `CorePlugins`. `CorePlugins` builds the
+//! > simulation infrastructure but leaves atoms static; adding only
+//! > `CorePlugins` gives a run that reads config, builds neighbor lists, and
+//! > prints output but never moves a particle. For a non-granular method you
+//! > would pair `CorePlugins` with `soil_verlet::VelocityVerletPlugin` (and
+//! > your own force plugins) instead of `GranularDefaultPlugins`.
+//! >
+//! > `GranularTempPlugin` is **opt-in** — it is *not* in
+//! > `GranularDefaultPlugins`; add it explicitly when you want
+//! > granular-temperature output.
 //!
 //! For finer control, add individual plugins instead of a plugin group.
 //!
@@ -152,7 +183,7 @@ use grass_app::prelude::*;
 /// at the end of [`App::start()`](grass_app::App::start).
 ///
 /// # Usage
-/// ```rust,ignore
+/// ```no_run
 /// use dirt_core::prelude::*;
 ///
 /// let mut app = App::new();
@@ -181,8 +212,9 @@ impl PluginGroup for CorePlugins {
 
 /// The DIRT prelude — import everything you need for a typical simulation.
 ///
-/// ```rust,ignore
+/// ```no_run
 /// use dirt_core::prelude::*;
+/// # let _ = || { let mut app = App::new(); app.add_plugins(CorePlugins); };
 /// ```
 ///
 /// This re-exports:

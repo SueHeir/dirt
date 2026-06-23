@@ -14,6 +14,80 @@
 //!   for overlapping spheres. Diagonalized to principal moments + axes quaternion.
 //! - **Euler equation integration.** Torque → principal frame, Euler α, half-kick ω.
 //!
+//! # Contact-exclusion contract
+//!
+//! Sub-spheres of the *same* body must never push on each other — they are held
+//! rigid, so an intra-body "contact" would be a spurious internal force. This
+//! crate does **not** silently filter the neighbor list; instead it exposes
+//! [`same_body`], and every contact-force consumer is responsible for calling it
+//! to skip same-body pairs:
+//!
+//! ```ignore
+//! // inside a pair loop over (i, j) from the neighbor list:
+//! if same_body(&clump_data, i, j) {
+//!     continue; // sub-spheres of one rigid body do not interact
+//! }
+//! ```
+//!
+//! [`same_body`] returns `true` only when both atoms carry a non-zero `body_id`
+//! and those ids match. The granular contact kernels in `dirt_granular` already
+//! honor this contract; any custom force plugin that iterates the neighbor list
+//! must do the same, or rigid bodies will self-repel and fly apart.
+//!
+//! # Rigid-body integration
+//!
+//! Each body is advanced with a velocity-Verlet scheme that follows LIGGGHTS's
+//! `FixMultisphere` (helper names are mirrored: [`body::angmom_to_omega`],
+//! `richardson`, `vecquat`). Two design choices are worth calling out:
+//!
+//! - **Angular momentum is the integrated state.** The body stores `angmom`
+//!   (space-frame angular momentum) and treats it as the primary rotational
+//!   variable, half-kicked by the torque each step (`L += ½ dt τ`). Angular
+//!   velocity `omega` is *derived* from `angmom` on demand via
+//!   [`body::angmom_to_omega`], never integrated directly. This keeps the update
+//!   stable for the asymmetric inertia tensors of non-spherical clumps, where
+//!   integrating `omega` through Euler's equation directly is fragile.
+//! - **Richardson-extrapolated quaternion update.** The orientation quaternion
+//!   is advanced by a private `richardson` routine: it takes one full step and
+//!   two half-steps (recomputing `omega` at the half-step orientation) and
+//!   extrapolates `q ← 2 q_half − q_full` for second-order accuracy, then
+//!   renormalizes.
+//!
+//! ## Two quaternions
+//!
+//! A body carries **two** orientation quaternions, and the distinction matters:
+//!
+//! - `quaternion` — **body → space**: the live orientation of the body frame in
+//!   the world, updated every step by the Richardson integrator.
+//! - `principal_axes` — **body → principal**: a *fixed* rotation (set at
+//!   creation) from the body frame to the frame in which the inertia tensor is
+//!   diagonal (`principal_moments`).
+//!
+//! Inertia work is only simple in the principal frame, so wherever a
+//! principal-frame mapping is needed the two are composed:
+//! `q_principal→space = quaternion * principal_axes` (Hamilton product). That
+//! composed quaternion is what [`body::angmom_to_omega`] expects — it rotates
+//! `angmom` into the principal frame, divides by `principal_moments`, and
+//! rotates the resulting `omega` back to space.
+//!
+//! # Inertia computation
+//!
+//! At body creation the inertia tensor is built one of two ways, auto-selected
+//! by [`body::has_overlap`]:
+//!
+//! - **Non-overlapping spheres** → [`compute_inertia_tensor_analytical`]
+//!   (exact, parallel-axis theorem).
+//! - **Overlapping spheres** → [`compute_inertia_tensor_montecarlo`] with a
+//!   **hardcoded 100 000 samples**. Monte Carlo integration over the bounding
+//!   box double-counts overlap volume correctly, but introduces ~5 % stochastic
+//!   noise in the resulting moments at this sample count; it is the price of
+//!   handling arbitrary overlapping geometry. Both paths are then diagonalized
+//!   into `principal_moments` + `principal_axes`.
+//!
+//! The scalar helper [`compute_clump_inertia`] is **legacy** — it returns only a
+//! single averaged moment (the trace / 3) and is kept for backward
+//! compatibility. New code should use the full-tensor functions above.
+//!
 //! # Configuration
 //!
 //! Clump definitions and insertion live under the `[clump]` TOML section
@@ -204,8 +278,14 @@ pub fn cross(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
 
 // ── Legacy scalar inertia (kept for backward compatibility) ─────────────────
 
-/// Compute scalar moment of inertia for a clump (spherical approximation).
-/// Prefer [`compute_inertia_tensor_analytical`] for full tensor math.
+/// **Legacy.** Compute a single scalar moment of inertia for a clump (the
+/// average of the diagonal, i.e. trace / 3 — a spherical approximation).
+///
+/// Kept only for backward compatibility. It discards the off-diagonal coupling
+/// and anisotropy that non-spherical clumps actually have, so the integrator
+/// does **not** use it; the body-creation path uses the full tensor from
+/// [`compute_inertia_tensor_analytical`] / [`compute_inertia_tensor_montecarlo`]
+/// instead. Prefer those for any new code.
 pub fn compute_clump_inertia(
     spheres: &[ClumpSphereConfig],
     density: f64,
@@ -471,7 +551,42 @@ fn integrate_bodies_final(atoms: Res<Atom>, mut bodies: ResMut<MultisphereBodySt
 }
 
 /// Wrap body COM through periodic boundaries and update body image flags.
+///
+/// Triclinic (Lees–Edwards) boxes wrap the COM in fractional (lamda) coordinates —
+/// so a gradient (y) crossing picks up the box x-tilt automatically — and apply the
+/// streaming-velocity remap to the COM velocity only (a uniform translation of a
+/// rigid body, adding no spurious spin; the body wraps as a unit so it never tears).
 fn pbc_multisphere_bodies(mut bodies: ResMut<MultisphereBodyStore>, domain: Res<Domain>) {
+    if domain.triclinic {
+        let periodic = domain.periodic_flags();
+        let bvel = domain.boundary_vel;
+        for body in &mut bodies.bodies {
+            let mut lam = domain.x2lamda(body.com_pos);
+            let mut dy = 0i32;
+            for d in 0..3 {
+                if periodic[d] {
+                    if lam[d] < 0.0 {
+                        lam[d] += 1.0;
+                        body.image[d] -= 1;
+                        if d == 1 { dy -= 1; }
+                    } else if lam[d] >= 1.0 {
+                        lam[d] -= 1.0;
+                        body.image[d] += 1;
+                        if d == 1 { dy += 1; }
+                    }
+                }
+            }
+            body.com_pos = domain.lamda2x(lam);
+            if dy != 0 {
+                let s = dy as f64;
+                body.com_vel[0] -= s * bvel[0];
+                body.com_vel[1] -= s * bvel[1];
+                body.com_vel[2] -= s * bvel[2];
+            }
+        }
+        return;
+    }
+
     for body in &mut bodies.bodies {
         for d in 0..3 {
             if domain.is_periodic(d) {
@@ -520,14 +635,26 @@ fn exchange_bodies(
         let mut lo_count = 0u32;
         let mut hi_count = 0u32;
 
-        // Scan bodies in reverse, pack those with COM outside subdomain
+        // Scan bodies in reverse, pack those with COM outside subdomain.
+        // Triclinic: classify the COM in fractional (lamda) coordinates against the
+        // lamda subdomain bounds (the box is a unit cube there).
+        let triclinic = domain.triclinic;
+        let (sub_lo, sub_hi) = if triclinic {
+            (domain.sub_lamda_low[dim], domain.sub_lamda_high[dim])
+        } else {
+            (domain.sub_domain_low[dim], domain.sub_domain_high[dim])
+        };
         for i in (0..bodies.bodies.len()).rev() {
-            let pos = bodies.bodies[i].com_pos[dim];
-            if pos < domain.sub_domain_low[dim] {
+            let pos = if triclinic {
+                domain.x2lamda(bodies.bodies[i].com_pos)[dim]
+            } else {
+                bodies.bodies[i].com_pos[dim]
+            };
+            if pos < sub_lo {
                 lo_count += 1;
                 bodies.bodies[i].pack(&mut lo_buf);
                 bodies.bodies.swap_remove(i);
-            } else if pos >= domain.sub_domain_high[dim] {
+            } else if pos >= sub_hi {
                 hi_count += 1;
                 bodies.bodies[i].pack(&mut hi_buf);
                 bodies.bodies.swap_remove(i);
@@ -1069,6 +1196,14 @@ pub fn insert_clump(
 }
 
 /// Check if two atoms belong to the same rigid body (for contact exclusion).
+///
+/// Returns `true` only when both `i` and `j` carry a non-zero `body_id` and
+/// those ids match (out-of-range indices return `false`). This is the
+/// **contact-exclusion contract**: every force plugin that iterates the
+/// neighbor list must call `same_body` and `continue` on a `true` result, so
+/// that sub-spheres of one rigid body never push on each other. The
+/// `dirt_granular` contact kernels already do this; custom force plugins must
+/// too. See the crate-level "Contact-exclusion contract" section.
 #[inline]
 pub fn same_body(clump_data: &ClumpAtom, i: usize, j: usize) -> bool {
     if i >= clump_data.body_id.len() || j >= clump_data.body_id.len() {

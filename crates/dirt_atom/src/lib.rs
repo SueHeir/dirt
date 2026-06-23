@@ -41,6 +41,18 @@
 //!   and summed into the owning atom's value (e.g., `torque`).
 //! - **`#[zero]`** — Field is zeroed at the start of each force computation step (e.g., `torque`),
 //!   before new contact forces accumulate.
+//!
+//! ## Where this fits in an app
+//!
+//! `dirt_atom` is registered for you by [`DemAtomPlugin`] / [`DemAtomInsertPlugin`],
+//! which are bundled in `dirt_granular::GranularDefaultPlugins`. You rarely
+//! construct a `MaterialTable` directly in application code — it is built from
+//! the `[[dem.materials]]` TOML section — but the
+//! [`MaterialTable::new`] docs show the by-hand two-phase build for tests and
+//! tools. For the smallest complete runnable application (drop particles in a
+//! box under gravity), see the **`hello_bed`** example in the DIRT repo's
+//! `examples/` directory, which assembles `CorePlugins + GranularDefaultPlugins`
+//! and lets this crate's insertion + material code run from a config file.
 
 pub mod insert;
 pub mod radius;
@@ -60,6 +72,64 @@ use soil_core::{register_atom_data, Atom, AtomData, AtomPlugin, Config, Schedule
 // ── Shared physics constants ────────────────────────────────────────────────
 
 pub const SQRT_5_6: f64 = 0.9128709291752768;
+
+// ── Exact coefficient-of-restitution damping (Hertz) ─────────────────────────
+
+/// COR of a head-on Hertz collision with the damping DIRT applies
+/// (`f_diss = 2β√(5/6)√(Sₙ mᵣ) vₙ`, `Sₙ = 2E*√(R*δ)`), as a function of β.
+///
+/// Computed by integrating the dimensionless 1D collision (E*=R*=mᵣ=1, v₀=1):
+/// `δ̈ = −(4/3)δ^{3/2} − 2β√(5/6)√2 · δ^{1/4} · δ̇`. The Tsuji scaling makes this
+/// velocity-independent, so one integration fixes the β↔COR map. RK4, fixed dt.
+fn hertz_cor_of_beta(beta: f64) -> f64 {
+    if beta <= 0.0 {
+        return 1.0;
+    }
+    let c = 2.0 * beta * SQRT_5_6 * std::f64::consts::SQRT_2; // damping prefactor
+    // acceleration of the overlap coordinate (only while in contact, δ>0)
+    let acc = |d: f64, v: f64| -> f64 {
+        if d <= 0.0 { 0.0 } else { -(4.0 / 3.0) * d.powf(1.5) - c * d.powf(0.25) * v }
+    };
+    let dt = 1.0e-4;
+    // δ = overlap (grows on approach): start at contact with δ̇ = +1 (approaching).
+    let (mut d, mut v) = (0.0_f64, 1.0_f64);
+    for _ in 0..2_000_000 {
+        // RK4 on (d, v) with d' = v, v' = acc(d, v)
+        let (k1d, k1v) = (v, acc(d, v));
+        let (k2d, k2v) = (v + 0.5 * dt * k1v, acc(d + 0.5 * dt * k1d, v + 0.5 * dt * k1v));
+        let (k3d, k3v) = (v + 0.5 * dt * k2v, acc(d + 0.5 * dt * k2d, v + 0.5 * dt * k2v));
+        let (k4d, k4v) = (v + dt * k3v, acc(d + dt * k3d, v + dt * k3v));
+        d += dt / 6.0 * (k1d + 2.0 * k2d + 2.0 * k3d + k4d);
+        v += dt / 6.0 * (k1v + 2.0 * k2v + 2.0 * k3v + k4v);
+        if d <= 0.0 && v < 0.0 {
+            return v.abs(); // separated (overlap back to 0, receding); COR = |v_out| (v_in = 1)
+        }
+    }
+    v.abs()
+}
+
+/// Invert [`hertz_cor_of_beta`]: the damping ratio β giving an exact restitution
+/// `e_target` for the Hertz contact (DIRT's analogue of LAMMPS `damping
+/// coeff_restitution`). COR(β) decreases monotonically from 1 (β=0), so bisect.
+/// This makes the **input restitution the realized COR**, so DIRT shear/cooling
+/// land on the same kinetic-theory / cross-code line as LAMMPS/LIGGGHTS rather
+/// than on a shifted "realized-e" line.
+pub fn hertz_beta_for_cor(e_target: f64) -> f64 {
+    if e_target >= 0.9999 {
+        return 0.0;
+    }
+    let e = e_target.clamp(1.0e-3, 0.9999);
+    let (mut lo, mut hi) = (0.0_f64, 5.0_f64); // β range; COR(5) ≈ 0
+    for _ in 0..60 {
+        let mid = 0.5 * (lo + hi);
+        if hertz_cor_of_beta(mid) > e {
+            lo = mid; // not enough damping → raise β
+        } else {
+            hi = mid;
+        }
+    }
+    0.5 * (lo + hi)
+}
 
 // ── Config structs ──────────────────────────────────────────────────────────
 
@@ -172,13 +242,72 @@ pub struct DemConfig {
 
 /// Per-material properties and precomputed per-pair mixing tables for contact force evaluation.
 ///
-/// Pair properties are computed in [`build_pair_tables`](Self::build_pair_tables) using:
+/// # Two-phase build contract
+///
+/// A `MaterialTable` is filled in **two phases**, and the contact force code
+/// reads only the second-phase output:
+///
+/// 1. **Register materials.** Each `add_material*` call appends one row to the
+///    per-material vectors (`youngs_mod`, `restitution`, `friction`, …) and
+///    returns its integer index. During this phase **every `*_ij` pair table is
+///    empty** (`Vec::new()`).
+/// 2. **Build pair tables.** [`build_pair_tables`](Self::build_pair_tables)
+///    allocates the `N×N` `*_ij` tables and fills them from the registered
+///    per-material values using the mixing rules below. It **must** be called
+///    once, after the last material is added and before any contact force is
+///    evaluated. Indexing a `*_ij` table before this is an out-of-bounds panic.
+///
+/// Mixing rules used in phase 2:
 /// - **Geometric mean** for friction, restitution, cohesion/surface energy, rolling/twisting friction
 /// - **Harmonic mean** (2·ki·kj/(ki+kj)) for Hooke stiffnesses and SDS spring stiffnesses
 /// - **Effective modulus** formulas for Hertz (`E*`) and Mindlin (`G*`) contact models
 ///
-/// Indexed by material index (returned by [`add_material`](Self::add_material) and
-/// [`find_material`](Self::find_material)). Pair tables are indexed as `table_ij[i][j]`.
+/// Per-material rows are indexed by the index returned from `add_material*` (or
+/// looked up via [`find_material`](Self::find_material)); pair tables are indexed
+/// `table_ij[i][j]`.
+///
+/// # The `add_material*` ladder
+///
+/// Four constructors form a wrapping ladder from fewest to most arguments; each
+/// delegates to the next with sensible zero defaults:
+///
+/// - [`add_material`](Self::add_material) — basics (E, ν, restitution, friction,
+///   rolling friction, cohesion); sets `surface_energy = 0` (no adhesion).
+/// - [`add_material_full`](Self::add_material_full) — adds `surface_energy`.
+/// - [`add_material_extended`](Self::add_material_extended) — adds twisting
+///   friction and Hooke linear stiffnesses `kn`/`kt`.
+/// - [`add_material_with_sds`](Self::add_material_with_sds) — adds the SDS
+///   rolling/twisting spring–dashpot parameters; the full constructor.
+///
+/// Use the shortest one that covers the parameters you need.
+///
+/// # Restitution → damping
+///
+/// `restitution` is stored as the **target coefficient of restitution (COR)**,
+/// not a damping ratio. In phase 2, `beta_ij[i][j]` is computed by inverting the
+/// exact head-on Hertz collision via [`hertz_beta_for_cor`] — a bisection on the
+/// monotone COR(β) curve of the head-on Hertz model. This makes the **input
+/// restitution the realized COR** of a binary collision, so DIRT's
+/// shear/cooling results land on the same kinetic-theory line as
+/// LAMMPS/LIGGGHTS (`damping coeff_restitution`) rather than on a shifted
+/// "realized-e" line. A plain damping-ratio mapping would not have that
+/// property.
+///
+/// # Config-error convention
+///
+/// `add_material*` validates physically inconsistent input (e.g. both
+/// `cohesion_energy` and `surface_energy` set) by printing an `ERROR:` line to
+/// stderr and calling `std::process::exit(1)` — it does **not** return a
+/// `Result`. This is deliberate: a malformed material table is a config bug that
+/// should stop the run immediately and identically on every MPI rank, rather
+/// than propagate a partially-built table.
+///
+/// # Hooke vs. Hertz adhesion asymmetry
+///
+/// JKR/DMT adhesion (`surface_energy`) is only honored under the Hertz contact
+/// model. Under `contact_model = "hooke"` the surface-energy term is silently
+/// ignored — only SJKR-style cohesion (`cohesion_energy`) is applied. See
+/// `dirt_granular` for the per-branch parameter reference.
 pub struct MaterialTable {
     pub names: Vec<String>,
     pub youngs_mod: Vec<f64>,
@@ -245,6 +374,37 @@ impl Default for MaterialTable {
 
 impl MaterialTable {
     /// Creates an empty `MaterialTable` with default contact/adhesion/rolling/twisting models.
+    ///
+    /// # Building a table by hand
+    ///
+    /// The full two-phase pattern — register materials, then build the pair
+    /// tables once before any contact force is evaluated:
+    ///
+    /// ```
+    /// use dirt_atom::MaterialTable;
+    ///
+    /// let mut mat = MaterialTable::new();
+    ///
+    /// // Phase 1 — register materials. Returns the material index.
+    /// let glass = mat.add_material(
+    ///     "glass",
+    ///     8.7e9, // Young's modulus E [Pa]
+    ///     0.3,   // Poisson's ratio ν
+    ///     0.95,  // restitution (target COR)
+    ///     0.5,   // sliding friction
+    ///     0.0,   // rolling friction
+    ///     0.0,   // cohesion energy
+    /// );
+    /// assert_eq!(glass, 0);
+    /// assert!(mat.beta_ij.is_empty()); // pair tables still empty in phase 1
+    ///
+    /// // Phase 2 — build the per-pair mixing tables. Required before contact eval.
+    /// mat.build_pair_tables();
+    ///
+    /// // restitution 0.95 inverts to a small (but non-zero) Hertz damping ratio.
+    /// let beta = mat.beta_ij[glass as usize][glass as usize];
+    /// assert!(beta > 0.0 && beta < 0.1);
+    /// ```
     pub fn new() -> Self {
         MaterialTable {
             names: Vec::new(),
@@ -446,23 +606,19 @@ impl MaterialTable {
                 // Geometric mean mixing for restitution
                 let e_ij = (self.restitution[i] * self.restitution[j]).sqrt();
                 let log_e = e_ij.ln();
-                // Damping coefficient β from the restitution. The model differs by
-                // contact law because they're driven differently:
-                //   - Hooke (linear): β = -ln(e)/√(π²+ln²e) gives a velocity-INDEPENDENT
-                //     restitution for a constant-stiffness spring-dashpot.
-                //   - Hertz (nonlinear): that linear formula does NOT hold a constant
-                //     restitution and over-damps fast collisions. Use Tsuji (1992),
-                //     the polynomial LAMMPS `damping tsuji` uses, which IS built for
-                //     Hertz → velocity-independent restitution. DIRT applies damping as
-                //     2β√(5/6)√(S_n·m_r)·v_n while LAMMPS applies α√(m·F_n/δ)·v_n =
-                //     α√(2/3)√(S_n·m_r)·v_n (since F_n/δ = ⅔S_n for Hertz); equating the
-                //     coefficients gives β = α/√5.
+                // Damping coefficient β from the restitution, so the realized COR
+                // EQUALS the input e (DIRT's analogue of LAMMPS `damping
+                // coeff_restitution`). This matters because T*∝1/(1−e²) near the
+                // elastic limit, so any input-vs-realized gap throws the stress off
+                // and DIRT would land on a separate line from LAMMPS/LIGGGHTS/KT.
+                //   - Hooke (linear): β = -ln(e)/√(π²+ln²e) is exact for a
+                //     constant-stiffness spring-dashpot (velocity-independent).
+                //   - Hertz (nonlinear): the old Tsuji *polynomial* fit realized a
+                //     COR above nominal (e.g. 0.95→0.965). Replace it with a
+                //     numerically EXACT inversion of the Hertz-collision COR(β)
+                //     (`hertz_beta_for_cor`), so input e = realized COR.
                 self.beta_ij[i][j] = if self.contact_model == "hertz" {
-                    let e = e_ij;
-                    let alpha = 1.2728 - 4.2783 * e + 11.087 * e.powi(2)
-                        - 22.348 * e.powi(3) + 27.467 * e.powi(4)
-                        - 18.022 * e.powi(5) + 4.8218 * e.powi(6);
-                    alpha / 5.0_f64.sqrt()
+                    hertz_beta_for_cor(e_ij)
                 } else {
                     -log_e / (PI * PI + log_e * log_e).sqrt()
                 };
@@ -717,15 +873,21 @@ mod tests {
         mt.build_pair_tables();
 
         let e = 0.95_f64;
-        // default contact_model is "hertz" → Tsuji damping coefficient β = α(e)/√5
-        let alpha = 1.2728 - 4.2783 * e + 11.087 * e.powi(2) - 22.348 * e.powi(3)
-            + 27.467 * e.powi(4) - 18.022 * e.powi(5) + 4.8218 * e.powi(6);
-        let expected_beta = alpha / 5.0_f64.sqrt();
+        // default contact_model is "hertz" → β set by the exact COR inversion, so
+        // the realized restitution of a Hertz collision equals the input e.
+        let expected_beta = hertz_beta_for_cor(e);
         assert!(
             (mt.beta_ij[0][0] - expected_beta).abs() < 1e-12,
             "beta should be {}, got {}",
             expected_beta,
             mt.beta_ij[0][0]
+        );
+        // The defining invariant: realized COR(β) ≈ nominal e.
+        assert!(
+            (hertz_cor_of_beta(mt.beta_ij[0][0]) - e).abs() < 2e-3,
+            "realized COR should equal input e={}, got {}",
+            e,
+            hertz_cor_of_beta(mt.beta_ij[0][0])
         );
         assert!(
             (mt.friction_ij[0][0] - 0.4).abs() < 1e-12,
@@ -760,11 +922,9 @@ mod tests {
             mt.friction_ij[0][1]
         );
 
-        // Geometric mean mixing for restitution -> beta (hertz default → Tsuji)
+        // Geometric mean mixing for restitution -> beta (hertz default → exact COR)
         let e_mix = (0.95_f64 * 0.8).sqrt();
-        let alpha = 1.2728 - 4.2783 * e_mix + 11.087 * e_mix.powi(2) - 22.348 * e_mix.powi(3)
-            + 27.467 * e_mix.powi(4) - 18.022 * e_mix.powi(5) + 4.8218 * e_mix.powi(6);
-        let expected_beta = alpha / 5.0_f64.sqrt();
+        let expected_beta = hertz_beta_for_cor(e_mix);
         assert!(
             (mt.beta_ij[0][1] - expected_beta).abs() < 1e-12,
             "beta_ij should use geometric mean restitution"

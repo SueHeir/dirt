@@ -1,5 +1,48 @@
 //! Wall contact forces for DEM simulations using Hertz normal contact with
-//! viscous damping and optional adhesion (JKR, DMT, SJKR cohesion).
+//! viscous damping, tangential/rolling/twisting friction, and optional adhesion
+//! (JKR, DMT, SJKR cohesion).
+//!
+//! # Contact mechanics
+//!
+//! Wall contacts reuse the same per-pair mixing tables as particle–particle
+//! contacts: the particle's material and the wall's `material` index a row of
+//! [`MaterialTable`] (`e_eff_ij`, `g_eff_ij`, `beta_ij`, `friction_ij`,
+//! `rolling_friction_ij`, `twisting_friction_ij`, …). Because a wall is treated
+//! as infinitely massive and infinitely flat, the **effective radius is the
+//! particle radius** (`R* = particle_radius`) and the reduced mass is the
+//! particle mass.
+//!
+//! Beyond the normal Hertz force + damping, walls apply:
+//!
+//! - **Tangential (Mindlin sliding) friction** — incremental spring-history
+//!   model with a per-contact tangential spring, Coulomb-capped at `μ |F_n|`.
+//!   Supported by **all** wall types (plane, cylinder, sphere, region).
+//! - **Rolling resistance** — `constant` (default) or `sds` (spring–dashpot–
+//!   slider) model, mirroring the particle–particle rolling model with the wall
+//!   as a zero-spin second body. Supported by **all** wall types.
+//! - **Twisting friction** — `constant`/`sds`, **plane walls only**.
+//!
+//! Frictionless walls (`friction = 0`) are byte-for-byte unchanged from a
+//! pure-normal contact. Tangential and rolling spring histories are stored on
+//! the [`Walls`] resource (`tangential_springs`, `rolling_springs`).
+//!
+//! ## Adhesion-model asymmetry
+//!
+//! Adhesion support differs by wall geometry:
+//!
+//! - **Plane walls** support JKR and DMT (`surface_energy`) *and* SJKR cohesion
+//!   (`cohesion_energy`), including the JKR extended-range pull-off regime.
+//! - **Cylinder, sphere, and region walls** support **SJKR cohesion only**
+//!   (`cohesion_energy`); their `surface_energy` is not consulted, so JKR/DMT
+//!   pull-off is unavailable on curved/region walls. Use a plane wall if you
+//!   need JKR/DMT against a wall.
+//!
+//! ## Wall temperature
+//!
+//! Every wall config accepts an optional `temperature` (K). This crate
+//! **stores** it on the wall but never reads it — it is a hook for an external
+//! heat-transfer system (e.g. a thermal-conduction plugin) to consult a wall's
+//! temperature. It has no effect on the contact force computed here.
 //!
 //! # Wall Types
 //!
@@ -94,6 +137,12 @@
 //!
 //! Add [`WallPlugin`] to your app. It depends on `DemAtomPlugin` (for
 //! [`MaterialTable`] and [`DemAtom`] data).
+//!
+//! Wall config errors are fatal: a malformed `[[wall]]` entry (bad TOML, an
+//! unknown cylinder axis, a wrong-length `center`, a missing region, a zero
+//! normal, …) prints an `ERROR:` line and calls `std::process::exit(1)` at
+//! setup rather than returning a `Result` — the run stops immediately and
+//! identically on every rank.
 //!
 //! # Systems
 //!
