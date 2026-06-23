@@ -32,12 +32,18 @@
 //!   `F = 2π γ R*` during contact only
 //! - **SJKR** — simplified cohesion proportional to contact area: `F = k_coh π δ R*`
 //!
+//! > ⚠️ **Hooke/Hertz adhesion asymmetry.** JKR and DMT adhesion (driven by
+//! > `surface_energy`) are implemented **only on the Hertz contact path**. Under
+//! > `contact_model = "hooke"` the `surface_energy` term is *silently ignored* —
+//! > the linear-spring path applies SJKR cohesion (`cohesion_energy`) only. If
+//! > you need JKR/DMT pull-off, use the default Hertz model.
+//!
 //! # TOML configuration
 //!
-//! Contact model parameters are set per-material in the `[[materials]]` array:
+//! Contact model parameters are set per-material in the `[[dem.materials]]` array:
 //!
 //! ```toml
-//! [[materials]]
+//! [[dem.materials]]
 //! name = "glass"
 //! youngs_modulus = 8.7e9      # Pa — Young's modulus E
 //! poisson_ratio = 0.3         # dimensionless — Poisson's ratio ν
@@ -51,19 +57,61 @@
 //! Global model selection:
 //!
 //! ```toml
-//! [materials]
+//! [dem]
 //! contact_model = "hertz"     # "hertz" (default) or "hooke"
 //! adhesion_model = "jkr"      # "jkr" (default) or "dmt" (only when surface_energy > 0)
 //! rolling_model = "constant"  # "constant" (default) or "sds"
 //! twisting_model = "constant" # "constant" (default) or "sds"
 //! ```
 //!
+//! # Material-parameter reference
+//!
+//! Every parameter above is stored per-material in [`dirt_atom::MaterialTable`]
+//! and mixed into per-pair tables by `MaterialTable::build_pair_tables()`. Which
+//! `MaterialTable` fields each model branch reads:
+//!
+//! | Model branch | `MaterialTable` inputs (per-pair table) |
+//! |---|---|
+//! | Hertz normal | `e_eff_ij` (E*), `beta_ij` (from `restitution`) |
+//! | Hooke normal | `kn_ij` (harmonic mean of per-material `kn`), `beta_ij` |
+//! | Mindlin tangential | `g_eff_ij` (G*), `friction_ij` (μ), `beta_ij` |
+//! | Hooke tangential | `kt_ij`, `friction_ij` |
+//! | Rolling (constant / SDS) | `rolling_friction_ij`, `rolling_stiffness_ij`, `rolling_damping_ij` |
+//! | Twisting (constant / SDS) | `twisting_friction_ij`, `twisting_stiffness_ij`, `twisting_damping_ij` |
+//! | JKR / DMT adhesion (Hertz only) | `surface_energy_ij` (γ), `adhesion_model` |
+//! | SJKR cohesion | `cohesion_energy_ij` |
+//!
+//! `restitution` is the **target COR**: `beta_ij` is derived by inverting the
+//! exact head-on Hertz collision (see [`dirt_atom::hertz_beta_for_cor`]).
+//!
+//! # Tangential / rolling / twisting history (canonical frame)
+//!
+//! The Mindlin tangential force and the SDS rolling/twisting variants are
+//! **incremental, history-dependent** springs: a displacement is integrated
+//! across timesteps, rotated to stay in the current tangent plane, and capped at
+//! a Coulomb limit. That history lives in
+//! [`tangential::ContactHistoryStore`], which stores **7 `f64` per contact** —
+//! `[0..3]` tangential spring vector, `[3..6]` rolling spring vector, `[6]`
+//! twisting scalar (rolling/twisting slots are zero under the constant-torque
+//! models).
+//!
+//! Each entry is kept in **canonical form** (from the lower-tag particle's
+//! perspective) so the spring is frame-consistent no matter which particle is
+//! `i` vs `j` in the neighbor list; a `sign` factor of `±1` flips the canonical
+//! spring into the local `(i, j)` frame each step. The Coulomb friction limit is
+//! applied in **two stages**: the stored spring is first capped so that
+//! `|k_t s| ≤ μ|F_n|` (truncating the history that survives to the next step),
+//! then the assembled force `F_t = k_t s − γ_t v_t` is capped again at `μ|F_n|`.
+//!
 //! # Modules
 //!
 //! - [`contact`] — Fused Hertz-Mindlin + Hooke contact force (primary code path)
 //! - [`tangential`] — Per-contact tangential spring-history store (`ContactHistoryStore`)
 //! - [`rotational`] — Quaternion-based velocity Verlet for angular degrees of freedom
-//! - [`granular_temp`] — Granular temperature (velocity fluctuation) output
+//! - [`granular_temp`] — Granular temperature (velocity fluctuation) output;
+//!   the plugin ([`GranularTempPlugin`]) is **opt-in** and is *not* part of
+//!   [`GranularDefaultPlugins`] — add it explicitly when you want
+//!   `data/GranularTemp.txt` written.
 
 pub mod granular_temp;
 pub mod rotational;

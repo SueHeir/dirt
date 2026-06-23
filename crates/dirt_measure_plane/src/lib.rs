@@ -30,10 +30,50 @@
 //! ```
 //!
 //! Multiple `[[measure_plane]]` blocks can be defined. Each plane tracks
-//! crossings independently. Results are pushed to thermo as:
-//! - `crossings_<name>` — total cumulative crossing count (positive direction)
-//! - `flow_rate_<name>` — mass flow rate (mass/time) averaged over `report_interval`
-//! - `cross_rate_<name>` — particle crossing rate (1/time) averaged over `report_interval`
+//! crossings independently.
+//!
+//! # Outputs
+//!
+//! All results are exposed **only as thermo keys** — written every
+//! `report_interval` steps by the reporting system. There is no public read
+//! API: the [`MeasurePlanes`] resource is opaque (its `planes` field is private,
+//! with no accessors), so downstream code must read the thermo columns rather
+//! than the resource. For each plane named `<name>`:
+//! - `crossings_<name>` — total cumulative crossing count (positive direction,
+//!   global all-reduced; never reset)
+//! - `flow_rate_<name>` — mass flow rate (mass/time) averaged over the window
+//! - `cross_rate_<name>` — particle crossing rate (1/time) averaged over the window
+//!
+//! # Caveats
+//!
+//! This plugin is a deliberately simple **directional gate**, not a flux meter.
+//! Read these before trusting the numbers:
+//!
+//! - **Directional, not net flux.** Only `≤ 0 → > 0` transitions are counted
+//!   (a crossing *with* the normal). Reverse crossings (`> 0 → ≤ 0`) are ignored
+//!   entirely — they are neither counted nor subtracted. A particle that
+//!   oscillates back and forth across the plane is **recounted** on every
+//!   forward pass, so the totals are *gross* positive crossings, not net
+//!   throughput. Place planes where flow is essentially one-way (e.g. below a
+//!   hopper outlet) for the count to mean what you expect.
+//! - **`prev_signed_dist` grows without bound.** The per-plane state stores one
+//!   `HashMap` entry per atom tag it has *ever* seen and never evicts them. In a
+//!   long run with continuous insertion (rate-based insertion, recycled tags
+//!   excluded) the map grows monotonically — a slow memory leak proportional to
+//!   the number of distinct tags that have appeared near the plane.
+//! - **MPI rank migration can mis/double-count.** Crossing detection runs over
+//!   `nlocal` only, and `prev_signed_dist` is keyed by tag but lives
+//!   independently on each rank. When a particle migrates between subdomains its
+//!   previous distance does not follow it, so a crossing straddling a migration
+//!   step can be missed or counted on the wrong rank. Counts are only summed
+//!   across ranks at report time, which does not repair this.
+//! - **Variable `dt` makes the window time approximate.** `window_time` is
+//!   `window_steps × dt` using the *current* timestep. If `dt` changes within a
+//!   reporting window (e.g. across run stages), the reported rates are only
+//!   approximate for that window.
+//! - **Degenerate normal silently falls back to `[1, 0, 0]`.** A normal with
+//!   magnitude `< 1e-30` is replaced by the +x direction without warning — a
+//!   mis-specified plane will silently measure the wrong cross-section.
 
 use std::collections::HashMap;
 
