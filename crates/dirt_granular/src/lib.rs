@@ -73,6 +73,7 @@ pub use granular_temp::GranularTempPlugin;
 pub use rotational::RotationalDynamicsPlugin;
 
 pub mod contact;
+pub mod gpu;
 
 use grass_app::prelude::*;
 
@@ -81,6 +82,7 @@ use dirt_atom::DemAtomInsertPlugin;
 use soil_verlet::VelocityVerletPlugin;
 
 pub use contact::HertzMindlinContactPlugin;
+pub use gpu::GpuGranularForcePlugin;
 
 /// Re-export from [`dirt_atom`] for convenience.
 pub use dirt_atom::SQRT_5_6;
@@ -137,6 +139,34 @@ impl PluginGroup for GranularDefaultPlugins {
             .add(DemAtomInsertPlugin)
             .add(VelocityVerletPlugin::new())
             .add(HertzMindlinContactPlugin)
+            .add(RotationalDynamicsPlugin)
+    }
+}
+
+/// GPU variant of [`GranularDefaultPlugins`]: identical, but the particle-particle
+/// contact force runs on the GPU ([`GpuGranularForcePlugin`]) instead of the CPU
+/// [`HertzMindlinContactPlugin`]. CPU integration, rotation, insertion and any
+/// other plugins (gravity, [`WallPlugin`](super)) are unchanged and compose with
+/// the GPU contact force (it accumulates like the CPU path). Falls back to the CPU
+/// contact force automatically if no GPU adapter is present.
+///
+/// Scope: plain Hertz-Mindlin materials only (no rolling/twisting friction,
+/// cohesion, or surface energy — see [`gpu`]). For those, use
+/// [`GranularDefaultPlugins`].
+///
+/// # Usage
+/// ```rust,ignore
+/// app.add_plugins(CorePlugins).add_plugins(GranularGpuPlugins);
+/// ```
+pub struct GranularGpuPlugins;
+
+impl PluginGroup for GranularGpuPlugins {
+    fn build(self) -> PluginGroupBuilder {
+        PluginGroupBuilder::start::<Self>()
+            .add(DemAtomPlugin)
+            .add(DemAtomInsertPlugin)
+            .add(VelocityVerletPlugin::new())
+            .add(GpuGranularForcePlugin)
             .add(RotationalDynamicsPlugin)
     }
 }
