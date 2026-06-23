@@ -70,28 +70,30 @@ fn main() {
     boundary.push(Plane::new([0.0, 0.0, 0.0], [0.0, 1.0, 0.0]));
     boundary.push(Plane::new([0.0, box_w, 0.0], [0.0, -1.0, 0.0]));
 
-    let grid = Grid::from_positions(&pos, 2.0 * r);
-    let mut gpu = GpuState::new(ctx, n, grid.total_cells);
-    gpu.set_params(dt, gravity);
-    gpu.set_state(&pos, &vel0, &inv_mass, grid);
-    let omega = gpu.add_aux_dof();
-    gpu.set_aux_inv_coeff(omega, &inv_inertia);
-    gpu.set_aux_state(omega, &om0);
-    let cfg = GranularConfig { e_eff, beta, g_eff, mu, dt };
-    gpu.add_force_hook(Box::new(GranularForce::new(&gpu, &grid, omega, &radius, cfg)));
-    gpu.add_force_hook(Box::new(WallForce::new(
-        &gpu, omega, &radius, &boundary, e_eff, beta, g_eff, mu, dt,
-    )));
+    // Build a FRESH GpuState + hooks per path, so each path starts from zero
+    // contact history. (Re-using one instance and only re-uploading pos/vel does
+    // NOT clear the on-device tangential springs, which would make each path
+    // start from the previous path's leftover history — a comparison artifact.)
+    let build = || {
+        let grid = Grid::from_positions(&pos, 2.0 * r);
+        let mut g = GpuState::new(ctx.clone(), n, grid.total_cells);
+        g.set_params(dt, gravity);
+        g.set_state(&pos, &vel0, &inv_mass, grid);
+        let omega = g.add_aux_dof();
+        g.set_aux_inv_coeff(omega, &inv_inertia);
+        g.set_aux_state(omega, &om0);
+        let cfg = GranularConfig { e_eff, beta, g_eff, mu, dt };
+        g.add_force_hook(Box::new(GranularForce::new(&g, &grid, omega, &radius, cfg)));
+        g.add_force_hook(Box::new(WallForce::new(
+            &g, omega, &radius, &boundary, e_eff, beta, g_eff, mu, dt,
+        )));
+        (g, omega)
+    };
 
-    println!("resident_validate: n={n}  dt={dt:.2e}  adapter={}", gpu.context().adapter_info);
+    println!("resident_validate: n={n}  dt={dt:.2e}  adapter={}", ctx.adapter_info);
 
     let steps = 4000usize;
     let window = 250usize; // resident sync cadence (a neighbor-rebuild-window stand-in)
-
-    let reset = |g: &GpuState| {
-        g.set_state(&pos, &vel0, &inv_mass, grid);
-        g.set_aux_state(omega, &om0);
-    };
 
     let maxdiff = |a: &[[f32; 3]], b: &[[f32; 3]]| -> f32 {
         let mut m = 0.0f32;
@@ -105,22 +107,26 @@ fn main() {
 
     // ── A. SINGLE WINDOW: run_steps(steps) once — primes exactly once, the ──
     //     reference resident trajectory (this is the pile/validate_trajectory path).
-    reset(&gpu);
+    let (gpu, _omega) = build();
     let ta = std::time::Instant::now();
     gpu.run_steps(steps);
     gpu.wait();
     let a_time = ta.elapsed();
     let a_pos = gpu.download_pos();
 
-    // ── B. WINDOWED: run_steps(window)×(steps/window) — the residency model ──
-    //     with host-sync boundaries (rebuild / MPI exchange / IO). Each window
-    //     RE-PRIMES the force at entry.
-    reset(&gpu);
+    // ── B. WINDOWED: the residency model with host-sync boundaries (rebuild /
+    //     MPI exchange / IO). Prime ONCE with run_steps, then run_steps_continue
+    //     per window — no re-prime, so windows stitch bit-for-bit to one run.
+    let (gpu, _omega) = build();
     let tb = std::time::Instant::now();
     let mut done = 0;
     while done < steps {
         let k = window.min(steps - done);
-        gpu.run_steps(k);
+        if done == 0 {
+            gpu.run_steps(k);
+        } else {
+            gpu.run_steps_continue(k);
+        }
         gpu.wait();
         done += k;
     }
@@ -129,7 +135,7 @@ fn main() {
 
     // ── C. PER-STEP: run_steps(1)×steps + the per-step readback the ─────────
     //     host-authoritative milestone-1 plugin pays. Re-primes every step.
-    reset(&gpu);
+    let (gpu, omega) = build();
     let tc = std::time::Instant::now();
     for _ in 0..steps {
         gpu.run_steps(1);

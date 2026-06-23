@@ -29,7 +29,7 @@ struct WallParams {
     g_eff: f32,
     mu: f32,
     dt: f32,
-    _p2: f32,
+    advance_hist: f32,
     _p3: f32,
     _p4: f32,
 }
@@ -49,6 +49,7 @@ pub struct WallForce {
     n_walls: usize,
     pipeline: wgpu::ComputePipeline,
     bind_group: wgpu::BindGroup,
+    bind_group_prime: wgpu::BindGroup,
     walls_buf: wgpu::Buffer,
 }
 
@@ -89,13 +90,21 @@ impl WallForce {
 
         let params = WallParams {
             n: n as u32, n_walls: boundary.len() as u32, _p0: 0, _p1: 0,
-            e_eff, beta, g_eff, mu, dt, _p2: 0.0, _p3: 0.0, _p4: 0.0,
+            e_eff, beta, g_eff, mu, dt, advance_hist: 1.0, _p3: 0.0, _p4: 0.0,
         };
         let params_buf = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("wf_params"), size: std::mem::size_of::<WallParams>() as u64,
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false,
         });
         ctx.queue.write_buffer(&params_buf, 0, bytemuck::bytes_of(&params));
+
+        // History-neutral params for the entry prime (advance_hist = 0).
+        let params_prime = WallParams { advance_hist: 0.0, ..params };
+        let params_buf_prime = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("wf_params_prime"), size: std::mem::size_of::<WallParams>() as u64,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false,
+        });
+        ctx.queue.write_buffer(&params_buf_prime, 0, bytemuck::bytes_of(&params_prime));
 
         // Per-(particle, wall) tangential spring history, owned in place; zeroed.
         let wsprings = vec![0.0f32; n.max(1) * MAX_WALLS * 3];
@@ -141,6 +150,22 @@ impl WallForce {
                 wgpu::BindGroupEntry { binding: 9, resource: wall_spring.as_entire_binding() },
             ],
         });
+        // Same bindings, params → advance_hist=0 buffer, for the prime.
+        let bind_group_prime = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("wf g0 bg prime"), layout: &g0,
+            entries: &[
+                wgpu::BindGroupEntry { binding: 0, resource: gs.pos_buffer().as_entire_binding() },
+                wgpu::BindGroupEntry { binding: 1, resource: gs.vel_buffer().as_entire_binding() },
+                wgpu::BindGroupEntry { binding: 2, resource: gs.force_buffer().as_entire_binding() },
+                wgpu::BindGroupEntry { binding: 3, resource: gs.aux_state_buffer(omega_aux).as_entire_binding() },
+                wgpu::BindGroupEntry { binding: 4, resource: gs.aux_rate_buffer(omega_aux).as_entire_binding() },
+                wgpu::BindGroupEntry { binding: 5, resource: radius_buf.as_entire_binding() },
+                wgpu::BindGroupEntry { binding: 6, resource: gs.inv_mass_buffer().as_entire_binding() },
+                wgpu::BindGroupEntry { binding: 7, resource: params_buf_prime.as_entire_binding() },
+                wgpu::BindGroupEntry { binding: 8, resource: walls_buf.as_entire_binding() },
+                wgpu::BindGroupEntry { binding: 9, resource: wall_spring.as_entire_binding() },
+            ],
+        });
         let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("wf pl"), bind_group_layouts: &[Some(&g0)], immediate_size: 0,
         });
@@ -151,7 +176,7 @@ impl WallForce {
 
         WallForce {
             ctx: ctx.clone(), n: n as u32, n_walls: boundary.len(),
-            pipeline, bind_group, walls_buf,
+            pipeline, bind_group, bind_group_prime, walls_buf,
         }
     }
 
@@ -185,6 +210,15 @@ impl GpuForce for WallForce {
         pass.set_pipeline(&self.pipeline);
         pass.dispatch_workgroups(self.n.div_ceil(64).max(1), 1, 1);
     }
+
+    /// History-neutral prime: evaluate the wall contact force from the current
+    /// in-place spring without integrating or writing it back (advance_hist=0),
+    /// so re-priming at window boundaries doesn't mutate wall history.
+    fn record_prime(&self, pass: &mut wgpu::ComputePass) {
+        pass.set_bind_group(0, &self.bind_group_prime, &[]);
+        pass.set_pipeline(&self.pipeline);
+        pass.dispatch_workgroups(self.n.div_ceil(64).max(1), 1, 1);
+    }
 }
 
 const WALL_WGSL: &str = r#"
@@ -202,7 +236,7 @@ struct WallParams {
     g_eff: f32,
     mu: f32,
     dt: f32,
-    _p2: f32,
+    advance_hist: f32,
     _p3: f32,
     _p4: f32,
 };
@@ -291,9 +325,11 @@ fn wall_force(@builtin(global_invocation_id) gid: vec3<u32>) {
 
         var s = vec3<f32>(wall_spring[sb], wall_spring[sb + 1u], wall_spring[sb + 2u]);
         let s_dot_n = s.x * nx + s.y * ny + s.z * nz;
-        s.x = s.x - s_dot_n * nx + vt_x * params.dt;
-        s.y = s.y - s_dot_n * ny + vt_y * params.dt;
-        s.z = s.z - s_dot_n * nz + vt_z * params.dt;
+        // advance_hist = 1 in the step loop, 0 in the entry prime: the prime
+        // reprojects but does NOT integrate the wall spring (no +vt·dt).
+        s.x = s.x - s_dot_n * nx + vt_x * params.dt * params.advance_hist;
+        s.y = s.y - s_dot_n * ny + vt_y * params.dt * params.advance_hist;
+        s.z = s.z - s_dot_n * nz + vt_z * params.dt * params.advance_hist;
 
         let f_t_max = params.mu * abs(f_n_mag);
 
@@ -328,9 +364,13 @@ fn wall_force(@builtin(global_invocation_id) gid: vec3<u32>) {
         ty = ty - ri * nxf_y;
         tz = tz - ri * nxf_z;
 
-        wall_spring[sb] = s.x;
-        wall_spring[sb + 1u] = s.y;
-        wall_spring[sb + 2u] = s.z;
+        // The wall spring is stored in-place (no ping-pong), so the prime must
+        // NOT write it back — otherwise the entry prime mutates history.
+        if (params.advance_hist != 0.0) {
+            wall_spring[sb] = s.x;
+            wall_spring[sb + 1u] = s.y;
+            wall_spring[sb + 2u] = s.z;
+        }
     }
 
     force_out[bi]      = fx;

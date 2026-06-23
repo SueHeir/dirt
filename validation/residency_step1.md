@@ -70,3 +70,40 @@ Delivered: the precise blocker + a reproducing benchmark + the soil_gpu fix
 needed. NOT delivered: a working resident schedule plugin (it would be incorrect
 until the re-prime fix lands). Recommend the soil_gpu `run_steps` history-neutral
 prime as the next concrete step before retrying the plugin.
+
+---
+
+## RESOLUTION (gate closed — bit-exact)
+
+The earlier diagnosis (above) was **wrong**: re-priming history was a minor
+effect, not the cause. The real divergence had three parts, fixed as follows.
+
+1. **Non-deterministic cell list (the dominant cause).** soil_gpu's cell-list
+   scatter used `atomicAdd` to place atoms in cells, so within-cell neighbour
+   order was a race — non-deterministic across command submits. A chaotic
+   frictional pile amplified that f32 summation-order noise to ~5e-2 over 4000
+   steps. Fix: a deterministic per-cell sort (`sort_cells` in cell_list.wgsl).
+   The sim is now bit-reproducible run-to-run.
+
+2. **Re-prime velocity mismatch.** Each `run_steps` re-evaluates the force at
+   entry using the *full* end-of-step velocity, but the integrator's force uses
+   the *mid-step* half-kick velocity, so re-priming at a window boundary diverges
+   the velocity-dependent contact damping. Fix: `run_steps_continue(K)` continues
+   without re-priming, trusting the resident force buffer.
+
+3. **Test artifact.** `resident_validate`'s `reset()` re-uploaded pos/vel but
+   never cleared on-device contact history, so paths B/C started from path A's
+   leftover springs. Fix: build a fresh GpuState + hooks per path.
+
+**Result (n=1000 frictional pile, 4000 steps, M5 Pro):** single-window vs
+windowed `run_steps(250)+run_steps_continue(250)×15` → **max |Δpos| = 0.000e0
+(bit-exact)**, 54× faster than per-step. Per-step (re-prime every step) still
+diverges 4.6e-2 — confirming residency-continue is the correct model.
+Milestone-1 unit test and validate_trajectory still pass.
+
+**Residency windowing is therefore correct and unblocked.** The remaining step-1
+work — the `GpuGranularResidentPlugin` schedule wiring — can now be built on
+`run_steps`/`run_steps_continue` at the neighbour-rebuild cadence.
+
+Requires the soil_gpu commit (deterministic cell list + run_steps_continue);
+soil `main` must be pushed before this dirt branch builds against it.
