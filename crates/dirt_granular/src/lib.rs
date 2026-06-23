@@ -132,7 +132,7 @@ use soil_verlet::VelocityVerletPlugin;
 
 pub use contact::HertzMindlinContactPlugin;
 pub use gpu::GpuGranularForcePlugin;
-pub use gpu_resident::GpuGranularResidentPlugin;
+pub use gpu_resident::{gpu_granular_resident_step, GpuGranularResidentPlugin, ResidentGpu};
 
 /// Re-export from [`dirt_atom`] for convenience.
 pub use dirt_atom::SQRT_5_6;
