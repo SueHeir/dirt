@@ -134,6 +134,8 @@ use soil_verlet::VelocityVerletPlugin;
 pub use contact::HertzMindlinContactPlugin;
 pub use gpu::GpuGranularForcePlugin;
 pub use gpu_resident::{gpu_granular_resident_step, GpuGranularResidentPlugin, ResidentGpu};
+#[cfg(feature = "gpu_coherence")]
+pub use gpu_resident::resident_coherence_registry;
 pub use gpu_resident_mpi::{gpu_resident_mpi_step, GpuGranularResidentMpiPlugin, ResidentMpiGpu};
 pub use dirt_gpu::{Boundary, Plane};
 

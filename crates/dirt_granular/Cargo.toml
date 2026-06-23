@@ -29,3 +29,9 @@ soil_verlet = { git = "https://github.com/SueHeir/soil.git", branch = "main", de
 
 [dev-dependencies]
 dirt_test_utils = { path = "../dirt_test_utils", version = "0.1.3" }
+
+# Coherence validation (coherence_plan.md Phase 4) — needs the gpu_coherence
+# feature for resident_coherence_registry. Skipped from default example builds.
+[[example]]
+name = "coherence_validate"
+required-features = ["gpu_coherence"]
