@@ -173,10 +173,20 @@ write→HostDirty→reprime) with a fake in-memory bridge; counters correct.
 
 ## Rollout order
 
-1. Phase 1 metadata → `main` immediately (harmless).
-2. Phase 0 audit/fix → `main`.
-3. Phases 2–3 behind `gpu_coherence` (default off).
-4. Phase 4 green → flip `gpu_coherence` default on.
+1. Phase 1 metadata → `main` immediately (harmless). ✅
+2. Phase 0 audit/fix → `main`. ✅
+3. Phases 2–3 behind `gpu_coherence` (default off). ✅
+4. Phase 4 green. ✅ **Default flip deferred (2026-06-23 decision): kept opt-in**
+   (`gpu_coherence` stays off by default). Reason: under coherence the host `Atom`
+   is only fresh after a *system* reads it, so code that reads `Atom` directly
+   after the run loop (not via a system) would see last-synced state. The standard
+   dump path reads via a `PostFinalIntegration` system (safe), but flipping the
+   global default could surprise ad-hoc direct reads. Flip later once downstream
+   workflows are confirmed to read through systems — it's a one-line change
+   (`gpu_coherence` into `dirt_core` default features).
+
+All five phases are implemented, validated (`coherence_validation.md`), and on
+`main`; the feature is enabled explicitly with `--features gpu_coherence`.
 
 ## Open risk to watch
 
