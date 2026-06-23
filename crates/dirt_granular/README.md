@@ -30,7 +30,7 @@ Modules: `contact` (fused Hertz–Mindlin + Hooke), `tangential` (`ContactHistor
 ## TOML configuration
 
 ```toml
-[[materials]]
+[[dem.materials]]
 name = "glass"
 youngs_modulus = 8.7e9      # Pa
 poisson_ratio = 0.3
@@ -40,7 +40,7 @@ rolling_friction = 0.1      # rolling friction μ_r
 cohesion_energy = 0.0       # J/m² (SJKR, 0 = disabled)
 surface_energy = 0.0        # J/m² (JKR/DMT, 0 = disabled)
 
-[materials]
+[dem]
 contact_model = "hertz"     # "hertz" (default) or "hooke"
 adhesion_model = "jkr"      # "jkr" (default) or "dmt"
 rolling_model = "constant"  # "constant" (default) or "sds"
