@@ -122,6 +122,7 @@ pub use rotational::RotationalDynamicsPlugin;
 
 pub mod contact;
 pub mod gpu;
+pub mod gpu_resident;
 
 use grass_app::prelude::*;
 
@@ -131,6 +132,7 @@ use soil_verlet::VelocityVerletPlugin;
 
 pub use contact::HertzMindlinContactPlugin;
 pub use gpu::GpuGranularForcePlugin;
+pub use gpu_resident::GpuGranularResidentPlugin;
 
 /// Re-export from [`dirt_atom`] for convenience.
 pub use dirt_atom::SQRT_5_6;
