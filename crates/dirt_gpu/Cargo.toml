@@ -32,3 +32,7 @@ dirt_test_utils = { path = "../dirt_test_utils", version = "0.1.3" }
 grass_app = { git = "https://github.com/SueHeir/grass.git", branch = "main" }
 grass_scheduler = { git = "https://github.com/SueHeir/grass.git", branch = "main" }
 soil_verlet = { git = "https://github.com/SueHeir/soil.git", branch = "main", default-features = false, features = ["precision-double"] }
+
+[[example]]
+name = "compare_cpu"
+required-features = ["precision-double"]
