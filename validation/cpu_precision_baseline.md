@@ -42,3 +42,20 @@ example's `Δ vs double` as the order-of-magnitude tolerance:
 The `double` run is the theory anchor (gold reference); `mixed`/`single` are the
 f32 reference the GPU is held to. Regenerate anytime: `python3
 validation/precision_baseline.py`.
+
+## Scope & deferred examples
+
+This baseline covers the **contact-physics** benchmarks — single/few-body
+collisions and granular-gas cooling — which directly exercise the normal and
+tangential contact force the GPU kernels compute, and which run in seconds.
+
+The **bulk/steady-state** benchmarks (`angle_of_repose`, `column_collapse`,
+`hopper_beverloo`, `granular_conductivity`, `fiber_crossover`, `lebc_shear`,
+`plate_sinkage`) are emergent-behaviour validations that take ~6–10 min per run,
+so ~1–2 h across 3 precisions. They are deferred from the inline baseline; run
+them on a longer budget with:
+
+    python3 validation/precision_baseline.py bench_angle_of_repose ...
+
+They append to `validation/results/` and merge into the summary via
+`python3 validation/_summarize.py`.
