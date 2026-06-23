@@ -100,6 +100,22 @@ impl Plugin for HertzMindlinContactPlugin {
 ///
 /// Panics if more than [`MAX_OVERLAP_WARNINGS`] pairs have excessive overlap
 /// in a single timestep, indicating an unstable simulation.
+/// Which pairs to process — for interior/boundary overlap (roadmap step 4). A pair
+/// `(i, j)` is "boundary" iff the neighbour `j` is a ghost (`j >= nlocal`): such
+/// pairs need fresh ghost positions, so they run after the halo lands. Interior
+/// pairs (`j < nlocal`) need no ghosts and can be computed while the halo is in
+/// flight. `All` reproduces the standard single-pass force exactly.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum ForcePass {
+    /// All pairs (resets active flags, prunes at the end) — the standard force.
+    All,
+    /// Interior pairs only (resets active flags, does NOT prune).
+    Interior,
+    /// Boundary pairs only (does NOT reset, prunes at the end).
+    Boundary,
+}
+
+/// Standard system: compute the full Hertz-Mindlin contact force in one pass.
 pub fn hertz_mindlin_contact_force(
     mut atoms: ResMut<Atom>,
     neighbor: Res<Neighbor>,
@@ -107,10 +123,30 @@ pub fn hertz_mindlin_contact_force(
     material_table: Res<MaterialTable>,
     mut virial: Option<ResMut<VirialStress>>,
 ) {
+    contact_force_core(
+        &mut atoms,
+        &neighbor,
+        &registry,
+        &material_table,
+        virial.as_deref_mut(),
+        ForcePass::All,
+    );
+}
+
+/// Core force computation, parameterised by [`ForcePass`] so the interior and
+/// boundary pairs can be computed in separate passes (with the halo exchange
+/// between) for comm/compute overlap. `ForcePass::All` is the single-pass force.
+pub fn contact_force_core(
+    atoms: &mut Atom,
+    neighbor: &Neighbor,
+    registry: &AtomDataRegistry,
+    material_table: &MaterialTable,
+    mut virial: Option<&mut VirialStress>,
+    pass: ForcePass,
+) {
     let newton = neighbor.newton;
-    let mut dem = registry.expect_mut::<DemAtom>("hertz_mindlin_contact_force");
-    let mut history =
-        registry.expect_mut::<ContactHistoryStore>("hertz_mindlin_contact_force");
+    let mut dem = registry.expect_mut::<DemAtom>("contact_force_core");
+    let mut history = registry.expect_mut::<ContactHistoryStore>("contact_force_core");
     let bond_store = registry.get::<BondStore>();
     let dt = atoms.dt;
 
@@ -122,14 +158,24 @@ pub fn hertz_mindlin_contact_force(
     let nlocal = atoms.nlocal as usize;
     let mut overlap_warnings = 0usize;
 
-    // Reset all active flags before pair loop
-    for i in 0..nlocal {
-        for entry in &mut history.contacts[i] {
-            entry.2 = false;
+    // Reset all active flags before pair loop (skipped on the Boundary pass, which
+    // continues the Interior pass's history instead of clearing it).
+    if pass != ForcePass::Boundary {
+        for i in 0..nlocal {
+            for entry in &mut history.contacts[i] {
+                entry.2 = false;
+            }
         }
     }
 
     for (i, j) in neighbor.pairs(nlocal) {
+        // Interior/boundary split (step 4): boundary pairs touch a ghost (j >= nlocal).
+        let is_boundary_pair = j >= nlocal;
+        match pass {
+            ForcePass::Interior if is_boundary_pair => continue,
+            ForcePass::Boundary if !is_boundary_pair => continue,
+            _ => {}
+        }
         if let Some(ref bonds) = bond_store {
             if bonds.are_excluded(i, j, &atoms.tag) {
                 continue;
@@ -583,9 +629,12 @@ pub fn hertz_mindlin_contact_force(
         }
     }
 
-    // Prune stale contacts for local atoms (remove entries not touched this step)
-    for i in 0..nlocal {
-        history.contacts[i].retain(|(_, _, active)| *active);
+    // Prune stale contacts (skipped on the Interior pass; the Boundary pass prunes
+    // once after both passes have marked their active contacts).
+    if pass != ForcePass::Interior {
+        for i in 0..nlocal {
+            history.contacts[i].retain(|(_, _, active)| *active);
+        }
     }
 
     // Debug: check total force + torque on all atoms (local + ghost).
@@ -1007,6 +1056,54 @@ mod tests {
     ) {
         push_dem_test_atom(atom, dem, tag, pos, radius);
         history.contacts.push(Vec::new());
+    }
+
+    /// Step 4 correctness: the interior/boundary two-pass force (Interior pass for
+    /// local-local pairs while the halo is in flight, Boundary pass for ghost pairs
+    /// after they land) must equal the single All pass — bit-for-bit.
+    #[test]
+    fn interior_boundary_split_matches_single_pass() {
+        let r = 0.001;
+        let build = || {
+            let mut atom = Atom::new();
+            let mut dem = DemAtom::new();
+            let mut hist = ContactHistoryStore::new();
+            atom.dt = 1e-7;
+            // atom 0 (local) overlaps atom 1 (local -> interior pair) and atom 2
+            // (ghost -> boundary pair).
+            push_test_atom_with_history(&mut atom, &mut dem, &mut hist, 0, [0.0, 0.0, 0.0], r);
+            push_test_atom_with_history(&mut atom, &mut dem, &mut hist, 1, [1.5 * r, 0.0, 0.0], r);
+            push_test_atom_with_history(&mut atom, &mut dem, &mut hist, 2, [0.0, 1.5 * r, 0.0], r);
+            atom.nlocal = 2;
+            atom.natoms = 3;
+            // Half neighbour list (newton): atom 0 -> {1 (local), 2 (ghost)}.
+            let mut nb = Neighbor::new();
+            nb.neighbor_offsets = vec![0, 2, 2, 2];
+            nb.neighbor_indices = vec![1, 2];
+            let mut reg = AtomDataRegistry::new();
+            reg.register(dem);
+            reg.register(hist);
+            (atom, nb, reg)
+        };
+        let mt = make_material_table();
+
+        let (mut a_all, nb, r_all) = build();
+        contact_force_core(&mut a_all, &nb, &r_all, &mt, None, ForcePass::All);
+
+        let (mut a_split, _nb, r_split) = build();
+        contact_force_core(&mut a_split, &nb, &r_split, &mt, None, ForcePass::Interior);
+        contact_force_core(&mut a_split, &nb, &r_split, &mt, None, ForcePass::Boundary);
+
+        let mut max_diff = 0.0f64;
+        for i in 0..3 {
+            for d in 0..3 {
+                max_diff =
+                    max_diff.max((a_all.force[i][d] as f64 - a_split.force[i][d] as f64).abs());
+            }
+        }
+        assert!(max_diff < 1e-15, "interior+boundary != all: max force diff = {max_diff:.3e}");
+        // Sanity: the contact actually produced a non-trivial force.
+        assert!(a_all.force[0][0].abs() as f64 + a_all.force[0][1].abs() as f64 > 0.0);
     }
 
     #[test]
