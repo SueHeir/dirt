@@ -12,6 +12,9 @@ categories = ["simulation", "science"]
 [features]
 default = ["mpi_backend", "precision-double"]
 mpi_backend = ["soil_core/mpi_backend", "dirt_clump/mpi_backend"]
+# Scheduler-mediated host<->device coherence (coherence_plan.md). Forwarded to
+# dirt_granular; off by default.
+gpu_coherence = ["dirt_granular/gpu_coherence"]
 precision-double = ["soil_core/precision-double"]
 precision-mixed = ["soil_core/precision-mixed"]
 precision-single = ["soil_core/precision-single"]

@@ -21,6 +21,8 @@ repository = "https://github.com/SueHeir/dirt"
 [features]
 default = ["mpi_backend", "precision-double"]
 mpi_backend = ["dirt_core/mpi_backend", "dep:libffi-sys"]
+# Host<->device coherence (coherence_plan.md); off by default until validated.
+gpu_coherence = ["dirt_core/gpu_coherence"]
 precision-double = ["dirt_core/precision-double"]
 precision-mixed = ["dirt_core/precision-mixed"]
 precision-single = ["dirt_core/precision-single"]
