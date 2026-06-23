@@ -19,8 +19,11 @@ license = "MIT OR Apache-2.0"
 repository = "https://github.com/SueHeir/dirt"
 
 [features]
-default = ["mpi_backend"]
+default = ["mpi_backend", "precision-double"]
 mpi_backend = ["dirt_core/mpi_backend", "dep:libffi-sys"]
+precision-double = ["dirt_core/precision-double"]
+precision-mixed = ["dirt_core/precision-mixed"]
+precision-single = ["dirt_core/precision-single"]
 
 [[example]]
 name = "granular_basic"
@@ -105,8 +108,8 @@ dirt_core = { path = "./crates/dirt_core", default-features = false }
 serde = { version = "1", features = ["derive"] }
 dirt_clump = { path = "./crates/dirt_clump" }
 dirt_measure_plane = { path = "./crates/dirt_measure_plane" }
-soil_derive = { git = "https://github.com/SueHeir/soil.git", branch = "master" }
-soil_deform = { git = "https://github.com/SueHeir/soil.git", branch = "master" }
+soil_derive = { git = "https://github.com/SueHeir/soil.git", branch = "main" }
+soil_deform = { git = "https://github.com/SueHeir/soil.git", branch = "main", default-features = false }
 grass_scheduler = { git = "https://github.com/SueHeir/grass.git", branch = "main" }
 # Force libffi-sys to use system libffi (via pkg-config) instead of building
 # from source. libffi-sys 2.3.0 has a broken aarch64 macOS assembler; Homebrew

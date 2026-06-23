@@ -93,17 +93,18 @@ fn main() {
 
     if let Some(atoms) = app.get_resource_ref::<Atom>() {
         let nlocal = atoms.nlocal as usize;
-        let discharged = (0..nlocal).filter(|&i| atoms.pos[i][2] < GATE_Z).count();
+        let discharged = (0..nlocal).filter(|&i| (atoms.pos[i][2] as f64) < GATE_Z).count();
         println!(
             "FINAL: {} particles, {} discharged below gate",
             nlocal, discharged
         );
         // Diagnostic: z distribution and speed percentiles.
-        let mut zs: Vec<f64> = (0..nlocal).map(|i| atoms.pos[i][2]).collect();
+        let mut zs: Vec<f64> = (0..nlocal).map(|i| atoms.pos[i][2] as f64).collect();
         let mut vs: Vec<f64> = (0..nlocal)
             .map(|i| {
                 let v = atoms.vel[i];
-                (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt()
+                (v[0] as f64 * v[0] as f64 + v[1] as f64 * v[1] as f64 + v[2] as f64 * v[2] as f64)
+                    .sqrt()
             })
             .collect();
         zs.sort_by(|a, b| a.partial_cmp(b).unwrap());
@@ -179,12 +180,16 @@ fn write_stats(
     let mut top_z = f64::MIN;
     for i in 0..nlocal {
         let v = atoms.vel[i];
-        ke += 0.5 * atoms.mass[i] * (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
-        if atoms.pos[i][2] < GATE_Z {
+        ke += 0.5
+            * atoms.mass[i] as f64
+            * (v[0] as f64 * v[0] as f64
+                + v[1] as f64 * v[1] as f64
+                + v[2] as f64 * v[2] as f64);
+        if (atoms.pos[i][2] as f64) < GATE_Z {
             discharged += 1;
         }
-        if atoms.pos[i][2] > top_z {
-            top_z = atoms.pos[i][2];
+        if atoms.pos[i][2] as f64 > top_z {
+            top_z = atoms.pos[i][2] as f64;
         }
     }
     let top_z = if nlocal > 0 { top_z } else { 0.0 };

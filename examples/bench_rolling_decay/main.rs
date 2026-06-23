@@ -96,16 +96,24 @@ fn init_pure_rolling(
     let r = dem.radius[i];
 
     // Desired horizontal launch speed: take it from the inserted velocity.
-    let v0 = atoms.vel[i][0];
+    let v0 = atoms.vel[i][0] as f64;
 
     // Seat the sphere on the floor wall (z = 0) with a small overlap so normal
     // contact is live and near force balance (≈ the Hertz static overlap that
     // supports the weight) from step 0.
     let overlap0 = 2.0e-6;
-    let cx = atoms.pos[i][0];
-    let cy = atoms.pos[i][1];
-    atoms.pos[i] = [cx, cy, r - overlap0];
-    atoms.vel[i] = [v0, 0.0, 0.0];
+    let cx = atoms.pos[i][0] as f64;
+    let cy = atoms.pos[i][1] as f64;
+    atoms.pos[i] = [
+        cx as dirt_core::soil_core::Real,
+        cy as dirt_core::soil_core::Real,
+        (r - overlap0) as dirt_core::soil_core::Real,
+    ];
+    atoms.vel[i] = [
+        v0 as dirt_core::soil_core::Real,
+        0.0 as dirt_core::soil_core::Real,
+        0.0 as dirt_core::soil_core::Real,
+    ];
 
     // Pure rolling in +x on a floor BELOW the sphere (contact point at the
     // bottom, lever r·n̂ = −R ẑ) ⇒ ω = (0, +v0/R, 0) makes the contact-point
@@ -144,8 +152,8 @@ fn record(
     let step = run_state.total_cycle;
     let dt = atoms.dt;
     let t = step as f64 * dt;
-    let x = atoms.pos[i][0];
-    let vx = atoms.vel[i][0];
+    let x = atoms.pos[i][0] as f64;
+    let vx = atoms.vel[i][0] as f64;
     // Forward-rolling spin is ω_y = +vx/R; report ω_y directly so that, in pure
     // rolling, omega·R = vx and the two decay together.
     let omega = dem.omega[i][1];

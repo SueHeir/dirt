@@ -13,7 +13,7 @@ use rand_distr::{Distribution, Normal};
 use serde::Deserialize;
 
 use soil_core::{
-    Atom, AtomDataRegistry, CommResource, CommState, Domain, Region, RunConfig, RunState,
+    Atom, AtomDataRegistry, CommResource, CommState, Domain, Real, Region, RunConfig, RunState,
     ParticleSimScheduleSet, ScheduleSetupSet, StageOverrides,
 };
 use grass_scheduler::prelude::CurrentState;
@@ -351,15 +351,15 @@ fn insert_single_particle(
     atom.nlocal += 1;
     atom.tag.push(tag);
     atom.origin_index.push(0);
-    atom.cutoff_radius.push(radius);
+    atom.cutoff_radius.push(radius as Real);
     atom.image.push([0, 0, 0]);
     atom.is_ghost.push(false);
-    atom.pos.push(pos);
-    atom.vel.push(vel);
+    atom.pos.push([pos[0] as Real, pos[1] as Real, pos[2] as Real]);
+    atom.vel.push([vel[0] as Real, vel[1] as Real, vel[2] as Real]);
     atom.force.push([0.0; 3]);
     let mass = density * 4.0 / 3.0 * PI * radius.powi(3);
-    atom.mass.push(mass);
-    atom.inv_mass.push(1.0 / mass);
+    atom.mass.push(mass as Real);
+    atom.inv_mass.push((1.0 / mass) as Real);
     atom.atom_type.push(mat_idx);
     dem_data.radius.push(radius);
     dem_data.density.push(density);

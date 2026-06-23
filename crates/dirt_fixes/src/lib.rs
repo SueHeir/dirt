@@ -35,7 +35,7 @@ use grass_app::prelude::*;
 use grass_scheduler::prelude::*;
 use serde::Deserialize;
 
-use soil_core::{Atom, AtomDataRegistry, CommResource, Config, GroupRegistry, ParticleSimScheduleSet, ScheduleSetupSet};
+use soil_core::{Accum, Atom, AtomDataRegistry, CommResource, Config, GroupRegistry, ParticleSimScheduleSet, Real, ScheduleSetupSet};
 use soil_print::Thermo;
 
 // ── Config structs ─────────────────────────────────────────────────────────
@@ -391,9 +391,9 @@ fn apply_move_linear_pre(
         let group = groups.expect(&def.group);
         for i in 0..nlocal {
             if group.mask[i] {
-                atoms.vel[i][0] = def.vx;
-                atoms.vel[i][1] = def.vy;
-                atoms.vel[i][2] = def.vz;
+                atoms.vel[i][0] = def.vx as Real;
+                atoms.vel[i][1] = def.vy as Real;
+                atoms.vel[i][2] = def.vz as Real;
             }
         }
     }
@@ -411,9 +411,9 @@ fn apply_add_force(
         let group = groups.expect(&def.group);
         for i in 0..nlocal {
             if group.mask[i] {
-                atoms.force[i][0] += def.fx;
-                atoms.force[i][1] += def.fy;
-                atoms.force[i][2] += def.fz;
+                atoms.force[i][0] += def.fx as Accum;
+                atoms.force[i][1] += def.fy as Accum;
+                atoms.force[i][2] += def.fz as Accum;
             }
         }
     }
@@ -431,9 +431,9 @@ fn apply_set_force(
         let group = groups.expect(&def.group);
         for i in 0..nlocal {
             if group.mask[i] {
-                atoms.force[i][0] = def.fx;
-                atoms.force[i][1] = def.fy;
-                atoms.force[i][2] = def.fz;
+                atoms.force[i][0] = def.fx as Accum;
+                atoms.force[i][1] = def.fy as Accum;
+                atoms.force[i][2] = def.fz as Accum;
             }
         }
     }
@@ -510,9 +510,9 @@ fn apply_viscous(
         let gamma = def.gamma;
         for i in 0..nlocal {
             if group.mask[i] {
-                atoms.force[i][0] -= gamma * atoms.vel[i][0];
-                atoms.force[i][1] -= gamma * atoms.vel[i][1];
-                atoms.force[i][2] -= gamma * atoms.vel[i][2];
+                atoms.force[i][0] -= (gamma * atoms.vel[i][0] as f64) as Accum;
+                atoms.force[i][1] -= (gamma * atoms.vel[i][1] as f64) as Accum;
+                atoms.force[i][2] -= (gamma * atoms.vel[i][2] as f64) as Accum;
             }
         }
     }
@@ -536,15 +536,15 @@ fn apply_nve_limit(
             if !group.mask[i] {
                 continue;
             }
-            let vx = atoms.vel[i][0];
-            let vy = atoms.vel[i][1];
-            let vz = atoms.vel[i][2];
+            let vx = atoms.vel[i][0] as f64;
+            let vy = atoms.vel[i][1] as f64;
+            let vz = atoms.vel[i][2] as f64;
             let vmag = (vx * vx + vy * vy + vz * vz).sqrt();
             if vmag > vmax {
                 let scale = vmax / vmag;
-                atoms.vel[i][0] *= scale;
-                atoms.vel[i][1] *= scale;
-                atoms.vel[i][2] *= scale;
+                atoms.vel[i][0] = (atoms.vel[i][0] as f64 * scale) as Real;
+                atoms.vel[i][1] = (atoms.vel[i][1] as f64 * scale) as Real;
+                atoms.vel[i][2] = (atoms.vel[i][2] as f64 * scale) as Real;
                 n_limited += 1;
             }
         }
@@ -623,9 +623,9 @@ gz = -9.81"#,
 /// Ghost atoms (index ≥ `nlocal`) are not affected.
 pub fn apply_gravity(mut atoms: ResMut<Atom>, gravity: Res<GravityConfig>) {
     for i in 0..atoms.nlocal as usize {
-        atoms.force[i][0] += atoms.mass[i] * gravity.gx;
-        atoms.force[i][1] += atoms.mass[i] * gravity.gy;
-        atoms.force[i][2] += atoms.mass[i] * gravity.gz;
+        atoms.force[i][0] += (atoms.mass[i] as f64 * gravity.gx) as Accum;
+        atoms.force[i][1] += (atoms.mass[i] as f64 * gravity.gy) as Accum;
+        atoms.force[i][2] += (atoms.mass[i] as f64 * gravity.gz) as Accum;
     }
 }
 

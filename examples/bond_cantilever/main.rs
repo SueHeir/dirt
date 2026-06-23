@@ -85,7 +85,7 @@ fn record_cantilever(
     let nlocal = atoms.nlocal as usize;
     for i in 0..nlocal {
         if atoms.tag[i] == TIP_TAG {
-            local_tip_z = atoms.pos[i][2];
+            local_tip_z = atoms.pos[i][2] as f64;
             break;
         }
     }
@@ -116,9 +116,9 @@ fn record_cantilever(
                     Some(&jx) => jx,
                     None => continue,
                 };
-                let dx = atoms.pos[j][0] - atoms.pos[i][0];
-                let dy = atoms.pos[j][1] - atoms.pos[i][1];
-                let dz = atoms.pos[j][2] - atoms.pos[i][2];
+                let dx = atoms.pos[j][0] as f64 - atoms.pos[i][0] as f64;
+                let dy = atoms.pos[j][1] as f64 - atoms.pos[i][1] as f64;
+                let dz = atoms.pos[j][2] as f64 - atoms.pos[i][2] as f64;
                 let dist = (dx*dx + dy*dy + dz*dz).sqrt();
                 let strain = ((dist - b.r0) / b.r0).abs();
                 if strain > max_s {

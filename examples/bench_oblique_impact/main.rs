@@ -104,7 +104,8 @@ fn track_oblique(
     if tracker.projectile_tag.is_none() {
         let mut best = (0usize, 0.0f64);
         for i in 0..atoms.nlocal as usize {
-            let s = dot(atoms.vel[i], atoms.vel[i]);
+            let vi = [atoms.vel[i][0] as f64, atoms.vel[i][1] as f64, atoms.vel[i][2] as f64];
+            let s = dot(vi, vi);
             if s > best.1 {
                 best = (i, s);
             }
@@ -117,13 +118,13 @@ fn track_oblique(
     };
     let t = (0..atoms.nlocal as usize).find(|&i| i != p).unwrap();
 
-    let vel = atoms.vel[p];
+    let vel = [atoms.vel[p][0] as f64, atoms.vel[p][1] as f64, atoms.vel[p][2] as f64];
 
     // Line-of-centers from target → projectile, and center overlap.
     let d = [
-        atoms.pos[p][0] - atoms.pos[t][0],
-        atoms.pos[p][1] - atoms.pos[t][1],
-        atoms.pos[p][2] - atoms.pos[t][2],
+        atoms.pos[p][0] as f64 - atoms.pos[t][0] as f64,
+        atoms.pos[p][1] as f64 - atoms.pos[t][1] as f64,
+        atoms.pos[p][2] as f64 - atoms.pos[t][2] as f64,
     ];
     let dist = dot(d, d).sqrt();
     let overlap = (dem.radius[p] + dem.radius[t]) - dist;
@@ -136,7 +137,7 @@ fn track_oblique(
     // step,overlap,fn,ft_mag,ft_signed,vt_x,omega_y).
     if in_contact && std::env::var("DIRT_TRACE").is_ok() {
         let n = [d[0] / dist, d[1] / dist, d[2] / dist];
-        let f = atoms.force[p];
+        let f = [atoms.force[p][0] as f64, atoms.force[p][1] as f64, atoms.force[p][2] as f64];
         let fn_ = dot(f, n);
         let ftv = [f[0] - fn_ * n[0], f[1] - fn_ * n[1], f[2] - fn_ * n[2]];
         let ft_mag = dot(ftv, ftv).sqrt();

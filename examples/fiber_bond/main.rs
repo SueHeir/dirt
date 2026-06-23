@@ -176,7 +176,7 @@ fn apply_three_step_load(
     let nlocal = atoms.nlocal as usize;
     for i in 0..nlocal {
         if atoms.tag[i] == TIP_TAG {
-            atoms.force[i][2] += f;
+            atoms.force[i][2] += f as dirt_core::soil_core::Accum;
             break;
         }
     }
@@ -209,8 +209,8 @@ fn find_middle_bond(
     let mut x_lo = f64::INFINITY;
     let mut x_hi = f64::NEG_INFINITY;
     for i in 0..nlocal {
-        x_lo = x_lo.min(atoms.pos[i][0]);
-        x_hi = x_hi.max(atoms.pos[i][0]);
+        x_lo = x_lo.min(atoms.pos[i][0] as f64);
+        x_hi = x_hi.max(atoms.pos[i][0] as f64);
     }
     let x_centre = 0.5 * (x_lo + x_hi);
     let mut best: Option<(usize, u32, u32, f64, f64)> = None;
@@ -223,7 +223,7 @@ fn find_middle_bond(
             // for our single-rank validation configs.
             let j_opt = (0..nlocal).find(|&k| atoms.tag[k] == b.partner_tag);
             let j = match j_opt { Some(k) => k, None => continue };
-            let bond_centre_x = 0.5 * (atoms.pos[i][0] + atoms.pos[j][0]);
+            let bond_centre_x = 0.5 * (atoms.pos[i][0] as f64 + atoms.pos[j][0] as f64);
             let d = (bond_centre_x - x_centre).abs();
             let take = match &best {
                 None => true,
@@ -281,7 +281,7 @@ fn record_fiber_state(
         let il_idx = tag_left.and_then(|t| (0..nlocal_now).find(|&k| atoms.tag[k] == t));
         let ir_idx = tag_right.and_then(|t| (0..nlocal_now).find(|&k| atoms.tag[k] == t));
         let length0 = match (il_idx, ir_idx) {
-            (Some(il), Some(ir)) => atoms.pos[ir][0] - atoms.pos[il][0],
+            (Some(il), Some(ir)) => atoms.pos[ir][0] as f64 - atoms.pos[il][0] as f64,
             _ => 0.0,
         };
 
@@ -316,7 +316,11 @@ fn record_fiber_state(
         let max_tag = (0..nlocal).map(|i| atoms.tag[i] as usize).max().unwrap_or(0);
         let mut initial_pos = vec![[0.0f64; 3]; max_tag + 1];
         for i in 0..nlocal {
-            initial_pos[atoms.tag[i] as usize] = atoms.pos[i];
+            initial_pos[atoms.tag[i] as usize] = [
+                atoms.pos[i][0] as f64,
+                atoms.pos[i][1] as f64,
+                atoms.pos[i][2] as f64,
+            ];
         }
 
         rec.writer = Some(w);
@@ -396,13 +400,13 @@ fn record_fiber_state(
     let i_left = rec.tag_left.and_then(|t| (0..nlocal_now).find(|&k| atoms.tag[k] == t));
     let i_right = rec.tag_right.and_then(|t| (0..nlocal_now).find(|&k| atoms.tag[k] == t));
     let (lx, ly, lz, lvx, lvy, lvz) = match i_left {
-        Some(i) => (atoms.pos[i][0], atoms.pos[i][1], atoms.pos[i][2],
-                    atoms.vel[i][0], atoms.vel[i][1], atoms.vel[i][2]),
+        Some(i) => (atoms.pos[i][0] as f64, atoms.pos[i][1] as f64, atoms.pos[i][2] as f64,
+                    atoms.vel[i][0] as f64, atoms.vel[i][1] as f64, atoms.vel[i][2] as f64),
         None => (f64::NAN, f64::NAN, f64::NAN, f64::NAN, f64::NAN, f64::NAN),
     };
     let (rx, ry, rz, rvx, rvy, rvz) = match i_right {
-        Some(i) => (atoms.pos[i][0], atoms.pos[i][1], atoms.pos[i][2],
-                    atoms.vel[i][0], atoms.vel[i][1], atoms.vel[i][2]),
+        Some(i) => (atoms.pos[i][0] as f64, atoms.pos[i][1] as f64, atoms.pos[i][2] as f64,
+                    atoms.vel[i][0] as f64, atoms.vel[i][1] as f64, atoms.vel[i][2] as f64),
         None => (f64::NAN, f64::NAN, f64::NAN, f64::NAN, f64::NAN, f64::NAN),
     };
     let length_global = match (i_left, i_right) {
@@ -423,9 +427,9 @@ fn record_fiber_state(
          theta_max_bend_mid, eps_max_axial_mid) =
         match (i_a, i_b) {
             (Some(i), Some(j)) => {
-                let dx = atoms.pos[j][0] - atoms.pos[i][0];
-                let dy = atoms.pos[j][1] - atoms.pos[i][1];
-                let dz = atoms.pos[j][2] - atoms.pos[i][2];
+                let dx = atoms.pos[j][0] as f64 - atoms.pos[i][0] as f64;
+                let dy = atoms.pos[j][1] as f64 - atoms.pos[i][1] as f64;
+                let dz = atoms.pos[j][2] as f64 - atoms.pos[i][2] as f64;
                 let len = (dx*dx + dy*dy + dz*dz).sqrt();
                 let delta = len - rec.bond_len_mid0;
                 let strain = delta / rec.bond_len_mid0;

@@ -8,9 +8,14 @@ description = "General-purpose measurement plane plugin for counting particle cr
 keywords = ["dem", "measurement", "throughput", "simulation"]
 categories = ["simulation", "science"]
 
+[features]
+precision-double = ["soil_core/precision-double"]
+precision-mixed = ["soil_core/precision-mixed"]
+precision-single = ["soil_core/precision-single"]
+
 [dependencies]
-soil_core = { git = "https://github.com/SueHeir/soil.git", branch = "master", default-features = false }
+soil_core = { git = "https://github.com/SueHeir/soil.git", branch = "main", default-features = false }
 grass_app = { git = "https://github.com/SueHeir/grass.git", branch = "main" }
 grass_scheduler = { git = "https://github.com/SueHeir/grass.git", branch = "main" }
-soil_print = { git = "https://github.com/SueHeir/soil.git", branch = "master" }
+soil_print = { git = "https://github.com/SueHeir/soil.git", branch = "main", default-features = false }
 serde = { version = "1", features = ["derive"] }

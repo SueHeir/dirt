@@ -109,7 +109,7 @@ fn dump_deposit(app: &App) {
         )
         .unwrap();
         let v = atoms.vel[i];
-        let s = (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt();
+        let s = ((v[0] as f64) * (v[0] as f64) + (v[1] as f64) * (v[1] as f64) + (v[2] as f64) * (v[2] as f64)).sqrt();
         if s > vmax {
             vmax = s;
         }

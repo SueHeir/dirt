@@ -7,10 +7,10 @@ repository.workspace = true
 description = "Multisphere/clump rigid body composites for non-spherical DEM particles"
 
 [dependencies]
-soil_core = { git = "https://github.com/SueHeir/soil.git", branch = "master", default-features = false }
+soil_core = { git = "https://github.com/SueHeir/soil.git", branch = "main", default-features = false }
 grass_app = { git = "https://github.com/SueHeir/grass.git", branch = "main" }
 grass_scheduler = { git = "https://github.com/SueHeir/grass.git", branch = "main" }
-soil_derive = { git = "https://github.com/SueHeir/soil.git", branch = "master" }
+soil_derive = { git = "https://github.com/SueHeir/soil.git", branch = "main" }
 dirt_atom = { path = "../dirt_atom", version = "0.1.3" }
 serde = { version = "1", features = ["derive"] }
 toml = "0.8"
@@ -19,6 +19,9 @@ rand = "0.9"
 [features]
 default = []
 mpi_backend = ["soil_core/mpi_backend"]
+precision-double = ["soil_core/precision-double"]
+precision-mixed = ["soil_core/precision-mixed"]
+precision-single = ["soil_core/precision-single"]
 
 [dev-dependencies]
 dirt_test_utils = { path = "../dirt_test_utils", version = "0.1.3" }

@@ -630,9 +630,9 @@ pub fn auto_bond_touching(
     for i in 0..nlocal {
         for j in (i + 1)..nlocal {
             let mut d = [
-                atoms.pos[j][0] - atoms.pos[i][0],
-                atoms.pos[j][1] - atoms.pos[i][1],
-                atoms.pos[j][2] - atoms.pos[i][2],
+                atoms.pos[j][0] as f64 - atoms.pos[i][0] as f64,
+                atoms.pos[j][1] as f64 - atoms.pos[i][1] as f64,
+                atoms.pos[j][2] as f64 - atoms.pos[i][2] as f64,
             ];
             for k in 0..3 {
                 if pflags[k] {
@@ -744,9 +744,9 @@ pub fn load_bonds_from_file(
         let idx2 = match tag_to_local.get(&tag2) { Some(&i) => i, None => continue };
 
         let mut d = [
-            atoms.pos[idx2][0] - atoms.pos[idx1][0],
-            atoms.pos[idx2][1] - atoms.pos[idx1][1],
-            atoms.pos[idx2][2] - atoms.pos[idx1][2],
+            atoms.pos[idx2][0] as f64 - atoms.pos[idx1][0] as f64,
+            atoms.pos[idx2][1] as f64 - atoms.pos[idx1][1] as f64,
+            atoms.pos[idx2][2] as f64 - atoms.pos[idx1][2] as f64,
         ];
         let pflags = domain.periodic_flags();
         let box_size = domain.size;
@@ -955,9 +955,9 @@ pub fn bond_force(
             // see the wrapped distance regardless of which atom copy the
             // map happens to land on.
             let mut dxv = [
-                atoms.pos[j][0] - atoms.pos[i][0],
-                atoms.pos[j][1] - atoms.pos[i][1],
-                atoms.pos[j][2] - atoms.pos[i][2],
+                atoms.pos[j][0] as f64 - atoms.pos[i][0] as f64,
+                atoms.pos[j][1] as f64 - atoms.pos[i][1] as f64,
+                atoms.pos[j][2] as f64 - atoms.pos[i][2] as f64,
             ];
             for k in 0..3 {
                 if pflags[k] {
@@ -983,8 +983,8 @@ pub fn bond_force(
             let k_bend = match e_mod { Some(e) => e * iben / len, None => k_bend_direct };
 
             // Reduced mass / reduced MOI for damping.
-            let m_i = atoms.mass[i];
-            let m_j = atoms.mass[j];
+            let m_i = atoms.mass[i] as f64;
+            let m_j = atoms.mass[j] as f64;
             let m_red = if m_i + m_j > 0.0 { m_i * m_j / (m_i + m_j) } else { 0.0 };
             let moi_i = if dem.inv_inertia[i] > 0.0 { 1.0 / dem.inv_inertia[i] } else { 0.0 };
             let moi_j = if dem.inv_inertia[j] > 0.0 { 1.0 / dem.inv_inertia[j] } else { 0.0 };
@@ -1007,15 +1007,15 @@ pub fn bond_force(
             let w_i = dem.omega[i];
             let w_j = dem.omega[j];
             let v_i_c = [
-                atoms.vel[i][0] + w_i[1]*r1[2] - w_i[2]*r1[1],
-                atoms.vel[i][1] + w_i[2]*r1[0] - w_i[0]*r1[2],
-                atoms.vel[i][2] + w_i[0]*r1[1] - w_i[1]*r1[0],
+                atoms.vel[i][0] as f64 + w_i[1]*r1[2] - w_i[2]*r1[1],
+                atoms.vel[i][1] as f64 + w_i[2]*r1[0] - w_i[0]*r1[2],
+                atoms.vel[i][2] as f64 + w_i[0]*r1[1] - w_i[1]*r1[0],
             ];
             // r2 = -r1 for j → contact
             let v_j_c = [
-                atoms.vel[j][0] - (w_j[1]*r1[2] - w_j[2]*r1[1]),
-                atoms.vel[j][1] - (w_j[2]*r1[0] - w_j[0]*r1[2]),
-                atoms.vel[j][2] - (w_j[0]*r1[1] - w_j[1]*r1[0]),
+                atoms.vel[j][0] as f64 - (w_j[1]*r1[2] - w_j[2]*r1[1]),
+                atoms.vel[j][1] as f64 - (w_j[2]*r1[0] - w_j[0]*r1[2]),
+                atoms.vel[j][2] as f64 - (w_j[0]*r1[1] - w_j[1]*r1[0]),
             ];
             let v_rel = [v_j_c[0] - v_i_c[0], v_j_c[1] - v_i_c[1], v_j_c[2] - v_i_c[2]];
             let v_n_s = v_rel[0]*nhat[0] + v_rel[1]*nhat[1] + v_rel[2]*nhat[2];
@@ -1189,12 +1189,12 @@ pub fn bond_force(
 
             // ── Apply forces ──
             let f_total = [f_n[0] + f_t[0], f_n[1] + f_t[1], f_n[2] + f_t[2]];
-            atoms.force[i][0] += f_total[0];
-            atoms.force[i][1] += f_total[1];
-            atoms.force[i][2] += f_total[2];
-            atoms.force[j][0] -= f_total[0];
-            atoms.force[j][1] -= f_total[1];
-            atoms.force[j][2] -= f_total[2];
+            atoms.force[i][0] += f_total[0] as soil_core::Accum;
+            atoms.force[i][1] += f_total[1] as soil_core::Accum;
+            atoms.force[i][2] += f_total[2] as soil_core::Accum;
+            atoms.force[j][0] -= f_total[0] as soil_core::Accum;
+            atoms.force[j][1] -= f_total[1] as soil_core::Accum;
+            atoms.force[j][2] -= f_total[2] as soil_core::Accum;
 
             if let Some(ref mut v) = virial {
                 if v.active {

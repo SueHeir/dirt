@@ -109,7 +109,7 @@ use serde::Deserialize;
 
 use dirt_atom::{DemAtom, MaterialTable, SQRT_5_6};
 use soil_core::region::Region;
-use soil_core::{Atom, AtomDataRegistry, Config, ParticleSimScheduleSet};
+use soil_core::{Accum, Atom, AtomDataRegistry, Config, ParticleSimScheduleSet};
 
 fn default_neg_inf() -> f64 {
     f64::NEG_INFINITY
@@ -1043,9 +1043,9 @@ pub fn wall_contact_force(
         let wall_mat = wall.material_index;
 
         for i in 0..nlocal {
-            let px = atoms.pos[i][0];
-            let py = atoms.pos[i][1];
-            let pz = atoms.pos[i][2];
+            let px = atoms.pos[i][0] as f64;
+            let py = atoms.pos[i][1] as f64;
+            let pz = atoms.pos[i][2] as f64;
 
             // Check if atom is within the wall's bounding region
             if !wall.in_bounds(px, py, pz) {
@@ -1108,12 +1108,12 @@ pub fn wall_contact_force(
             };
 
             // Wall has infinite mass → m_reduced = m_particle
-            let m_r = atoms.mass[i];
+            let m_r = atoms.mass[i] as f64;
 
             // Relative velocity along wall normal (subtract wall velocity)
-            let v_rel_x = atoms.vel[i][0] - wall.velocity[0];
-            let v_rel_y = atoms.vel[i][1] - wall.velocity[1];
-            let v_rel_z = atoms.vel[i][2] - wall.velocity[2];
+            let v_rel_x = atoms.vel[i][0] as f64 - wall.velocity[0];
+            let v_rel_y = atoms.vel[i][1] as f64 - wall.velocity[1];
+            let v_rel_z = atoms.vel[i][2] as f64 - wall.velocity[2];
             let v_n = v_rel_x * wall.normal_x
                 + v_rel_y * wall.normal_y
                 + v_rel_z * wall.normal_z;
@@ -1146,9 +1146,9 @@ pub fn wall_contact_force(
             };
 
             // Force direction: along wall normal (pushes atom away from wall)
-            atoms.force[i][0] += f_net * wall.normal_x;
-            atoms.force[i][1] += f_net * wall.normal_y;
-            atoms.force[i][2] += f_net * wall.normal_z;
+            atoms.force[i][0] += (f_net * wall.normal_x) as Accum;
+            atoms.force[i][1] += (f_net * wall.normal_y) as Accum;
+            atoms.force[i][2] += (f_net * wall.normal_z) as Accum;
 
             // Twisting friction torque (wall-particle)
             if delta > 0.0 {
@@ -1178,9 +1178,9 @@ pub fn wall_contact_force(
                 let (ft, tau, ns) = wall_tangential_force(
                     n, v_rel, dem.omega[i], radius, delta, f_net, m_r, g_eff, mu, beta, dt, old,
                 );
-                atoms.force[i][0] += ft[0];
-                atoms.force[i][1] += ft[1];
-                atoms.force[i][2] += ft[2];
+                atoms.force[i][0] += ft[0] as Accum;
+                atoms.force[i][1] += ft[1] as Accum;
+                atoms.force[i][2] += ft[2] as Accum;
                 dem.torque[i][0] += tau[0];
                 dem.torque[i][1] += tau[1];
                 dem.torque[i][2] += tau[2];
@@ -1226,7 +1226,11 @@ pub fn wall_contact_force(
         }
         let wall_mat = cyl.material_index;
         for i in 0..nlocal {
-            let pos = atoms.pos[i];
+            let pos = [
+                atoms.pos[i][0] as f64,
+                atoms.pos[i][1] as f64,
+                atoms.pos[i][2] as f64,
+            ];
             let radius = dem.radius[i];
             let mat_i = atoms.atom_type[i] as usize;
 
@@ -1290,8 +1294,10 @@ pub fn wall_contact_force(
             let sdr = (delta * r_eff).sqrt();
             let k_n = 4.0 / 3.0 * e_eff * sdr;
             let s_n = 2.0 * e_eff * sdr;
-            let m_r = atoms.mass[i];
-            let v_n = atoms.vel[i][0] * nx + atoms.vel[i][1] * ny + atoms.vel[i][2] * nz;
+            let m_r = atoms.mass[i] as f64;
+            let v_n = atoms.vel[i][0] as f64 * nx
+                + atoms.vel[i][1] as f64 * ny
+                + atoms.vel[i][2] as f64 * nz;
             let beta = material_table.beta_ij[mat_i][wall_mat];
             let cohesion_energy = material_table.cohesion_energy_ij[mat_i][wall_mat];
 
@@ -1304,9 +1310,9 @@ pub fn wall_contact_force(
                 (k_n * delta - f_diss).max(0.0)
             };
 
-            atoms.force[i][0] += f_net * nx;
-            atoms.force[i][1] += f_net * ny;
-            atoms.force[i][2] += f_net * nz;
+            atoms.force[i][0] += (f_net * nx) as Accum;
+            atoms.force[i][1] += (f_net * ny) as Accum;
+            atoms.force[i][2] += (f_net * nz) as Accum;
 
             // Tangential (Mindlin) sliding friction (cylinder wall is static).
             let mu = material_table.friction_ij[mat_i][wall_mat];
@@ -1315,12 +1321,18 @@ pub fn wall_contact_force(
                 let key = (1u8, cyl_idx, atoms.tag[i]);
                 let old = old_springs.get(&key).copied().unwrap_or([0.0; 3]);
                 let (ft, tau, ns) = wall_tangential_force(
-                    [nx, ny, nz], atoms.vel[i], dem.omega[i], radius, delta, f_net, m_r, g_eff,
+                    [nx, ny, nz],
+                    [
+                        atoms.vel[i][0] as f64,
+                        atoms.vel[i][1] as f64,
+                        atoms.vel[i][2] as f64,
+                    ],
+                    dem.omega[i], radius, delta, f_net, m_r, g_eff,
                     mu, beta, dt, old,
                 );
-                atoms.force[i][0] += ft[0];
-                atoms.force[i][1] += ft[1];
-                atoms.force[i][2] += ft[2];
+                atoms.force[i][0] += ft[0] as Accum;
+                atoms.force[i][1] += ft[1] as Accum;
+                atoms.force[i][2] += ft[2] as Accum;
                 dem.torque[i][0] += tau[0];
                 dem.torque[i][1] += tau[1];
                 dem.torque[i][2] += tau[2];
@@ -1363,7 +1375,11 @@ pub fn wall_contact_force(
         }
         let wall_mat = sph.material_index;
         for i in 0..nlocal {
-            let pos = atoms.pos[i];
+            let pos = [
+                atoms.pos[i][0] as f64,
+                atoms.pos[i][1] as f64,
+                atoms.pos[i][2] as f64,
+            ];
             let radius = dem.radius[i];
             let mat_i = atoms.atom_type[i] as usize;
 
@@ -1398,8 +1414,10 @@ pub fn wall_contact_force(
             let sdr = (delta * r_eff).sqrt();
             let k_n = 4.0 / 3.0 * e_eff * sdr;
             let s_n = 2.0 * e_eff * sdr;
-            let m_r = atoms.mass[i];
-            let v_n = atoms.vel[i][0] * nx + atoms.vel[i][1] * ny + atoms.vel[i][2] * nz;
+            let m_r = atoms.mass[i] as f64;
+            let v_n = atoms.vel[i][0] as f64 * nx
+                + atoms.vel[i][1] as f64 * ny
+                + atoms.vel[i][2] as f64 * nz;
             let beta = material_table.beta_ij[mat_i][wall_mat];
             let cohesion_energy = material_table.cohesion_energy_ij[mat_i][wall_mat];
 
@@ -1412,9 +1430,9 @@ pub fn wall_contact_force(
                 (k_n * delta - f_diss).max(0.0)
             };
 
-            atoms.force[i][0] += f_net * nx;
-            atoms.force[i][1] += f_net * ny;
-            atoms.force[i][2] += f_net * nz;
+            atoms.force[i][0] += (f_net * nx) as Accum;
+            atoms.force[i][1] += (f_net * ny) as Accum;
+            atoms.force[i][2] += (f_net * nz) as Accum;
 
             // Tangential (Mindlin) sliding friction (sphere wall is static).
             let mu = material_table.friction_ij[mat_i][wall_mat];
@@ -1423,12 +1441,18 @@ pub fn wall_contact_force(
                 let key = (2u8, sph_idx, atoms.tag[i]);
                 let old = old_springs.get(&key).copied().unwrap_or([0.0; 3]);
                 let (ft, tau, ns) = wall_tangential_force(
-                    [nx, ny, nz], atoms.vel[i], dem.omega[i], radius, delta, f_net, m_r, g_eff,
+                    [nx, ny, nz],
+                    [
+                        atoms.vel[i][0] as f64,
+                        atoms.vel[i][1] as f64,
+                        atoms.vel[i][2] as f64,
+                    ],
+                    dem.omega[i], radius, delta, f_net, m_r, g_eff,
                     mu, beta, dt, old,
                 );
-                atoms.force[i][0] += ft[0];
-                atoms.force[i][1] += ft[1];
-                atoms.force[i][2] += ft[2];
+                atoms.force[i][0] += ft[0] as Accum;
+                atoms.force[i][1] += ft[1] as Accum;
+                atoms.force[i][2] += ft[2] as Accum;
                 dem.torque[i][0] += tau[0];
                 dem.torque[i][1] += tau[1];
                 dem.torque[i][2] += tau[2];
@@ -1471,7 +1495,11 @@ pub fn wall_contact_force(
         }
         let wall_mat = reg.material_index;
         for i in 0..nlocal {
-            let pos = atoms.pos[i];
+            let pos = [
+                atoms.pos[i][0] as f64,
+                atoms.pos[i][1] as f64,
+                atoms.pos[i][2] as f64,
+            ];
             let radius = dem.radius[i];
             let mat_i = atoms.atom_type[i] as usize;
 
@@ -1511,8 +1539,10 @@ pub fn wall_contact_force(
             let sdr = (delta * r_eff).sqrt();
             let k_n = 4.0 / 3.0 * e_eff * sdr;
             let s_n = 2.0 * e_eff * sdr;
-            let m_r = atoms.mass[i];
-            let v_n = atoms.vel[i][0] * nx + atoms.vel[i][1] * ny + atoms.vel[i][2] * nz;
+            let m_r = atoms.mass[i] as f64;
+            let v_n = atoms.vel[i][0] as f64 * nx
+                + atoms.vel[i][1] as f64 * ny
+                + atoms.vel[i][2] as f64 * nz;
             let beta = material_table.beta_ij[mat_i][wall_mat];
             let cohesion_energy = material_table.cohesion_energy_ij[mat_i][wall_mat];
 
@@ -1525,9 +1555,9 @@ pub fn wall_contact_force(
                 (k_n * delta - f_diss).max(0.0)
             };
 
-            atoms.force[i][0] += f_net * nx;
-            atoms.force[i][1] += f_net * ny;
-            atoms.force[i][2] += f_net * nz;
+            atoms.force[i][0] += (f_net * nx) as Accum;
+            atoms.force[i][1] += (f_net * ny) as Accum;
+            atoms.force[i][2] += (f_net * nz) as Accum;
 
             // Tangential (Mindlin) sliding friction (region wall is static).
             let mu = material_table.friction_ij[mat_i][wall_mat];
@@ -1536,12 +1566,18 @@ pub fn wall_contact_force(
                 let key = (3u8, reg_idx, atoms.tag[i]);
                 let old = old_springs.get(&key).copied().unwrap_or([0.0; 3]);
                 let (ft, tau, ns) = wall_tangential_force(
-                    [nx, ny, nz], atoms.vel[i], dem.omega[i], radius, delta, f_net, m_r, g_eff,
+                    [nx, ny, nz],
+                    [
+                        atoms.vel[i][0] as f64,
+                        atoms.vel[i][1] as f64,
+                        atoms.vel[i][2] as f64,
+                    ],
+                    dem.omega[i], radius, delta, f_net, m_r, g_eff,
                     mu, beta, dt, old,
                 );
-                atoms.force[i][0] += ft[0];
-                atoms.force[i][1] += ft[1];
-                atoms.force[i][2] += ft[2];
+                atoms.force[i][0] += ft[0] as Accum;
+                atoms.force[i][1] += ft[1] as Accum;
+                atoms.force[i][2] += ft[2] as Accum;
                 dem.torque[i][0] += tau[0];
                 dem.torque[i][1] += tau[1];
                 dem.torque[i][2] += tau[2];

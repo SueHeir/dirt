@@ -81,8 +81,8 @@ fn track_rebound(
     let step = run_state.total_cycle;
 
     // Single particle at index 0
-    let z = atoms.pos[0][2];
-    let vz = atoms.vel[0][2];
+    let z = atoms.pos[0][2] as f64;
+    let vz = atoms.vel[0][2] as f64;
     let r = dem.radius[0];
 
     // Check overlap with the floor wall (z = 0, normal +z)

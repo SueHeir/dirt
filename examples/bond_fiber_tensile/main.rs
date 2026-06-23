@@ -97,7 +97,7 @@ fn record_stress_strain(
         let r_b = bond_config.bond_radius_ratio * r_i.min(r_j);
         let area = PI * r_b * r_b;
 
-        let dx = atoms.pos[i_right][0] - atoms.pos[i_left][0];
+        let dx = atoms.pos[i_right][0] as f64 - atoms.pos[i_left][0] as f64;
         let length0 = dx;
 
         // K_n per bond: material mode prefers E·A/L; else direct stiffness.
@@ -149,7 +149,7 @@ fn record_stress_strain(
 
     let dt = atoms.dt;
     let t = step as f64 * dt;
-    let length = atoms.pos[i_right][0] - atoms.pos[i_left][0];
+    let length = atoms.pos[i_right][0] as f64 - atoms.pos[i_left][0] as f64;
     let delta_l = length - recorder.length0;
     let strain_global = delta_l / recorder.length0;
 
@@ -159,9 +159,9 @@ fn record_stress_strain(
         .iter()
         .find(|b| b.partner_tag == tag_mid_b)
         .expect("middle bond must exist");
-    let dx = atoms.pos[i_mid_b][0] - atoms.pos[i_mid_a][0];
-    let dy = atoms.pos[i_mid_b][1] - atoms.pos[i_mid_a][1];
-    let dz = atoms.pos[i_mid_b][2] - atoms.pos[i_mid_a][2];
+    let dx = atoms.pos[i_mid_b][0] as f64 - atoms.pos[i_mid_a][0] as f64;
+    let dy = atoms.pos[i_mid_b][1] as f64 - atoms.pos[i_mid_a][1] as f64;
+    let dz = atoms.pos[i_mid_b][2] as f64 - atoms.pos[i_mid_a][2] as f64;
     let dist = (dx*dx + dy*dy + dz*dz).sqrt();
     let delta_mid = dist - mid_bond.r0;
     let strain_mid = delta_mid / mid_bond.r0;

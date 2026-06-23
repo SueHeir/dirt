@@ -147,11 +147,11 @@ fn record_discharge(
     let mut new_mass = 0.0;
     let mut newly: Vec<u32> = Vec::new();
     for i in 0..nlocal {
-        if atoms.pos[i][2] < oz {
+        if (atoms.pos[i][2] as f64) < oz {
             let tag = atoms.tag[i];
             if !tracker.discharged.contains(&tag) {
                 newly.push(tag);
-                new_mass += atoms.mass[i];
+                new_mass += atoms.mass[i] as f64;
             }
         }
     }
