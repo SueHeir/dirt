@@ -66,3 +66,39 @@ trajectory check — driving each baseline example through the resident GpuState
 and diffing the recorded metric within its Δ-band — is the remaining work toward
 "fully validated GPU code." It needs a small GPU runner per example scenario; not
 straightforward enough to include here.
+
+## Tier 2 — GPU full-trajectory vs CPU-single baseline
+
+End-to-end GPU sims (resident `GpuState` + `WallForce`/`GranularForce` hooks) run
+on the actual baseline scenarios; measured metrics diffed against CPU-single
+(the right reference — GPU is f32). Runner: `crates/dirt_gpu/examples/validate_trajectory.rs`
+(`cargo run --release -p dirt_gpu --example validate_trajectory --no-default-features --features precision-double`).
+Effective params come from dirt's own `MaterialTable`, so the only difference is f32-vs-f64.
+
+| scenario | metric | GPU (f32) | CPU-single | relΔ | verdict |
+|---|---|---|---|---|---|
+| hertz_rebound (normal Hertz, wall) | COR | 9.0155047e-1 | 9.0164524e-1 | 1.05e-4 | PASS |
+| | contact_time | 3.5063736e-5 | 3.5063735e-5 | 1.43e-8 | PASS |
+| | max_overlap | 1.1253282e-5 | 1.1249557e-5 | 3.31e-4 | PASS |
+| sliding_friction (tangential Coulomb, wall, gravity) | vx_final | 7.1491158e-1 | 7.1499372e-1 | 1.15e-4 | PASS |
+| | omega_y_final | 1.4298235e2 | 1.4299874e2 | 1.15e-4 | PASS |
+
+Both trajectories reproduce the CPU within ~1e-4 (f32-trajectory level — larger
+than the ~2e-5/1e-3 CPU single-vs-double bands because the GPU runs a different
+reduction order, accumulated over the contact). Sliding correctly reaches the
+rolling-without-slipping plateau (vx = ω·R = 0.71491; ≈ 5/7·v₀, the textbook
+result), validating the tangential Mindlin force over a full trajectory — not
+just the single evaluation of Tier 1.
+
+**Gotcha found (not a physics bug):** `WallForce`'s tangential friction history is
+maintained in the shared resident contact-history substrate that `GranularForce`
+initializes. With only a `WallForce` hook registered (no `GranularForce`), the
+wall tangential force/torque is erratic — vx fails to decelerate and omega_y
+thrashes ±hundreds (and smaller dt makes it worse, ruling out dt-stability).
+Registering a `GranularForce` hook too (as pile.rs does) fixes it. Worth making
+`WallForce` self-initialise its history, or documenting the dependency.
+
+**Remaining (deferred):** oblique_impact (2-particle, frozen target, impact-frame
+measurement) and rolling_decay need 2-body / sustained-rolling setups with higher
+false-mismatch risk; not built. The two scenarios here already exercise both the
+normal and tangential wall-contact trajectory paths.
