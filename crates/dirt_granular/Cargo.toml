@@ -10,6 +10,11 @@ keywords = ["dem", "hertz", "granular", "contact"]
 categories = ["simulation", "science"]
 
 [features]
+# Scheduler-mediated host<->device coherence (coherence_plan.md). Default-off:
+# registers a CoherenceRegistry + the resident GPU mirror so CPU systems added to
+# a resident config sync transparently instead of silently dropping. Off => the
+# resident step uses the eager per-window download (unchanged behaviour).
+gpu_coherence = []
 precision-double = ["soil_core/precision-double", "dirt_gpu/precision-double"]
 precision-mixed = ["soil_core/precision-mixed", "dirt_gpu/precision-mixed"]
 precision-single = ["soil_core/precision-single", "dirt_gpu/precision-single"]

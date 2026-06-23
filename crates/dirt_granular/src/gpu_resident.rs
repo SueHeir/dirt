@@ -23,6 +23,8 @@
 //! - Bit-exactness across window boundaries depends on soil's deterministic cell
 //!   list + `run_steps_continue` (the force-prime/history gate, already landed).
 
+use std::any::TypeId;
+
 use grass_app::prelude::*;
 use grass_scheduler::prelude::*;
 
@@ -107,6 +109,33 @@ impl ResidentGpu {
         self.n = n;
         self.primed = false;
     }
+
+    /// Push the current host `Atom`/`DemAtom` state for the local bulk back onto the
+    /// device, overwriting the resident buffers. Used by the coherence path when a
+    /// host system mutated the state between windows (policy A): the caller then
+    /// clears `primed` so the next `run_steps` re-primes the force (contact history
+    /// resets — a small physics discontinuity, see coherence_plan.md). Positions are
+    /// assumed to stay within the existing grid bounds (true for velocity/force
+    /// edits; a teleporting write would also need a `set_grid`).
+    fn reupload_locals(&self, atoms: &Atom, registry: &AtomDataRegistry) {
+        let Some(gs) = self.gpu.as_ref() else { return };
+        let n = self.n;
+        let posf: Vec<[f32; 3]> = (0..n)
+            .map(|i| [atoms.pos[i][0] as f32, atoms.pos[i][1] as f32, atoms.pos[i][2] as f32])
+            .collect();
+        let velf: Vec<[f32; 3]> = (0..n)
+            .map(|i| [atoms.vel[i][0] as f32, atoms.vel[i][1] as f32, atoms.vel[i][2] as f32])
+            .collect();
+        let omf: Vec<[f32; 3]> = {
+            let dem = registry.expect::<DemAtom>("ResidentGpu::reupload_locals");
+            (0..n)
+                .map(|i| [dem.omega[i][0] as f32, dem.omega[i][1] as f32, dem.omega[i][2] as f32])
+                .collect()
+        };
+        gs.write_pos_slice(0, &posf);
+        gs.write_vel_slice(0, &velf);
+        gs.write_aux_slice(self.omega_aux, 0, &omf);
+    }
 }
 
 /// Resident step system: advance the device by one window of `K` steps, then sync
@@ -118,6 +147,7 @@ pub fn gpu_granular_resident_step(
     registry: Res<AtomDataRegistry>,
     material_table: Res<MaterialTable>,
     mut res: ResMut<ResidentGpu>,
+    mut coherence: Option<ResMut<CoherenceRegistry>>,
 ) {
     let n = atoms.nlocal as usize;
     if n == 0 || res.ctx.is_none() {
@@ -126,29 +156,118 @@ pub fn gpu_granular_resident_step(
     if res.gpu.is_none() || res.n != n {
         res.build(&atoms, &registry, &material_table);
     }
+
+    // Coherence path (policy A): if a host system wrote `Atom` since the last
+    // window, push it to the device and force a re-prime (contact history resets).
+    // `take_host_dirty` is None when coherence is off → eager path below, unchanged.
+    if let Some(c) = coherence.as_mut() {
+        if c.take_host_dirty(TypeId::of::<Atom>()) {
+            res.reupload_locals(&atoms, &registry);
+            res.primed = false;
+            if std::env::var("SIM_SUPPRESS_WARNINGS").is_err() {
+                eprintln!(
+                    "[coherence] resident GPU re-primed from host-modified state (contact history reset)"
+                );
+            }
+        }
+    }
+
     let window = res.window;
     let omega_aux = res.omega_aux;
     let primed = res.primed;
 
-    let (p, v, w) = {
+    {
         let gs = res.gpu.as_ref().unwrap();
         if primed {
             gs.run_steps_continue(window);
         } else {
             gs.run_steps(window);
         }
-        gs.wait();
-        (gs.download_pos(), gs.download_vel(), gs.download_aux_state(omega_aux))
-    };
+    }
     res.primed = true;
 
-    for i in 0..n {
-        atoms.pos[i] = [p[i][0] as Real, p[i][1] as Real, p[i][2] as Real];
-        atoms.vel[i] = [v[i][0] as Real, v[i][1] as Real, v[i][2] as Real];
+    if let Some(c) = coherence.as_mut() {
+        // Lazy sync: the device is now authoritative. The host `Atom`/`DemAtom`
+        // mirror is NOT downloaded here — the next host consumer triggers the pull
+        // via ResidentMirrorBridge (scheduler-mediated). Saves the per-window
+        // download whenever no host system reads the state this window.
+        c.mark_device_dirty(TypeId::of::<Atom>());
+    } else {
+        // Eager path (coherence off): wait, download, and write the host mirror
+        // back every window — the original step-1 behaviour.
+        let (p, v, w) = {
+            let gs = res.gpu.as_ref().unwrap();
+            gs.wait();
+            (gs.download_pos(), gs.download_vel(), gs.download_aux_state(omega_aux))
+        };
+        for i in 0..n {
+            atoms.pos[i] = [p[i][0] as Real, p[i][1] as Real, p[i][2] as Real];
+            atoms.vel[i] = [v[i][0] as Real, v[i][1] as Real, v[i][2] as Real];
+        }
+        let mut dem = registry.expect_mut::<DemAtom>("gpu_granular_resident_step");
+        for i in 0..n {
+            dem.omega[i] = [w[i][0] as f64, w[i][1] as f64, w[i][2] as f64];
+        }
     }
-    let mut dem = registry.expect_mut::<DemAtom>("gpu_granular_resident_step");
-    for i in 0..n {
-        dem.omega[i] = [w[i][0] as f64, w[i][1] as f64, w[i][2] as f64];
+}
+
+/// Bridge that pulls the resident device state (pos/vel + omega) back into the
+/// host `Atom`/`DemAtom` when a host consumer reads `Atom` while the mirror is
+/// `DeviceDirty` (coherence_plan.md Phase 3). Borrows the resource cells it needs
+/// by index; `resolve` fills those in once the resource table is final.
+#[cfg(feature = "gpu_coherence")]
+struct ResidentMirrorBridge {
+    atom_idx: usize,
+    registry_idx: usize,
+    gpu_idx: usize,
+}
+
+#[cfg(feature = "gpu_coherence")]
+impl ResidentMirrorBridge {
+    fn unresolved() -> Self {
+        ResidentMirrorBridge { atom_idx: usize::MAX, registry_idx: usize::MAX, gpu_idx: usize::MAX }
+    }
+}
+
+#[cfg(feature = "gpu_coherence")]
+impl MirrorBridge for ResidentMirrorBridge {
+    fn resolve(&mut self, index: &std::collections::HashMap<TypeId, usize>) {
+        self.atom_idx = index[&TypeId::of::<Atom>()];
+        self.registry_idx = index[&TypeId::of::<AtomDataRegistry>()];
+        self.gpu_idx = index[&TypeId::of::<ResidentGpu>()];
+    }
+
+    fn download(&self, resources: &[std::cell::RefCell<Box<dyn std::any::Any>>]) {
+        let gpu_cell = resources[self.gpu_idx].borrow();
+        let res = gpu_cell
+            .downcast_ref::<ResidentGpu>()
+            .expect("ResidentMirrorBridge: gpu_idx is not a ResidentGpu");
+        let Some(gs) = res.gpu.as_ref() else { return };
+        let n = res.n;
+        let omega_aux = res.omega_aux;
+        gs.wait();
+        let p = gs.download_pos();
+        let v = gs.download_vel();
+        let w = gs.download_aux_state(omega_aux);
+
+        {
+            let mut atom_cell = resources[self.atom_idx].borrow_mut();
+            let atoms = atom_cell
+                .downcast_mut::<Atom>()
+                .expect("ResidentMirrorBridge: atom_idx is not an Atom");
+            for i in 0..n {
+                atoms.pos[i] = [p[i][0] as Real, p[i][1] as Real, p[i][2] as Real];
+                atoms.vel[i] = [v[i][0] as Real, v[i][1] as Real, v[i][2] as Real];
+            }
+        }
+        let reg_cell = resources[self.registry_idx].borrow();
+        let registry = reg_cell
+            .downcast_ref::<AtomDataRegistry>()
+            .expect("ResidentMirrorBridge: registry_idx is not an AtomDataRegistry");
+        let mut dem = registry.expect_mut::<DemAtom>("ResidentMirrorBridge::download");
+        for i in 0..n {
+            dem.omega[i] = [w[i][0] as f64, w[i][1] as f64, w[i][2] as f64];
+        }
     }
 }
 
@@ -202,5 +321,17 @@ impl Plugin for GpuGranularResidentPlugin {
             gpu_granular_resident_step.label("gpu_granular_resident"),
             ParticleSimScheduleSet::Force,
         );
+
+        // Coherence (coherence_plan.md Phase 3): register the Atom mirror so host
+        // systems added to this resident config sync transparently instead of
+        // silently dropping. Off by default — the resident step then uses the eager
+        // per-window download and this registry is never created.
+        #[cfg(feature = "gpu_coherence")]
+        {
+            let mut reg = CoherenceRegistry::new();
+            reg.register(TypeId::of::<Atom>(), Box::new(ResidentMirrorBridge::unresolved()));
+            app.add_resource(reg);
+            println!("GpuGranularResident: host<->device coherence enabled (Atom mirror)");
+        }
     }
 }
