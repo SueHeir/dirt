@@ -130,7 +130,7 @@ mod tests {
         atom.dt = dt;
 
         push_dem_test_atom(&mut atom, &mut dem, 0, [0.0; 3], radius);
-        let mass = atom.mass[0];
+        let mass = atom.mass[0] as f64;
         let inertia = 0.4 * mass * radius * radius;
 
         // Apply torque around z-axis

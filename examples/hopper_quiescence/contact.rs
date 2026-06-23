@@ -16,6 +16,7 @@ use dirt_core::soil_core::{
     register_atom_data, Atom, AtomData, AtomDataRegistry, Neighbor, ParticleSimScheduleSet,
     VirialStress, VirialStressPlugin,
 };
+use dirt_core::soil_core::Accum;
 use std::any::Any;
 
 /// Particle region modes set by the quiescence module each step.
@@ -330,9 +331,9 @@ pub fn quiescent_contact_force(
         let r1 = dem.radius[i];
         let r2 = dem.radius[j];
 
-        let dx = atoms.pos[j][0] - atoms.pos[i][0];
-        let dy = atoms.pos[j][1] - atoms.pos[i][1];
-        let dz = atoms.pos[j][2] - atoms.pos[i][2];
+        let dx = atoms.pos[j][0] as f64 - atoms.pos[i][0] as f64;
+        let dy = atoms.pos[j][1] as f64 - atoms.pos[i][1] as f64;
+        let dz = atoms.pos[j][2] as f64 - atoms.pos[i][2] as f64;
         let dist_sq = dx * dx + dy * dy + dz * dz;
         let sum_r = r1 + r2;
 
@@ -396,8 +397,8 @@ pub fn quiescent_contact_force(
         let nz = dz * inv_dist;
 
         let g_eff = material_table.g_eff_ij[mat_i][mat_j];
-        let inv_m_i = if atoms.inv_mass[i] > 0.0 { atoms.inv_mass[i] } else { 1.0 / atoms.mass[i] };
-        let inv_m_j = if atoms.inv_mass[j] > 0.0 { atoms.inv_mass[j] } else { 1.0 / atoms.mass[j] };
+        let inv_m_i = if atoms.inv_mass[i] as f64 > 0.0 { atoms.inv_mass[i] as f64 } else { 1.0 / atoms.mass[i] as f64 };
+        let inv_m_j = if atoms.inv_mass[j] as f64 > 0.0 { atoms.inv_mass[j] as f64 } else { 1.0 / atoms.mass[j] as f64 };
         let m_r = 1.0 / (inv_m_i + inv_m_j);
 
         let beta = material_table.beta_ij[mat_i][mat_j];
@@ -428,16 +429,16 @@ pub fn quiescent_contact_force(
         let r1n_x = r1 * nx;
         let r1n_y = r1 * ny;
         let r1n_z = r1 * nz;
-        let vc_ix = atoms.vel[i][0] + (omega_iy * r1n_z - omega_iz * r1n_y);
-        let vc_iy = atoms.vel[i][1] + (omega_iz * r1n_x - omega_ix * r1n_z);
-        let vc_iz = atoms.vel[i][2] + (omega_ix * r1n_y - omega_iy * r1n_x);
+        let vc_ix = atoms.vel[i][0] as f64 + (omega_iy * r1n_z - omega_iz * r1n_y);
+        let vc_iy = atoms.vel[i][1] as f64 + (omega_iz * r1n_x - omega_ix * r1n_z);
+        let vc_iz = atoms.vel[i][2] as f64 + (omega_ix * r1n_y - omega_iy * r1n_x);
 
         let r2n_x = r2 * nx;
         let r2n_y = r2 * ny;
         let r2n_z = r2 * nz;
-        let vc_jx = atoms.vel[j][0] + (-omega_jy * r2n_z + omega_jz * r2n_y);
-        let vc_jy = atoms.vel[j][1] + (-omega_jz * r2n_x + omega_jx * r2n_z);
-        let vc_jz = atoms.vel[j][2] + (-omega_jx * r2n_y + omega_jy * r2n_x);
+        let vc_jx = atoms.vel[j][0] as f64 + (-omega_jy * r2n_z + omega_jz * r2n_y);
+        let vc_jy = atoms.vel[j][1] as f64 + (-omega_jz * r2n_x + omega_jx * r2n_z);
+        let vc_jz = atoms.vel[j][2] as f64 + (-omega_jx * r2n_y + omega_jy * r2n_x);
 
         let vr_x = vc_jx - vc_ix;
         let vr_y = vc_jy - vc_iy;
@@ -471,13 +472,13 @@ pub fn quiescent_contact_force(
         let fn_y = f_n_mag * ny;
         let fn_z = f_n_mag * nz;
 
-        atoms.force[i][0] -= fn_x;
-        atoms.force[i][1] -= fn_y;
-        atoms.force[i][2] -= fn_z;
+        atoms.force[i][0] -= fn_x as Accum;
+        atoms.force[i][1] -= fn_y as Accum;
+        atoms.force[i][2] -= fn_z as Accum;
         if newton {
-            atoms.force[j][0] += fn_x;
-            atoms.force[j][1] += fn_y;
-            atoms.force[j][2] += fn_z;
+            atoms.force[j][0] += fn_x as Accum;
+            atoms.force[j][1] += fn_y as Accum;
+            atoms.force[j][2] += fn_z as Accum;
         }
 
         // ── Tangential (skip in JKR adhesion-only regime) ─────────────────
@@ -539,13 +540,13 @@ pub fn quiescent_contact_force(
             ft_z *= scale;
         }
 
-        atoms.force[i][0] += ft_x;
-        atoms.force[i][1] += ft_y;
-        atoms.force[i][2] += ft_z;
+        atoms.force[i][0] += ft_x as Accum;
+        atoms.force[i][1] += ft_y as Accum;
+        atoms.force[i][2] += ft_z as Accum;
         if newton {
-            atoms.force[j][0] -= ft_x;
-            atoms.force[j][1] -= ft_y;
-            atoms.force[j][2] -= ft_z;
+            atoms.force[j][0] -= ft_x as Accum;
+            atoms.force[j][1] -= ft_y as Accum;
+            atoms.force[j][2] -= ft_z as Accum;
         }
 
         // Per-pair torque accumulators (needed for the freeze cache).

@@ -93,8 +93,8 @@ fn record_crossover(
         // (move_linear sets it before the first force evaluation).
         let mut vmax = 0.0_f64;
         for i in 0..nlocal {
-            if atoms.pos[i][2] > UPPER_Z_THRESHOLD {
-                vmax = vmax.max(atoms.vel[i][0]);
+            if (atoms.pos[i][2] as f64) > UPPER_Z_THRESHOLD {
+                vmax = vmax.max(atoms.vel[i][0] as f64);
             }
         }
 
@@ -138,15 +138,15 @@ fn record_crossover(
     let mut mid_upper: Option<usize> = None;
     let mut mid_lower: Option<usize> = None;
     for i in 0..nlocal {
-        if atoms.pos[i][2] > UPPER_Z_THRESHOLD {
-            fx_sum += atoms.force[i][0];
-            fz_sum += atoms.force[i][2];
-            vx_sum += atoms.vel[i][0];
+        if (atoms.pos[i][2] as f64) > UPPER_Z_THRESHOLD {
+            fx_sum += atoms.force[i][0] as f64;
+            fz_sum += atoms.force[i][2] as f64;
+            vx_sum += atoms.vel[i][0] as f64;
             n_upper += 1;
-            if atoms.pos[i][0].abs() < 1.0e-3 && atoms.pos[i][1].abs() < 1.0e-3 {
+            if (atoms.pos[i][0] as f64).abs() < 1.0e-3 && (atoms.pos[i][1] as f64).abs() < 1.0e-3 {
                 mid_upper = Some(i);
             }
-        } else if atoms.pos[i][0].abs() < 1.0e-3 && atoms.pos[i][1].abs() < 1.0e-3 {
+        } else if (atoms.pos[i][0] as f64).abs() < 1.0e-3 && (atoms.pos[i][1] as f64).abs() < 1.0e-3 {
             mid_lower = Some(i);
         }
     }
@@ -156,9 +156,9 @@ fn record_crossover(
 
     let overlap = match (mid_upper, mid_lower) {
         (Some(u), Some(l)) => {
-            let dx = atoms.pos[u][0] - atoms.pos[l][0];
-            let dy = atoms.pos[u][1] - atoms.pos[l][1];
-            let dz = atoms.pos[u][2] - atoms.pos[l][2];
+            let dx = atoms.pos[u][0] as f64 - atoms.pos[l][0] as f64;
+            let dy = atoms.pos[u][1] as f64 - atoms.pos[l][1] as f64;
+            let dz = atoms.pos[u][2] as f64 - atoms.pos[l][2] as f64;
             let dist = (dx * dx + dy * dy + dz * dz).sqrt();
             (dem.radius[u] + dem.radius[l]) - dist
         }

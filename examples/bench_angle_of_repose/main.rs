@@ -90,7 +90,7 @@ fn max_speed(atoms: &Atom, comm: &CommResource) -> f64 {
     let local_max: f64 = (0..nlocal)
         .map(|i| {
             let v = atoms.vel[i];
-            (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt()
+            ((v[0] as f64) * (v[0] as f64) + (v[1] as f64) * (v[1] as f64) + (v[2] as f64) * (v[2] as f64)).sqrt()
         })
         .fold(0.0, f64::max);
     // No all_reduce_max in the comm API; max(x) = -min(-x). Single-rank here, so

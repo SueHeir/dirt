@@ -209,7 +209,7 @@ fn q_post_force(
     let mut sleep_set_changed = false;
     let wake_sq = q.wake_force_rel * q.wake_force_rel;
     for i in 0..nlocal {
-        let f = atoms.force[i];
+        let f = [atoms.force[i][0] as f64, atoms.force[i][1] as f64, atoms.force[i][2] as f64];
         if store.mode[i] == MODE_ASLEEP {
             if !store.has_base[i] {
                 store.f_base[i] = f;
@@ -231,7 +231,7 @@ fn q_post_force(
             store.accum_fnet[i][0] += f[0];
             store.accum_fnet[i][1] += f[1];
             store.accum_fnet[i][2] += f[2];
-            let weight = atoms.mass[i] * q.g;
+            let weight = atoms.mass[i] as f64 * q.g;
             store.accum_scale[i] += store.contact_mag[i].max(weight);
         }
     }

@@ -53,10 +53,10 @@ fn check_settled(
     let nlocal = atoms.nlocal as usize;
     let local_ke: f64 = (0..nlocal)
         .map(|i| {
-            let vx = atoms.vel[i][0];
-            let vy = atoms.vel[i][1];
-            let vz = atoms.vel[i][2];
-            0.5 * atoms.mass[i] * (vx * vx + vy * vy + vz * vz)
+            let vx = atoms.vel[i][0] as f64;
+            let vy = atoms.vel[i][1] as f64;
+            let vz = atoms.vel[i][2] as f64;
+            0.5 * atoms.mass[i] as f64 * (vx * vx + vy * vy + vz * vz)
         })
         .sum();
     let global_ke = comm.all_reduce_sum_f64(local_ke);

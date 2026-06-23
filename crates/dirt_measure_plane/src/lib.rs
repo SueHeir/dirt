@@ -230,7 +230,9 @@ fn measure_plane_detect_crossings(atoms: Res<Atom>, mut planes: ResMut<MeasurePl
             let tag = atoms.tag[i];
 
             // Compute signed distance: positive means on the normal side of the plane.
-            let dist = plane.signed_distance(&atoms.pos[i]);
+            // pos is `Real` (f32 in mixed/single); plane geometry is f64.
+            let p = [atoms.pos[i][0] as f64, atoms.pos[i][1] as f64, atoms.pos[i][2] as f64];
+            let dist = plane.signed_distance(&p);
 
             if let Some(&prev_dist) = plane.prev_signed_dist.get(&tag) {
                 // Crossing detection: a sign change from non-positive to positive
@@ -239,7 +241,7 @@ fn measure_plane_detect_crossings(atoms: Res<Atom>, mut planes: ResMut<MeasurePl
                 if prev_dist <= 0.0 && dist > 0.0 {
                     plane.crossings_window += 1;
                     plane.total_crossings += 1;
-                    plane.mass_window += atoms.mass[i];
+                    plane.mass_window += atoms.mass[i] as f64;
                 }
             }
             // If no previous distance exists (first timestep for this particle),

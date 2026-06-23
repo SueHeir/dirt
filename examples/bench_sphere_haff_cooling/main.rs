@@ -55,10 +55,10 @@ fn measure_cooling(
     let mut m_total = 0.0_f64;
     let mut mv = [0.0_f64; 3];
     for i in 0..nlocal {
-        let m = atoms.mass[i];
+        let m = atoms.mass[i] as f64;
         m_total += m;
         for d in 0..3 {
-            mv[d] += m * atoms.vel[i][d];
+            mv[d] += m * atoms.vel[i][d] as f64;
         }
     }
     let m_total = comm.all_reduce_sum_f64(m_total);
@@ -75,10 +75,10 @@ fn measure_cooling(
 
     let mut ke_trans = 0.0_f64;
     for i in 0..nlocal {
-        let m = atoms.mass[i];
+        let m = atoms.mass[i] as f64;
         let mut dv2 = 0.0;
         for d in 0..3 {
-            let dv = atoms.vel[i][d] - v_mean[d];
+            let dv = atoms.vel[i][d] as f64 - v_mean[d];
             dv2 += dv * dv;
         }
         ke_trans += m * dv2;
@@ -91,7 +91,7 @@ fn measure_cooling(
     let mut ke_rot_2 = 0.0_f64;
     if let Some(ref dem) = dem {
         for i in 0..nlocal {
-            let m = atoms.mass[i];
+            let m = atoms.mass[i] as f64;
             let r = dem.radius[i];
             let inertia = 0.4 * m * r * r;
             let w = dem.omega[i];

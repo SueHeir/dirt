@@ -144,9 +144,9 @@ pub fn hertz_mindlin_contact_force(
         let r1 = dem.radius[i];
         let r2 = dem.radius[j];
 
-        let dx = atoms.pos[j][0] - atoms.pos[i][0];
-        let dy = atoms.pos[j][1] - atoms.pos[i][1];
-        let dz = atoms.pos[j][2] - atoms.pos[i][2];
+        let dx = atoms.pos[j][0] as f64 - atoms.pos[i][0] as f64;
+        let dy = atoms.pos[j][1] as f64 - atoms.pos[i][1] as f64;
+        let dz = atoms.pos[j][2] as f64 - atoms.pos[i][2] as f64;
         let dist_sq = dx * dx + dy * dy + dz * dz;
         let sum_r = r1 + r2;
 
@@ -231,8 +231,8 @@ pub fn hertz_mindlin_contact_force(
 
         // Reduced mass: m_r = 1 / (1/m1 + 1/m2)
         // For clump sub-spheres inv_mass is 0 (body-integrated); use real mass.
-        let inv_m_i = if atoms.inv_mass[i] > 0.0 { atoms.inv_mass[i] } else { 1.0 / atoms.mass[i] };
-        let inv_m_j = if atoms.inv_mass[j] > 0.0 { atoms.inv_mass[j] } else { 1.0 / atoms.mass[j] };
+        let inv_m_i = if atoms.inv_mass[i] as f64 > 0.0 { atoms.inv_mass[i] as f64 } else { 1.0 / atoms.mass[i] as f64 };
+        let inv_m_j = if atoms.inv_mass[j] as f64 > 0.0 { atoms.inv_mass[j] as f64 } else { 1.0 / atoms.mass[j] as f64 };
         let m_r = 1.0 / (inv_m_i + inv_m_j);
 
         let beta = material_table.beta_ij[mat_i][mat_j];
@@ -271,17 +271,17 @@ pub fn hertz_mindlin_contact_force(
         let r1n_x = r1 * nx;
         let r1n_y = r1 * ny;
         let r1n_z = r1 * nz;
-        let vc_ix = atoms.vel[i][0] + (omega_iy * r1n_z - omega_iz * r1n_y);
-        let vc_iy = atoms.vel[i][1] + (omega_iz * r1n_x - omega_ix * r1n_z);
-        let vc_iz = atoms.vel[i][2] + (omega_ix * r1n_y - omega_iy * r1n_x);
+        let vc_ix = atoms.vel[i][0] as f64 + (omega_iy * r1n_z - omega_iz * r1n_y);
+        let vc_iy = atoms.vel[i][1] as f64 + (omega_iz * r1n_x - omega_ix * r1n_z);
+        let vc_iz = atoms.vel[i][2] as f64 + (omega_ix * r1n_y - omega_iy * r1n_x);
 
         // v_contact_j = vel_j + omega_j × (-r2 * n)
         let r2n_x = r2 * nx;
         let r2n_y = r2 * ny;
         let r2n_z = r2 * nz;
-        let vc_jx = atoms.vel[j][0] + (-omega_jy * r2n_z + omega_jz * r2n_y);
-        let vc_jy = atoms.vel[j][1] + (-omega_jz * r2n_x + omega_jx * r2n_z);
-        let vc_jz = atoms.vel[j][2] + (-omega_jx * r2n_y + omega_jy * r2n_x);
+        let vc_jx = atoms.vel[j][0] as f64 + (-omega_jy * r2n_z + omega_jz * r2n_y);
+        let vc_jy = atoms.vel[j][1] as f64 + (-omega_jz * r2n_x + omega_jx * r2n_z);
+        let vc_jz = atoms.vel[j][2] as f64 + (-omega_jx * r2n_y + omega_jy * r2n_x);
 
         let vr_x = vc_jx - vc_ix;
         let vr_y = vc_jy - vc_iy;
@@ -323,13 +323,13 @@ pub fn hertz_mindlin_contact_force(
         let fn_y = f_n_mag * ny;
         let fn_z = f_n_mag * nz;
 
-        atoms.force[i][0] -= fn_x;
-        atoms.force[i][1] -= fn_y;
-        atoms.force[i][2] -= fn_z;
+        atoms.force[i][0] -= fn_x as soil_core::Accum;
+        atoms.force[i][1] -= fn_y as soil_core::Accum;
+        atoms.force[i][2] -= fn_z as soil_core::Accum;
         if newton {
-            atoms.force[j][0] += fn_x;
-            atoms.force[j][1] += fn_y;
-            atoms.force[j][2] += fn_z;
+            atoms.force[j][0] += fn_x as soil_core::Accum;
+            atoms.force[j][1] += fn_y as soil_core::Accum;
+            atoms.force[j][2] += fn_z as soil_core::Accum;
         }
 
         // ── Tangential force (skip in JKR adhesion-only regime) ──────────
@@ -407,13 +407,13 @@ pub fn hertz_mindlin_contact_force(
         let tj_y = r2n_z * ft_x - r2n_x * ft_z;
         let tj_z = r2n_x * ft_y - r2n_y * ft_x;
 
-        atoms.force[i][0] += ft_x;
-        atoms.force[i][1] += ft_y;
-        atoms.force[i][2] += ft_z;
+        atoms.force[i][0] += ft_x as soil_core::Accum;
+        atoms.force[i][1] += ft_y as soil_core::Accum;
+        atoms.force[i][2] += ft_z as soil_core::Accum;
         if newton {
-            atoms.force[j][0] -= ft_x;
-            atoms.force[j][1] -= ft_y;
-            atoms.force[j][2] -= ft_z;
+            atoms.force[j][0] -= ft_x as soil_core::Accum;
+            atoms.force[j][1] -= ft_y as soil_core::Accum;
+            atoms.force[j][2] -= ft_z as soil_core::Accum;
         }
         dem.torque[i][0] += ti_x;
         dem.torque[i][1] += ti_y;
@@ -600,9 +600,9 @@ pub fn hertz_mindlin_contact_force(
         let mut sum_fy = 0.0;
         let mut sum_fz = 0.0;
         for i in 0..total {
-            sum_fx += atoms.force[i][0];
-            sum_fy += atoms.force[i][1];
-            sum_fz += atoms.force[i][2];
+            sum_fx += atoms.force[i][0] as f64;
+            sum_fy += atoms.force[i][1] as f64;
+            sum_fz += atoms.force[i][2] as f64;
         }
         let sum_f = (sum_fx * sum_fx + sum_fy * sum_fy + sum_fz * sum_fz).sqrt();
         if sum_f > 1e-6 {
@@ -660,9 +660,9 @@ pub fn hooke_contact_force(
         let r1 = dem.radius[i];
         let r2 = dem.radius[j];
 
-        let dx = atoms.pos[j][0] - atoms.pos[i][0];
-        let dy = atoms.pos[j][1] - atoms.pos[i][1];
-        let dz = atoms.pos[j][2] - atoms.pos[i][2];
+        let dx = atoms.pos[j][0] as f64 - atoms.pos[i][0] as f64;
+        let dy = atoms.pos[j][1] as f64 - atoms.pos[i][1] as f64;
+        let dz = atoms.pos[j][2] as f64 - atoms.pos[i][2] as f64;
         let dist_sq = dx * dx + dy * dy + dz * dz;
         let sum_r = r1 + r2;
 
@@ -698,8 +698,8 @@ pub fn hooke_contact_force(
         let mat_j = atoms.atom_type[j] as usize;
         let r_eff = (r1 * r2) / sum_r;
         // For clump sub-spheres inv_mass is 0 (body-integrated); use real mass.
-        let inv_m_i = if atoms.inv_mass[i] > 0.0 { atoms.inv_mass[i] } else { 1.0 / atoms.mass[i] };
-        let inv_m_j = if atoms.inv_mass[j] > 0.0 { atoms.inv_mass[j] } else { 1.0 / atoms.mass[j] };
+        let inv_m_i = if atoms.inv_mass[i] as f64 > 0.0 { atoms.inv_mass[i] as f64 } else { 1.0 / atoms.mass[i] as f64 };
+        let inv_m_j = if atoms.inv_mass[j] as f64 > 0.0 { atoms.inv_mass[j] as f64 } else { 1.0 / atoms.mass[j] as f64 };
         let m_r = 1.0 / (inv_m_i + inv_m_j);
         let beta = material_table.beta_ij[mat_i][mat_j];
         let mu = material_table.friction_ij[mat_i][mat_j];
@@ -725,16 +725,16 @@ pub fn hooke_contact_force(
         let r1n_x = r1 * nx;
         let r1n_y = r1 * ny;
         let r1n_z = r1 * nz;
-        let vc_ix = atoms.vel[i][0] + (omega_iy * r1n_z - omega_iz * r1n_y);
-        let vc_iy = atoms.vel[i][1] + (omega_iz * r1n_x - omega_ix * r1n_z);
-        let vc_iz = atoms.vel[i][2] + (omega_ix * r1n_y - omega_iy * r1n_x);
+        let vc_ix = atoms.vel[i][0] as f64 + (omega_iy * r1n_z - omega_iz * r1n_y);
+        let vc_iy = atoms.vel[i][1] as f64 + (omega_iz * r1n_x - omega_ix * r1n_z);
+        let vc_iz = atoms.vel[i][2] as f64 + (omega_ix * r1n_y - omega_iy * r1n_x);
 
         let r2n_x = r2 * nx;
         let r2n_y = r2 * ny;
         let r2n_z = r2 * nz;
-        let vc_jx = atoms.vel[j][0] + (-omega_jy * r2n_z + omega_jz * r2n_y);
-        let vc_jy = atoms.vel[j][1] + (-omega_jz * r2n_x + omega_jx * r2n_z);
-        let vc_jz = atoms.vel[j][2] + (-omega_jx * r2n_y + omega_jy * r2n_x);
+        let vc_jx = atoms.vel[j][0] as f64 + (-omega_jy * r2n_z + omega_jz * r2n_y);
+        let vc_jy = atoms.vel[j][1] as f64 + (-omega_jz * r2n_x + omega_jx * r2n_z);
+        let vc_jz = atoms.vel[j][2] as f64 + (-omega_jx * r2n_y + omega_jy * r2n_x);
 
         let vr_x = vc_jx - vc_ix;
         let vr_y = vc_jy - vc_iy;
@@ -753,13 +753,13 @@ pub fn hooke_contact_force(
         let fn_y = f_n_mag * ny;
         let fn_z = f_n_mag * nz;
 
-        atoms.force[i][0] -= fn_x;
-        atoms.force[i][1] -= fn_y;
-        atoms.force[i][2] -= fn_z;
+        atoms.force[i][0] -= fn_x as soil_core::Accum;
+        atoms.force[i][1] -= fn_y as soil_core::Accum;
+        atoms.force[i][2] -= fn_z as soil_core::Accum;
         if newton {
-            atoms.force[j][0] += fn_x;
-            atoms.force[j][1] += fn_y;
-            atoms.force[j][2] += fn_z;
+            atoms.force[j][0] += fn_x as soil_core::Accum;
+            atoms.force[j][1] += fn_y as soil_core::Accum;
+            atoms.force[j][2] += fn_z as soil_core::Accum;
         }
 
         // Tangential force
@@ -821,13 +821,13 @@ pub fn hooke_contact_force(
         let tj_y = r2n_z * ft_x - r2n_x * ft_z;
         let tj_z = r2n_x * ft_y - r2n_y * ft_x;
 
-        atoms.force[i][0] += ft_x;
-        atoms.force[i][1] += ft_y;
-        atoms.force[i][2] += ft_z;
+        atoms.force[i][0] += ft_x as soil_core::Accum;
+        atoms.force[i][1] += ft_y as soil_core::Accum;
+        atoms.force[i][2] += ft_z as soil_core::Accum;
         if newton {
-            atoms.force[j][0] -= ft_x;
-            atoms.force[j][1] -= ft_y;
-            atoms.force[j][2] -= ft_z;
+            atoms.force[j][0] -= ft_x as soil_core::Accum;
+            atoms.force[j][1] -= ft_y as soil_core::Accum;
+            atoms.force[j][2] -= ft_z as soil_core::Accum;
         }
         dem.torque[i][0] += ti_x;
         dem.torque[i][1] += ti_y;
@@ -1238,7 +1238,7 @@ mod tests {
             app.organize_systems();
             app.run();
             let atom = app.get_resource_ref::<Atom>().unwrap();
-            atom.force[0]
+            [atom.force[0][0] as f64, atom.force[0][1] as f64, atom.force[0][2] as f64]
         };
 
         let f_default = run(make_material_table());
@@ -1314,7 +1314,7 @@ mod tests {
             atom.force[0][0]
         );
         // f_n_mag = -F_adhesion, force[0] -= f_n_mag * nx → force[0] += F_adhesion
-        let f_mag = atom.force[0][0];
+        let f_mag = atom.force[0][0] as f64;
         assert!(
             (f_mag - expected_pulloff).abs() / expected_pulloff < 1e-6,
             "pull-off force should match theory {}, got {}",
@@ -1452,7 +1452,7 @@ mod tests {
             app.organize_systems();
             app.run();
             let atom = app.get_resource_ref::<Atom>().unwrap();
-            atom.force[0][0]
+            atom.force[0][0] as f64
         };
 
         // delta1 = 2*r - sep1, delta2 = 2*r - sep2
@@ -2042,7 +2042,7 @@ mod tests {
             atom.force[0][0]
         );
         assert!(
-            (atom.force[0][0] - expected_dmt).abs() / expected_dmt < 1e-3,
+            (atom.force[0][0] as f64 - expected_dmt).abs() / expected_dmt < 1e-3,
             "DMT pull-off force should match 2*pi*gamma*r_eff = {}, got {}",
             expected_dmt, atom.force[0][0]
         );
@@ -2203,7 +2203,7 @@ mod tests {
             atom.force[0][0]
         );
         assert!(
-            (atom.force[0][0] - expected_jkr).abs() / expected_jkr < 1e-6,
+            (atom.force[0][0] as f64 - expected_jkr).abs() / expected_jkr < 1e-6,
             "JKR pull-off force should still match 1.5*pi*gamma*r_eff = {}, got {}",
             expected_jkr, atom.force[0][0]
         );
@@ -2241,7 +2241,7 @@ mod tests {
             app.run();
             let atom = app.get_resource_ref::<Atom>().unwrap();
             // Force on atom 0 is negative (pushed away from atom 1), take absolute value
-            atom.force[0][0].abs()
+            atom.force[0][0].abs() as f64
         };
 
         // Test at 5 different overlaps
@@ -2291,7 +2291,7 @@ mod tests {
             app.organize_systems();
             app.run();
             let atom = app.get_resource_ref::<Atom>().unwrap();
-            atom.force[0][0].abs()
+            atom.force[0][0].abs() as f64
         };
 
         let deltas = [2e-5, 4e-5, 6e-5, 8e-5, 1e-4];
@@ -2348,7 +2348,7 @@ mod tests {
         app.run();
 
         let atom = app.get_resource_ref::<Atom>().unwrap();
-        let f_computed = atom.force[0][0].abs();
+        let f_computed = atom.force[0][0].abs() as f64;
         // Analytical: F = (4/3) * E_eff * sqrt(R_eff) * delta^(3/2)
         let f_analytical = (4.0 / 3.0) * e_eff * r_eff.sqrt() * delta.powf(1.5);
         let rel_err = (f_computed - f_analytical).abs() / f_analytical;

@@ -6,6 +6,11 @@ license.workspace = true
 repository.workspace = true
 description = "Shared test utilities for DIRT crates"
 
+[features]
+precision-double = ["soil_core/precision-double"]
+precision-mixed = ["soil_core/precision-mixed"]
+precision-single = ["soil_core/precision-single"]
+
 [dependencies]
-soil_core = { git = "https://github.com/SueHeir/soil.git", branch = "master", default-features = false }
+soil_core = { git = "https://github.com/SueHeir/soil.git", branch = "main", default-features = false }
 dirt_atom = { path = "../dirt_atom", version = "0.1.3" }

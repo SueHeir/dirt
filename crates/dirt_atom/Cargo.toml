@@ -9,11 +9,16 @@ description = "Per-atom DEM data (radius, density) with pack/unpack and Material
 keywords = ["dem", "atom", "material", "simulation"]
 categories = ["simulation", "science"]
 
+[features]
+precision-double = ["soil_core/precision-double"]
+precision-mixed = ["soil_core/precision-mixed"]
+precision-single = ["soil_core/precision-single"]
+
 [dependencies]
-soil_core = { git = "https://github.com/SueHeir/soil.git", branch = "master", default-features = false }
+soil_core = { git = "https://github.com/SueHeir/soil.git", branch = "main", default-features = false }
 grass_app = { git = "https://github.com/SueHeir/grass.git", branch = "main" }
 grass_scheduler = { git = "https://github.com/SueHeir/grass.git", branch = "main" }
-soil_derive = { git = "https://github.com/SueHeir/soil.git", branch = "master" }
+soil_derive = { git = "https://github.com/SueHeir/soil.git", branch = "main" }
 serde = { version = "1", features = ["derive"] }
 rand = "0.9"
 rand_distr = "0.5.1"

@@ -350,9 +350,9 @@ fn compute_contact_analysis(
         let r1 = dem.radius[i];
         let r2 = dem.radius[j];
 
-        let dx = atoms.pos[j][0] - atoms.pos[i][0];
-        let dy = atoms.pos[j][1] - atoms.pos[i][1];
-        let dz = atoms.pos[j][2] - atoms.pos[i][2];
+        let dx = atoms.pos[j][0] as f64 - atoms.pos[i][0] as f64;
+        let dy = atoms.pos[j][1] as f64 - atoms.pos[i][1] as f64;
+        let dz = atoms.pos[j][2] as f64 - atoms.pos[i][2] as f64;
         let dist_sq = dx * dx + dy * dy + dz * dz;
         let sum_r = r1 + r2;
 
@@ -409,9 +409,9 @@ fn compute_contact_analysis(
             // the center of atom i, advance along the contact normal by
             // (r1 − δ/2), which places the point halfway into the overlap.
             let alpha = r1 - 0.5 * delta;
-            let cx = atoms.pos[i][0] + alpha * nx;
-            let cy = atoms.pos[i][1] + alpha * ny;
-            let cz = atoms.pos[i][2] + alpha * nz;
+            let cx = atoms.pos[i][0] as f64 + alpha * nx;
+            let cy = atoms.pos[i][1] as f64 + alpha * ny;
+            let cz = atoms.pos[i][2] as f64 + alpha * nz;
 
             contact_output.records.push(ContactRecord {
                 i_tag: atoms.tag[i],
@@ -627,12 +627,12 @@ mod tests {
         for i in 0..nlocal {
             neighbor.neighbor_offsets[i] = neighbor.neighbor_indices.len() as u32;
             for j in (i + 1)..ntotal {
-                let dx = atoms.pos[j][0] - atoms.pos[i][0];
-                let dy = atoms.pos[j][1] - atoms.pos[i][1];
-                let dz = atoms.pos[j][2] - atoms.pos[i][2];
+                let dx = atoms.pos[j][0] as f64 - atoms.pos[i][0] as f64;
+                let dy = atoms.pos[j][1] as f64 - atoms.pos[i][1] as f64;
+                let dz = atoms.pos[j][2] as f64 - atoms.pos[i][2] as f64;
                 let dist_sq = dx * dx + dy * dy + dz * dz;
                 // Use cutoff_radius sum as neighbor cutoff
-                let cut = atoms.cutoff_radius[i] + atoms.cutoff_radius[j];
+                let cut = atoms.cutoff_radius[i] as f64 + atoms.cutoff_radius[j] as f64;
                 if dist_sq < cut * cut * 1.5 {
                     // generous skin
                     neighbor.neighbor_indices.push(j as u32);
@@ -669,9 +669,9 @@ mod tests {
         for (i, j) in neighbor.pairs(nlocal) {
             let r1 = dem.radius[i];
             let r2 = dem.radius[j];
-            let dx = atoms.pos[j][0] - atoms.pos[i][0];
-            let dy = atoms.pos[j][1] - atoms.pos[i][1];
-            let dz = atoms.pos[j][2] - atoms.pos[i][2];
+            let dx = atoms.pos[j][0] as f64 - atoms.pos[i][0] as f64;
+            let dy = atoms.pos[j][1] as f64 - atoms.pos[i][1] as f64;
+            let dz = atoms.pos[j][2] as f64 - atoms.pos[i][2] as f64;
             let dist_sq = dx * dx + dy * dy + dz * dz;
             let sum_r = r1 + r2;
             if dist_sq >= sum_r * sum_r {

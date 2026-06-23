@@ -103,7 +103,7 @@ fn track_pulloff(
         let mut moving = None;
         let mut frozen = None;
         for i in 0..atoms.nlocal as usize {
-            let v = atoms.vel[i];
+            let v = [atoms.vel[i][0] as f64, atoms.vel[i][1] as f64, atoms.vel[i][2] as f64];
             let speed2 = v[0] * v[0] + v[1] * v[1] + v[2] * v[2];
             if speed2 > 0.0 {
                 moving = Some(atoms.tag[i]);
@@ -129,9 +129,9 @@ fn track_pulloff(
 
     // Line of centers (frozen -> moving) and surface separation.
     let d = [
-        atoms.pos[m][0] - atoms.pos[f][0],
-        atoms.pos[m][1] - atoms.pos[f][1],
-        atoms.pos[m][2] - atoms.pos[f][2],
+        atoms.pos[m][0] as f64 - atoms.pos[f][0] as f64,
+        atoms.pos[m][1] as f64 - atoms.pos[f][1] as f64,
+        atoms.pos[m][2] as f64 - atoms.pos[f][2] as f64,
     ];
     let dist = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt();
     if dist == 0.0 {
@@ -144,7 +144,7 @@ fn track_pulloff(
     // the contact force; project onto the line of centers. The sign convention:
     // f·n > 0 pushes the moving sphere outward (repulsion), f·n < 0 pulls it
     // back toward the frozen sphere (adhesion/tension).
-    let fvec = atoms.force[m];
+    let fvec = [atoms.force[m][0] as f64, atoms.force[m][1] as f64, atoms.force[m][2] as f64];
     let f_n = fvec[0] * n[0] + fvec[1] * n[1] + fvec[2] * n[2];
 
     // Consider the contact "engaged" once a meaningful force is present.

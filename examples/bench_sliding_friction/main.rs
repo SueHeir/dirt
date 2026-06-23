@@ -86,12 +86,12 @@ fn record(
     }
 
     let t = run_state.total_cycle as f64 * atoms.dt;
-    let vx = atoms.vel[p][0];
+    let vx = atoms.vel[p][0] as f64;
     let omega_y = dem.omega[p][1];
     let r = dem.radius[p];
 
     // Particle–wall contact: overlap with the z = 0 floor is (R - z) > 0.
-    let pz = atoms.pos[p][2];
+    let pz = atoms.pos[p][2] as f64;
     let in_contact = pz < r;
 
     if let Some(f) = tracker.file.as_mut() {

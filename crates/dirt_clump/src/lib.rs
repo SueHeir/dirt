@@ -47,7 +47,7 @@ use rand::Rng;
 
 use soil_core::{
     register_atom_data, Atom, AtomData, AtomDataRegistry, CommResource, Config, Domain, Region,
-    RunState, ParticleSimScheduleSet, ScheduleSetupSet,
+    RunState, ParticleSimScheduleSet, ScheduleSetupSet, Real, Accum,
 };
 
 #[cfg(feature = "mpi_backend")]
@@ -404,7 +404,8 @@ fn snap_subspheres_to_body_com(
             continue;
         }
         if let Some(body_idx) = bodies.map(bid) {
-            atoms.pos[i] = bodies.bodies[body_idx].com_pos;
+            let com = bodies.bodies[body_idx].com_pos;
+            atoms.pos[i] = [com[0] as Real, com[1] as Real, com[2] as Real];
         }
     }
 }
@@ -439,15 +440,15 @@ fn restore_subsphere_positions(
             let body = &bodies.bodies[body_idx];
             let rotated = quat_rotate(body.quaternion, clump.body_offset[i]);
             atoms.pos[i] = [
-                body.com_pos[0] + rotated[0],
-                body.com_pos[1] + rotated[1],
-                body.com_pos[2] + rotated[2],
+                (body.com_pos[0] + rotated[0]) as Real,
+                (body.com_pos[1] + rotated[1]) as Real,
+                (body.com_pos[2] + rotated[2]) as Real,
             ];
             let omega_cross_r = cross(body.omega, rotated);
             atoms.vel[i] = [
-                body.com_vel[0] + omega_cross_r[0],
-                body.com_vel[1] + omega_cross_r[1],
-                body.com_vel[2] + omega_cross_r[2],
+                (body.com_vel[0] + omega_cross_r[0]) as Real,
+                (body.com_vel[1] + omega_cross_r[1]) as Real,
+                (body.com_vel[2] + omega_cross_r[2]) as Real,
             ];
             dem.omega[i] = body.omega;
         }
@@ -636,7 +637,8 @@ pub fn aggregate_clump_forces(
         // r = rotated body_offset (current space-frame displacement)
         let rotated = quat_rotate(body.quaternion, clump.body_offset[i]);
 
-        let f = atoms.force[i];
+        let f_raw = atoms.force[i];
+        let f = [f_raw[0] as f64, f_raw[1] as f64, f_raw[2] as f64];
         let torque_from_force = cross(rotated, f);
 
         let sub_torque = if i < dem.torque.len() {
@@ -741,8 +743,8 @@ pub fn update_clump_positions(
 
     let mut dem = registry.expect_mut::<DemAtom>("update_clump_positions");
     for u in updates {
-        atoms.pos[u.idx] = u.pos;
-        atoms.vel[u.idx] = u.vel;
+        atoms.pos[u.idx] = [u.pos[0] as Real, u.pos[1] as Real, u.pos[2] as Real];
+        atoms.vel[u.idx] = [u.vel[0] as Real, u.vel[1] as Real, u.vel[2] as Real];
         dem.omega[u.idx] = u.omega;
     }
 }
@@ -892,11 +894,11 @@ fn clump_insert_atoms(
 
             // Check against existing atoms
             for i in 0..atoms.len() {
-                let dx = pos[0] - atoms.pos[i][0];
-                let dy = pos[1] - atoms.pos[i][1];
-                let dz = pos[2] - atoms.pos[i][2];
+                let dx = pos[0] - atoms.pos[i][0] as f64;
+                let dy = pos[1] - atoms.pos[i][1] as f64;
+                let dz = pos[2] - atoms.pos[i][2] as f64;
                 let dist_sq = dx * dx + dy * dy + dz * dz;
-                let min_d = eff_radius + atoms.cutoff_radius[i];
+                let min_d = eff_radius + atoms.cutoff_radius[i] as f64;
                 if dist_sq < min_d * min_d {
                     overlaps = true;
                     break;
@@ -1037,12 +1039,12 @@ pub fn insert_clump(
         atoms.tag.push(sub_tag);
         atoms.atom_type.push(atom_type);
         atoms.origin_index.push(0);
-        atoms.pos.push(sub_pos);
-        atoms.vel.push(com_vel);
-        atoms.force.push([0.0; 3]);
-        atoms.mass.push(sub_mass);
-        atoms.inv_mass.push(0.0); // Sub-spheres don't integrate via Verlet
-        atoms.cutoff_radius.push(sphere.radius);
+        atoms.pos.push([sub_pos[0] as Real, sub_pos[1] as Real, sub_pos[2] as Real]);
+        atoms.vel.push([com_vel[0] as Real, com_vel[1] as Real, com_vel[2] as Real]);
+        atoms.force.push([0.0 as Accum; 3]);
+        atoms.mass.push(sub_mass as Real);
+        atoms.inv_mass.push(0.0 as Real); // Sub-spheres don't integrate via Verlet
+        atoms.cutoff_radius.push(sphere.radius as Real);
         atoms.image.push([0, 0, 0]);
         atoms.is_ghost.push(false);
 
