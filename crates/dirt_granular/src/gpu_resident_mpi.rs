@@ -29,7 +29,7 @@ use grass_scheduler::prelude::*;
 
 use dirt_atom::{DemAtom, MaterialTable};
 use dirt_gpu::{Boundary, GpuContext, GpuState, GranularConfig, GranularForce, Grid, WallForce};
-use soil_core::{Atom, AtomDataRegistry, ParticleSimScheduleSet, Real};
+use soil_core::{Atom, AtomDataRegistry, CommResource, ParticleSimScheduleSet, Real};
 
 use crate::gpu::gpu_scalars;
 
@@ -181,9 +181,15 @@ impl Plugin for GpuGranularResidentMpiPlugin {
         vec!["dem_particles", "neighbor_list"]
     }
     fn build(&self, app: &mut App) {
-        let ctx = GpuContext::new();
+        // Step 3: bind one GPU per rank — rank r uses adapter r % num_adapters.
+        // No-op on a single-GPU machine (every rank gets device 0).
+        let local_rank = app
+            .get_resource_ref::<CommResource>()
+            .map(|c| c.rank() as usize)
+            .unwrap_or(0);
+        let ctx = GpuContext::new_for_rank(local_rank);
         if let Some(ref c) = ctx {
-            println!("GpuGranularResidentMpi: window={} on GPU {}", self.window, c.adapter_info);
+            println!("GpuGranularResidentMpi: rank {local_rank} window={} on GPU {}", self.window, c.adapter_info);
         } else {
             eprintln!("GpuGranularResidentMpi: no GPU adapter — resident step is a no-op");
         }
