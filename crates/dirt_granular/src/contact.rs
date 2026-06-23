@@ -38,6 +38,7 @@ use grass_scheduler::prelude::*;
 
 use dirt_atom::{self, DemAtom, MaterialTable};
 use soil_core::{register_atom_data, Atom, AtomDataRegistry, BondStore, ParticleSimScheduleSet, VirialStress, VirialStressPlugin};
+use soil_core::{forward_comm_overlap, CommBuffers, CommResource, CommTopology};
 use soil_core::Neighbor;
 
 use crate::tangential::ContactHistoryStore;
@@ -81,10 +82,23 @@ impl Plugin for HertzMindlinContactPlugin {
                 );
             }
             _ => {
-                app.add_update_system(
-                    hertz_mindlin_contact_force.label("hertz_mindlin_contact"),
-                    ParticleSimScheduleSet::Force,
-                );
+                // Roadmap step 4: opt into the interior/boundary overlapped force
+                // (interior pairs computed while the ghost halo is in flight). Bit-
+                // identical to the standard force; set DIRT_OVERLAP_FORCE=1 to enable.
+                let overlap = std::env::var("DIRT_OVERLAP_FORCE")
+                    .map(|v| v != "0" && !v.is_empty())
+                    .unwrap_or(false);
+                if overlap {
+                    app.add_update_system(
+                        overlapped_contact_force.label("hertz_mindlin_contact"),
+                        ParticleSimScheduleSet::Force,
+                    );
+                } else {
+                    app.add_update_system(
+                        hertz_mindlin_contact_force.label("hertz_mindlin_contact"),
+                        ParticleSimScheduleSet::Force,
+                    );
+                }
             }
         }
     }
@@ -130,6 +144,43 @@ pub fn hertz_mindlin_contact_force(
         &material_table,
         virial.as_deref_mut(),
         ForcePass::All,
+    );
+}
+
+/// Overlapped Hertz-Mindlin force (roadmap step 4): compute the interior pairs
+/// (`j < nlocal`, no ghosts needed) *while the ghost halo is in flight*, then the
+/// boundary pairs (`j >= nlocal`) once it lands. The interior force runs as the
+/// overlap closure of [`forward_comm_overlap`], so on a multi-rank run its compute
+/// hides the MPI latency of the ghost exchange. Bit-identical to
+/// [`hertz_mindlin_contact_force`] (the interior/boundary split is exact — see
+/// `interior_boundary_split_matches_single_pass`).
+pub fn overlapped_contact_force(
+    mut atoms: ResMut<Atom>,
+    neighbor: Res<Neighbor>,
+    registry: Res<AtomDataRegistry>,
+    material_table: Res<MaterialTable>,
+    comm: Res<CommResource>,
+    topo: Res<CommTopology>,
+    mut buffers: ResMut<CommBuffers>,
+    mut virial: Option<ResMut<VirialStress>>,
+) {
+    let mut pool = std::mem::take(&mut buffers.forward_scratch);
+    {
+        // Interior pairs need no fresh ghosts — run them during the in-flight halo.
+        let mut interior = |a: &mut Atom| {
+            contact_force_core(a, &neighbor, &registry, &material_table, None, ForcePass::Interior);
+        };
+        forward_comm_overlap(&mut atoms, &registry, &topo, &**comm, &mut pool, &mut interior);
+    }
+    buffers.forward_scratch = pool;
+    // Boundary pairs, now that the halo has landed.
+    contact_force_core(
+        &mut atoms,
+        &neighbor,
+        &registry,
+        &material_table,
+        virial.as_deref_mut(),
+        ForcePass::Boundary,
     );
 }
 
