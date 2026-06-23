@@ -64,7 +64,12 @@ impl GpuGranular {
     /// Resets device contact history (acceptable on an atom-count change).
     fn build(&mut self, atoms: &Atom, registry: &AtomDataRegistry, mt: &MaterialTable) {
         let Some(ctx) = self.ctx.clone() else { return };
-        let n = atoms.nlocal as usize;
+        // local + ghost. Ghost atoms must be in the GPU cell list so that, under
+        // MPI domain decomposition, a boundary-local atom still finds its
+        // neighbour-rank contacts (delivered as ghosts by border/forward comm).
+        // Ghost DemAtom fields (radius/inv_inertia via pack_all at border, omega
+        // via #[forward] each step) are valid — the same data the CPU path uses.
+        let n = atoms.len();
         let dem = registry.expect::<DemAtom>("GpuGranular::build");
 
         let radius: Vec<f32> = (0..n).map(|i| dem.radius[i] as f32).collect();
@@ -122,24 +127,29 @@ fn gpu_granular_force(
     material_table: Res<MaterialTable>,
     mut g: ResMut<GpuGranular>,
 ) {
-    let n = atoms.nlocal as usize;
-    if n == 0 || g.ctx.is_none() {
+    let nlocal = atoms.nlocal as usize;
+    // Upload local + ghost so boundary-local contacts under MPI aren't dropped;
+    // force/torque are accumulated back onto locals only (below). nall is constant
+    // between neighbour rebuilds (forward_comm only moves ghosts), so this rebuilds
+    // at the host's rebuild cadence — contact history persists between rebuilds.
+    let nall = atoms.len();
+    if nlocal == 0 || g.ctx.is_none() {
         return;
     }
-    if g.state.is_none() || g.n != n {
+    if g.state.is_none() || g.n != nall {
         g.build(&atoms, &registry, &material_table);
     }
     let grid = g.grid;
     let omega_aux = g.omega_aux;
 
     let posf: Vec<[f32; 3]> =
-        (0..n).map(|i| [atoms.pos[i][0] as f32, atoms.pos[i][1] as f32, atoms.pos[i][2] as f32]).collect();
+        (0..nall).map(|i| [atoms.pos[i][0] as f32, atoms.pos[i][1] as f32, atoms.pos[i][2] as f32]).collect();
     let velf: Vec<[f32; 3]> =
-        (0..n).map(|i| [atoms.vel[i][0] as f32, atoms.vel[i][1] as f32, atoms.vel[i][2] as f32]).collect();
+        (0..nall).map(|i| [atoms.vel[i][0] as f32, atoms.vel[i][1] as f32, atoms.vel[i][2] as f32]).collect();
 
     let mut dem = registry.expect_mut::<DemAtom>("gpu_granular_force");
     let omf: Vec<[f32; 3]> =
-        (0..n).map(|i| [dem.omega[i][0] as f32, dem.omega[i][1] as f32, dem.omega[i][2] as f32]).collect();
+        (0..nall).map(|i| [dem.omega[i][0] as f32, dem.omega[i][1] as f32, dem.omega[i][2] as f32]).collect();
 
     let (force, torque) = {
         let gs = g.state.as_ref().unwrap();
@@ -150,8 +160,11 @@ fn gpu_granular_force(
     };
 
     // Accumulate (like the CPU hertz path) so the GPU contact force composes with
-    // gravity, walls, and any other force contributor.
-    for i in 0..n {
+    // gravity, walls, and any other force contributor. Locals only: the i-centric
+    // kernel already summed each local atom's complete force from all neighbours
+    // (including ghosts), so ghost forces are redundant and discarded — no
+    // reverse-comm of ghost forces needed.
+    for i in 0..nlocal {
         atoms.force[i][0] += force[i][0] as soil_core::Accum;
         atoms.force[i][1] += force[i][1] as soil_core::Accum;
         atoms.force[i][2] += force[i][2] as soil_core::Accum;

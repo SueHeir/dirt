@@ -1,0 +1,79 @@
+# Dense settling bed in a walled box — MPI+GPU contact correctness test (1 rank).
+# A floor + 4 side walls contain ~500 grains that settle under gravity into a
+# packed bed straddling x = 0.01 (where the n2 run splits the domain), creating
+# many particle-particle contacts that cross the subdomain boundary.
+
+[comm]
+processors_x = 2
+processors_y = 1
+processors_z = 1
+
+[domain]
+x_low = 0.0
+x_high = 0.02
+y_low = 0.0
+y_high = 0.02
+z_low = 0.0
+z_high = 0.024
+boundary_x = "fixed"
+boundary_y = "fixed"
+boundary_z = "fixed"
+
+[neighbor]
+skin_fraction = 1.2
+bin_size = 0.0025
+every = 10
+
+[gravity]
+gx = 0.0
+gy = 0.0
+gz = -40.0
+
+[dem]
+contact_model = "hertz"
+
+[[dem.materials]]
+name = "glass"
+youngs_mod = 5.0e7
+poisson_ratio = 0.3
+restitution = 0.9
+friction = 0.3
+
+[[particles.insert]]
+material = "glass"
+count = 600
+radius = 0.001
+density = 2500.0
+velocity = 0.0
+region = { type = "block", min = [0.0015, 0.0015, 0.0015], max = [0.0185, 0.0185, 0.0205] }
+
+# Walled box: floor + 4 sides keep the bed contained (so a single domain has no
+# ghosts — a clean baseline). Walls are CPU (WallPlugin) in both CPU and GPU runs.
+[[wall]]
+point_z = 0.0
+normal_z = 1.0
+material = "glass"
+[[wall]]
+point_x = 0.0
+normal_x = 1.0
+material = "glass"
+[[wall]]
+point_x = 0.02
+normal_x = -1.0
+material = "glass"
+[[wall]]
+point_y = 0.0
+normal_y = 1.0
+material = "glass"
+[[wall]]
+point_y = 0.02
+normal_y = -1.0
+material = "glass"
+
+[output]
+dir = "examples/mpi_gpu_validate"
+
+[run]
+steps = 12000
+thermo = 1000
+dt = 2.0e-6
