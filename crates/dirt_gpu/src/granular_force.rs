@@ -39,7 +39,7 @@ struct GParams {
     g_eff: f32,
     mu: f32,
     dt: f32,
-    _p0: f32,
+    advance_hist: f32,
     _p1: f32,
     _p2: f32,
 }
@@ -51,6 +51,7 @@ pub struct GranularForce {
     n: u32,
     pipeline: wgpu::ComputePipeline,
     bind_group: wgpu::BindGroup,
+    bind_group_prime: wgpu::BindGroup,
     slots: NeighborSlots,
 }
 
@@ -73,13 +74,23 @@ impl GranularForce {
         let params = GParams {
             n: n as u32, nx: grid.n[0], ny: grid.n[1], nz: grid.n[2],
             e_eff: cfg.e_eff, beta: cfg.beta, g_eff: cfg.g_eff, mu: cfg.mu, dt: cfg.dt,
-            _p0: 0.0, _p1: 0.0, _p2: 0.0,
+            advance_hist: 1.0, _p1: 0.0, _p2: 0.0,
         };
         let params_buf = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("gf_params"), size: std::mem::size_of::<GParams>() as u64,
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false,
         });
         ctx.queue.write_buffer(&params_buf, 0, bytemuck::bytes_of(&params));
+
+        // History-neutral params for the entry prime (advance_hist = 0): same as
+        // `params` but the Mindlin spring is not integrated, so re-priming at a
+        // residency/MPI window boundary doesn't double-advance contact history.
+        let params_prime = GParams { advance_hist: 0.0, ..params };
+        let params_buf_prime = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("gf_params_prime"), size: std::mem::size_of::<GParams>() as u64,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false,
+        });
+        ctx.queue.write_buffer(&params_buf_prime, 0, bytemuck::bytes_of(&params_prime));
 
         let slots = NeighborSlots::new(ctx.clone(), n);
         slots.clear();
@@ -122,6 +133,24 @@ impl GranularForce {
                 wgpu::BindGroupEntry { binding: 10, resource: params_buf.as_entire_binding() },
             ],
         });
+        // Same bindings as `bind_group`, but params → the advance_hist=0 buffer,
+        // used by `record_prime` for the history-neutral entry prime.
+        let bind_group_prime = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("gf g0 bg prime"), layout: &g0,
+            entries: &[
+                wgpu::BindGroupEntry { binding: 0, resource: gs.pos_buffer().as_entire_binding() },
+                wgpu::BindGroupEntry { binding: 1, resource: gs.vel_buffer().as_entire_binding() },
+                wgpu::BindGroupEntry { binding: 2, resource: gs.force_buffer().as_entire_binding() },
+                wgpu::BindGroupEntry { binding: 3, resource: gs.aux_state_buffer(omega_aux).as_entire_binding() },
+                wgpu::BindGroupEntry { binding: 4, resource: gs.aux_rate_buffer(omega_aux).as_entire_binding() },
+                wgpu::BindGroupEntry { binding: 5, resource: radius_buf.as_entire_binding() },
+                wgpu::BindGroupEntry { binding: 6, resource: gs.inv_mass_buffer().as_entire_binding() },
+                wgpu::BindGroupEntry { binding: 7, resource: gs.atom_cell_buffer().as_entire_binding() },
+                wgpu::BindGroupEntry { binding: 8, resource: gs.cell_start_buffer().as_entire_binding() },
+                wgpu::BindGroupEntry { binding: 9, resource: gs.sorted_atoms_buffer().as_entire_binding() },
+                wgpu::BindGroupEntry { binding: 10, resource: params_buf_prime.as_entire_binding() },
+            ],
+        });
         let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("gf pl"), bind_group_layouts: &[Some(&g0), Some(slots.layout())], immediate_size: 0,
         });
@@ -134,7 +163,8 @@ impl GranularForce {
         // (wgpu refcounts the buffer), so dropping the local handle is fine.
         let _ = radius_buf;
         let _ = params_buf;
-        GranularForce { n: n as u32, pipeline, bind_group, slots }
+        let _ = params_buf_prime;
+        GranularForce { n: n as u32, pipeline, bind_group, bind_group_prime, slots }
     }
 }
 
@@ -146,6 +176,16 @@ impl GpuForce for GranularForce {
         pass.dispatch_workgroups(self.n.div_ceil(64).max(1), 1, 1);
         // OLD/NEW history swap for the next step (interior-mutable, &self).
         self.slots.swap();
+    }
+
+    /// History-neutral prime: evaluate the contact force from the CURRENT spring
+    /// (advance_hist=0 → no +vt·dt integration) and do NOT swap, so the OLD slots
+    /// the next step reads are untouched. Idempotent across window boundaries.
+    fn record_prime(&self, pass: &mut wgpu::ComputePass) {
+        pass.set_bind_group(0, &self.bind_group_prime, &[]);
+        pass.set_bind_group(1, self.slots.current_bind_group(), &[]);
+        pass.set_pipeline(&self.pipeline);
+        pass.dispatch_workgroups(self.n.div_ceil(64).max(1), 1, 1);
     }
 }
 
@@ -163,7 +203,7 @@ struct GParams {
     g_eff: f32,
     mu: f32,
     dt: f32,
-    _p0: f32,
+    advance_hist: f32,
     _p1: f32,
     _p2: f32,
 };
@@ -286,9 +326,11 @@ fn contact_force(@builtin(global_invocation_id) gid: vec3<u32>) {
 
                     var s = slot_lookup(i, j);
                     let s_dot_n = s.x * nx + s.y * ny + s.z * nz;
-                    s.x = s.x - s_dot_n * nx + vt_x * params.dt;
-                    s.y = s.y - s_dot_n * ny + vt_y * params.dt;
-                    s.z = s.z - s_dot_n * nz + vt_z * params.dt;
+                    // advance_hist = 1 in the step loop, 0 in the entry prime: the
+                    // prime reprojects but does NOT integrate the spring (no +vt·dt).
+                    s.x = s.x - s_dot_n * nx + vt_x * params.dt * params.advance_hist;
+                    s.y = s.y - s_dot_n * ny + vt_y * params.dt * params.advance_hist;
+                    s.z = s.z - s_dot_n * nz + vt_z * params.dt * params.advance_hist;
 
                     let f_t_max = params.mu * abs(f_n_mag);
 
