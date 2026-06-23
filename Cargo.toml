@@ -26,14 +26,6 @@ precision-mixed = ["dirt_core/precision-mixed"]
 precision-single = ["dirt_core/precision-single"]
 
 [[example]]
-name = "granular_basic"
-path = "examples/granular_basic/main.rs"
-
-[[example]]
-name = "granular_gas_benchmark"
-path = "examples/granular_gas_benchmark/main.rs"
-
-[[example]]
 name = "hello_bed"
 path = "examples/hello_bed/main.rs"
 
