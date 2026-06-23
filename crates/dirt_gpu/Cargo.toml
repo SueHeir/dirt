@@ -1,0 +1,34 @@
+[package]
+name = "dirt_gpu"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "GPU (wgpu/Metal) DEM kernels for DIRT — f32 neighbor build and contact forces"
+publish = false
+
+[features]
+# Default to double for easy standalone testing; the GPU kernels are always f32
+# (data is cast on upload). Switch host precision with --no-default-features.
+default = ["precision-double"]
+precision-double = ["soil_core/precision-double", "soil_gpu/precision-double", "dirt_atom/precision-double"]
+precision-mixed = ["soil_core/precision-mixed", "soil_gpu/precision-mixed", "dirt_atom/precision-mixed"]
+precision-single = ["soil_core/precision-single", "soil_gpu/precision-single", "dirt_atom/precision-single"]
+
+[dependencies]
+soil_core = { git = "https://github.com/SueHeir/soil.git", branch = "main", default-features = false }
+soil_gpu = { git = "https://github.com/SueHeir/soil.git", branch = "main", default-features = false }
+dirt_atom = { path = "../dirt_atom", version = "0.1.3", default-features = false }
+wgpu = "29"
+bytemuck = { version = "1", features = ["derive"] }
+pollster = "0.4"
+
+[dev-dependencies]
+# Comparison harness against dirt's REAL CPU force code (Tier 1/3).
+# precision-double matches dirt's CPU Atom = f64 (GPU kernels are f32 regardless).
+dirt_granular = { path = "../dirt_granular", default-features = false, features = ["precision-double"] }
+dirt_wall = { path = "../dirt_wall", default-features = false, features = ["precision-double"] }
+dirt_test_utils = { path = "../dirt_test_utils", version = "0.1.3" }
+grass_app = { git = "https://github.com/SueHeir/grass.git", branch = "main" }
+grass_scheduler = { git = "https://github.com/SueHeir/grass.git", branch = "main" }
+soil_verlet = { git = "https://github.com/SueHeir/soil.git", branch = "main", default-features = false, features = ["precision-double"] }
