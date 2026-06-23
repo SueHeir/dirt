@@ -34,6 +34,26 @@ name = "granular_gas_benchmark"
 path = "examples/granular_gas_benchmark/main.rs"
 
 [[example]]
+name = "hello_bed"
+path = "examples/hello_bed/main.rs"
+
+[[example]]
+name = "two_particle_collision"
+path = "examples/two_particle_collision/main.rs"
+
+[[example]]
+name = "measure_plane_throughput"
+path = "examples/measure_plane_throughput/main.rs"
+
+[[example]]
+name = "clump_dimer_drop"
+path = "examples/clump_dimer_drop/main.rs"
+
+[[example]]
+name = "wall_servo_lid"
+path = "examples/wall_servo_lid/main.rs"
+
+[[example]]
 name = "hopper"
 path = "examples/hopper/main.rs"
 
@@ -96,6 +116,51 @@ path = "examples/bench_hopper_beverloo/main.rs"
 [[example]]
 name = "perf_mpi_scaling"
 path = "examples/perf_mpi_scaling/main.rs"
+
+[[example]]
+name = "bench_lebc_shear"
+path = "examples/bench_lebc_shear/main.rs"
+
+[[example]]
+name = "bench_granular_conductivity"
+path = "examples/bench_granular_conductivity/main.rs"
+
+[[example]]
+name = "contact_analysis_demo"
+path = "examples/contact_analysis_demo/main.rs"
+
+# ── SPH glass-sphere calibration suite (one example per DEM closure) ──
+[[example]]
+name = "sphcal_shear_rheology"
+path = "examples/SPH_glass_sphere_calibration/01_shear_rheology/main.rs"
+
+[[example]]
+name = "sphcal_compressibility"
+path = "examples/SPH_glass_sphere_calibration/02_compressibility/main.rs"
+
+[[example]]
+name = "sphcal_angle_of_repose"
+path = "examples/SPH_glass_sphere_calibration/03_angle_of_repose/main.rs"
+
+[[example]]
+name = "sphcal_enduring_contact"
+path = "examples/SPH_glass_sphere_calibration/04_enduring_contact/main.rs"
+
+[[example]]
+name = "sphcal_cooling_dissipation"
+path = "examples/SPH_glass_sphere_calibration/05_cooling_dissipation/main.rs"
+
+[[example]]
+name = "sphcal_conductivity"
+path = "examples/SPH_glass_sphere_calibration/06_conductivity/main.rs"
+
+[[example]]
+name = "sphcal_column_collapse"
+path = "examples/SPH_glass_sphere_calibration/07_column_collapse/main.rs"
+
+[[example]]
+name = "sphcal_cooperativity_length"
+path = "examples/SPH_glass_sphere_calibration/08_cooperativity_length/main.rs"
 
 [profile.release]
 opt-level = 3

@@ -1,5 +1,8 @@
 target/
 Cargo.lock
+
+# mdBook rendered output (source lives in docs/src)
+docs/book/
 **/*.rs.bk
 .DS_Store
 .claude/*

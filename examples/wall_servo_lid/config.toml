@@ -1,0 +1,94 @@
+# wall_servo_lid — a servo plane wall compresses a settled bed to a target force.
+#
+# Particles fill a closed box; a downward-facing plane wall named "lid" runs a
+# proportional servo that drives its velocity to reach a target contact force,
+# compressing the bed. The example binary deactivates the lid by name partway
+# through the run (see main.rs) to let the bed relax.
+
+[comm]
+processors_x = 1
+processors_y = 1
+processors_z = 1
+
+[domain]
+x_low = 0.0
+x_high = 0.04
+y_low = 0.0
+y_high = 0.04
+z_low = 0.0
+z_high = 0.08
+boundary_x = "fixed"
+boundary_y = "fixed"
+boundary_z = "fixed"
+
+[neighbor]
+skin_fraction = 1.1
+bin_size = 0.006          # >= largest particle diameter
+
+[gravity]
+gz = -9.81
+
+[[dem.materials]]
+name = "glass"
+youngs_mod = 8.7e9
+poisson_ratio = 0.3
+restitution = 0.3
+friction = 0.5
+
+[[particles.insert]]
+material = "glass"
+count = 300
+radius = 0.002
+density = 2500.0
+region = { type = "block", min = [0.004, 0.004, 0.005], max = [0.036, 0.036, 0.045] }
+
+# --- container: four side walls + floor ---
+[[wall]]              # floor (z = 0, normal +z)
+point_z = 0.0
+normal_z = 1.0
+material = "glass"
+
+[[wall]]              # x_low
+point_x = 0.0
+normal_x = 1.0
+material = "glass"
+
+[[wall]]              # x_high
+point_x = 0.04
+normal_x = -1.0
+material = "glass"
+
+[[wall]]              # y_low
+point_y = 0.0
+normal_y = 1.0
+material = "glass"
+
+[[wall]]              # y_high
+point_y = 0.04
+normal_y = -1.0
+material = "glass"
+
+# --- servo lid: a downward-facing plane that presses on the bed ---
+# The servo drives the lid velocity toward a target downward contact force.
+[[wall]]
+type = "plane"
+point_z = 0.07
+normal_z = -1.0        # faces downward, onto the bed
+material = "glass"
+name = "lid"           # so main.rs can deactivate_by_name("lid")
+servo = { target_force = 50.0, max_velocity = 0.05, gain = 1.0e-5 }
+
+[vtp]
+interval = 2000
+
+[[run]]
+name = "compress"
+dt = 1.0e-5
+steps = 60000
+thermo = 2000
+
+[[run]]
+name = "relax"
+dt = 1.0e-5
+steps = 40000
+thermo = 2000

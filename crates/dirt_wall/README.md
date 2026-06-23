@@ -1,10 +1,21 @@
 # dirt_wall
 
-Wall contact forces for DIRT (DEM) simulations: Hertz normal contact with viscous damping and optional adhesion (JKR, DMT, or SJKR cohesion).
+Wall contact forces for DIRT (DEM) simulations: Hertz normal contact with viscous damping, tangential/rolling/twisting friction, and optional adhesion (JKR, DMT, or SJKR cohesion).
 
 ## What it does
 
-Parses `[[wall]]` entries from the TOML config, resolves each wall's material against the `[[dem.materials]]` table, and computes wall–particle contact forces every timestep. Walls have infinite mass and infinite radius, so the effective radius is the particle radius and the reduced mass is the particle mass. Plane walls can move (constant velocity, sinusoidal oscillation, or servo force-feedback) and apply a twisting friction torque; cylinder, sphere, and region walls are static. Walls carry an optional `name` for runtime enable/disable and an optional `temperature` field.
+Parses `[[wall]]` entries from the TOML config, resolves each wall's material against the `[[dem.materials]]` table, and computes wall–particle contact forces every timestep. Walls have infinite mass and infinite radius, so the effective radius is the particle radius and the reduced mass is the particle mass. Plane walls can move (constant velocity, sinusoidal oscillation, or servo force-feedback); cylinder, sphere, and region walls are static. Walls carry an optional `name` for runtime enable/disable and an optional `temperature` field.
+
+## Friction & adhesion
+
+Wall contacts reuse the same per-pair `MaterialTable` tables as particle–particle contacts (`friction_ij`, `rolling_friction_ij`, `twisting_friction_ij`, `e_eff_ij`, `g_eff_ij`, `beta_ij`), with `R* = particle_radius`.
+
+- **Tangential (Mindlin sliding) friction** and **rolling resistance** (`constant` or `sds`) are applied by **all** wall types. Frictionless walls (`friction = 0`) are byte-for-byte identical to a pure-normal contact.
+- **Twisting friction** is applied by **plane walls only**.
+- **Adhesion is asymmetric by geometry:** plane walls support JKR/DMT (`surface_energy`) *and* SJKR cohesion (`cohesion_energy`); cylinder/sphere/region walls support **SJKR cohesion only** — their `surface_energy` is ignored.
+- The optional **`temperature`** field is *stored but never read* by this crate — it is a hook for an external heat-transfer system.
+
+Malformed `[[wall]]` config (bad TOML, unknown cylinder axis, wrong-length `center`, missing region, zero normal) prints an `ERROR:` and calls `std::process::exit(1)` at setup.
 
 ## Wall types
 

@@ -130,6 +130,40 @@
 //! breakpoint_strains  = [0.01, 0.02, 0.03]
 //! slope_multipliers   = [0.5, 0.1, 0.0]
 //! ```
+//!
+//! ## Usage
+//!
+//! This crate exports [`DemBondPlugin`]. It does **not** depend on `dirt_core`;
+//! a full application is assembled through the `dirt_core` umbrella, whose
+//! prelude re-exports `DemBondPlugin` next to the core and granular plugin
+//! groups:
+//!
+//! ```text
+//! // (built from the dirt_core umbrella crate, not from dirt_bond itself —
+//! //  this crate has no dirt_core dependency, so the snippet is illustrative)
+//! use dirt_core::prelude::*; // re-exports DemBondPlugin, CorePlugins, GranularDefaultPlugins
+//!
+//! let mut app = App::new();
+//! app.add_plugins(CorePlugins)
+//!     .add_plugins(GranularDefaultPlugins) // Hertz-Mindlin contact + Verlet
+//!     .add_plugins(DemBondPlugin);         // bond forces; contact suppressed on bonded pairs
+//! app.start();
+//! ```
+//!
+//! If you depend on this crate directly, import the plugin from here
+//! (`use dirt_bond::DemBondPlugin;`) and supply your own core/granular plugins.
+//! `DemBondPlugin` needs the granular contact plugin present so non-bonded
+//! pairs still interact; contact on bonded pairs is suppressed via
+//! `soil_core`'s `BondStore`.
+//!
+//! ## Thermo output
+//!
+//! [`BondMetrics`] publishes three keys each thermo step:
+//!
+//! - `bond_strain` — mean axial strain `δ/r₀` over all live bonds (0 if none).
+//! - `bonds_broken` — cumulative bonds broken since the run started.
+//! - `bond_missing` — bonds skipped this step because the partner atom was not
+//!   visible (ghost cutoff too small, or an MPI cut runs through a bond).
 
 use std::any::Any;
 use std::collections::HashMap;
@@ -528,15 +562,35 @@ impl Plugin for DemBondPlugin {
 # tensile = { kind = "constant", value = 5.0e7 }
 # shear   = { kind = "constant", value = 3.0e7 }
 #
+# Each threshold accepts one of three distributions (`kind`):
+#   constant   — same value for every bond:
+#     { kind = "constant", value = 5.0e7 }
+#   weibull    — length-scaled 2-parameter Weibull (weakest-link size effect):
+#     { kind = "weibull", mean = 5.0e7, m = 8.0, l_calib = 0.020, l_min = 0.0 }
+#   crack_band — deterministic, length-rescaled (Bazant crack-band) so the
+#                per-bond energy budget is mesh-invariant; the part above
+#                eps_yield scales as l_ref / max(l_bond, l_min). Use eps_yield = 0
+#                for force/stress criteria, eps_yield > 0 for strain criteria:
+#     { kind = "crack_band", value_ref = 0.05, l_ref = 0.020, eps_yield = 0.0, l_min = 0.0 }
+#
 # Plasticity (omit for purely elastic bonds). Both `bending` and `axial`
 # channels are independently optional. Examples:
 # [bonds.plasticity.bending]
-# kind         = "guo_bending"
+# kind         = "guo_bending"      # elastic-perfectly-plastic, cap M^p = (4/3) sigma_0 r_b^3
 # yield_stress = 1.23e8
+# # ...or the Guo 2018 trilinear envelope (Eq. 32; needs [bonds].youngs_modulus):
+# # kind         = "guo_trilinear"  # elastic -> K_e/2 elasto-plastic -> perfectly plastic
+# # yield_stress = 1.23e8
+# # ...or an arbitrary piecewise-linear bending envelope (extreme-fibre strain):
+# # kind               = "piecewise"
+# # breakpoint_strains = [0.01, 0.02]
+# # slope_multipliers  = [0.5, 0.0]
+# # length_calibration = 0.020       # optional crack-band length regularization (m)
 # [bonds.plasticity.axial]
 # kind                = "piecewise"
 # breakpoint_strains  = [0.01, 0.02, 0.03]
-# slope_multipliers   = [0.5, 0.1, 0.0]"#,
+# slope_multipliers   = [0.5, 0.1, 0.0]
+# length_calibration  = 0.020         # optional crack-band length regularization (m)"#,
         )
     }
 

@@ -1,0 +1,116 @@
+# measure_plane_throughput — count spheres falling through a horizontal plane.
+#
+# A cloud of spheres is dropped under gravity in a closed box. A single
+# horizontal measurement plane near the bottom counts downward crossings and
+# reports particle/mass throughput to thermo. The plane is a counter only — it
+# does not block particles; the floor wall stops them.
+
+[comm]
+processors_x = 1
+processors_y = 1
+processors_z = 1
+
+[domain]
+x_low = 0.0
+x_high = 0.04
+y_low = 0.0
+y_high = 0.04
+z_low = 0.0
+z_high = 0.10
+boundary_x = "fixed"
+boundary_y = "fixed"
+boundary_z = "fixed"
+
+[neighbor]
+skin_fraction = 1.1
+bin_size = 0.005          # >= largest particle diameter
+
+[gravity]
+gz = -9.81                # m/s²
+
+[[dem.materials]]
+name = "glass"
+youngs_mod = 8.7e9        # Pa
+poisson_ratio = 0.3
+restitution = 0.3
+friction = 0.5
+
+[[particles.insert]]
+material = "glass"
+count = 200
+radius = 0.002            # m
+density = 2500.0          # kg/m³
+# Dropped from the top third of the box.
+region = { type = "block", min = [0.005, 0.005, 0.07], max = [0.035, 0.035, 0.095] }
+
+# --- six container walls (inward normals) ---
+[[wall]]              # floor   (z = 0,    normal +z)
+point_x = 0.0
+point_y = 0.0
+point_z = 0.0
+normal_x = 0.0
+normal_y = 0.0
+normal_z = 1.0
+material = "glass"
+
+[[wall]]              # ceiling (z = 0.10, normal -z)
+point_x = 0.0
+point_y = 0.0
+point_z = 0.10
+normal_x = 0.0
+normal_y = 0.0
+normal_z = -1.0
+material = "glass"
+
+[[wall]]              # x_low   (x = 0,    normal +x)
+point_x = 0.0
+point_y = 0.0
+point_z = 0.0
+normal_x = 1.0
+normal_y = 0.0
+normal_z = 0.0
+material = "glass"
+
+[[wall]]              # x_high  (x = 0.04, normal -x)
+point_x = 0.04
+point_y = 0.0
+point_z = 0.0
+normal_x = -1.0
+normal_y = 0.0
+normal_z = 0.0
+material = "glass"
+
+[[wall]]              # y_low   (y = 0,    normal +y)
+point_x = 0.0
+point_y = 0.0
+point_z = 0.0
+normal_x = 0.0
+normal_y = 1.0
+normal_z = 0.0
+material = "glass"
+
+[[wall]]              # y_high  (y = 0.04, normal -y)
+point_x = 0.0
+point_y = 0.04
+point_z = 0.0
+normal_x = 0.0
+normal_y = -1.0
+normal_z = 0.0
+material = "glass"
+
+# Horizontal measurement plane at z = 0.03, normal pointing DOWN so a falling
+# particle crosses in the counted (positive-normal) direction exactly once.
+[[measure_plane]]
+name = "outlet"
+point = [0.0, 0.0, 0.03]
+normal = [0.0, 0.0, -1.0]
+report_interval = 1000
+
+[vtp]
+interval = 2000
+
+[[run]]
+name = "drop"
+dt = 1.0e-5               # s
+steps = 200000
+thermo = 2000

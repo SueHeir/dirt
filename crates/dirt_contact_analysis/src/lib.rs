@@ -1,4 +1,9 @@
-//! DEM contact analysis: coordination number, per-contact force output, and fabric tensor.
+//! DEM contact analysis: coordination number, per-contact geometry output, and fabric tensor.
+//!
+//! Note: the per-contact CSV carries **geometry only** (tags, overlap, contact
+//! point, contact normal) — no contact force. Force data lives in the
+//! Hertz-Mindlin contact plugin's tangential-history store and is not coupled
+//! here; see [`ContactRecord`].
 //!
 //! Provides [`ContactAnalysisPlugin`] which reads a `[contact_analysis]` TOML config section
 //! and registers post-force systems for:
@@ -47,6 +52,50 @@
 //! | `nx`     | f64   | Contact normal x-component (unit, i → j)       |
 //! | `ny`     | f64   | Contact normal y-component                     |
 //! | `nz`     | f64   | Contact normal z-component                     |
+//!
+//! # Newton's-third-law accounting (half vs. full neighbor lists)
+//!
+//! Every metric here is computed in a single pass over the neighbor list, so
+//! each result depends on whether that list uses **Newton's third law** — i.e.
+//! whether a contacting pair *(i, j)* is visited **once** (`neighbor.newton ==
+//! true`, half list) or **twice**, once as *(i, j)* and once as *(j, i)*
+//! (`newton == false`, full list). The three accumulators each correct for this
+//! differently so the reported quantities are list-independent:
+//!
+//! - **Coordination number.** When `newton`, the pair is seen once, so both
+//!   endpoints are incremented in that single visit — `coordination[i] += 1` and
+//!   `coordination[j] += 1` (the latter only when `j < nlocal`, since a ghost
+//!   *j* is owned by another rank and will be counted there). When `!newton`,
+//!   the pair is seen twice, so only the *i* endpoint is incremented per visit;
+//!   across the two visits each particle still ends up with the right count.
+//! - **Fabric tensor.** Each contact's `n ⊗ n` outer product must contribute
+//!   once. When `newton` the pair is visited once, so it is added at full weight
+//!   (`vs = 1.0`); when `!newton` it is visited twice, so each visit adds half
+//!   (`vs = 0.5`). The running contact count `nc` is incremented by the same
+//!   weight, so the normalized tensor `F = (1/Nc) Σ n⊗n` is identical either
+//!   way.
+//! - **Per-contact CSV records.** Each physical contact must appear once. When
+//!   `newton` the single visit is recorded; when `!newton` the duplicate is
+//!   suppressed by recording only the `i < j` ordering.
+//!
+//! # Plugin ordering contract
+//!
+//! [`ContactAnalysisPlugin`] does not own a force or output pipeline — it hooks
+//! into existing ones, so **registration order matters**:
+//!
+//! - A **Hertz-Mindlin contact plugin must be registered first.** The analysis
+//!   system is scheduled `.after("hertz_mindlin_contact")` so it runs in
+//!   `PostForce` once positions and the neighbor list are settled. With no
+//!   system carrying that label, the scheduler has no ordering anchor for the
+//!   analysis pass.
+//! - **`PrintPlugin` must be registered first** when `coordination = true`. The
+//!   plugin registers the `coordination` per-atom dump scalar against the
+//!   `DumpRegistry` at build time; if the registry is absent it **panics** with
+//!   `"DumpRegistry not found — PrintPlugin must be added first"`.
+//!
+//! In practice both are satisfied by adding `GranularDefaultPlugins` (contact)
+//! and `CorePlugins` (which includes `PrintPlugin`) **before**
+//! `ContactAnalysisPlugin`.
 
 use std::{
     fs::{self, File},

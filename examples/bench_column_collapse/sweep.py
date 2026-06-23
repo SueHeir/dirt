@@ -63,14 +63,18 @@ LAMMPS_CSV = os.path.join(DATA_DIR, "lammps_results.csv")  # LAMMPS runout per a
 LAMMPS_BINS = ["lmp_serial", "lmp", "lmp_mpi", "lammps"]
 
 # ── Geometry / material (shared by every case) ───────────────────────────────
-RADIUS = 0.0015            # m (d = 3 mm)
-DENSITY = 2500.0           # kg/m^3 (glass-like)
+RADIUS = 0.0015            # m (d = 3 mm; Lajeunesse used ~1–3 mm glass beads)
+DENSITY = 2500.0           # kg/m^3 (glass)
 L0 = 0.024                 # initial column width [m] (= 8 diameters)
 W = 0.009                  # slab width in y [m] (= 3 diameters, quasi-2D)
-YOUNGS_MOD = 7.0e7         # Pa (softened so dt stays reasonable for a bed)
-POISSON = 0.25
-RESTITUTION = 0.5
-FRICTION = 0.5
+# Canonical glass-bead (ballotini) material — measured properties, shared across
+# all DIRT calibrations (shear/cooling/conduction/collapse). E softened from the
+# real ~65 GPa (rigid-grain limit; keeps dt tractable). e and μ_p are measured
+# glass–glass values (Wu et al. 2019, Meas. of restitution & friction for glass beads).
+YOUNGS_MOD = 7.0e7         # Pa (softened from ~65 GPa real glass)
+POISSON = 0.245
+RESTITUTION = 0.926        # measured glass–glass COR
+FRICTION = 0.16            # measured glass–glass sliding friction
 DT = 4.0e-6               # s
 SETTLE_STEPS = 80000
 COLLAPSE_STEPS = 200000
