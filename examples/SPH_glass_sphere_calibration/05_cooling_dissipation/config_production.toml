@@ -1,0 +1,68 @@
+# sphcal_cooling_dissipation — PRODUCTION dissipation closure (full canonical material).
+#
+# This is the PRODUCTION counterpart to config.toml. config.toml is the idealized
+# Haff-cooling VALIDATION (frictionless rolling, MONODISPERSE) that validates Haff's
+# law against the LAMMPS cross-check and the kinetic-theory dissipation rate — Haff's
+# law assumes smooth, monodisperse grains, so that run must stay idealized and is
+# left untouched.
+#
+# This config instead uses the FULL FINALIZED canonical glass-bead material:
+#   e = 0.926, ν = 0.245, μ_p = 0.16, μ_r = 0.10 (default "constant" rolling model),
+#   ρ = 2500, and ±10% uniform polydispersity (radius ∈ [0.00099, 0.00121] about
+#   r = 0.0011), so the extracted dissipation closure reflects the real frictional,
+#   rolling-resistant, polydisperse material the MUD SPH solver actually consumes.
+# With rolling friction and polydispersity the gas no longer obeys the smooth-sphere
+# Haff law exactly; the deliverable is the realized cooling/dissipation rate, not a
+# Haff PASS/FAIL — run the Haff validation (config.toml) for that.
+#
+# Run:  cargo run --release --example sphcal_cooling_dissipation \
+#   --no-default-features -- examples/SPH_glass_sphere_calibration/05_cooling_dissipation/config_production.toml
+
+[comm]
+processors_x = 1
+processors_y = 1
+processors_z = 1
+
+[domain]
+x_low = 0.0
+x_high = 0.04
+y_low = 0.0
+y_high = 0.04
+z_low = 0.0
+z_high = 0.04
+boundary_x = "periodic"
+boundary_y = "periodic"
+boundary_z = "periodic"
+
+[neighbor]
+skin_fraction = 1.1
+bin_size = 0.004
+
+[dem]
+contact_model = "hertz"
+
+[[dem.materials]]
+name = "glass"
+youngs_mod = 7.0e7    # softened glass-bead modulus (canonical calibration material)
+poisson_ratio = 0.245 # glass
+restitution = 0.926   # measured glass-glass COR
+friction = 0.16       # measured glass-glass sliding mu_p
+rolling_friction = 0.10  # mu_r — canonical glass-bead rolling friction (default "constant" model)
+# density (2500 kg/m^3, canonical glass) is set on the particle insert below —
+# DIRT's [[dem.materials]] schema carries contact properties, not density.
+
+[[particles.insert]]
+material = "glass"
+count = 800                # smooth temperature statistics
+# Full canonical ±10% uniform polydispersity about r = 0.0011 m.
+radius = { distribution = "uniform", min = 0.00099, max = 0.00121 }
+density = 2500.0
+velocity = 0.5             # Gaussian sigma per component -> initial T_trans ~ 0.25
+region = { type = "block", min = [0.002, 0.002, 0.002], max = [0.038, 0.038, 0.038] }
+
+[output]
+dir = "examples/SPH_glass_sphere_calibration/05_cooling_dissipation"
+
+[run]
+steps = 700000            # ~30 cooling times -> ~3 decades of decay above the noise floor
+thermo = 10000

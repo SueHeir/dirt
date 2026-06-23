@@ -1,0 +1,144 @@
+# Angle-of-repose benchmark — "lift the cylinder" heap on a frictional floor.
+#
+# A mobile column of spheres is confined inside a z-aligned cylinder wall on the
+# floor, settles under gravity (stage "fill"), then the cylinder is deactivated
+# at runtime (stage "lift") and the column slumps into a conical heap. main.rs
+# dumps the settled particle positions; sweep.py fits the height-vs-radius slope
+# to get θ_r = atan(slope).
+#
+# The heap sits directly on a real frictional plane wall (z = 0, normal +z).
+# dirt_wall applies Mindlin sliding (tangential) friction on plane walls, using
+# the material's `friction` coefficient (μ) via friction_ij — exactly the base
+# friction the bottom layer needs so it does not slide out and pancake the heap.
+# dirt_wall now also applies the sds rolling resistance on the floor (mu_roll,
+# k_roll, gamma_roll below), matching the grain–wall rolling LAMMPS applies via
+# `fix wall/gran ... rolling sds`.
+#
+# This single-case config is the representative case for the GLASS CALIBRATION:
+# sliding friction μ_p = 0.16 (measured glass) is FIXED and sweep.py sweeps the
+# ROLLING friction μ_r to pin the value that reproduces the measured glass repose
+# band [22,26]°. Restitution is held at e = 0.4 as a FORMATION AID — the static
+# repose angle is friction-controlled, so the heap is formed with this dissipative
+# e (canonical glass e=0.926 is too elastic to settle a heap) and the calibrated
+# μ_r then transfers to the e=0.926 glass material.
+#
+# Run:
+#   cargo run --release --example sphcal_angle_of_repose --no-default-features -- examples/SPH_glass_sphere_calibration/03_angle_of_repose/config.toml
+
+[comm]
+processors_x = 1
+processors_y = 1
+processors_z = 1
+
+[domain]
+x_low = -0.08
+x_high = 0.08
+y_low = -0.08
+y_high = 0.08
+z_low = 0.0
+z_high = 0.16
+boundary_x = "fixed"
+boundary_y = "fixed"
+boundary_z = "fixed"
+
+[neighbor]
+skin_fraction = 1.2
+bin_size = 0.006
+every = 1
+
+[gravity]
+gz = -9.81
+
+[dem]
+contact_model = "hertz"
+# sds (spring–dashpot–slider) rolling resistance, matched 1:1 to LAMMPS
+# `pair_style granular ... rolling sds k_roll gamma_roll mu_roll`. The rolling
+# torque is −k_roll·δ − gamma_roll·ω_roll, Coulomb-capped at mu_roll·|F_n|·r_eff,
+# with the spring rescaled on slip — the same model and the same parameters the
+# LAMMPS leg uses (sweep.py). k_roll ~ k_t·r² per Ai et al. (2011) /
+# Wensrich & Katterfeld (2012); gamma_roll ~0.4·critical.
+rolling_model = "sds"
+
+# Mobile heap particles. Sliding friction μ_p is FIXED (0.16, measured glass) and
+# rolling friction μ_r is swept by sweep.py. μ_p governs particle–particle and
+# particle–floor sliding (the base friction); μ_r is the rolling Coulomb cap that
+# sets the static repose angle.
+[[dem.materials]]
+name = "glass"
+youngs_mod = 1.0e7        # Pa — softened for a larger stable timestep (common DEM practice)
+poisson_ratio = 0.25
+restitution = 0.4         # FORMATION AID — dissipative so the heap settles (see header)
+friction = 0.16           # μ_p — sliding (Coulomb) friction; FIXED at measured glass value
+rolling_friction = 0.10   # μ_r — canonical value (pinned via #7 column-collapse runout); 03 is now a qualitative check
+rolling_stiffness = 1.0e-2 # k_roll — rolling spring stiffness (N·m/rad)
+rolling_damping = 1.0e-6   # gamma_roll — rolling viscous damping
+
+# Confining cylinder wall (z-aligned), centered at origin, standing on the floor.
+# Narrow and tall (a poured-column geometry) so the collapse deposits a clean cone
+# rather than a thin pancake. Particles live INSIDE it; deactivated at runtime by
+# name to "lift" the cylinder. Its wall friction is harmless — the cylinder is
+# removed before the heap forms.
+[[wall]]
+type = "cylinder"
+axis = "z"
+center = [0.0, 0.0]
+radius = 0.025
+lo = 0.0
+hi = 0.16
+inside = true
+material = "glass"
+name = "cylinder"
+
+# Floor (z = 0, normal +z). A real frictional plane wall: dirt_wall applies
+# Mindlin sliding friction here using the material's μ, so the heap's base layer
+# grips the floor and the pile holds a slope.
+[[wall]]
+type = "plane"
+point_x = 0.0
+point_y = 0.0
+point_z = 0.0
+normal_x = 0.0
+normal_y = 0.0
+normal_z = 1.0
+material = "glass"
+
+# Outer catch wall (z-aligned cylinder, particles inside). Beyond the heap toe
+# (~0.05 m); stops the few particles flung out during collapse from leaving the
+# domain, conserving the count. It does not touch the static heap.
+[[wall]]
+type = "cylinder"
+axis = "z"
+center = [0.0, 0.0]
+radius = 0.07
+lo = 0.0
+hi = 0.16
+inside = true
+material = "glass"
+
+# Mobile column inside the cylinder, sitting on the floor. A tall, narrow column
+# (aspect ratio H/R ~ 6) so its gravity-driven collapse spreads outward over the
+# frictional floor and relaxes into a cone whose flank the fit can resolve.
+[[particles.insert]]
+material = "glass"
+count = 1200
+radius = 0.002
+density = 2500.0
+velocity_z = -0.1
+region = { type = "cylinder", center = [0.0, 0.0], radius = 0.022, axis = "z", lo = 0.003, hi = 0.14 }
+
+[vtp]
+interval = 5000
+
+# Stage 1: fill — column settles; main.rs lifts the cylinder when motion stops.
+[[run]]
+name = "fill"
+steps = 100000
+thermo = 10000
+
+# Stage 2: lift — heap slumps and relaxes; main.rs records positions at rest.
+# main.rs records on its own (rest reached or a 150k-step cap after lift), so
+# this budget just needs to comfortably exceed lift_step + 150k.
+[[run]]
+name = "lift"
+steps = 200000
+thermo = 10000

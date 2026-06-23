@@ -10,6 +10,9 @@
 # dirt_wall applies Mindlin sliding (tangential) friction on plane walls, using
 # the material's `friction` coefficient (μ) via friction_ij — exactly the base
 # friction the bottom layer needs so it does not slide out and pancake the heap.
+# dirt_wall now also applies the sds rolling resistance on the floor (mu_roll,
+# k_roll, gamma_roll below), matching the grain–wall rolling LAMMPS applies via
+# `fix wall/gran ... rolling sds`.
 #
 # This single-case config is the representative μ=0.3 case. sweep.py sweeps μ.
 #
@@ -42,6 +45,13 @@ gz = -9.81
 
 [dem]
 contact_model = "hertz"
+# sds (spring–dashpot–slider) rolling resistance, matched 1:1 to LAMMPS
+# `pair_style granular ... rolling sds k_roll gamma_roll mu_roll`. The rolling
+# torque is −k_roll·δ − gamma_roll·ω_roll, Coulomb-capped at mu_roll·|F_n|·r_eff,
+# with the spring rescaled on slip — the same model and the same parameters the
+# LAMMPS leg uses (sweep.py). k_roll ~ k_t·r² per Ai et al. (2011) /
+# Wensrich & Katterfeld (2012); gamma_roll ~0.4·critical.
+rolling_model = "sds"
 
 # Mobile heap particles. friction (μ) is swept by sweep.py. The same μ governs
 # both particle–particle contacts (which set the pile's angle) and particle–wall
@@ -52,7 +62,9 @@ youngs_mod = 1.0e7        # Pa — softened for a larger stable timestep (common
 poisson_ratio = 0.25
 restitution = 0.4         # dissipative, so the heap settles quickly
 friction = 0.3            # μ — sliding (Coulomb) friction; swept by sweep.py
-rolling_friction = 0.1    # small rolling resistance, helps the heap hold a slope
+rolling_friction = 0.1    # mu_roll — rolling Coulomb cap (matched to LAMMPS sds)
+rolling_stiffness = 1.0e-2 # k_roll — rolling spring stiffness (N·m/rad)
+rolling_damping = 1.0e-6   # gamma_roll — rolling viscous damping
 
 # Confining cylinder wall (z-aligned), centered at origin, standing on the floor.
 # Narrow and tall (a poured-column geometry) so the collapse deposits a clean cone

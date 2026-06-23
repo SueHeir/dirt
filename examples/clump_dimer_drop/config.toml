@@ -1,0 +1,118 @@
+# clump_dimer_drop — drop two-sphere dimers into a box under gravity.
+#
+# A minimal end-to-end clump simulation: define one dimer clump type, insert a
+# few of them in the upper half of a closed box, and let them fall and settle.
+# Single run stage, no runtime control.
+
+[comm]
+processors_x = 1
+processors_y = 1
+processors_z = 1
+
+[domain]
+# Simulation box extents [m]
+x_low = 0.0
+x_high = 0.04
+y_low = 0.0
+y_high = 0.04
+z_low = 0.0
+z_high = 0.08
+boundary_x = "fixed"
+boundary_y = "fixed"
+boundary_z = "fixed"
+
+[neighbor]
+skin_fraction = 1.2
+bin_size = 0.005          # >= largest sub-sphere diameter (0.004 m)
+
+[gravity]
+gz = -9.81                # m/s²
+
+[[dem.materials]]
+name = "glass"
+youngs_mod = 8.7e9        # Pa
+poisson_ratio = 0.3
+restitution = 0.3
+friction = 0.5
+
+# A dimer: two overlapping spheres offset along the body x-axis. The Monte
+# Carlo inertia path is used automatically because the spheres overlap.
+[[clump.definitions]]
+name = "dimer"
+spheres = [
+    { offset = [-0.0015, 0.0, 0.0], radius = 0.002 },
+    { offset = [ 0.0015, 0.0, 0.0], radius = 0.002 },
+]
+
+[[clump.insert]]
+definition = "dimer"
+count = 20
+density = 2500.0          # kg/m³
+material = "glass"        # must match a [[dem.materials]] entry
+velocity = 0.1            # optional: each component uniform in [-v, +v]
+# Insertion region near the top of the box.
+region = { type = "block", min = [0.006, 0.006, 0.05], max = [0.034, 0.034, 0.074] }
+
+# --- six container walls (inward normals) ---
+[[wall]]              # floor   (z = 0,    normal +z)
+point_x = 0.0
+point_y = 0.0
+point_z = 0.0
+normal_x = 0.0
+normal_y = 0.0
+normal_z = 1.0
+material = "glass"
+
+[[wall]]              # ceiling (z = 0.08, normal -z)
+point_x = 0.0
+point_y = 0.0
+point_z = 0.08
+normal_x = 0.0
+normal_y = 0.0
+normal_z = -1.0
+material = "glass"
+
+[[wall]]              # x_low   (x = 0,    normal +x)
+point_x = 0.0
+point_y = 0.0
+point_z = 0.0
+normal_x = 1.0
+normal_y = 0.0
+normal_z = 0.0
+material = "glass"
+
+[[wall]]              # x_high  (x = 0.04, normal -x)
+point_x = 0.04
+point_y = 0.0
+point_z = 0.0
+normal_x = -1.0
+normal_y = 0.0
+normal_z = 0.0
+material = "glass"
+
+[[wall]]              # y_low   (y = 0,    normal +y)
+point_x = 0.0
+point_y = 0.0
+point_z = 0.0
+normal_x = 0.0
+normal_y = 1.0
+normal_z = 0.0
+material = "glass"
+
+[[wall]]              # y_high  (y = 0.04, normal -y)
+point_x = 0.0
+point_y = 0.04
+point_z = 0.0
+normal_x = 0.0
+normal_y = -1.0
+normal_z = 0.0
+material = "glass"
+
+[vtp]
+interval = 2000           # write VTP visualization files every N steps
+
+[[run]]
+name = "settle"
+dt = 1.0e-5               # s
+steps = 200000
+thermo = 2000

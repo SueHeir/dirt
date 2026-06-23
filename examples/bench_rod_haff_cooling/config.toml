@@ -34,10 +34,10 @@ contact_model = "hertz"
 
 [[dem.materials]]
 name = "glass"
-youngs_mod = 5.0e7          # [Pa] softened for faster timestep
-poisson_ratio = 0.3
-restitution = 0.9           # mild dissipation for clear Haff decay
-friction = 0.3
+youngs_mod = 7.0e7          # [Pa] softened from ~65 GPa real glass (canonical glass-bead material)
+poisson_ratio = 0.245       # glass
+restitution = 0.926         # measured glass–glass COR
+friction = 0.16             # measured glass–glass sliding μ_p
 
 # --- Rod-shaped clump: 4 spheres along x-axis ---
 # Each sub-sphere r = 0.5 mm, centers spaced 0.8 mm apart (overlapping)
