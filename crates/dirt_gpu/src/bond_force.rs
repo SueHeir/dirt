@@ -47,6 +47,37 @@ impl BondTopology {
     pub fn num_bonds(&self) -> usize {
         self.partner.len()
     }
+
+    /// Build a persistent GPU bond topology from the CPU `BondStore`, resolving each
+    /// bond's `partner_tag` to its current local/ghost atom index. `offsets` spans
+    /// all `atoms.len()` GPU atoms (ghosts own no bonds). Bonds whose partner is not
+    /// present (cut by an MPI ghost boundary) are dropped — same `missing_partner`
+    /// semantics as the CPU. The flat order matches `BondStore.bonds[i]` per point so
+    /// per-bond GPU state lines up with a host download for migration.
+    pub fn from_bond_store(bonds: &soil_core::BondStore, atoms: &soil_core::Atom) -> Self {
+        let nall = atoms.len();
+        let nlocal = atoms.nlocal as usize;
+        let mut tag_to_index = std::collections::HashMap::with_capacity(nall);
+        for idx in 0..nall {
+            tag_to_index.insert(atoms.tag[idx], idx);
+        }
+        let mut offsets = Vec::with_capacity(nall + 1);
+        let mut partner = Vec::new();
+        let mut r0 = Vec::new();
+        offsets.push(0u32);
+        for i in 0..nall {
+            if i < nlocal && i < bonds.bonds.len() {
+                for e in &bonds.bonds[i] {
+                    if let Some(&j) = tag_to_index.get(&e.partner_tag) {
+                        partner.push(j as u32);
+                        r0.push(e.r0 as f32);
+                    }
+                }
+            }
+            offsets.push(partner.len() as u32);
+        }
+        BondTopology { offsets, partner, r0 }
+    }
 }
 
 #[repr(C)]
