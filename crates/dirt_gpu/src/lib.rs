@@ -20,6 +20,9 @@ pub use granular_force::{GranularConfig, GranularForce};
 mod wall_force;
 pub use wall_force::{WallForce, MAX_WALLS};
 
+mod bond_force;
+pub use bond_force::{BondConfig, BondForce, BondTopology};
+
 // Generic GPU substrate owned by soil_gpu, re-exported for dirt_gpu consumers so
 // they can build the whole hook stack from a single crate.
 pub use soil_gpu::{Boundary, GpuContext, GpuState, Grid, Plane};
