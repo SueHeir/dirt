@@ -37,6 +37,31 @@ load-balance) are itemized below.
 
 All 7 `dirt_gpu` tests pass (`--features precision-double`).
 
+## Benchmark finding — host-authoritative GPU is a dead end (2026-06-24)
+
+LEBC contact+neighbor timing, `bench_lebc_shear` (1634 glass beads, 42k steps,
+`DIRT_FORCE=cpu` vs `gpu`, identical config — harness committed):
+
+| Contact force | Wall-clock |
+|---|---|
+| CPU Hertz-Mindlin | **8.6 s** |
+| GPU host-authoritative (`GpuGranularForcePlugin`) | **156 s** |
+
+**GPU is 18× *slower*.** `gpu_granular_force` re-uploads state, rebuilds the cell
+list, and does **two blocking device-waits** to download force+torque *every step*
+— ≈3.7 ms/step of pure sync/launch latency vs the CPU's ~0.2 ms/step total. At 1634
+particles the M5 is also underfilled. **Decision: do not pursue the host-authoritative
+path (it round-trips every step); full residency is the only route to a GPU speedup.**
+Target scale is BPM aggregates (20–30 spheres/shape, ≤~10k particles total).
+
+### Toward resident periodic + Lees–Edwards (started)
+- **Periodic minimum-image (+ LE tilt) in the bond kernel** — `BeamBondConfig.{lx,ly,lz,tilt_xy}`;
+  the bond vector uses the triclinic minimum image, so a BPM aggregate spanning a
+  periodic boundary stays bonded. Bonds don't use the cell list, so this needs no
+  cell-list change. Test: a bond across a periodic x-boundary matches the equivalent
+  close pair (`< 1e-3`). LE velocity-offset on the damping term of a y-wrapped bond
+  is not yet applied (orthogonal-periodic is fully correct).
+
 ## Remaining (toward full CPU parity)
 
 1. **End-to-end ECS parity harness** — run the actual `dirt_bond::bond_force` system

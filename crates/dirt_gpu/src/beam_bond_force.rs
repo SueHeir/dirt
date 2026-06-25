@@ -42,6 +42,15 @@ pub struct BeamBondConfig {
     /// Shear beam-stress limit τ_max; set huge for unbreakable.
     pub tau_max: f32,
     pub dt: f32,
+    /// Periodic box lengths (0 on an axis = non-periodic). When set, the bond
+    /// vector uses the triclinic minimum image — so a BPM aggregate spanning a
+    /// periodic boundary stays bonded. Bonds don't use the cell list, so this needs
+    /// no cell-list change.
+    pub lx: f32,
+    pub ly: f32,
+    pub lz: f32,
+    /// Lees–Edwards xy tilt (x shift per y-image). 0 = orthogonal box.
+    pub tilt_xy: f32,
 }
 
 #[repr(C)]
@@ -58,6 +67,10 @@ struct BeamParams {
     beta_bend: f32,
     sigma_max: f32,
     tau_max: f32,
+    lx: f32,
+    ly: f32,
+    lz: f32,
+    tilt_xy: f32,
     _pad: f32,
 }
 
@@ -121,7 +134,8 @@ impl BeamBondForce {
             n: n as u32, dt: cfg.dt, ratio: cfg.bond_radius_ratio,
             e_mod: cfg.youngs_modulus, g_mod: cfg.shear_modulus,
             beta_n: cfg.beta_normal, beta_t: cfg.beta_shear, beta_tor: cfg.beta_twist, beta_bend: cfg.beta_bending,
-            sigma_max: cfg.sigma_max, tau_max: cfg.tau_max, _pad: 0.0,
+            sigma_max: cfg.sigma_max, tau_max: cfg.tau_max,
+            lx: cfg.lx, ly: cfg.ly, lz: cfg.lz, tilt_xy: cfg.tilt_xy, _pad: 0.0,
         };
         let params_buf = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("beam_params"), size: std::mem::size_of::<BeamParams>() as u64,
@@ -223,7 +237,8 @@ const PI: f32 = 3.14159265358979323846;
 struct BeamParams {
     n: u32, dt: f32, ratio: f32, e_mod: f32, g_mod: f32,
     beta_n: f32, beta_t: f32, beta_tor: f32, beta_bend: f32,
-    sigma_max: f32, tau_max: f32, _pad: f32,
+    sigma_max: f32, tau_max: f32,
+    lx: f32, ly: f32, lz: f32, tilt_xy: f32, _pad: f32,
 };
 
 @group(0) @binding(0) var<storage, read>       pos: array<f32>;
@@ -265,7 +280,19 @@ fn beam_bond_force(@builtin(global_invocation_id) gid: vec3<u32>) {
         let j = bond_partner[k];
         let bj = 3u * j;
         let xj = vec3<f32>(pos[bj], pos[bj + 1u], pos[bj + 2u]);
-        let d = xj - xi;
+        // Triclinic minimum image (Lees–Edwards): wrap z, then y (a y-image shifts
+        // x by the tilt), then x. Lets a BPM aggregate span a periodic boundary.
+        // (NOTE: the LE velocity offset Δv for the damping term on a y-wrapped bond
+        // is not yet applied — elastic position term only; orthogonal-periodic is
+        // fully correct.)
+        var d = xj - xi;
+        if (params.lz > 0.0) { d.z = d.z - params.lz * round(d.z / params.lz); }
+        if (params.ly > 0.0) {
+            let ny = round(d.y / params.ly);
+            d.y = d.y - params.ly * ny;
+            d.x = d.x - params.tilt_xy * ny;
+        }
+        if (params.lx > 0.0) { d.x = d.x - params.lx * round(d.x / params.lx); }
         let dist = length(d);
         if (dist < 1.0e-20) { continue; }
         let nhat = d / dist;
@@ -381,6 +408,7 @@ mod tests {
             bond_radius_ratio: 1.0, youngs_modulus: 1.0e7, shear_modulus: 4.0e6,
             beta_normal: 0.1, beta_shear: 0.1, beta_twist: 0.1, beta_bending: 0.1,
             sigma_max: 1.0e30, tau_max: 1.0e30, dt,
+            lx: 0.0, ly: 0.0, lz: 0.0, tilt_xy: 0.0,
         };
         gs.add_force_hook(Box::new(BeamBondForce::new(&gs, omega, &[rad, rad], &topo, cfg)));
         gs.run_steps(steps);
@@ -479,6 +507,7 @@ mod tests {
             bond_radius_ratio: 1.0, youngs_modulus: e as f32, shear_modulus: g as f32,
             beta_normal: beta as f32, beta_shear: beta as f32, beta_twist: beta as f32, beta_bending: beta as f32,
             sigma_max: 1.0e30, tau_max: 1.0e30, dt: dt as f32,
+            lx: 0.0, ly: 0.0, lz: 0.0, tilt_xy: 0.0,
         };
         gs.add_force_hook(Box::new(BeamBondForce::new(&gs, omega, &[rad as f32, rad as f32], &topo, cfg)));
         gs.eval_force_once();
@@ -491,6 +520,44 @@ mod tests {
             assert!(rel(gt[0][c], et[c]) < 2e-3, "torque[{c}] gpu={} cpu={}", gt[0][c], et[c]);
         }
         eprintln!("beam parity: F gpu={:?} cpu={:?}\n             T gpu={:?} cpu={:?}", gf[0], ef, gt[0], et);
+    }
+
+    #[test]
+    fn beam_bond_periodic_minimum_image() {
+        if GpuContext::new().is_none() { eprintln!("no GPU; skipping"); return; }
+        // One force eval for a bonded pair; returns force on atom 0.
+        let eval = |p0: [[f32; 3]; 2], lx: f32| -> [f32; 3] {
+            let ctx = GpuContext::new().unwrap();
+            let (rad, mass) = (0.5f32, 1.0f32);
+            let inertia = 0.4 * mass * rad * rad;
+            let grid = Grid::from_positions(&p0, 2.0 * rad);
+            let mut gs = GpuState::new(ctx, 2, grid.total_cells);
+            gs.set_params(1.0e-4, [0.0; 3]);
+            gs.set_state(&p0, &[[0.0; 3]; 2], &[1.0 / mass, 1.0 / mass], grid);
+            let omega = gs.add_aux_dof();
+            gs.set_aux_inv_coeff(omega, &[1.0 / inertia, 1.0 / inertia]);
+            gs.set_aux_state(omega, &[[0.0; 3]; 2]);
+            let topo = BondTopology { offsets: vec![0, 1, 2], partner: vec![1, 0], r0: vec![0.2, 0.2] };
+            let cfg = BeamBondConfig {
+                bond_radius_ratio: 1.0, youngs_modulus: 1.0e7, shear_modulus: 4.0e6,
+                beta_normal: 0.0, beta_shear: 0.0, beta_twist: 0.0, beta_bending: 0.0,
+                sigma_max: 1.0e30, tau_max: 1.0e30, dt: 1.0e-4,
+                lx, ly: 0.0, lz: 0.0, tilt_xy: 0.0,
+            };
+            gs.add_force_hook(Box::new(BeamBondForce::new(&gs, omega, &[rad, rad], &topo, cfg)));
+            gs.eval_force_once();
+            gs.download_force()[0]
+        };
+        // Periodic in x (L=1): atoms straddle the boundary → min-image separation 0.1.
+        let fp = eval([[0.05, 0.0, 0.0], [0.95, 0.0, 0.0]], 1.0);
+        // Non-periodic equivalent: the same 0.1 separation, no wrap.
+        let fd = eval([[0.1, 0.0, 0.0], [0.0, 0.0, 0.0]], 0.0);
+        let rel = |a: f32, b: f32| (a - b).abs() / b.abs().max(1.0);
+        for c in 0..3 {
+            assert!(rel(fp[c], fd[c]) < 1e-3, "periodic[{c}]={} != direct={}", fp[c], fd[c]);
+        }
+        assert!(fp[0].abs() > 1.0, "no force across the boundary: {fp:?}");
+        eprintln!("periodic bond min-image: F_periodic={fp:?} F_direct={fd:?}");
     }
 
     #[test]

@@ -28,15 +28,32 @@ use dirt_core::prelude::*;
 use dirt_core::dirt_atom::DemAtom;
 
 fn main() {
+    // DIRT_FORCE=gpu runs the particle-particle contact on the GPU
+    // (GranularGpuPlugins / GpuGranularForcePlugin); default is CPU
+    // Hertz-Mindlin. Everything else (integration, deform/LEBC, PBC, output) is
+    // identical, so the wall-clock ratio isolates the contact+neighbor cost.
+    let use_gpu = std::env::var("DIRT_FORCE").map(|v| v.eq_ignore_ascii_case("gpu")).unwrap_or(false);
+
     let mut app = App::new();
-    app.add_plugins(CorePlugins)
-        .add_plugins(GranularDefaultPlugins)
-        .add_plugins(GravityPlugin)   // gravity is set to 0 in config; kept for generality
+    app.add_plugins(CorePlugins);
+    if use_gpu {
+        app.add_plugins(GranularGpuPlugins);
+    } else {
+        app.add_plugins(GranularDefaultPlugins);
+    }
+    app.add_plugins(GravityPlugin)   // gravity is set to 0 in config; kept for generality
         .add_plugins(FixesPlugin)     // viscous damping for the settle stage
         .add_plugins(DeformPlugin);   // the Lees–Edwards xy shear driver
 
     app.add_update_system(record_shear, ParticleSimScheduleSet::PostFinalIntegration);
+
+    let t0 = std::time::Instant::now();
     app.start();
+    eprintln!(
+        "[timing] DIRT_FORCE={} wall={:.3}s",
+        if use_gpu { "gpu" } else { "cpu" },
+        t0.elapsed().as_secs_f64()
+    );
 }
 
 /// Record the steady-shear stress tensor, granular temperature, and solid fraction.
