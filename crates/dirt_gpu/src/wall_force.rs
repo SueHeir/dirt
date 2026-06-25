@@ -411,7 +411,7 @@ mod tests {
         gs.set_aux_state(omega, &[[0.0; 3]]);
 
         let radius = vec![r];
-        let cfg = GranularConfig { e_eff: 1.0e6, beta: 0.3, g_eff: 4.0e5, mu: 0.5, dt };
+        let cfg = GranularConfig::new(1.0e6, 0.3, 4.0e5, 0.5, dt);
         gs.add_force_hook(Box::new(GranularForce::new(&gs, &grid, omega, &radius, cfg)));
 
         let mut boundary = Boundary::new();

@@ -97,7 +97,7 @@ impl GpuGranular {
         gs.set_aux_state(omega_aux, &omf);
 
         let (e_eff, beta, g_eff, mu) = gpu_scalars(mt);
-        let cfg = GranularConfig { e_eff, beta, g_eff, mu, dt };
+        let cfg = GranularConfig::new(e_eff, beta, g_eff, mu, dt);
         gs.add_force_hook(Box::new(GranularForce::new(&gs, &grid, omega_aux, &radius, cfg)));
 
         self.state = Some(gs);

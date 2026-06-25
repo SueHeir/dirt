@@ -67,7 +67,7 @@ fn build(ctx: GpuContext, pos: [f32; 3], vel: [f32; 3], r: f32, dt: f32, gravity
     gpu.set_aux_state(omega, &[[0.0f32; 3]]);
     // Mirror pile.rs: register GranularForce too (single particle ⇒ no pairs, but
     // it initialises the same resident contact-history substrate WallForce uses).
-    let cfg = GranularConfig { e_eff, beta, g_eff, mu, dt };
+    let cfg = GranularConfig::new(e_eff, beta, g_eff, mu, dt);
     gpu.add_force_hook(Box::new(GranularForce::new(&gpu, &grid2, omega, &radius, cfg)));
     gpu.add_force_hook(Box::new(WallForce::new(
         &gpu, omega, &radius, &boundary, e_eff, beta, g_eff, mu, dt,

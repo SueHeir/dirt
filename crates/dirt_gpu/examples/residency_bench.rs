@@ -86,7 +86,7 @@ fn build_scene(side: usize) -> Scene {
         radius: vec![r; n],
         inv_mass: vec![1.0 / mass; n],
         inv_inertia: vec![1.0 / (0.4 * mass * r * r); n],
-        cfg: GranularConfig { e_eff, beta, g_eff, mu, dt },
+        cfg: GranularConfig::new(e_eff, beta, g_eff, mu, dt),
         boundary,
         grid,
         gravity,

@@ -82,7 +82,7 @@ fn main() {
         let omega = g.add_aux_dof();
         g.set_aux_inv_coeff(omega, &inv_inertia);
         g.set_aux_state(omega, &om0);
-        let cfg = GranularConfig { e_eff, beta, g_eff, mu, dt };
+        let cfg = GranularConfig::new(e_eff, beta, g_eff, mu, dt);
         g.add_force_hook(Box::new(GranularForce::new(&g, &grid, omega, &radius, cfg)));
         g.add_force_hook(Box::new(WallForce::new(
             &g, omega, &radius, &boundary, e_eff, beta, g_eff, mu, dt,

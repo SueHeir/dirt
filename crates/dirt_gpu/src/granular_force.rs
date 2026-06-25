@@ -25,6 +25,21 @@ pub struct GranularConfig {
     pub g_eff: f32,
     pub mu: f32,
     pub dt: f32,
+    /// Periodic box (0 length = non-periodic axis): the contact stencil wraps and
+    /// the pair vector uses the triclinic minimum image; a y-image pair gets the
+    /// Lees–Edwards x-tilt + Δv velocity offset. Defaults to all-zero (open box).
+    pub lx: f32,
+    pub ly: f32,
+    pub lz: f32,
+    pub tilt_xy: f32,
+    pub dv_xy: f32,
+}
+
+impl GranularConfig {
+    /// Open-box (non-periodic) config — the original 5-field constructor.
+    pub fn new(e_eff: f32, beta: f32, g_eff: f32, mu: f32, dt: f32) -> Self {
+        Self { e_eff, beta, g_eff, mu, dt, lx: 0.0, ly: 0.0, lz: 0.0, tilt_xy: 0.0, dv_xy: 0.0 }
+    }
 }
 
 #[repr(C)]
@@ -40,8 +55,12 @@ struct GParams {
     mu: f32,
     dt: f32,
     advance_hist: f32,
+    lx: f32,
+    ly: f32,
+    lz: f32,
+    tilt_xy: f32,
+    dv_xy: f32,
     _p1: f32,
-    _p2: f32,
 }
 
 /// Granular contact-force hook. Owns the contact kernel, its group-0 bind group
@@ -74,7 +93,8 @@ impl GranularForce {
         let params = GParams {
             n: n as u32, nx: grid.n[0], ny: grid.n[1], nz: grid.n[2],
             e_eff: cfg.e_eff, beta: cfg.beta, g_eff: cfg.g_eff, mu: cfg.mu, dt: cfg.dt,
-            advance_hist: 1.0, _p1: 0.0, _p2: 0.0,
+            advance_hist: 1.0,
+            lx: cfg.lx, ly: cfg.ly, lz: cfg.lz, tilt_xy: cfg.tilt_xy, dv_xy: cfg.dv_xy, _p1: 0.0,
         };
         let params_buf = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("gf_params"), size: std::mem::size_of::<GParams>() as u64,
@@ -204,8 +224,12 @@ struct GParams {
     mu: f32,
     dt: f32,
     advance_hist: f32,
+    lx: f32,
+    ly: f32,
+    lz: f32,
+    tilt_xy: f32,
+    dv_xy: f32,
     _p1: f32,
-    _p2: f32,
 };
 
 @group(0) @binding(0)  var<storage, read>       pos: array<f32>;
@@ -254,14 +278,17 @@ fn contact_force(@builtin(global_invocation_id) gid: vec3<u32>) {
     var nslot: u32 = 0u;
 
     for (var dx = -1; dx <= 1; dx = dx + 1) {
-        let cx = cx0 + dx;
-        if (cx < 0 || cx >= params.nx) { continue; }
+        var cx = cx0 + dx;
+        if (params.lx > 0.0) { cx = (cx + params.nx) % params.nx; }
+        else if (cx < 0 || cx >= params.nx) { continue; }
         for (var dy = -1; dy <= 1; dy = dy + 1) {
-            let cy = cy0 + dy;
-            if (cy < 0 || cy >= params.ny) { continue; }
+            var cy = cy0 + dy;
+            if (params.ly > 0.0) { cy = (cy + params.ny) % params.ny; }
+            else if (cy < 0 || cy >= params.ny) { continue; }
             for (var dz = -1; dz <= 1; dz = dz + 1) {
-                let cz = cz0 + dz;
-                if (cz < 0 || cz >= params.nz) { continue; }
+                var cz = cz0 + dz;
+                if (params.lz > 0.0) { cz = (cz + params.nz) % params.nz; }
+                else if (cz < 0 || cz >= params.nz) { continue; }
                 let cc = u32((cx * params.ny + cy) * params.nz + cz);
                 let start = cell_start[cc];
                 let end = cell_start[cc + 1u];
@@ -269,9 +296,20 @@ fn contact_force(@builtin(global_invocation_id) gid: vec3<u32>) {
                     let j = sorted_atoms[m];
                     if (j == i) { continue; }
                     let bj = 3u * j;
-                    let ddx = pos[bj]      - xi;
-                    let ddy = pos[bj + 1u] - yi;
-                    let ddz = pos[bj + 2u] - zi;
+                    var ddx = pos[bj]      - xi;
+                    var ddy = pos[bj + 1u] - yi;
+                    var ddz = pos[bj + 2u] - zi;
+                    // Triclinic minimum image (Lees–Edwards): a y-image pair is
+                    // shifted in x by the tilt; `imgy` also carries the Δv velocity
+                    // offset into the relative velocity below.
+                    var imgy = 0.0;
+                    if (params.lz > 0.0) { ddz = ddz - params.lz * round(ddz / params.lz); }
+                    if (params.ly > 0.0) {
+                        imgy = round(ddy / params.ly);
+                        ddy = ddy - params.ly * imgy;
+                        ddx = ddx - params.tilt_xy * imgy;
+                    }
+                    if (params.lx > 0.0) { ddx = ddx - params.lx * round(ddx / params.lx); }
                     let dist_sq = ddx * ddx + ddy * ddy + ddz * ddz;
                     let rj = radius[j];
                     let sum_r = ri + rj;
@@ -305,7 +343,9 @@ fn contact_force(@builtin(global_invocation_id) gid: vec3<u32>) {
                     let r2n_x = rj * nx;
                     let r2n_y = rj * ny;
                     let r2n_z = rj * nz;
-                    let vc_jx = vel[bj]      + (-wjy * r2n_z + wjz * r2n_y);
+                    // Lees–Edwards: the y-image the partner was wrapped from moves
+                    // at +Δv·imgy in x, so its effective contact velocity is offset.
+                    let vc_jx = (vel[bj] - params.dv_xy * imgy) + (-wjy * r2n_z + wjz * r2n_y);
                     let vc_jy = vel[bj + 1u] + (-wjz * r2n_x + wjx * r2n_z);
                     let vc_jz = vel[bj + 2u] + (-wjx * r2n_y + wjy * r2n_x);
 
@@ -412,7 +452,7 @@ mod tests {
         gs.set_aux_inv_coeff(omega, &inv_inertia);
         gs.set_aux_state(omega, &[[0.0; 3]; 2]);
 
-        let cfg = GranularConfig { e_eff: 1.0e6, beta: 0.1, g_eff: 4.0e5, mu: 0.5, dt };
+        let cfg = GranularConfig::new(1.0e6, 0.1, 4.0e5, 0.5, dt);
         gs.add_force_hook(Box::new(GranularForce::new(&gs, &grid, omega, &radius, cfg)));
 
         gs.run_steps(3000);
@@ -429,5 +469,39 @@ mod tests {
         }
         eprintln!("granular hook: x=[{}, {}] v=[{}, {}] (Hertz repulsion, symmetric)",
             p[0][0], p[1][0], v[0][0], v[1][0]);
+    }
+
+    #[test]
+    fn granular_contact_across_periodic_boundary() {
+        let Some(ctx) = GpuContext::new() else { eprintln!("no GPU; skipping"); return; };
+        // Cubic periodic box L=1.0, 6 cells/axis. Two grains (r=0.1) straddle the
+        // x-boundary: min-image separation 0.15 < 0.2 → they contact across it.
+        let r = 0.1f32;
+        let mass = (4.0 / 3.0) * std::f32::consts::PI * r * r * r;
+        let inertia = 0.4 * mass * r * r;
+        let l = 1.0f32;
+        let nc = 6i32;
+        let grid = Grid { n: [nc, nc, nc], origin: [0.0; 3], bin_size: l / nc as f32, total_cells: (nc * nc * nc) as usize };
+        let p0 = [[0.05f32, 0.5, 0.5], [0.90, 0.5, 0.5]]; // raw dx 0.85 -> min-image -0.15
+        let mut gs = GpuState::new(ctx, 2, grid.total_cells);
+        let dt = 1.0e-5f32;
+        gs.set_params(dt, [0.0; 3]);
+        gs.set_state(&p0, &[[0.0; 3]; 2], &[1.0 / mass, 1.0 / mass], grid.clone());
+        let omega = gs.add_aux_dof();
+        gs.set_aux_inv_coeff(omega, &[1.0 / inertia, 1.0 / inertia]);
+        gs.set_aux_state(omega, &[[0.0; 3]; 2]);
+        // Periodic contact: box passed to the kernel via the config.
+        let mut cfg = GranularConfig::new(1.0e6, 0.1, 4.0e5, 0.5, dt);
+        cfg.lx = l; cfg.ly = l; cfg.lz = l;
+        gs.add_force_hook(Box::new(GranularForce::new(&gs, &grid, omega, &[r, r], cfg)));
+        gs.eval_force_once();
+        let f = gs.download_force();
+        // Repulsion across the boundary: atom 0 (left edge) pushed +x, atom 1 −x,
+        // equal & opposite (momentum), on-axis.
+        assert!(f[0][0] > 1e-3, "atom0 not pushed +x across boundary: {f:?}");
+        assert!(f[1][0] < -1e-3, "atom1 not pushed -x: {f:?}");
+        assert!((f[0][0] + f[1][0]).abs() < 1e-4 * f[0][0].abs().max(1.0), "not equal/opposite: {f:?}");
+        for a in 0..2 { assert!(f[a][1].abs() < 1e-2 && f[a][2].abs() < 1e-2, "off-axis: {f:?}"); }
+        eprintln!("periodic contact: f0={:?} f1={:?}", f[0], f[1]);
     }
 }

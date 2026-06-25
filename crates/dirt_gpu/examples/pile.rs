@@ -89,7 +89,7 @@ fn main() {
     let omega = gpu.add_aux_dof(); // rotation: state=ω, rate=τ, inv_coeff=1/inertia
     gpu.set_aux_inv_coeff(omega, &inv_inertia);
     gpu.set_aux_state(omega, &om);
-    let cfg = GranularConfig { e_eff, beta, g_eff, mu, dt };
+    let cfg = GranularConfig::new(e_eff, beta, g_eff, mu, dt);
     gpu.add_force_hook(Box::new(GranularForce::new(&gpu, &grid, omega, &radius, cfg)));
     gpu.add_force_hook(Box::new(WallForce::new(&gpu, omega, &radius, &boundary, e_eff, beta, g_eff, mu, dt)));
 

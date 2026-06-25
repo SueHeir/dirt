@@ -260,7 +260,7 @@ fn gpu_force_once(
     gs.set_aux_inv_coeff(om, &inv_inertia);
     gs.set_aux_state(om, &omf);
 
-    let cfg = GranularConfig { e_eff, beta, g_eff, mu, dt: 1e-6 };
+    let cfg = GranularConfig::new(e_eff, beta, g_eff, mu, 1e-6);
     gs.add_force_hook(Box::new(GranularForce::new(&gs, &grid, om, &radiusf, cfg)));
     if !walls_geo.is_empty() {
         let mut b = Boundary::new();
@@ -572,7 +572,7 @@ fn bench_gpu_full_step(ctx: GpuContext, n: usize, r: f64, steps: usize, mt: &Mat
     gs.set_aux_inv_coeff(om, &inv_inertia);
     gs.set_aux_state(om, &omf);
 
-    let cfg = GranularConfig { e_eff, beta, g_eff, mu, dt };
+    let cfg = GranularConfig::new(e_eff, beta, g_eff, mu, dt);
     gs.add_force_hook(Box::new(GranularForce::new(&gs, &grid, om, &radiusf, cfg)));
     let mut b = Boundary::new();
     b.push(Plane::new([0.0, 0.0, 0.0], [0.0, 0.0, 1.0]));
