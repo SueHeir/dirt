@@ -51,6 +51,10 @@ pub struct BeamBondConfig {
     pub lz: f32,
     /// Lees–Edwards xy tilt (x shift per y-image). 0 = orthogonal box.
     pub tilt_xy: f32,
+    /// If true, ACCUMULATE torque (`+=`) onto the aux-rate buffer instead of owning
+    /// it (`=`). Set true when composing with a contact hook that seeds torque first
+    /// (the resident BPM loop); false for a bonds-only run where this hook owns it.
+    pub accumulate_torque: bool,
 }
 
 #[repr(C)]
@@ -71,7 +75,7 @@ struct BeamParams {
     ly: f32,
     lz: f32,
     tilt_xy: f32,
-    _pad: f32,
+    accum: u32,
 }
 
 /// Elastic beam bond force hook. Group 0 binds the resident pos/vel/force/omega/
@@ -135,7 +139,8 @@ impl BeamBondForce {
             e_mod: cfg.youngs_modulus, g_mod: cfg.shear_modulus,
             beta_n: cfg.beta_normal, beta_t: cfg.beta_shear, beta_tor: cfg.beta_twist, beta_bend: cfg.beta_bending,
             sigma_max: cfg.sigma_max, tau_max: cfg.tau_max,
-            lx: cfg.lx, ly: cfg.ly, lz: cfg.lz, tilt_xy: cfg.tilt_xy, _pad: 0.0,
+            lx: cfg.lx, ly: cfg.ly, lz: cfg.lz, tilt_xy: cfg.tilt_xy,
+            accum: u32::from(cfg.accumulate_torque),
         };
         let params_buf = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("beam_params"), size: std::mem::size_of::<BeamParams>() as u64,
@@ -238,7 +243,7 @@ struct BeamParams {
     n: u32, dt: f32, ratio: f32, e_mod: f32, g_mod: f32,
     beta_n: f32, beta_t: f32, beta_tor: f32, beta_bend: f32,
     sigma_max: f32, tau_max: f32,
-    lx: f32, ly: f32, lz: f32, tilt_xy: f32, _pad: f32,
+    lx: f32, ly: f32, lz: f32, tilt_xy: f32, accum: u32,
 };
 
 @group(0) @binding(0) var<storage, read>       pos: array<f32>;
@@ -376,7 +381,15 @@ fn beam_bond_force(@builtin(global_invocation_id) gid: vec3<u32>) {
     }
 
     force_out[bi] = f.x; force_out[bi + 1u] = f.y; force_out[bi + 2u] = f.z;
-    torque[bi] = t.x; torque[bi + 1u] = t.y; torque[bi + 2u] = t.z;
+    // Own (=) when standalone, or accumulate (+=) onto a contact hook's seeded
+    // torque when composing in the resident BPM loop.
+    if (params.accum != 0u) {
+        torque[bi] = torque[bi] + t.x;
+        torque[bi + 1u] = torque[bi + 1u] + t.y;
+        torque[bi + 2u] = torque[bi + 2u] + t.z;
+    } else {
+        torque[bi] = t.x; torque[bi + 1u] = t.y; torque[bi + 2u] = t.z;
+    }
 }
 "#;
 
@@ -408,7 +421,7 @@ mod tests {
             bond_radius_ratio: 1.0, youngs_modulus: 1.0e7, shear_modulus: 4.0e6,
             beta_normal: 0.1, beta_shear: 0.1, beta_twist: 0.1, beta_bending: 0.1,
             sigma_max: 1.0e30, tau_max: 1.0e30, dt,
-            lx: 0.0, ly: 0.0, lz: 0.0, tilt_xy: 0.0,
+            lx: 0.0, ly: 0.0, lz: 0.0, tilt_xy: 0.0, accumulate_torque: false,
         };
         gs.add_force_hook(Box::new(BeamBondForce::new(&gs, omega, &[rad, rad], &topo, cfg)));
         gs.run_steps(steps);
@@ -507,7 +520,7 @@ mod tests {
             bond_radius_ratio: 1.0, youngs_modulus: e as f32, shear_modulus: g as f32,
             beta_normal: beta as f32, beta_shear: beta as f32, beta_twist: beta as f32, beta_bending: beta as f32,
             sigma_max: 1.0e30, tau_max: 1.0e30, dt: dt as f32,
-            lx: 0.0, ly: 0.0, lz: 0.0, tilt_xy: 0.0,
+            lx: 0.0, ly: 0.0, lz: 0.0, tilt_xy: 0.0, accumulate_torque: false,
         };
         gs.add_force_hook(Box::new(BeamBondForce::new(&gs, omega, &[rad as f32, rad as f32], &topo, cfg)));
         gs.eval_force_once();
@@ -542,7 +555,7 @@ mod tests {
                 bond_radius_ratio: 1.0, youngs_modulus: 1.0e7, shear_modulus: 4.0e6,
                 beta_normal: 0.0, beta_shear: 0.0, beta_twist: 0.0, beta_bending: 0.0,
                 sigma_max: 1.0e30, tau_max: 1.0e30, dt: 1.0e-4,
-                lx, ly: 0.0, lz: 0.0, tilt_xy: 0.0,
+                lx, ly: 0.0, lz: 0.0, tilt_xy: 0.0, accumulate_torque: false,
             };
             gs.add_force_hook(Box::new(BeamBondForce::new(&gs, omega, &[rad, rad], &topo, cfg)));
             gs.eval_force_once();
