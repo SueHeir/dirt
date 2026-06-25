@@ -82,9 +82,14 @@ Direction after the 18×-slower host-authoritative finding: full residency, on-d
   (owns) + bond (accumulates) compose. **End-to-end test:** a bonded pair in a periodic
   box advanced by the resident loop with both hooks holds together, momentum conserved
   — periodic contact + PBC remap + resident bond + torque composition all together.
-  *(dirt `75400d7`, `90e05bd`)* REMAINING: ECS plugin auto-wiring
-  (`GpuGranularResidentPlugin` builds the bond hook from `BondStore` + plumbs the box
-  from `Domain`/`DeformState`, advancing the tilt each window).
+  *(dirt `75400d7`, `90e05bd`)* **ECS wiring done** *(dirt `e1b6e98`)*:
+  `GpuGranularResidentPlugin` (via `gpu_granular_resident_step`) reads the periodic
+  box from `Domain` (`set_box` + box-tiling grid; walls fallback when non-periodic)
+  and auto-builds a `BeamBondForce` from the `BondStore` topology + `BondConfig`
+  material params, added after contact so it accumulates torque. A periodic `[bonds]`
+  TOML config runs contact + beam bonds fully resident. Refinements: active-shear LE
+  tilt advancing each window; breakage-config → σ_max/τ_max mapping (currently
+  unbreakable); `|tilt|>bin_size` contact stencil shift.
 - **Step 5 — scale benchmark (done):** `resident_bonded_bench` — a periodic cubic
   lattice with 6 bonds/grain (bonds wrap the boundary → periodic min-image exercised),
   advanced fully resident on GPU (contact + beam bond composing), M5 Pro:
