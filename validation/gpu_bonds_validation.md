@@ -85,8 +85,20 @@ Direction after the 18×-slower host-authoritative finding: full residency, on-d
   *(dirt `75400d7`, `90e05bd`)* REMAINING: ECS plugin auto-wiring
   (`GpuGranularResidentPlugin` builds the bond hook from `BondStore` + plumbs the box
   from `Domain`/`DeformState`, advancing the tilt each window).
-- **Step 5 — scale benchmark (pending):** resident bonded-LEBC vs CPU at 1634 and ~10k
-  particles — the speedup number at BPM scale.
+- **Step 5 — scale benchmark (done):** `resident_bonded_bench` — a periodic cubic
+  lattice with 6 bonds/grain (bonds wrap the boundary → periodic min-image exercised),
+  advanced fully resident on GPU (contact + beam bond composing), M5 Pro:
+
+  | System | GPU resident | vs CPU ~8 M part-steps/s (contact-only LEBC) |
+  |---|---|---|
+  | 1728 grains + 10368 bonds | **27.5 M part-steps/s** | ~3.4× |
+  | 10648 grains + 63888 bonds | **107.9 M part-steps/s** | ~13× |
+
+  **Full residency reverses the 18× host-authoritative slowdown into a 3.4×–13×
+  speedup, scaling with N** (6× grains → ~4× throughput as the GPU fills). Conservative:
+  the GPU runs carry bonds the CPU baseline didn't, so a fair CPU bonded run is slower.
+  Confirms GPU is worth it at BPM scale (≤10k). LE tilt=0 here (orthogonal periodic);
+  the kernels handle LE, and the tilt adds negligible per-step cost.
 
 ## Remaining (toward full CPU parity)
 
