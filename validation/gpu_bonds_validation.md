@@ -62,6 +62,32 @@ Target scale is BPM aggregates (20–30 spheres/shape, ≤~10k particles total).
   close pair (`< 1e-3`). LE velocity-offset on the damping term of a y-wrapped bond
   is not yet applied (orthogonal-periodic is fully correct).
 
+## Residency stack for bonded-LEBC GPU speedup (steps 2–5)
+
+Direction after the 18×-slower host-authoritative finding: full residency, on-device.
+
+- **Step 2 — periodic + LE contact (done):** `GranularConfig` gains a periodic box
+  (`lx,ly,lz,tilt_xy,dv_xy`; `GranularConfig::new` for open box). The contact kernel
+  wraps the cell stencil (mod n per periodic axis), applies the triclinic minimum
+  image to the pair vector, and offsets the partner velocity by LE Δv on a y-image.
+  Test: cross-boundary pair repels symmetrically. *(dirt `db335ec`)* NOTE: correct
+  for `|tilt| < bin_size`; large shear needs the y-boundary x-cell stencil shift —
+  remaining refinement.
+- **Step 3 — on-device PBC + LE remap (done):** `GpuState::set_box`; `integrate_initial`
+  wraps drifted positions into the box each step, a y-crossing shifts x by the tilt
+  and vx by Δv. Tests: streaming particle wraps; y-cross applies tilt + Δv.
+  *(soil `36c70b7`)*
+- **Step 4 — bonds in the resident loop (core done):** `BeamBondConfig.accumulate_torque`
+  lets the bond hook add (`+=`) onto a contact hook's seeded torque, so contact
+  (owns) + bond (accumulates) compose. **End-to-end test:** a bonded pair in a periodic
+  box advanced by the resident loop with both hooks holds together, momentum conserved
+  — periodic contact + PBC remap + resident bond + torque composition all together.
+  *(dirt `75400d7`, `90e05bd`)* REMAINING: ECS plugin auto-wiring
+  (`GpuGranularResidentPlugin` builds the bond hook from `BondStore` + plumbs the box
+  from `Domain`/`DeformState`, advancing the tilt each window).
+- **Step 5 — scale benchmark (pending):** resident bonded-LEBC vs CPU at 1634 and ~10k
+  particles — the speedup number at BPM scale.
+
 ## Remaining (toward full CPU parity)
 
 1. **End-to-end ECS parity harness** — run the actual `dirt_bond::bond_force` system
