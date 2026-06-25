@@ -29,10 +29,12 @@ use grass_app::prelude::*;
 use grass_scheduler::prelude::*;
 
 use dirt_atom::{DemAtom, MaterialTable};
+use dirt_bond::BondConfig;
 use dirt_gpu::{
-    Boundary, GpuContext, GpuState, GranularConfig, GranularForce, Grid, WallForce,
+    BeamBondConfig, BeamBondForce, Boundary, BondTopology, GpuContext, GpuState, GranularConfig,
+    GranularForce, Grid, WallForce,
 };
-use soil_core::{Atom, AtomDataRegistry, ParticleSimScheduleSet, Real};
+use soil_core::{Atom, AtomDataRegistry, BondStore, Domain, ParticleSimScheduleSet, Real};
 
 /// Plain Hertz-Mindlin scalars the GPU kernel uses (single material).
 fn gpu_scalars(mt: &MaterialTable) -> (f32, f32, f32, f32) {
@@ -68,7 +70,14 @@ impl ResidentGpu {
         Self { ctx, gpu: None, omega_aux: 0, primed: false, window: window.max(1), gravity, boundary, n: 0 }
     }
 
-    fn build(&mut self, atoms: &Atom, registry: &AtomDataRegistry, mt: &MaterialTable) {
+    fn build(
+        &mut self,
+        atoms: &Atom,
+        registry: &AtomDataRegistry,
+        mt: &MaterialTable,
+        domain: Option<&Domain>,
+        bond_config: Option<&BondConfig>,
+    ) {
         let Some(ctx) = self.ctx.clone() else { return };
         let n = atoms.nlocal as usize;
         let dem = registry.expect::<DemAtom>("ResidentGpu::build");
@@ -87,22 +96,79 @@ impl ResidentGpu {
             .collect();
 
         let r_max = radius.iter().copied().fold(0.0f32, f32::max).max(f32::MIN_POSITIVE);
-        let grid = Grid::from_positions(&posf, 2.0 * r_max);
+        let cutoff = 2.0 * r_max;
         let dt = atoms.dt as f32;
+
+        // Periodic box from the domain (orthogonal; the active-shear LE tilt advancing
+        // each window is a documented refinement). When the domain is absent
+        // (standalone GpuState examples) or all-non-periodic, fall back to the
+        // atom-extent grid + planar walls.
+        let periodic = domain.map(|d| [d.is_periodic(0), d.is_periodic(1), d.is_periodic(2)]).unwrap_or([false; 3]);
+        let any_periodic = periodic.iter().any(|&p| p);
+        let box_len = match domain {
+            Some(d) => [
+                if periodic[0] { d.size[0] as f32 } else { 0.0 },
+                if periodic[1] { d.size[1] as f32 } else { 0.0 },
+                if periodic[2] { d.size[2] as f32 } else { 0.0 },
+            ],
+            None => [0.0; 3],
+        };
+        let box_origin = domain
+            .map(|d| [d.boundaries_low[0] as f32, d.boundaries_low[1] as f32, d.boundaries_low[2] as f32])
+            .unwrap_or([0.0; 3]);
+        let dv_xy = domain.map(|d| d.boundary_vel[0] as f32).unwrap_or(0.0);
+
+        let grid = if any_periodic {
+            periodic_box_grid(box_len, box_origin, cutoff)
+        } else {
+            Grid::from_positions(&posf, cutoff)
+        };
 
         let mut gs = GpuState::new(ctx, n, grid.total_cells);
         gs.set_params(dt, self.gravity);
-        gs.set_state(&posf, &velf, &inv_mass, grid);
+        if any_periodic {
+            gs.set_box(box_len, box_origin, 0.0, dv_xy);
+        }
+        gs.set_state(&posf, &velf, &inv_mass, grid.clone());
         let omega_aux = gs.add_aux_dof();
         gs.set_aux_inv_coeff(omega_aux, &inv_inertia);
         gs.set_aux_state(omega_aux, &omf);
 
         let (e_eff, beta, g_eff, mu) = gpu_scalars(mt);
-        let cfg = GranularConfig::new(e_eff, beta, g_eff, mu, dt);
+        let mut cfg = GranularConfig::new(e_eff, beta, g_eff, mu, dt);
+        if any_periodic {
+            cfg.lx = box_len[0]; cfg.ly = box_len[1]; cfg.lz = box_len[2]; cfg.dv_xy = dv_xy;
+        }
         gs.add_force_hook(Box::new(GranularForce::new(&gs, &grid, omega_aux, &radius, cfg)));
-        gs.add_force_hook(Box::new(WallForce::new(
-            &gs, omega_aux, &radius, &self.boundary, e_eff, beta, g_eff, mu, dt,
-        )));
+        // Planar walls only for the open-box drop; a periodic (LEBC) box has none.
+        if !any_periodic {
+            gs.add_force_hook(Box::new(WallForce::new(
+                &gs, omega_aux, &radius, &self.boundary, e_eff, beta, g_eff, mu, dt,
+            )));
+        }
+
+        // Bonds: build the beam hook from the bond store + config, added AFTER the
+        // contact hook so it accumulates torque (contact seeds, bond +=).
+        if let Some(bc) = bond_config {
+            if let Some(bonds) = registry.get::<BondStore>() {
+                let topo = BondTopology::from_bond_store(&bonds, atoms);
+                if topo.num_bonds() > 0 {
+                    let beam = BeamBondConfig {
+                        bond_radius_ratio: bc.bond_radius_ratio as f32,
+                        youngs_modulus: bc.youngs_modulus.unwrap_or(0.0) as f32,
+                        shear_modulus: bc.shear_modulus.unwrap_or(0.0) as f32,
+                        beta_normal: bc.beta_normal as f32,
+                        beta_shear: bc.beta_shear as f32,
+                        beta_twist: bc.beta_twist as f32,
+                        beta_bending: bc.beta_bending as f32,
+                        sigma_max: 1.0e30, tau_max: 1.0e30, dt,
+                        lx: box_len[0], ly: box_len[1], lz: box_len[2], tilt_xy: 0.0,
+                        accumulate_torque: true,
+                    };
+                    gs.add_force_hook(Box::new(BeamBondForce::new(&gs, omega_aux, &radius, &topo, beam)));
+                }
+            }
+        }
 
         self.gpu = Some(gs);
         self.omega_aux = omega_aux;
@@ -138,6 +204,18 @@ impl ResidentGpu {
     }
 }
 
+/// Build a grid that tiles a (cubic) periodic box exactly: cells span `[origin,
+/// origin+len)` so the contact stencil's `mod n` wrap maps to the box period. Uses
+/// the x-axis cell size for all axes (exact for a cubic LEBC box).
+fn periodic_box_grid(len: [f32; 3], origin: [f32; 3], cutoff: f32) -> Grid {
+    let lx = len[0].max(cutoff);
+    let nx = ((lx / cutoff).floor() as i32).max(3);
+    let bin = lx / nx as f32;
+    let nfor = |l: f32| if l > 0.0 { ((l / bin).round() as i32).max(3) } else { nx };
+    let n = [nx, nfor(len[1]), nfor(len[2])];
+    Grid { n, origin, bin_size: bin, total_cells: (n[0] * n[1] * n[2]) as usize }
+}
+
 /// Resident step system: advance the device by one window of `K` steps, then sync
 /// host `Atom`/`DemAtom` so I/O and diagnostics see the current state. The device
 /// state is authoritative across calls — host arrays are NOT re-uploaded (that
@@ -148,13 +226,21 @@ pub fn gpu_granular_resident_step(
     material_table: Res<MaterialTable>,
     mut res: ResMut<ResidentGpu>,
     mut coherence: Option<ResMut<CoherenceRegistry>>,
+    domain: Option<Res<Domain>>,
+    bond_config: Option<Res<BondConfig>>,
 ) {
     let n = atoms.nlocal as usize;
     if n == 0 || res.ctx.is_none() {
         return;
     }
     if res.gpu.is_none() || res.n != n {
-        res.build(&atoms, &registry, &material_table);
+        res.build(
+            &atoms,
+            &registry,
+            &material_table,
+            domain.as_deref(),
+            bond_config.as_deref(),
+        );
     }
 
     // Coherence path (policy A): if a host system wrote `Atom` since the last

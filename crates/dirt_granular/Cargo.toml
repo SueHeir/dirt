@@ -24,6 +24,7 @@ soil_core = { git = "https://github.com/SueHeir/soil.git", branch = "main", defa
 grass_app = { git = "https://github.com/SueHeir/grass.git", branch = "main" }
 grass_scheduler = { git = "https://github.com/SueHeir/grass.git", branch = "main" }
 dirt_atom = { path = "../dirt_atom", version = "0.1.3" }
+dirt_bond = { path = "../dirt_bond", version = "0.1.3" }
 dirt_gpu = { path = "../dirt_gpu", version = "0.1.3", default-features = false }
 soil_verlet = { git = "https://github.com/SueHeir/soil.git", branch = "main", default-features = false }
 

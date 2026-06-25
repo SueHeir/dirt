@@ -157,7 +157,7 @@ fn run_direct(s: &Scene, ctx: GpuContext, window: usize) -> Vec<[f64; 3]> {
     let omega_aux = gs.add_aux_dof();
     gs.set_aux_inv_coeff(omega_aux, &inv_inertia);
     gs.set_aux_state(omega_aux, &omf);
-    let cfg = GranularConfig { e_eff: s.e_eff, beta: s.beta, g_eff: s.g_eff, mu: s.mu, dt: s.dt };
+    let cfg = GranularConfig::new(s.e_eff, s.beta, s.g_eff, s.mu, s.dt);
     gs.add_force_hook(Box::new(GranularForce::new(&gs, &grid, omega_aux, &radius, cfg)));
     gs.add_force_hook(Box::new(WallForce::new(
         &gs, omega_aux, &radius, &s.boundary, s.e_eff, s.beta, s.g_eff, s.mu, s.dt,
