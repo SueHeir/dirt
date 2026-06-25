@@ -535,6 +535,59 @@ mod tests {
         eprintln!("beam parity: F gpu={:?} cpu={:?}\n             T gpu={:?} cpu={:?}", gf[0], ef, gt[0], et);
     }
 
+    /// End-to-end resident stack: a bonded pair in a periodic box, advanced by the
+    /// resident loop with BOTH the contact hook (periodic, owns torque) and the beam
+    /// bond hook (periodic, accumulate_torque) composing. Validates the residency
+    /// steps 2–4 together: periodic contact + on-device PBC remap + resident bond +
+    /// torque composition. The bond must hold the pair together under a transverse
+    /// kick, with momentum conserved.
+    #[test]
+    fn resident_contact_plus_bond_periodic_compose() {
+        use crate::{GranularConfig, GranularForce};
+        let Some(ctx) = GpuContext::new() else { eprintln!("no GPU; skipping"); return; };
+        let (r, l) = (0.1f32, 1.0f32);
+        let mass = (4.0 / 3.0) * std::f32::consts::PI * r * r * r;
+        let inertia = 0.4 * mass * r * r;
+        let nc = 6i32;
+        let grid = Grid { n: [nc, nc, nc], origin: [0.0; 3], bin_size: l / nc as f32, total_cells: (nc * nc * nc) as usize };
+        let p0 = [[0.4f32, 0.5, 0.5], [0.6, 0.5, 0.5]]; // dist 0.2 = r0 (bond at rest)
+        let dt = 1.0e-5f32;
+        let mut gs = GpuState::new(ctx, 2, grid.total_cells);
+        gs.set_params(dt, [0.0; 3]);
+        gs.set_box([l, l, l], [0.0; 3], 0.0, 0.0); // periodic box, on-device remap
+        gs.set_state(&p0, &[[0.0, 0.5, 0.0], [0.0; 3]], &[1.0 / mass, 1.0 / mass], grid.clone());
+        let omega = gs.add_aux_dof();
+        gs.set_aux_inv_coeff(omega, &[1.0 / inertia, 1.0 / inertia]);
+        gs.set_aux_state(omega, &[[0.0; 3]; 2]);
+
+        // Contact hook FIRST (owns torque, periodic), then bond hook (accumulates).
+        let mut cc = GranularConfig::new(1.0e6, 0.1, 4.0e5, 0.5, dt);
+        cc.lx = l; cc.ly = l; cc.lz = l;
+        gs.add_force_hook(Box::new(GranularForce::new(&gs, &grid, omega, &[r, r], cc)));
+        let bcfg = BeamBondConfig {
+            bond_radius_ratio: 1.0, youngs_modulus: 1.0e7, shear_modulus: 4.0e6,
+            beta_normal: 0.1, beta_shear: 0.1, beta_twist: 0.1, beta_bending: 0.1,
+            sigma_max: 1.0e30, tau_max: 1.0e30, dt,
+            lx: l, ly: l, lz: l, tilt_xy: 0.0, accumulate_torque: true,
+        };
+        let topo = BondTopology { offsets: vec![0, 1, 2], partner: vec![1, 0], r0: vec![0.2, 0.2] };
+        gs.add_force_hook(Box::new(BeamBondForce::new(&gs, omega, &[r, r], &topo, bcfg)));
+
+        gs.run_steps(500);
+        let p = gs.download_pos();
+        let v = gs.download_vel();
+        // Bond holds the pair: separation stays near r0 (didn't fly apart or collapse).
+        let d = [(p[1][0] - p[0][0]), (p[1][1] - p[0][1]), (p[1][2] - p[0][2])];
+        let dist = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt();
+        assert!((dist - 0.2).abs() < 0.05, "bond did not hold the pair: dist={dist}");
+        // Linear momentum conserved at its initial value (atom 0 started vy=0.5,
+        // equal masses → total vy stays 0.5; internal contact+bond forces only).
+        let mom = [v[0][0] + v[1][0], v[0][1] + v[1][1], v[0][2] + v[1][2]];
+        assert!((mom[1] - 0.5).abs() < 1e-3, "y-momentum not conserved: {mom:?}");
+        assert!(mom[0].abs() < 1e-3 && mom[2].abs() < 1e-3, "spurious x/z momentum: {mom:?}");
+        eprintln!("resident contact+bond periodic: dist={dist} mom={mom:?}");
+    }
+
     #[test]
     fn beam_bond_periodic_minimum_image() {
         if GpuContext::new().is_none() { eprintln!("no GPU; skipping"); return; }
