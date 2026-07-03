@@ -66,5 +66,5 @@ region = { type = "block", min = [0.002, 0.002, 0.002], max = [0.038, 0.038, 0.0
 dir = "examples/bench_clump_haff_cooling/data"
 
 [run]
-steps = 700000           # ~8 cooling times → ~2 decades of decay, slope approaching -2
+steps = 1800000          # ~12 cooling times → late-time log-log slope reaches ~-2
 thermo = 20000
