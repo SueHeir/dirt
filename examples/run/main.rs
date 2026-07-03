@@ -9,12 +9,20 @@
 //! cargo run --release --example run -- examples/run/config.toml
 //! ```
 //!
+//! Shipped configs (each a complete, self-contained scenario — pick one on argv):
+//!
+//! | Config | Scenario | Geometry | Insertion |
+//! |--------|----------|----------|-----------|
+//! | `config.toml`        | two-sphere settle       | floor plane           | 2 fixed spheres |
+//! | `pour_settle.toml`   | granular pour & settle  | box (5 plane walls)   | polydisperse cloud |
+//! | `pour_cylinder.toml` | bidisperse silo pour    | cylinder wall + floor | two materials |
+//!
 //! The plugin set below is deliberately a superset of what any one simple case
 //! needs. Each plugin is a no-op when its config section is absent (gravity
 //! defaults to zero body force only if you set it; walls/fixes register nothing
 //! when no `[[wall]]` / `[[*]]` fixes are declared), so the same driver runs a
-//! two-particle rebound, a settle-into-a-box, and (in later epic steps) a
-//! granular pour — chosen entirely by the config.
+//! two-particle rebound, a settle-into-a-box, and a granular pour — chosen
+//! entirely by the config.
 //!
 //! Standard dump output is produced via the config's `[dump]` (per-atom CSV /
 //! binary snapshots) and/or `[vtp]` sections, handled by the core `PrintPlugin`.
