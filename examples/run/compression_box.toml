@@ -1,0 +1,84 @@
+# run/compression_box.toml — uniaxial compression box, driven DECLARATIVELY.
+#
+# A triperiodic cell of glass beads (gravity off) is compressed along z at a
+# constant engineering strain rate up to a target total strain — the box shrinks
+# and the pack densifies. The loading is described — not scripted — by the single
+# [loading] block at the bottom:
+#
+#     [loading]
+#     type          = "compression"  # uniaxial box-deform compaction
+#     axis          = "z"            # compression axis (default z)
+#     rate          = 15.0           # engineering strain rate magnitude (1/s)
+#     target_strain = 0.15           # stop at 15% engineering compressive strain
+#     dt            = 2.0e-7         # s
+#
+# The RUNNER interprets that spec: it derives the step count
+# (steps = ceil(target_strain / (|rate|·dt)) = 50000), drives the z box face
+# inward (negative engineering strain rate), and owns the step loop. There is NO
+# user-authored [[run]] schedule and NO [deform] block here — loading is
+# declarative; the runner expands it.
+#
+#   cargo run --release --example run -- examples/run/compression_box.toml
+
+[comm]
+processors_x = 1
+processors_y = 1
+processors_z = 1
+
+[domain]
+# Fully periodic cell; the z faces move inward under the declarative loading.
+x_low = 0.0
+x_high = 0.005
+y_low = 0.0
+y_high = 0.005
+z_low = 0.0
+z_high = 0.005
+boundary_x = "periodic"
+boundary_y = "periodic"
+boundary_z = "periodic"
+
+[neighbor]
+skin_fraction = 1.2
+bin_size = 0.0007         # >= largest particle diameter (2 * 0.000275 m)
+every = 1
+
+[gravity]
+gx = 0.0
+gy = 0.0
+gz = 0.0                  # OFF — clean uniaxial box-deform element test
+
+[dem]
+contact_model = "hertz"
+
+[[dem.materials]]
+name = "glass"
+youngs_mod = 7.0e7        # softened from ~65 GPa real glass (rigid-grain limit)
+poisson_ratio = 0.245
+restitution = 0.926       # measured glass–glass COR
+friction = 0.16           # measured glass–glass sliding μ_p
+
+# --- glass pack: ~500 mildly polydisperse beads, Φ ≈ 0.26 in the 5 mm cell ---
+[[particles.insert]]
+material = "glass"
+count = 500
+radius = { distribution = "uniform", min = 0.000225, max = 0.000275 }
+density = 2500.0
+velocity = 0.01           # small initial agitation to break the insertion lattice
+region = { type = "block", min = [0.0, 0.0, 0.0], max = [0.005, 0.005, 0.005] }
+seed = 2024
+
+# --- standard dump output ---
+[dump]
+interval = 10000          # per-atom LAMMPS-dump snapshots (box header + atoms)
+format = "lammps"
+
+[vtp]
+interval = 10000          # VTP visualization frames
+
+# --- DECLARATIVE loading: the runner owns the step loop ---
+[loading]
+type = "compression"      # uniaxial box-deform compaction
+axis = "z"                # compression axis (default z)
+rate = 15.0               # engineering strain rate magnitude (1/s)
+target_strain = 0.15      # 15% engineering compressive strain
+dt = 2.0e-7              # s  → runner derives steps = 0.15 / (15·2e-7) = 50000
