@@ -115,6 +115,12 @@ every = 1
 
 [dem]
 contact_model = "hertz"
+# Match LAMMPS's default `pair granular` (no tensile cutoff): allow the
+# viscoelastic damping to go net-attractive near separation. Required for
+# cross-code COR agreement at low restitution (both codes then integrate the
+# identical Tsuji damping force). Without this DIRT clamps the force to ≥0 and
+# realizes a higher COR than LAMMPS (up to ~0.03 at e=0.5).
+limit_damping = false
 
 [[dem.materials]]
 name = "glass"
@@ -152,8 +158,9 @@ thermo = 5000
 # Mapping to DIRT's Hertz model:
 #   hertz/material E e nu     -> Young's modulus, restitution, Poisson ratio
 #   damping tsuji             -> derive normal damping from the restitution e
-#                                (LAMMPS's viscoelastic-COR model; DIRT uses
-#                                 beta = -ln(e)/sqrt(pi^2+ln^2 e) for the same job)
+#                                via the Tsuji(1992) polynomial alpha(e). DIRT
+#                                uses the SAME polynomial (beta = alpha(e)/sqrt5)
+#                                so both codes integrate an identical damping force.
 #   tangential ... 0.0        -> friction = 0 (clean normal rebound)
 #   nve/sphere                -> translational Velocity Verlet, no gravity
 # A per-step trace (time, z, vz) of the single atom is written for post-processing.

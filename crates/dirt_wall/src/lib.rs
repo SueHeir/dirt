@@ -1191,7 +1191,11 @@ pub fn wall_contact_force(
                 k_n * delta - f_diss - f_cohesion
             } else {
                 let f_diss = 2.0 * beta * SQRT_5_6 * (s_n * m_r).sqrt() * v_n;
-                (k_n * delta - f_diss).max(0.0)
+                // `limit_damping` (default) clamps to repulsive-only; disabling it
+                // lets the damping go net-attractive near separation, matching
+                // LAMMPS `fix wall/gran` default (no tensile cutoff).
+                let f_total = k_n * delta - f_diss;
+                if material_table.limit_damping { f_total.max(0.0) } else { f_total }
             };
 
             // Force direction: along wall normal (pushes atom away from wall)
@@ -1356,7 +1360,11 @@ pub fn wall_contact_force(
                 k_n * delta - f_diss - f_cohesion
             } else {
                 let f_diss = 2.0 * beta * SQRT_5_6 * (s_n * m_r).sqrt() * v_n;
-                (k_n * delta - f_diss).max(0.0)
+                // `limit_damping` (default) clamps to repulsive-only; disabling it
+                // lets the damping go net-attractive near separation, matching
+                // LAMMPS `fix wall/gran` default (no tensile cutoff).
+                let f_total = k_n * delta - f_diss;
+                if material_table.limit_damping { f_total.max(0.0) } else { f_total }
             };
 
             atoms.force[i][0] += (f_net * nx) as Accum;
@@ -1476,7 +1484,11 @@ pub fn wall_contact_force(
                 k_n * delta - f_diss - f_cohesion
             } else {
                 let f_diss = 2.0 * beta * SQRT_5_6 * (s_n * m_r).sqrt() * v_n;
-                (k_n * delta - f_diss).max(0.0)
+                // `limit_damping` (default) clamps to repulsive-only; disabling it
+                // lets the damping go net-attractive near separation, matching
+                // LAMMPS `fix wall/gran` default (no tensile cutoff).
+                let f_total = k_n * delta - f_diss;
+                if material_table.limit_damping { f_total.max(0.0) } else { f_total }
             };
 
             atoms.force[i][0] += (f_net * nx) as Accum;
@@ -1601,7 +1613,11 @@ pub fn wall_contact_force(
                 k_n * delta - f_diss - f_cohesion
             } else {
                 let f_diss = 2.0 * beta * SQRT_5_6 * (s_n * m_r).sqrt() * v_n;
-                (k_n * delta - f_diss).max(0.0)
+                // `limit_damping` (default) clamps to repulsive-only; disabling it
+                // lets the damping go net-attractive near separation, matching
+                // LAMMPS `fix wall/gran` default (no tensile cutoff).
+                let f_total = k_n * delta - f_diss;
+                if material_table.limit_damping { f_total.max(0.0) } else { f_total }
             };
 
             atoms.force[i][0] += (f_net * nx) as Accum;
