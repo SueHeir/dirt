@@ -8,7 +8,9 @@ matter by computing each inter-particle contact force directly: Hertz–Mindlin
 contact, rotational dynamics, parallel bonds, walls, multisphere clumps, heat
 conduction, and contact analysis. It rides the [SOIL](https://github.com/SueHeir/soil)
 substrate for the method-agnostic machinery (atom data, domain decomposition,
-halo exchange, neighbor lists) and adds only the granular physics.
+halo exchange, neighbor lists) and adds only the granular physics. It is a
+ground-up Rust reimplementation building on roughly two years of prior DEM
+development (formerly MDDEM).
 
 ## A simulation is a few plugins you assemble in Rust
 
