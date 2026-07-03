@@ -18,10 +18,24 @@ conduction vs dissipation, which isolates κ.
 ## Run
 
 ```bash
-cargo run --release --example bench_granular_conductivity --no-default-features -- examples/bench_granular_conductivity/config.toml
-# or the driver (build + run + analyze):
-python3 examples/bench_granular_conductivity/sweep.py
+python3 examples/bench_granular_conductivity/sweep.py         # BOUNDED smoke gate (PASS/FAIL) — the harness default
+python3 examples/bench_granular_conductivity/sweep.py smoke   # same as no-arg
+python3 examples/bench_granular_conductivity/sweep.py full    # full scientific run (config.toml): profiles + κ(Φ)
+# a single full run directly:
+cargo run --release --example bench_granular_conductivity --no-default-features --features precision-double -- examples/bench_granular_conductivity/config.toml
 ```
+
+### Bounded smoke gate (CI)
+
+The full run (3000 grains, 45 mm column, 4M steps at dt=1e-7 ≈ 0.4 s of drive)
+legitimately overran the 1800 s automation cap every hourly run — so it validated
+nothing. `sweep.py` with **no argument** now runs a **bounded gate** on the
+shallower [`config.smoke.toml`](config.smoke.toml) (800 grains, 30 mm column,
+800k steps at dt=2e-7 ≈ 0.16 s): it reaches a steady fluidized state and asserts
+the measured Fourier-law conductivity `κ*(Φ)` is positive, finite, and within
+order-unity of kinetic theory (median `κ*_EB/κ*_KT` ∈ [0.4, 6.0]). It completes
+in ~50 s and prints `ALL CHECKS PASSED`/`CHECKS FAILED`. The full κ*(Φ)-vs-KT
+scientific run (`config.toml`) is **unchanged** and still run via `sweep.py full`.
 
 The recorder streams horizontal-slab profiles to `data/conductivity_profiles.csv`:
 per y-bin the solid fraction Φ(y), the granular temperature
