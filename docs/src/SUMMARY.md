@@ -21,6 +21,10 @@
 - [Fixes, Gravity & Damping](./physics/fixes.md)
 - [Diagnostics: Planes & Contact Analysis](./physics/diagnostics.md)
 
+# Comparisons
+
+- [LAMMPS vs DIRT — DEM Parity](./comparisons/lammps-dem-parity.md)
+
 # Reference
 
 - [Configuration Reference](./reference/config.md)
