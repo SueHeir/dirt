@@ -25,11 +25,12 @@ short:
 ```bash
 git clone https://github.com/SueHeir/dirt
 cd dirt
-cargo build --release --no-default-features
+cargo build --release
 ```
 
-`--no-default-features` skips the MPI backend for the quickest single-process
-build. That's all the setup you need — no code to touch.
+That builds the driver with the default plugin stack (including the
+`precision-double` feature the solver requires). That's all the setup you need —
+no code to touch.
 
 ## 2. Pick a config
 
@@ -55,7 +56,7 @@ Run the granular pour-and-settle case — a cloud of glass beads dropped into an
 open-topped box under gravity:
 
 ```bash
-cargo run --release --no-default-features --example run -- examples/run/pour_settle.toml
+cargo run --release --example run -- examples/run/pour_settle.toml
 ```
 
 The single trailing argument is the config path. There is **nothing else to
