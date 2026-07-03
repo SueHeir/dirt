@@ -54,6 +54,30 @@ cd dirt
 cargo run --release --example hopper --no-default-features -- examples/hopper/config.toml
 ```
 
+## How to cite
+
+If you use DIRT in academic work, please cite the version you used so results
+stay reproducible. Machine-readable citation metadata lives in
+[`CITATION.cff`](CITATION.cff) at the repository root (GitHub renders a
+"Cite this repository" button from it), and per-version changes are tracked in
+[`CHANGELOG.md`](CHANGELOG.md).
+
+A BibTeX entry for the current release:
+
+```bibtex
+@software{suehr_dirt_2026,
+  author  = {Suehr, Elizabeth},
+  title   = {{DIRT — Discrete-element Interaction-Resolved Toolkit}},
+  version = {0.1.3},
+  year    = {2026},
+  url     = {https://github.com/SueHeir/dirt},
+  license = {MIT OR Apache-2.0}
+}
+```
+
+Update `version` (and `year`) to match the release you actually ran — see
+[`CHANGELOG.md`](CHANGELOG.md) for the list of `0.1.x` versions.
+
 ## License
 
 MIT OR Apache-2.0
