@@ -1,0 +1,82 @@
+# bench_restart_determinism — frictional granular gas for restart/determinism.
+#
+# A moderately dense, fully-periodic box of ~300 frictional glass spheres given
+# a seeded Gaussian velocity field. They collide and cool (restitution < 1), so
+# at any step there are live frictional contacts carrying tangential spring
+# history in the per-contact ContactHistoryStore. That makes the case a genuine
+# stress test for restart continuity: a checkpoint that dropped per-atom state
+# or per-contact history would diverge from the uninterrupted run.
+#
+# EVERYTHING BELOW THE "SWEEP CONTROL" MARKER (output / restart / dump / run) is
+# rewritten per-run by sweep.py. The default block at the bottom exists only so
+# this config is runnable standalone for development. Keep the marker line intact.
+
+[comm]
+processors_x = 1
+processors_y = 1
+processors_z = 1
+
+[domain]
+x_low = 0.0
+x_high = 0.02
+y_low = 0.0
+y_high = 0.02
+z_low = 0.0
+z_high = 0.02
+boundary_x = "periodic"
+boundary_y = "periodic"
+boundary_z = "periodic"
+
+[neighbor]
+skin_fraction = 1.2
+bin_size = 0.0022          # >= largest particle diameter (0.002 m)
+# Deterministic neighboring so a resumed run reproduces the uninterrupted one
+# byte-for-byte. The neighbor list, its rebuild schedule, and the cache-locality
+# atom re-sort are NOT part of the restart file, so if their timing differs
+# between the two runs the (physics-identical) pair-summation ORDER differs and
+# floating-point associativity injects ~1e-16 noise that a chaotic granular gas
+# amplifies. Rebuilding every step (like LAMMPS `neigh_modify every 1 check no`)
+# and disabling the re-sort removes that confound WITHOUT changing the physics,
+# isolating exactly what a restart must preserve: the per-atom + per-contact
+# state. (With sorting on, restart continuity still holds, but only to ~1e-9 —
+# the FP-associativity floor — not bit-exactly.)
+every = 1
+check = false
+sort_every = 0
+
+[dem]
+contact_model = "hertz"
+
+[[dem.materials]]
+name = "glass"
+youngs_mod = 7.0e7        # softened glass (canonical soft-sphere DEM value)
+poisson_ratio = 0.245     # glass
+restitution = 0.9         # < 1 so the gas cools and contacts dissipate
+friction = 0.3            # frictional -> tangential spring history is exercised
+
+# ~300 spheres, radius 0.001 m -> solid fraction ~0.16 (dense enough that many
+# contacts are live at any instant). Seeded insertion + seeded Gaussian velocity
+# make the initial condition reproducible bit-for-bit.
+[[particles.insert]]
+material = "glass"
+count = 300
+radius = 0.001
+density = 2500.0
+velocity = 0.2            # Gaussian sigma per component (seeded)
+region = { type = "block", min = [0.0015, 0.0015, 0.0015], max = [0.0185, 0.0185, 0.0185] }
+seed = 20260703
+
+# === SWEEP CONTROL BELOW: sweep.py replaces everything after this marker ===
+[output]
+dir = "examples/bench_restart_determinism/data/standalone"
+
+[dump]
+interval = 0
+format = "binary"
+
+[[run]]
+name = "standalone"
+dt = 1.0e-6
+steps = 4000
+thermo = 1000
+save_at_end = true
