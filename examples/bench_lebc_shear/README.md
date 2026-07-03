@@ -30,15 +30,29 @@ Single representative case:
 cargo run --release --example bench_lebc_shear --no-default-features -- examples/bench_lebc_shear/config.toml
 ```
 
-Full sweep (generate configs → run → validate + fit + plot):
+Bounded smoke gate (the harness default) / full sweep:
 
 ```bash
-python3 examples/bench_lebc_shear/sweep.py            # generate, start, graph
-# or individually:
+python3 examples/bench_lebc_shear/sweep.py            # BOUNDED smoke gate (PASS/FAIL) — the harness default
+python3 examples/bench_lebc_shear/sweep.py smoke      # same as no-arg
+python3 examples/bench_lebc_shear/sweep.py full       # full sweep: generate, start, graph
+# or individually (full):
 python3 examples/bench_lebc_shear/sweep.py generate
 python3 examples/bench_lebc_shear/sweep.py start
 python3 examples/bench_lebc_shear/sweep.py graph
 ```
+
+### Bounded smoke gate (CI)
+
+The full 14-case sweep shears each case to strain 70 (~3.5M steps per case at
+γ̇=100), which overran the 1800 s automation cap every hourly run — so it
+validated nothing. `sweep.py` with **no argument** now runs a **bounded gate**: 3
+frictional (production) cases (Φ = 0.2, 0.3, 0.4) sheared to strain 10, asserting
+that each reaches a **steady, physical shear-stress ratio** `μ = |σ_xy|/P`
+(0.15 ≤ μ ≤ 0.90, pressure `P > 0`, window drift < 15%). It completes in ~9 min
+and prints `ALL CHECKS PASSED`/`CHECKS FAILED`. The full production+KT sweep and
+its kinetic-theory tolerances (in `graph()`) are **unchanged** and still run via
+`sweep.py full`.
 
 Each case is prepared by inserting a **loose** pack (random insertion saturates
 near Φ≈0.38) and **compressing** it to the target box (→ target Φ) with a

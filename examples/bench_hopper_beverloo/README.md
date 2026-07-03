@@ -125,11 +125,24 @@ and removes drained grains so the pile cannot re-block the slot.
 ## How to Run
 
 ```bash
-python3 examples/bench_hopper_beverloo/sweep.py generate   # write per-case configs
-python3 examples/bench_hopper_beverloo/sweep.py start      # build + run all D cases -> CSV
-python3 examples/bench_hopper_beverloo/sweep.py graph      # validate (PASS/FAIL) + plot
-python3 examples/bench_hopper_beverloo/sweep.py            # all three, in order
+python3 examples/bench_hopper_beverloo/sweep.py            # BOUNDED smoke gate (PASS/FAIL) — the harness default
+python3 examples/bench_hopper_beverloo/sweep.py smoke      # same as no-arg
+python3 examples/bench_hopper_beverloo/sweep.py full       # full sweep: generate + run + validate + plot
+python3 examples/bench_hopper_beverloo/sweep.py generate   # write per-case configs (full)
+python3 examples/bench_hopper_beverloo/sweep.py start      # build + run all D cases -> CSV (full)
+python3 examples/bench_hopper_beverloo/sweep.py graph      # validate (PASS/FAIL) + plot (full)
 ```
+
+### Bounded smoke gate (CI)
+
+The full sweep (5 slots × 1400 grains × 150k steps) legitimately takes far longer
+than the 1800 s automation cap, so it timed out every hourly run and validated
+nothing. `sweep.py` with **no argument** now runs a **bounded gate**: a lighter
+4-slot sweep (600 grains, 25k fill + 45k flow) that fits the same Beverloo
+exponent `W ∝ (D − k·d)^n` and asserts `n ≈ 3/2` (tol ±0.35, R² ≥ 0.95, monotone).
+It completes in ~15 s and prints `ALL CHECKS PASSED`/`CHECKS FAILED`. The full run
+and its tighter tolerances (`EXP_TOL = 0.25`, `R2_MIN = 0.97`) are **unchanged**
+and still run via `sweep.py full`.
 
 A single standalone discharge can be run directly:
 

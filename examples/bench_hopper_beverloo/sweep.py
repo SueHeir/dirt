@@ -12,10 +12,12 @@ i.e. on a log–log plot of W vs (D − k·d) the slope (exponent) is 3/2 and W 
 D → k·d. The fit recovers BOTH the exponent and the Beverloo length k·d.
 
 Commands (from anywhere):
-    python3 examples/bench_hopper_beverloo/sweep.py generate   # write per-case configs
-    python3 examples/bench_hopper_beverloo/sweep.py start      # build + run all sims -> CSV
-    python3 examples/bench_hopper_beverloo/sweep.py graph      # validate + plot
-    python3 examples/bench_hopper_beverloo/sweep.py            # all three, in order
+    python3 examples/bench_hopper_beverloo/sweep.py            # BOUNDED smoke gate (PASS/FAIL), the harness default
+    python3 examples/bench_hopper_beverloo/sweep.py smoke      # same as no-arg: fast 4-slot Beverloo-exponent gate
+    python3 examples/bench_hopper_beverloo/sweep.py full       # full sweep: generate + run + validate + plot
+    python3 examples/bench_hopper_beverloo/sweep.py generate   # write per-case configs (full)
+    python3 examples/bench_hopper_beverloo/sweep.py start      # build + run all sims -> CSV (full)
+    python3 examples/bench_hopper_beverloo/sweep.py graph      # validate + plot (full)
 
 If a LAMMPS binary (lmp_serial / lmp / lmp_mpi / lammps) is on PATH, an OPTIONAL
 LAMMPS leg reproduces the same quasi-2D slot hopper — same material (Hertz-Mindlin
@@ -784,23 +786,110 @@ def graph():
     return ok
 
 
+# ── Bounded smoke / CI gate ──────────────────────────────────────────────────
+# A fast, bounded discharge sweep (the harness default). Fewer, lighter cases and
+# a shorter fill/flow than the full run, but it still fits the Beverloo exponent
+# W ∝ (D − k·d)^n and asserts n ≈ 3/2. It runs in ~15 s (vs the 1800 s timeout of
+# the full 1400-grain × 150k-step × 5-slot sweep) and emits an explicit PASS/FAIL.
+# The full run and its tolerances (EXP_TOL=0.25, R2_MIN=0.97 in validate()) are
+# unchanged and still run via `sweep.py full`.
+SMOKE = dict(
+    D_LIST=[0.016, 0.020, 0.024, 0.028],  # 4 slots (full sweeps 5) — same small-orifice regime
+    N_PARTICLES=600,                       # lighter bed (full: 1400) — settles/drains faster
+    FILL_STEPS=25000,                      # full: 60000
+    FLOW_STEPS=45000,                      # full: 90000
+)
+# Smoke thresholds — DELIBERATELY looser than validate()'s full-run tolerances
+# because the gate uses fewer points and a shorter, fully-drained window. This is
+# an ADDITIVE breakage gate, not a replacement for the full physics validation.
+SMOKE_EXP_TOL = 0.35   # |fitted exponent − 3/2| (full run: 0.25)
+SMOKE_R2_MIN = 0.95    # log-log fit quality      (full run: 0.97)
+
+
+def smoke():
+    """Bounded fast gate: run the reduced discharge sweep and assert the Beverloo
+    exponent. Prints 'ALL CHECKS PASSED' / 'CHECKS FAILED' and exits 0/1."""
+    global D_LIST, N_PARTICLES, FILL_STEPS, FLOW_STEPS, SWEEP_DIR, DATA_DIR, SWEEP_CSV
+    D_LIST = SMOKE["D_LIST"]
+    N_PARTICLES = SMOKE["N_PARTICLES"]
+    FILL_STEPS = SMOKE["FILL_STEPS"]
+    FLOW_STEPS = SMOKE["FLOW_STEPS"]
+    # Keep smoke artifacts out of the full run's dirs (both are gitignored).
+    SWEEP_DIR = os.path.join(SCRIPT_DIR, "sweep", "smoke")
+    DATA_DIR = os.path.join(SCRIPT_DIR, "data", "smoke")
+    SWEEP_CSV = os.path.join(DATA_DIR, "sweep.csv")
+    os.makedirs(DATA_DIR, exist_ok=True)
+
+    print(f"Building {EXAMPLE} (release)...", flush=True)
+    subprocess.run(["cargo", "build", "--release", "--example", EXAMPLE,
+                    "--no-default-features", "--features", "precision-double"],
+                   cwd=REPO_ROOT, check=True)
+    generate()
+
+    rows = []
+    n = len(D_LIST)
+    for i, D in enumerate(D_LIST, 1):
+        cdir = case_dir(D)
+        print(f"  [{i}/{n}] D={D:.4f} m ...", end="  ", flush=True)
+        W, curve = _run_dirt(D, cdir)
+        if W is None or W <= 0:
+            print("DIRT FAILED / no steady flow")
+            continue
+        D_eff = D - K_BEVERLOO * D_GRAIN
+        rows.append({"D": D, "D_eff": D_eff, "W": W})
+        print(f"W = {W:.4e} kg/s   (D-kd = {D_eff*1e3:.2f} mm)")
+
+    print("\n=== Hopper-Beverloo smoke gate (2D slot, exponent target = 3/2) ===")
+    checks = []
+    got = len(rows) >= 3
+    checks.append((got, f"cases with steady flow: {len(rows)} (need >=3)"))
+
+    exponent = r2 = float("nan")
+    mono = False
+    if got:
+        rows = sorted(rows, key=lambda r: r["D"])
+        xs = [r["D_eff"] for r in rows]
+        ys = [r["W"] for r in rows]
+        if all(x > 0 for x in xs) and all(y > 0 for y in ys):
+            exponent, _, r2 = _loglog_fit(xs, ys)
+            mono = all(ys[i] < ys[i + 1] for i in range(len(ys) - 1))
+        print(f"  {'D (mm)':>8}{'D-kd (mm)':>12}{'W (kg/s)':>14}")
+        for r in rows:
+            print(f"  {r['D']*1e3:>8.1f}{r['D_eff']*1e3:>12.2f}{r['W']:>14.4e}")
+
+    checks.append((abs(exponent - EXPONENT_2D) <= SMOKE_EXP_TOL,
+                   f"fitted exponent = {exponent:.3f} within {EXPONENT_2D}+/-{SMOKE_EXP_TOL}"))
+    checks.append((r2 >= SMOKE_R2_MIN, f"log-log R^2 = {r2:.4f} >= {SMOKE_R2_MIN}"))
+    checks.append((mono, "W increases monotonically with D"))
+
+    npass = sum(1 for ok, _ in checks if ok)
+    for ok, msg in checks:
+        print(f"  [{'PASS' if ok else 'FAIL'}] {msg}")
+    ok = all(ok for ok, _ in checks)
+    print(f"\n{npass}/{len(checks)} checks passed")
+    print("ALL CHECKS PASSED" if ok else "CHECKS FAILED")
+    sys.exit(0 if ok else 1)
+
+
 # ── dispatch ─────────────────────────────────────────────────────────────────
 def main():
-    cmd = sys.argv[1] if len(sys.argv) > 1 else "all"
-    if cmd == "generate":
+    cmd = sys.argv[1] if len(sys.argv) > 1 else "smoke"
+    if cmd == "smoke":
+        smoke()
+    elif cmd == "generate":
         generate()
     elif cmd == "start":
         start()
     elif cmd == "graph":
         sys.exit(0 if graph() else 1)
-    elif cmd == "all":
+    elif cmd in ("all", "full"):
         generate()
         start()
         print()
         sys.exit(0 if graph() else 1)
     else:
         print(f"Unknown command: {cmd!r}")
-        print("Usage: sweep.py [generate|start|graph]   (no arg = all three)")
+        print("Usage: sweep.py [smoke|full|generate|start|graph]   (no arg = smoke gate)")
         sys.exit(2)
 
 
