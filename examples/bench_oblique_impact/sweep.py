@@ -245,7 +245,7 @@ def _run_dirt(cdir, trace=False):
     log = os.path.join(cdir, "run.log")
     with open(log, "w") as lf:
         proc = subprocess.run(
-            ["cargo", "run", "--release", "--example", EXAMPLE, "--no-default-features", "--", config],
+            ["cargo", "run", "--release", "--example", EXAMPLE, "--no-default-features", "--features", "precision-double", "--", config],
             cwd=REPO_ROOT, stdout=lf, stderr=subprocess.STDOUT, env=env,
         )
     if proc.returncode != 0 or not os.path.isfile(res):
@@ -333,7 +333,7 @@ def _write_csv(path, fields, rows):
 def start():
     os.makedirs(DATA_DIR, exist_ok=True)
     print(f"Building {EXAMPLE} (release)...", flush=True)
-    subprocess.run(["cargo", "build", "--release", "--example", EXAMPLE, "--no-default-features"],
+    subprocess.run(["cargo", "build", "--release", "--example", EXAMPLE, "--no-default-features", "--features", "precision-double"],
                    cwd=REPO_ROOT, check=True)
 
     lammps = find_lammps()

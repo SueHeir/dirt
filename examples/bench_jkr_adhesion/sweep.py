@@ -220,7 +220,7 @@ def start():
 
     print(f"Building {EXAMPLE} (release)...", flush=True)
     subprocess.run(
-        ["cargo", "build", "--release", "--example", EXAMPLE, "--no-default-features"],
+        ["cargo", "build", "--release", "--example", EXAMPLE, "--no-default-features", "--features", "precision-double"],
         cwd=REPO_ROOT, check=True,
     )
 
@@ -242,7 +242,7 @@ def start():
         with open(log, "w") as lf:
             proc = subprocess.run(
                 ["cargo", "run", "--release", "--example", EXAMPLE,
-                 "--no-default-features", "--", config],
+                 "--no-default-features", "--features", "precision-double", "--", config],
                 cwd=REPO_ROOT, stdout=lf, stderr=subprocess.STDOUT,
             )
         csv_path = os.path.join(cdir, "data", "jkr_results.csv")

@@ -78,7 +78,7 @@ def start():
     # Wipe stale run state so old results can never be re-plotted.
     if os.path.isfile(DATA):
         os.remove(DATA)
-    subprocess.run(["cargo", "build", "--release", "--no-default-features", "--example", EXAMPLE],
+    subprocess.run(["cargo", "build", "--release", "--no-default-features", "--features", "precision-double", "--example", EXAMPLE],
                    cwd=REPO_ROOT, check=True)
     exe = os.path.join(REPO_ROOT, "target", "release", "examples", EXAMPLE)
     subprocess.run([exe, CONFIG], cwd=REPO_ROOT, check=True)

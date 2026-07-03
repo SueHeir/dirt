@@ -248,7 +248,7 @@ def _run_dirt(cdir):
     with open(log, "w") as lf:
         proc = subprocess.run(
             ["cargo", "run", "--release", "--example", EXAMPLE,
-             "--no-default-features", "--", config],
+             "--no-default-features", "--features", "precision-double", "--", config],
             cwd=REPO_ROOT, stdout=lf, stderr=subprocess.STDOUT,
         )
     if proc.returncode != 0 or not os.path.isfile(res):
@@ -283,7 +283,7 @@ def start():
     os.makedirs(DATA_DIR, exist_ok=True)
     print(f"Building {EXAMPLE} (release)...", flush=True)
     subprocess.run(["cargo", "build", "--release", "--example", EXAMPLE,
-                    "--no-default-features"], cwd=REPO_ROOT, check=True)
+                    "--no-default-features", "--features", "precision-double"], cwd=REPO_ROOT, check=True)
 
     if find_lammps():
         print("LAMMPS found but not used by this benchmark (theory-only validation).")

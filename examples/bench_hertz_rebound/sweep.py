@@ -350,7 +350,7 @@ def start():
 
     print(f"Building {EXAMPLE} (release)...", flush=True)
     subprocess.run(
-        ["cargo", "build", "--release", "--example", EXAMPLE, "--no-default-features"],
+        ["cargo", "build", "--release", "--example", EXAMPLE, "--no-default-features", "--features", "precision-double"],
         cwd=REPO_ROOT, check=True,
     )
 
@@ -374,7 +374,7 @@ def start():
             with open(dirt_log, "w") as log:
                 proc = subprocess.run(
                     ["cargo", "run", "--release", "--example", EXAMPLE,
-                     "--no-default-features", "--", config],
+                     "--no-default-features", "--features", "precision-double", "--", config],
                     cwd=REPO_ROOT, stdout=log, stderr=subprocess.STDOUT,
                 )
             dirt_csv = os.path.join(cdir, "data", "rebound_results.csv")

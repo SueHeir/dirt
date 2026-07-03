@@ -142,7 +142,7 @@ def generate():
 
 def start():
     subprocess.run(
-        ["cargo", "build", "--release", "--no-default-features", "--example", EXAMPLE],
+        ["cargo", "build", "--release", "--no-default-features", "--features", "precision-double", "--example", EXAMPLE],
         cwd=REPO_ROOT, check=True)
     exe = os.path.join(REPO_ROOT, "target", "release", "examples", EXAMPLE)
     # Wipe stale results so an old run can never be re-plotted.

@@ -445,7 +445,7 @@ def start():
     print(f"Building {EXAMPLE} (release)...", flush=True)
     env = dict(os.environ)
     subprocess.run(
-        ["cargo", "build", "--release", "--example", EXAMPLE, "--no-default-features"],
+        ["cargo", "build", "--release", "--example", EXAMPLE, "--no-default-features", "--features", "precision-double"],
         cwd=REPO_ROOT, check=True, env=env,
     )
 
@@ -464,7 +464,7 @@ def start():
         with open(log, "w") as lf:
             subprocess.run(
                 ["cargo", "run", "--release", "--example", EXAMPLE,
-                 "--no-default-features", "--", config],
+                 "--no-default-features", "--features", "precision-double", "--", config],
                 cwd=REPO_ROOT, stdout=lf, stderr=subprocess.STDOUT, env=env,
             )
 

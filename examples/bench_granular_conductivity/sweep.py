@@ -67,7 +67,7 @@ def dissipation(phi, T, e):
 
 
 def start():
-    subprocess.run(["cargo", "build", "--release", "--no-default-features", "--example", EXAMPLE],
+    subprocess.run(["cargo", "build", "--release", "--no-default-features", "--features", "precision-double", "--example", EXAMPLE],
                    cwd=REPO_ROOT, check=True)
     exe = os.path.join(REPO_ROOT, "target", "release", "examples", EXAMPLE)
     subprocess.run([exe, CONFIG], cwd=REPO_ROOT, check=True)

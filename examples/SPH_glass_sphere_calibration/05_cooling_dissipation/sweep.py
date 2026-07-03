@@ -179,7 +179,7 @@ def start():
     os.makedirs(DATA_DIR, exist_ok=True)
     print(f"Building {EXAMPLE} (release)...", flush=True)
     subprocess.run(
-        ["cargo", "build", "--release", "--example", EXAMPLE, "--no-default-features"],
+        ["cargo", "build", "--release", "--example", EXAMPLE, "--no-default-features", "--features", "precision-double"],
         cwd=REPO_ROOT, check=True,
     )
 
@@ -190,7 +190,7 @@ def start():
     with open(log, "w") as lf:
         proc = subprocess.run(
             ["cargo", "run", "--release", "--example", EXAMPLE,
-             "--no-default-features", "--", CONFIG],
+             "--no-default-features", "--features", "precision-double", "--", CONFIG],
             cwd=REPO_ROOT, stdout=lf, stderr=subprocess.STDOUT,
         )
     if proc.returncode != 0 or not os.path.isfile(DIRT_CSV):

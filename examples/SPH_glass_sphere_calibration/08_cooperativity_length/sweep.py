@@ -56,7 +56,7 @@ def run_case(cfg):
     rel = os.path.relpath(cfg, root)
     subprocess.run(
         ["cargo", "run", "--release", "--example",
-         "sphcal_cooperativity_length", "--no-default-features", "--", rel],
+         "sphcal_cooperativity_length", "--no-default-features", "--features", "precision-double", "--", rel],
         cwd=root, check=True,
     )
 

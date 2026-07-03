@@ -203,7 +203,7 @@ def generate():
 def build():
     print("building example (release)...")
     subprocess.run(
-        ["cargo", "build", "--release", "--no-default-features", "--example", EXAMPLE],
+        ["cargo", "build", "--release", "--no-default-features", "--features", "precision-double", "--example", EXAMPLE],
         cwd=REPO_ROOT, check=True,
     )
 

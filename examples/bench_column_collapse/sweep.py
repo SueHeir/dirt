@@ -413,7 +413,7 @@ def start():
     env = dict(os.environ)
     # macOS: ensure system libffi is found if the workspace needs it.
     subprocess.run(
-        ["cargo", "build", "--release", "--example", EXAMPLE, "--no-default-features"],
+        ["cargo", "build", "--release", "--example", EXAMPLE, "--no-default-features", "--features", "precision-double"],
         cwd=REPO_ROOT, check=True, env=env,
     )
 
@@ -432,7 +432,7 @@ def start():
         with open(log, "w") as lf:
             subprocess.run(
                 ["cargo", "run", "--release", "--example", EXAMPLE,
-                 "--no-default-features", "--", config],
+                 "--no-default-features", "--features", "precision-double", "--", config],
                 cwd=REPO_ROOT, stdout=lf, stderr=subprocess.STDOUT, env=env,
             )
 
