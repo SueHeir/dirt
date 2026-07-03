@@ -110,6 +110,12 @@
 //! region = { type = "block", min = [0.001, 0.001, 0.001], max = [0.019, 0.019, 0.019] }
 //! ```
 
+// Public API documentation-completeness gate: every public item in this crate
+// must carry a doc comment. Enforced on both `cargo build` (rustc) and
+// `cargo doc` (rustdoc; e.g. `RUSTDOCFLAGS="-D missing_docs"`). Document real
+// API intent here — do not add empty doc comments just to satisfy the lint.
+#![deny(missing_docs)]
+
 use std::collections::HashMap;
 use std::f64::consts::PI;
 
@@ -183,8 +189,12 @@ pub struct ClumpInsertConfig {
 /// Separate from `[dem]` because `DemConfig` uses `deny_unknown_fields`.
 #[derive(Deserialize, Clone, Default)]
 pub struct ClumpTopConfig {
+    /// Clump shape definitions (`[[clump.definitions]]`), each a named
+    /// multisphere template referenced by insertion commands.
     #[serde(default)]
     pub definitions: Option<Vec<ClumpDef>>,
+    /// Clump insertion commands (`[[clump.insert]]`) that place instances of a
+    /// named definition into the domain.
     #[serde(default)]
     pub insert: Option<Vec<ClumpInsertConfig>>,
 }
@@ -214,6 +224,7 @@ impl Default for ClumpAtom {
 }
 
 impl ClumpAtom {
+    /// Creates an empty `ClumpAtom` column with no per-atom entries.
     pub fn new() -> Self {
         ClumpAtom {
             body_id: Vec::new(),
@@ -226,14 +237,18 @@ impl ClumpAtom {
 
 /// Runtime storage for clump definitions, looked up during insertion.
 pub struct ClumpRegistry {
+    /// All registered clump definitions, indexed by insertion-time name lookup.
     pub defs: Vec<ClumpDef>,
 }
 
 impl ClumpRegistry {
+    /// Creates an empty registry with no clump definitions.
     pub fn new() -> Self {
         ClumpRegistry { defs: Vec::new() }
     }
 
+    /// Returns the clump definition with the given `name`, or `None` if no
+    /// definition by that name has been registered.
     pub fn find(&self, name: &str) -> Option<&ClumpDef> {
         self.defs.iter().find(|d| d.name == name)
     }

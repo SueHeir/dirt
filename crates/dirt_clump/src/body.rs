@@ -72,12 +72,14 @@ impl MultisphereBody {
 /// similar to LIGGGHTS's `mapArray_`.
 #[derive(Default)]
 pub struct MultisphereBodyStore {
+    /// All rigid bodies, in insertion order; indexed indirectly through `map`.
     pub bodies: Vec<MultisphereBody>,
     /// Flat lookup: `map[body_id] = index` into `bodies`, or `usize::MAX` if absent.
     map: Vec<usize>,
 }
 
 impl MultisphereBodyStore {
+    /// Creates an empty body store with no bodies and an empty lookup map.
     pub fn new() -> Self {
         Self {
             bodies: Vec::new(),

@@ -54,6 +54,12 @@
 //! `examples/` directory, which assembles `CorePlugins + GranularDefaultPlugins`
 //! and lets this crate's insertion + material code run from a config file.
 
+// Public API documentation-completeness gate: every public item in this crate
+// must carry a doc comment. Enforced on both `cargo build` (rustc) and
+// `cargo doc` (rustdoc; e.g. `RUSTDOCFLAGS="-D missing_docs"`). Document real
+// API intent here — do not add empty doc comments just to satisfy the lint.
+#![deny(missing_docs)]
+
 pub mod insert;
 pub mod radius;
 
@@ -71,6 +77,8 @@ use soil_core::{register_atom_data, Atom, AtomData, AtomPlugin, Config, Schedule
 
 // ── Shared physics constants ────────────────────────────────────────────────
 
+/// Precomputed `sqrt(5/6)`, the coefficient relating tangential to normal
+/// damping in the Hertz–Mindlin contact model.
 pub const SQRT_5_6: f64 = 0.9128709291752768;
 
 // ── Tsuji (1992) restitution → damping mapping (Hertz) ───────────────────────
@@ -354,18 +362,31 @@ impl Default for DemConfig {
 /// ignored — only SJKR-style cohesion (`cohesion_energy`) is applied. See
 /// `dirt_granular` for the per-branch parameter reference.
 pub struct MaterialTable {
+    /// Material names, indexed by material ID (the index into every per-material vector).
     pub names: Vec<String>,
+    /// Per-material Young's modulus E (Pa).
     pub youngs_mod: Vec<f64>,
+    /// Per-material Poisson ratio ν (dimensionless).
     pub poisson_ratio: Vec<f64>,
+    /// Per-material sliding friction coefficient μ (dimensionless).
     pub friction: Vec<f64>,
+    /// Per-material coefficient of restitution e (dimensionless).
     pub restitution: Vec<f64>,
+    /// Per-material rolling friction coefficient (dimensionless).
     pub rolling_friction: Vec<f64>,
+    /// Per-material twisting friction coefficient (dimensionless).
     pub twisting_friction: Vec<f64>,
+    /// Per-material SJKR cohesion energy density (J/m³).
     pub cohesion_energy: Vec<f64>,
+    /// Per-material JKR/DMT surface energy γ (J/m²).
     pub surface_energy: Vec<f64>,
+    /// Per-pair Tsuji damping coefficient β, derived from the pair restitution.
     pub beta_ij: Vec<Vec<f64>>,
+    /// Per-pair sliding friction coefficient (overrides the geometric mean when set).
     pub friction_ij: Vec<Vec<f64>>,
+    /// Per-pair rolling friction coefficient.
     pub rolling_friction_ij: Vec<Vec<f64>>,
+    /// Per-pair SJKR cohesion energy density (J/m³).
     pub cohesion_energy_ij: Vec<Vec<f64>>,
     /// Per-pair surface energy for JKR adhesion (geometric mean mixing).
     pub surface_energy_ij: Vec<Vec<f64>>,

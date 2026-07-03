@@ -152,6 +152,12 @@
 //! | [`wall_zero_force_accumulators`] | `PreForce` | Zeros per-wall force accumulators |
 //! | [`wall_contact_force`] | `Force` | Computes Hertz contact + damping + adhesion |
 
+// Public API documentation-completeness gate: every public item in this crate
+// must carry a doc comment. Enforced on both `cargo build` (rustc) and
+// `cargo doc` (rustdoc; e.g. `RUSTDOCFLAGS="-D missing_docs"`). Document real
+// API intent here — do not add empty doc comments just to satisfy the lint.
+#![deny(missing_docs)]
+
 use grass_app::prelude::*;
 use grass_scheduler::prelude::*;
 use serde::Deserialize;
@@ -1059,6 +1065,14 @@ fn wall_rolling_torque(
     }
 }
 
+/// System that applies wall–particle contact forces for every registered wall.
+///
+/// For each local atom in contact with a wall it evaluates the Hertzian normal
+/// force with viscous damping, the tangential/rolling/twisting friction springs
+/// (whose per-contact history is carried in [`Walls`]), and any adhesion model,
+/// accumulating the result into the atom's force and torque. Tangential and
+/// rolling spring histories are rebuilt each step so that contacts which ended
+/// are pruned automatically.
 pub fn wall_contact_force(
     mut atoms: ResMut<Atom>,
     mut walls: ResMut<Walls>,

@@ -16,7 +16,9 @@ use serde::Deserialize;
 #[derive(Deserialize, Clone, Debug)]
 #[serde(untagged)]
 pub enum RadiusSpec {
+    /// A single fixed radius (m) shared by every inserted particle.
     Fixed(f64),
+    /// A statistical distribution sampled per particle.
     Distribution(RadiusDistribution),
 }
 
@@ -27,20 +29,32 @@ pub enum RadiusSpec {
 #[derive(Deserialize, Clone, Debug)]
 #[serde(tag = "distribution", rename_all = "lowercase")]
 pub enum RadiusDistribution {
+    /// Uniform distribution on `[min, max]` (m).
     Uniform {
+        /// Inclusive lower bound of the radius range (m).
         min: f64,
+        /// Inclusive upper bound of the radius range (m).
         max: f64,
     },
+    /// Normal distribution with the given mean and standard deviation (m).
     Gaussian {
+        /// Mean radius (m).
         mean: f64,
+        /// Standard deviation of the radius (m).
         std: f64,
     },
+    /// Log-normal distribution whose realized radii have the given mean and std (m).
     Lognormal {
+        /// Desired mean of the sampled radii (m).
         mean: f64,
+        /// Desired standard deviation of the sampled radii (m).
         std: f64,
     },
+    /// Discrete set of radii sampled according to the given weights.
     Discrete {
+        /// Candidate radii (m).
         values: Vec<f64>,
+        /// Relative sampling weights, aligned with `values`.
         weights: Vec<f64>,
     },
 }

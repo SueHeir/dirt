@@ -159,12 +159,22 @@ pub enum AxialPlasticityConfig {
 /// [`BendingPlasticityConfig`].
 #[derive(Clone, Debug)]
 pub enum BendingPlasticity {
+    /// Guo perfectly-plastic bending: elastic up to the plastic moment
+    /// `M^p = (4/3)·σ_0·r_b³`, then flat.
     GuoBending {
+        /// Material yield stress σ_0 (Pa).
         yield_stress: f64,
     },
+    /// Piecewise-linear bending envelope in extreme-fibre-strain space.
     Piecewise {
+        /// Strictly-ascending breakpoints in extreme-fibre strain
+        /// `ε = r_b · θ_bend / l_b` (dimensionless).
         breakpoint_strains: Vec<f64>,
+        /// Per-segment slope multipliers relative to the elastic stiffness `K_e`.
         slope_multipliers: Vec<f64>,
+        /// Optional crack-band length calibration (Bažant 1976); rescales
+        /// post-yield breakpoints so plastic dissipation × bond length is
+        /// mesh-invariant. `None` recovers the unregularized envelope.
         length_calibration: Option<f64>,
     },
 }
@@ -193,9 +203,16 @@ impl BendingPlasticity {
 /// [`AxialPlasticityConfig`].
 #[derive(Clone, Debug)]
 pub enum AxialPlasticity {
+    /// Piecewise-linear axial envelope in axial-strain space.
     Piecewise {
+        /// Strictly-ascending breakpoints in axial strain
+        /// `ε_axial = (L − L₀)/L₀` (dimensionless).
         breakpoint_strains: Vec<f64>,
+        /// Per-segment slope multipliers relative to the elastic axial
+        /// stiffness-per-strain `E_b · A = K_n · L₀`.
         slope_multipliers: Vec<f64>,
+        /// Optional crack-band length calibration (Bažant 1976); see the
+        /// bending variant. `None` recovers the unregularized envelope.
         length_calibration: Option<f64>,
     },
 }

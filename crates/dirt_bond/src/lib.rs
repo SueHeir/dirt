@@ -165,6 +165,12 @@
 //! - `bond_missing` — bonds skipped this step because the partner atom was not
 //!   visible (ghost cutoff too small, or an MPI cut runs through a bond).
 
+// Public API documentation-completeness gate: every public item in this crate
+// must carry a doc comment. Enforced on both `cargo build` (rustc) and
+// `cargo doc` (rustdoc; e.g. `RUSTDOCFLAGS="-D missing_docs"`). Document real
+// API intent here — do not add empty doc comments just to satisfy the lint.
+#![deny(missing_docs)]
+
 use std::any::Any;
 use std::collections::HashMap;
 use std::f64::consts::PI;

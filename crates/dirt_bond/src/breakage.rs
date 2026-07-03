@@ -564,53 +564,75 @@ pub enum BreakageConfig {
     Unbreakable,
     /// See [`AxialForce`].
     AxialForce {
+        /// Tensile (normal-force) failure threshold distribution.
         tensile: ThresholdDistribution,
+        /// Optional shear-force failure threshold; if `None`, shear never breaks.
         #[serde(default)]
         shear: Option<ThresholdDistribution>,
     },
     /// See [`AxialStress`].
     AxialStress {
+        /// Tensile (normal-stress) failure threshold distribution.
         tensile: ThresholdDistribution,
+        /// Optional shear-stress failure threshold; if `None`, shear never breaks.
         #[serde(default)]
         shear: Option<ThresholdDistribution>,
     },
     /// See [`AxialStrain`].
     AxialStrain {
+        /// Tensile (normal-strain) failure threshold distribution.
         tensile: ThresholdDistribution,
+        /// Optional shear-strain failure threshold; if `None`, shear never breaks.
         #[serde(default)]
         shear: Option<ThresholdDistribution>,
     },
     /// See [`CombinedStress`].
     CombinedStress {
+        /// Tensile-stress contribution to the combined failure criterion.
         tensile: ThresholdDistribution,
+        /// Optional shear-stress contribution to the combined criterion.
         #[serde(default)]
         shear: Option<ThresholdDistribution>,
     },
     /// See [`CombinedStrain`].
     CombinedStrain {
+        /// Tensile-strain contribution to the combined failure criterion.
         tensile: ThresholdDistribution,
+        /// Optional shear-strain contribution to the combined criterion.
         #[serde(default)]
         shear: Option<ThresholdDistribution>,
     },
     /// See [`InteractionLinearForce`].
     InteractionLinearForce {
+        /// Optional axial (normal) force failure threshold.
         #[serde(default)] axial:   Option<ThresholdDistribution>,
+        /// Optional shear force failure threshold.
         #[serde(default)] shear:   Option<ThresholdDistribution>,
+        /// Optional bending-moment failure threshold.
         #[serde(default)] bending: Option<ThresholdDistribution>,
+        /// Optional twisting-moment failure threshold.
         #[serde(default)] twist:   Option<ThresholdDistribution>,
     },
     /// See [`InteractionLinearStress`].
     InteractionLinearStress {
+        /// Optional axial (normal) stress failure threshold.
         #[serde(default)] axial:   Option<ThresholdDistribution>,
+        /// Optional shear stress failure threshold.
         #[serde(default)] shear:   Option<ThresholdDistribution>,
+        /// Optional bending-stress failure threshold.
         #[serde(default)] bending: Option<ThresholdDistribution>,
+        /// Optional twisting-stress failure threshold.
         #[serde(default)] twist:   Option<ThresholdDistribution>,
     },
     /// See [`InteractionLinearStrain`].
     InteractionLinearStrain {
+        /// Optional axial (normal) strain failure threshold.
         #[serde(default)] axial:   Option<ThresholdDistribution>,
+        /// Optional shear strain failure threshold.
         #[serde(default)] shear:   Option<ThresholdDistribution>,
+        /// Optional bending-strain failure threshold.
         #[serde(default)] bending: Option<ThresholdDistribution>,
+        /// Optional twisting-strain failure threshold.
         #[serde(default)] twist:   Option<ThresholdDistribution>,
     },
 }

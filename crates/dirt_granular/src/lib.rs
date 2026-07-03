@@ -114,6 +114,12 @@
 //!   [`GranularDefaultPlugins`] — add it explicitly when you want
 //!   `data/GranularTemp.txt` written.
 
+// Public API documentation-completeness gate: every public item in this crate
+// must carry a doc comment. Enforced on both `cargo build` (rustc) and
+// `cargo doc` (rustdoc; e.g. `RUSTDOCFLAGS="-D missing_docs"`). Document real
+// API intent here — do not add empty doc comments just to satisfy the lint.
+#![deny(missing_docs)]
+
 pub mod granular_temp;
 pub mod rotational;
 pub mod tangential;
