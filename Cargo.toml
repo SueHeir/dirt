@@ -63,6 +63,10 @@ name = "bench_oblique_impact"
 path = "examples/bench_oblique_impact/main.rs"
 
 [[example]]
+name = "bench_kharaz_oblique"
+path = "examples/bench_kharaz_oblique/main.rs"
+
+[[example]]
 name = "bench_rolling_decay"
 path = "examples/bench_rolling_decay/main.rs"
 

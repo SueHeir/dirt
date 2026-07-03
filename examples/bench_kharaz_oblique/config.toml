@@ -1,0 +1,72 @@
+# Kharaz, Gorham & Salman (2001) oblique-impact replication — single case.
+#
+# A 5 mm aluminium-oxide sphere strikes a flat, frictional GLASS anvil
+# (dirt_wall z-plane, normal +z) at fixed speed V_i = 3.85 m/s and incidence
+# angle 45 deg from the normal (v_t = v_n = 3.85/sqrt2 = 2.7224 m/s). Glass-anvil
+# elastic parameters: e_n = 0.98, mu = 0.092, nu = 0.23. This standalone case is
+# the theta = 45 deg point of the sweep driven by sweep.py; run the full sweep
+# for the rebound/spin-vs-incidence-angle curves.
+#
+# Run:
+#   cargo run --release --example bench_kharaz_oblique --no-default-features \
+#       --features precision-double -- examples/bench_kharaz_oblique/config.toml
+
+[comm]
+processors_x = 1
+processors_y = 1
+processors_z = 1
+
+[domain]
+x_low = -0.05
+x_high = 0.05
+y_low = -0.02
+y_high = 0.02
+z_low = 0.0
+z_high = 0.05
+boundary_x = "fixed"
+boundary_y = "fixed"
+boundary_z = "fixed"
+
+[neighbor]
+skin_fraction = 1.1
+bin_size = 0.012
+every = 1
+
+[dem]
+contact_model = "hertz"
+
+[[dem.materials]]
+name = "alumina"
+youngs_mod = 380.0e9      # Pa — alumina
+poisson_ratio = 0.23
+restitution = 0.98        # e_n — Kharaz glass-anvil normal restitution
+friction = 0.092          # mu — Kharaz sliding friction
+
+# Projectile: V_i = 3.85 m/s at 45 deg from the normal -> (v_t, v_n) = (2.7224, 2.7224).
+# Centre starts 0.3 mm above the wall surface (contact at z = R = 5 mm).
+[[particles.insert]]
+material = "alumina"
+count = 1
+radius = 0.005
+density = 4000.0
+velocity_x = 2.7223546
+velocity_z = -2.7223546
+region = { type = "block", min = [-1.0e-6, -1.0e-6, 0.0052999990], max = [1.0e-6, 1.0e-6, 0.0053000010] }
+
+# Flat frictional glass anvil (z = 0, normal +z) — Mindlin tangential + Coulomb.
+[[wall]]
+point_x = 0.0
+point_y = 0.0
+point_z = 0.0
+normal_x = 0.0
+normal_y = 0.0
+normal_z = 1.0
+material = "alumina"
+
+[output]
+dir = "examples/bench_kharaz_oblique"
+
+[run]
+steps = 40000
+thermo = 40000
+dt = 1.0e-7
