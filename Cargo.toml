@@ -51,6 +51,10 @@ name = "hopper"
 path = "examples/hopper/main.rs"
 
 [[example]]
+name = "bench_polydisperse_mixing"
+path = "examples/bench_polydisperse_mixing/main.rs"
+
+[[example]]
 name = "bench_hertz_rebound"
 path = "examples/bench_hertz_rebound/main.rs"
 
