@@ -65,7 +65,7 @@ POISSON = 0.3
 RESTITUTION = 0.9
 FRICTION = 0.3
 SIGMA = 0.5
-STEPS = 700_000
+STEPS = 1_800_000
 OUTPUT_EVERY = 2000
 KB = 1.380649e-23
 
@@ -383,8 +383,8 @@ def graph():
     ax.loglog(tf, 1.0 / (1 + tf / tcd) ** 2, "-", color="black", lw=1.5,
               label=f"Haff fit  T0/(1+t/tc)²,  tc={tcd:.2e}s")
     # The Haff fit IS the -2 law (it bends to slope -2 only at t >> tc); this run
-    # reaches t/tc ~ 8, so the data sits at ~-1.6 and a literal -2 line would
-    # diverge from it. The fit lying on the data is the validation.
+    # reaches t/tc ~ 12, so the late-time data sits at ~-1.8 and approaches -2 as
+    # t/tc grows. The fit lying on the data is the validation.
     ax.set_xlabel("Time since equilibration [s]")
     ax.set_ylabel(r"$T_\mathrm{total}/T(t_\mathrm{eq})$")
     ax.set_title(f"Cooling from equilibration onward (skipped first {t_eq:.2f} s)")
