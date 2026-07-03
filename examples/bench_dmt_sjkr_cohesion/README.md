@@ -96,13 +96,16 @@ Both spheres are the same material (`R* = R/2`); friction and gravity are zero
 | DMT per-case `F_pulloff` vs `2πwR*` | ≤ 2% relative error |
 | DMT linear in `w` (through origin) | R² ≥ 0.999, slope vs `2πR*` ≤ 2% |
 | DMT/JKR pull-off ratio vs `4/3` | ≤ 2% (adhesion-model selection) |
+| **DMT `F_pulloff` vs LAMMPS `pair granular dmt`** | **≤ 2% vs analytical AND vs DIRT** (when `lmp` on PATH) |
 | SJKR per-case slope `F_coh(δ)/δ` vs `cπR*` | ≤ 5%, R² ≥ 0.995 |
 | SJKR slope-of-slopes vs `πR*` (linear in `c`) | ≤ 5%, R² ≥ 0.999 |
 
 In practice every DMT case matches to **< 0.25%** (linear fit R² = 1.000000), the
 DMT/JKR ratio comes out **1.3332** vs `4/3`, and every SJKR slope matches to
 **< 0.01%** with R² = 1.000000 — because both attractive terms are exact
-closed-form expressions.
+closed-form expressions. The **LAMMPS DMT cross-check** matches the analytical
+pull-off to **< 0.002%** and DIRT to **< 0.25%** across `w = 0.1 … 5.0 J/m²`
+(LAMMPS linear-fit slope vs `2πR*`: 0.000%, R² = 1.000000).
 
 ## How to Run
 
@@ -116,12 +119,36 @@ python3 examples/bench_dmt_sjkr_cohesion/sweep.py start       # build, run all c
 python3 examples/bench_dmt_sjkr_cohesion/sweep.py graph       # validate + write plots/
 ```
 
-### LAMMPS comparison
+### LAMMPS cross-validation (DMT arm)
 
-None. DIRT's DMT/SJKR are simplified explicit force models with no exact LAMMPS
-counterpart (LAMMPS' `granular ... jkr`/`sjkr` use different force–overlap laws),
-so a code-to-code overlay would compare different physics. Validation is against
-the closed-form pull-off and area-law expressions only.
+The **DMT pull-off is cross-validated against LAMMPS**, an independent DEM code.
+LAMMPS' `pair granular ... dmt` normal force is (`doc/src/pair_granular.rst`)
+
+```
+F_ne,dmt = (4/3)·E·√R·δ^{3/2}  −  4·π·γ·R          →   F_pulloff = 4·π·γ·R
+```
+
+which is **exactly** DIRT's DMT law once you use the standard work-of-adhesion
+identity `w = 2γ` (γ = surface energy per surface, `w` = work of adhesion):
+
+```
+LAMMPS  4·π·γ·R   ≡   DIRT  2·π·w·R*      (γ = w/2,  R = R* = R/2)
+```
+
+So the DMT constant pull-off is a genuine **code-to-code** check, not merely a
+self-consistent one. If a LAMMPS binary (`lmp_serial`/`lmp`/…) is on `PATH`, the
+`start` stage runs each DMT case in LAMMPS: two equal spheres, the free one driven
+through contact under **displacement control** (`fix move`) at restitution 1 (zero
+normal damping, `damping velocity` with `η=0`), feeding `γ = w/2`. The peak tensile
+normal force (`−min fₓ`, realised as `δ → 0⁺`) is the measured pull-off, compared to
+both DIRT and `2πwR*`. Result: agreement to **< 0.002%** vs analytical and **< 0.25%**
+vs DIRT across the full `w` sweep (blue ✕ markers on the DMT plot below).
+
+> **Scope.** Only the DMT *constant pull-off* has a matching LAMMPS force law and is
+> cross-validated. SJKR (area-law cohesion) and the full JKR contact-area compliance
+> have no exact LAMMPS counterpart, so those arms remain analytical-only. If no LAMMPS
+> binary is found the DMT arm falls back to the analytical check (cross-validation is
+> skipped, not failed).
 
 ### Single case (default config, DMT arm)
 
@@ -135,9 +162,10 @@ cargo run --release --example bench_dmt_sjkr_cohesion --no-default-features \
 ### DMT pull-off force vs work of adhesion
 ![DMT pull-off vs w](plots/dmt_pulloff_vs_w.png)
 
-Measured DMT pull-off (markers) lands on the `F = 2πwR*` line (solid); the JKR
-line `1.5πwR*` (dashed) is shown for contrast — selecting `adhesion_model = "dmt"`
-moves the response onto the upper line (ratio `4/3`).
+DIRT DMT pull-off (red ●) lands on the `F = 2πwR*` line (solid); the JKR line
+`1.5πwR*` (dashed) is shown for contrast — selecting `adhesion_model = "dmt"`
+moves the response onto the upper line (ratio `4/3`). The **LAMMPS** `pair granular
+dmt` pull-off (blue ✕) sits on the same line, an independent-code confirmation.
 
 ### SJKR cohesion vs overlap
 ![SJKR cohesion vs overlap](plots/sjkr_cohesion_vs_overlap.png)
@@ -166,3 +194,6 @@ overlap `δ` and lands on the `c·π·R*·δ` area-law line (solid) for every `c
 3. K.L. Johnson, *Contact Mechanics*, Cambridge University Press, 1985.
 4. For the "simplified JKR" (SJKR) area-proportional cohesion model as used in DEM
    codes, see the LIGGGHTS `cohesion model sjkr` documentation.
+5. LAMMPS `pair granular` DMT normal model and pull-off `F = 4πγR`:
+   `doc/src/pair_granular.rst` (Derjaguin–Muller–Toporov cohesive model). Used here
+   as the independent cross-validation reference for the DMT pull-off.
