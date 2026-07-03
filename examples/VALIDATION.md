@@ -134,6 +134,38 @@ that blew up neighbor binning is gone). The `(5/7)v₀` plateau is model-indepen
 it genuinely tests the Hertz–Mindlin tangential law; `a = μg` is partly
 self-consistent (the cap is μ|Fₙ| by construction). Gross sliding only; no LAMMPS.
 
+## `bench_polydisperse_mixing` — per-pair mixing rules (R*, E*, e_ij, μ_ij)
+
+Single binary collisions between spheres of **unequal radius** and/or **different
+material**, checking that DIRT combines the two particles' properties with the
+right per-pair rules: reduced radius `R* = r1 r2/(r1+r2)`, effective modulus
+`E* = e_eff_ij`, restitution `e_ij = √(e1 e2)`, and friction `μ_ij = √(μ1 μ2)`.
+Where `bench_hertz_rebound`/`bench_oblique_impact` validate the single-material
+normal/tangential laws, this isolates the **mixing**.
+
+*Head-on (free–free), elastic:* peak overlap and contact duration match undamped
+Hertz theory evaluated with the mixed `R*`, `E*`, `m*` to **≤ 0.1 %** across `R*`
+1.6–2.5 mm and `E*` 4.8e9–3.7e10 Pa (COR = 1.000). *Restitution mixing:* the
+realized COR of a cross pair `(e1,e2)` equals that of a same-material reference at
+`e_ref = √(e1 e2)` to Δ ≤ 0.001 — a calibration-offset-free way to confirm the
+geometric-mean rule. *Oblique (frozen target, gross sliding):* the
+tangential/normal impulse ratio equals `√(μ1 μ2)` to **≤ 3.5 %**, lying far closer
+to the geometric than the arithmetic mean.
+
+![Mixing validation](bench_polydisperse_mixing/plots/mixing_validation.png)
+
+*Left: elastic head-on peak overlap vs Hertz theory (mixed R*, E*) — on the 1:1
+line. Right: oblique gross-sliding impulse ratio tracks the geometric mean √(μ1 μ2)
+(green), not the arithmetic mean (red).*
+
+**Honest read:** analytical references, but for the model DIRT implements — this
+confirms the mixing arithmetic is wired up, not which mixing rule is physically
+"true" for a given pair (a modelling choice). The friction check carries a small
+consistent ~2–3.5 % deficit from end-of-contact micro-slip (the Coulomb cap is not
+held for the entire contact), covered by a 5 % tolerance; it still separates
+cleanly from the arithmetic mean. Equal density throughout, so `m*` varies through
+radius only.
+
 ## `bench_rolling_decay` — rolling-resistance deceleration
 
 A sphere set in pure rolling on a (locally flat) frozen floor sphere is decelerated by
