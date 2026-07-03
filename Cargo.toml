@@ -27,6 +27,10 @@ precision-mixed = ["dirt_core/precision-mixed"]
 precision-single = ["dirt_core/precision-single"]
 
 [[example]]
+name = "run"
+path = "examples/run/main.rs"
+
+[[example]]
 name = "hello_bed"
 path = "examples/hello_bed/main.rs"
 
