@@ -65,8 +65,12 @@ Each case runs only as long as needed: `~1.6 t*` plus a short rolling plateau.
 | Final rolling speed `v_final` vs `(5/7) v0` | ≤ 3% relative | mean over the rolling plateau |
 | Transition time `t*` vs `2 v0 / (7 μ g)` | ≤ 10% relative | first sample where slip closes |
 | All cases produce a clean slip phase | every case | fit must succeed |
+| **DIRT vs LAMMPS** `a` and `v_final` (cross-code) | ≤ 2% relative | per case, when a LAMMPS binary is on `PATH` |
 
-`graph` exits non-zero if any case fails.
+`graph` exits non-zero if any case fails. When LAMMPS is present the cross-code
+check (`pair granular ... tangential mindlin`) is **gated**, not just plotted:
+DIRT's Mindlin tangential response must match LAMMPS within 2% or the benchmark
+fails. Without a LAMMPS binary the cross-check is skipped (theory checks still run).
 
 ## How to Run
 
@@ -82,21 +86,28 @@ python3 examples/bench_sliding_friction/sweep.py start      # build + run all ca
 python3 examples/bench_sliding_friction/sweep.py graph      # validate vs theory + write plots/
 ```
 
-### LAMMPS comparison
+### LAMMPS cross-validation (gated)
 
 If a LAMMPS binary (`lmp_serial`, `lmp`, `lmp_mpi`, or `lammps`) is on `PATH`,
-`start` also runs each case in LAMMPS and overlays it on the figures —
-**DIRT as filled markers, LAMMPS as open markers**. LAMMPS is optional; without a
-binary the benchmark runs DIRT only and still validates against theory.
+`start` also runs each case in LAMMPS and `graph` **gates** DIRT against it (the
+`XVAL: PASS/FAIL` block) as well as overlaying it on the figures — **DIRT as
+filled markers, LAMMPS as open markers**. LAMMPS is optional; without a binary
+the cross-check is skipped and the benchmark still validates DIRT against theory.
 
-The LAMMPS model mirrors DIRT's exactly: one sphere of the same radius/density
-launched horizontally at `v0` with **zero spin** (`velocity ... set v0 0 0`) onto
-a flat frictional granular floor (`fix wall/gran granular hertz/material <E> <e>
-<nu> tangential mindlin NULL <xt> <mu> ... zplane 0.0 NULL`) under gravity, with
-the same material (E, ν, restitution, friction μ). The sliding-phase deceleration
-`a` and rolling plateau `v_final` are fit the **same way** as DIRT. Because
-`a = μg` and `v_final = (5/7)v0` are identical in both codes, the cross-check is
-near-exact: across all cases `|Δa| ≤ 4×10⁻³ m/s²` and `|Δv_final| ≤ 1×10⁻³ m/s`.
+The LAMMPS model mirrors DIRT's exactly and drives the **same Mindlin tangential
+contact law in both `pair granular` (particle) and `wall/gran` (floor)**: one
+sphere of the same radius/density launched horizontally at `v0` with **zero spin**
+(`velocity ... set v0 0 0`) onto a flat frictional granular floor
+(`pair_style granular; pair_coeff 1 1 hertz/material <E> <e> <nu> tangential
+mindlin NULL <xt> <mu> ...` and matching `fix wall/gran granular ... tangential
+mindlin ... zplane 0.0 NULL`) under gravity, with the same material (E, ν,
+restitution, friction μ). The sliding-phase deceleration `a` and rolling plateau
+`v_final` are fit the **same way** as DIRT and compared per case.
+
+Because `a = μg` and `v_final = (5/7)v0` are identical in both codes, the
+cross-check is near-exact — measured agreement is `a` within 0.09% and `v_final`
+within 0.16% across all cases (`|Δa| ≤ 4×10⁻³ m/s²`, `|Δv_final| ≤ 1×10⁻³ m/s`),
+comfortably inside the 2% cross-code gate.
 
 ### Single case (default config)
 

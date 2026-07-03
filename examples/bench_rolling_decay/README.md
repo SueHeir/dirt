@@ -95,6 +95,7 @@ reaches rest) and compares the fitted deceleration to `a = (5/7) μ_r g`.
 | Fitted deceleration vs theory | ≤ 2 % relative error | per μ_r (theory is exact) |
 | Pure rolling maintained | \|vₓ − ωR\| ≤ 1 % of v₀ | over the fit window |
 | All 3 cases complete | 3/3 | |
+| **DIRT vs LAMMPS** deceleration (cross-code) | ≤ 2 % relative | per μ_r, when a LAMMPS binary is on `PATH` |
 
 **Result (no LAMMPS required):** PASS. Measured vs predicted deceleration:
 
@@ -128,22 +129,25 @@ python3 examples/bench_rolling_decay/sweep.py graph       # fit + validate vs th
 `graph` reads the existing `data/sweep.csv` (and `data/sweep_lammps.csv` if
 present), so you can re-validate and re-plot without re-running the simulations.
 
-### LAMMPS comparison
+### LAMMPS cross-validation (gated)
 
 If a LAMMPS binary (`lmp_serial`, `lmp`, `lmp_mpi`, or `lammps`) is on `PATH`,
-`start` also runs each case in LAMMPS and overlays it on the figures —
-**DIRT as filled markers, LAMMPS as open markers**. LAMMPS is optional; without a
-binary the benchmark runs DIRT only and still validates against theory.
+`start` also runs each case in LAMMPS and `graph` **gates** DIRT against it (the
+`XVAL: PASS/FAIL` block) as well as overlaying it on the figures — **DIRT as
+filled markers, LAMMPS as open markers**. LAMMPS is optional; without a binary
+the cross-check is skipped and the benchmark still validates DIRT against theory.
 
 The LAMMPS model mirrors DIRT's: a single sphere rolling on a flat granular
-floor (`fix wall/gran ... zplane 0.0`) under gravity, launched in pure rolling.
-LAMMPS has no constant-torque rolling model, so it uses `granular` with
-`rolling sds` — a stiff spring–dashpot–slider whose torque saturates at the same
-cap `μ_r·F_n·r_eff` (with `r_eff = R` for the flat wall). In steady rolling the
-SDS torque sits at that cap, so the two codes reproduce the **same**
-deceleration: they agree to within `|Δa| ≤ 4×10⁻⁴ m/s²` across all μ_r. (The SDS
-spring can make vₓ oscillate slightly about zero *after* the sphere stops, so the
-fit uses only the initial monotone decay.)
+floor (`pair_style granular` + matching `fix wall/gran ... zplane 0.0`) under
+gravity, launched in pure rolling. LAMMPS has no constant-torque rolling model,
+so it uses `pair granular ... rolling sds` (with `tangential mindlin`) — a stiff
+spring–dashpot–slider whose torque saturates at the same cap `μ_r·F_n·r_eff`
+(with `r_eff = R` for the flat wall). In steady rolling the SDS torque sits at
+that cap, so the two codes reproduce the **same** deceleration: measured
+agreement is within 0.06 % (`|Δa| ≤ 4×10⁻⁴ m/s²`) across all μ_r, comfortably
+inside the 2% cross-code gate. (The SDS spring can make vₓ oscillate slightly
+about zero *after* the sphere stops, so the fit uses only the initial monotone
+decay.)
 
 ### Single case (default config)
 

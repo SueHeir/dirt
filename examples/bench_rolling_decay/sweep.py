@@ -460,6 +460,42 @@ def compare_codes(dirt, lammps):
         print(f"  {r['mu_r']:>6.3f}{r['a_fit']:>10.4f}{l['a_fit']:>10.4f}{d:>+10.4f}")
 
 
+# DIRT-vs-LAMMPS cross-validation tolerance (relative). Both codes run the SAME
+# SDS rolling contact (`pair granular ... rolling sds` + Mindlin tangential in
+# LAMMPS; DIRT's SDS rolling on the flat wall) so the fitted pure-rolling
+# deceleration agrees to ~0.1% in practice. 2% is a tight gate that passes
+# comfortably yet trips if the rolling law regresses. NOT a theory tolerance —
+# this checks the two independent codes against each other.
+XVAL_TOL = 0.02
+
+
+def xvalidate_lammps(dirt, lammps):
+    """Gate DIRT's SDS-rolling deceleration against LAMMPS's `pair granular`
+    (rolling sds) per case. Returns True iff every matched case agrees on the
+    fitted deceleration within XVAL_TOL (relative)."""
+    lmp = {round(r["mu_r"], 4): r for r in lammps}
+    print("\n=== DIRT vs LAMMPS cross-validation (SDS rolling) ===")
+    print(f"  {'mu_r':>6}{'a_err%':>9}  note")
+    ok = True
+    matched = 0
+    for r in sorted(dirt, key=lambda x: x["mu_r"]):
+        l = lmp.get(round(r["mu_r"], 4))
+        if not l:
+            continue
+        matched += 1
+        ea = abs(r["a_fit"] - l["a_fit"]) / abs(l["a_fit"]) if l["a_fit"] else 0.0
+        note = ""
+        if ea > XVAL_TOL:
+            note = "A MISMATCH"; ok = False
+        print(f"  {r['mu_r']:>6.3f}{100*ea:>9.2f}  {note}")
+    if matched == 0:
+        print("  (no matched DIRT/LAMMPS cases — cross-validation skipped)")
+        return True
+    print(f"  tolerance: {XVAL_TOL*100:.0f}% rel on fitted deceleration")
+    print("XVAL:", "PASS" if ok else "FAIL")
+    return ok
+
+
 def plot(dirt, lammps):
     os.makedirs(PLOT_DIR, exist_ok=True)
     import matplotlib
@@ -525,8 +561,9 @@ def graph():
     ok = validate(dirt)
     if lammps:
         compare_codes(dirt, lammps)
+        ok = xvalidate_lammps(dirt, lammps) and ok
     else:
-        print("\n(no LAMMPS sweep — plotting DIRT only)")
+        print("\n(no LAMMPS sweep — plotting DIRT only; cross-validation skipped)")
     plot(dirt, lammps)
     return ok
 
