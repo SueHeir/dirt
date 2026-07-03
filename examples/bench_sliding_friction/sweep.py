@@ -504,6 +504,47 @@ def compare_codes(dirt, lammps):
               f"{da:>+9.3f}{r['v_final']:>10.4f}{l['v_final']:>10.4f}{dvf:>+9.4f}")
 
 
+# DIRT-vs-LAMMPS cross-validation tolerance (relative). The two codes run the
+# SAME Mindlin tangential contact law (`pair granular ... tangential mindlin` in
+# LAMMPS; DIRT's dirt_wall Mindlin floor) so the fitted sliding deceleration a
+# and rolling plateau v_final agree to ~0.1% in practice. 2% is a tight gate that
+# still passes comfortably yet trips if the tangential law regresses (a wrong
+# friction model deviates by tens of %). NOT a theory tolerance — this checks the
+# two independent codes against each other.
+TOL_XVAL = 0.02
+
+
+def xvalidate_lammps(dirt, lammps):
+    """Gate DIRT's Mindlin tangential response against LAMMPS's `pair granular`
+    (tangential mindlin) per case. Returns True iff every matched case agrees on
+    both fitted a and rolling plateau v_final within TOL_XVAL (relative)."""
+    key = lambda r: (round(r["mu"], 6), round(r["v0"], 6))
+    lmp = {key(r): r for r in lammps}
+    print("\n=== DIRT vs LAMMPS cross-validation (Mindlin tangential) ===")
+    print(f"  {'mu':>5}{'v0':>6}{'a_err%':>9}{'vf_err%':>9}  note")
+    ok = True
+    matched = 0
+    for r in sorted(dirt, key=lambda x: (x["v0"], x["mu"])):
+        l = lmp.get(key(r))
+        if not l:
+            continue
+        matched += 1
+        ea = abs(r["a_fit"] - l["a_fit"]) / abs(l["a_fit"]) if l["a_fit"] else 0.0
+        ev = abs(r["v_final"] - l["v_final"]) / abs(l["v_final"]) if l["v_final"] else 0.0
+        notes = []
+        if ea > TOL_XVAL:
+            notes.append("A"); ok = False
+        if ev > TOL_XVAL:
+            notes.append("VFINAL"); ok = False
+        print(f"  {r['mu']:>5.2f}{r['v0']:>6.2f}{100*ea:>9.2f}{100*ev:>9.2f}  {' '.join(notes)}")
+    if matched == 0:
+        print("  (no matched DIRT/LAMMPS cases — cross-validation skipped)")
+        return True
+    print(f"  tolerance: {100*TOL_XVAL:.0f}% rel on a and v_final")
+    print("XVAL:", "PASS" if ok else "FAIL")
+    return ok
+
+
 # Validation tolerances (relative).
 TOL_A = 0.08         # deceleration a = mu*g
 TOL_VFINAL = 0.03    # rolling plateau v_final = (5/7) v0
@@ -656,8 +697,9 @@ def graph():
     ok = validate(rows)
     if lammps:
         compare_codes(rows, lammps)
+        ok = xvalidate_lammps(rows, lammps) and ok
     else:
-        print("\n(no LAMMPS sweep — plotting DIRT only)")
+        print("\n(no LAMMPS sweep — plotting DIRT only; cross-validation skipped)")
     plot(rows, lammps)
     return ok
 
