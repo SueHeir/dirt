@@ -33,8 +33,10 @@ So the suite is doing its job, not just decorating passing runs.
 **Wall friction (recent core change).** `dirt_wall` now applies a **Mindlin
 tangential (sliding) spring with a Coulomb cap** on plane walls (using the
 material's `friction`), with per-contact tangential history — not just normal force.
-This unblocked `bench_sliding_friction` (now a clean flat-wall test) and
-`bench_column_collapse` (now passes), and let `bench_angle_of_repose` stand its
+This unblocked `bench_sliding_friction` (now a clean flat-wall test) and let the
+`bench_column_collapse` deposit come to rest as a finite pile instead of a runaway
+monolayer (though that bench still **FAILs** its exponent gate — see below), and let
+`bench_angle_of_repose` stand its
 heap on a real frictional floor wall. Two examples still use a **frozen partner**
 for legitimate reasons: `rolling_decay` needs a curved surface to define `r_eff`,
 and `oblique_impact` uses a sphere–sphere contact to exercise the *particle–particle*
@@ -362,18 +364,26 @@ ratio `a = H/L0` is fit against the experimental scalings of Lube (2004) and Laj
 ![Runout scaling](bench_column_collapse/plots/runout_scaling.png)
 
 *Normalized runout vs aspect ratio (log–log) with the two experimental regime lines.
-Fitted exponents are 0.81 (a ≤ 3, target 1.0) and 0.59 (a ≥ 3, target 2/3) — both within
-the ±0.25 band, so the benchmark **passes**.*
+Fitted exponents are 1.57 (a ≤ 3, target 1.0) and 0.58 (a ≥ 3, target 2/3): the
+power-regime exponent is inside the ±0.25 band but the linear-regime exponent is
+outside it, so the benchmark **FAILs** its exponent gate (`sweep.py graph` exits 1).*
 
 ![Deposit profile](bench_column_collapse/plots/deposit_profile.png)
 
-*Side view of the rest-state deposit for the representative case — it now comes to rest
-as a finite pile rather than running to the wall.*
+*Side view of the rest-state deposit for the representative case — with wall friction it
+comes to rest as a finite pile rather than running to the wall.*
 
-**Honest read:** **now passes** thanks to the new wall sliding friction (with a
-frictionless floor it previously collapsed to a runaway monolayer). The reference is
-still empirical with material-dependent prefactors — only the exponents/regime change
-are tested, not the prefactors — and the band (±0.25) is wide.
+**Honest read:** **FAIL (known limitation).** Adding particle–wall sliding friction to
+`dirt_wall` fixed the earlier runaway-monolayer failure mode — the column now arrests as
+a finite pile instead of sliding to the domain wall — but the fitted **linear-regime
+exponent (1.57) still lands outside the ±0.25 band**, so the bench does not validate to
+tolerance and exits non-zero. The likely cause is not a wall-friction gap (friction is
+present) but the noisy few-point log–log fit at these modest particle counts (~110–1100),
+a single seed, and a coarse 6-point aspect sweep with diameter-scale runout quantization
+(the a = 3 and a = 4 cases land in the same runout bin). The reference is empirical with
+material-dependent prefactors, so only the exponents/regime change are tested; tightening
+the fit would need finer/averaged runs, and **no tolerance was loosened to force a pass**.
+The bench is retained in regression as an honest, visible FAIL rather than reported green.
 
 ## `bench_hopper_beverloo` — silo discharge rate
 
@@ -511,7 +521,7 @@ will need a benchmark when re-added.)
 | fiber_crossover | Coulomb limit μN | analytical (self-consistent) | PASS; ratio circular vs measured N |
 | sphere/clump/rod haff | Haff law + LAMMPS | law (cross-code) | PASS; −2 not reached; tc unvalidated; clump cross-check calibrated |
 | angle_of_repose | empirical (none exact) | qualitative | PASS; trends only; frozen-bed |
-| column_collapse | Lube/Lajeunesse (empirical) | empirical scaling | PASS (after wall friction); exponents only |
+| column_collapse | Lube/Lajeunesse (empirical) | empirical scaling | FAIL (known limitation); linear exponent 1.57 vs 1.0 outside ±0.25 band; exits 1 |
 | hopper_beverloo | Beverloo (empirical) | empirical correlation | PASS; exponent 1.36 vs 1.5; prefactor untested |
 | plate_sinkage | Bekker (empirical) | empirical / qualitative | PASS; form only; loose bands; softened grains |
 | convergence | finest-dt / large-N limit (+ Hertz anchor) | numerical (self-convergence) | PASS; dt & N convergence; observed order p≈2; box size untested |

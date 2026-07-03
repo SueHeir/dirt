@@ -581,10 +581,13 @@ def validate(rows):
     ok = low_ok and high_ok
     if not ok:
         print()
-        print("  NOTE: dirt_wall has no particle-wall sliding friction, so the")
-        print("  basal floor cannot arrest the deposit — the column slides into a")
-        print("  thin sheet and the runout does not follow the experimental laws.")
-        print("  This is a core limitation; see README. Core crates were NOT edited.")
+        print("  NOTE: this bench does NOT currently validate to tolerance — the")
+        print("  fitted linear-regime exponent falls outside the +/-0.25 band, so")
+        print("  it is a documented FAIL (known limitation; see README/VALIDATION.md).")
+        print("  dirt_wall DOES apply particle-wall sliding friction, so the deposit")
+        print("  comes to rest as a finite pile (no runaway monolayer) — the miss is")
+        print("  in the exponent fit, which is noisy at these modest particle counts,")
+        print("  single seed, and coarse 6-point aspect sweep, not a wall-friction gap.")
     print("\nALL CHECKS PASSED" if ok else "VALIDATION FAILED (see note above)")
     return ok
 
