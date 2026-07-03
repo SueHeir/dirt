@@ -1,0 +1,119 @@
+# run/hopper_discharge.toml — quasi-2D slot-hopper discharge, run by the generic
+# `run` driver with ZERO per-case Rust.
+#
+# A rectangular bin feeds a symmetric wedge funnel that converges to a central
+# bottom SLOT of opening width D = 0.024 m. The slot is OPEN from the start:
+# glass beads inserted above the funnel fall through it under gravity and drain
+# in a steady stream. The driver just runs it and writes standard per-atom dump
+# snapshots; the post-processing (counting the grains that have dropped below the
+# orifice vs. time, and fitting the steady mass-flow rate W) is done offline by
+# examples/run/analyze_discharge.py — a config -> run -> analyze workflow.
+#
+# The geometry is periodic in y over a few grain diameters, so the orifice is a
+# long SLOT (flow per unit slot depth) and the discharge follows Beverloo's 2D
+# law W = C · rho_b · sqrt(g) · (D - k·d)^(3/2).
+#
+#   cargo run --release --example run -- examples/run/hopper_discharge.toml
+#   python3 examples/run/analyze_discharge.py examples/run/hopper_discharge
+
+[comm]
+processors_x = 1
+processors_y = 1
+processors_z = 1
+
+[domain]
+x_low = 0.0
+x_high = 0.16
+y_low = 0.0
+y_high = 0.012
+z_low = 0.0
+z_high = 0.32
+boundary_x = "fixed"
+boundary_y = "periodic"     # periodic depth -> quasi-2D slot (per-unit-width flow)
+boundary_z = "fixed"
+
+[neighbor]
+skin_fraction = 1.2
+bin_size = 0.009            # >= largest particle diameter (d = 0.004 m)
+
+[gravity]
+gz = -9.81                  # m/s^2
+
+[[dem.materials]]
+name = "glass"
+youngs_mod = 5.0e7          # Pa — softened (rigid-grain Beverloo regime, larger stable dt)
+poisson_ratio = 0.3
+restitution = 0.5
+friction = 0.5
+
+# Fill the bin above the funnel with a bed of beads. With the slot OPEN they
+# begin draining immediately; the middle of the run is the steady-flow window.
+[[particles.insert]]
+material = "glass"
+count = 900
+radius = 0.002             # d = 0.004 m, monodisperse
+density = 2500.0           # kg/m^3
+velocity_z = -0.2
+region = { type = "block", min = [0.025, 0.0, 0.19], max = [0.135, 0.012, 0.31] }
+seed = 7
+
+# ── Bin side walls (vertical) ────────────────────────────────────────────────
+[[wall]]                   # left bin wall (x = 0.02, normal +x)
+point_x = 0.02
+point_z = 0.0
+normal_x = 1.0
+material = "glass"
+name = "bin_left"
+
+[[wall]]                   # right bin wall (x = 0.14, normal -x)
+point_x = 0.14
+point_z = 0.0
+normal_x = -1.0
+material = "glass"
+name = "bin_right"
+
+# ── Wedge funnel: two finite inclined planes leaving a slot of width D = 0.024 ─
+# Left funnel plane: from (x=0.02, z=0.18) down to (x=0.068, z=0.05). The slot
+# runs from x=0.068 to x=0.092 (D = 0.024 m) centred at x=0.08. Inward normal
+# points up-and-right (+x, +z); bound_z_* make the infinite plane a finite panel.
+[[wall]]
+point_x = 0.02
+point_z = 0.18
+normal_x = 0.13
+normal_z = 0.048
+material = "glass"
+name = "funnel_left"
+bound_z_low = 0.049
+bound_z_high = 0.181
+
+# Right funnel plane: mirror — from (x=0.14, z=0.18) down to (x=0.092, z=0.05).
+[[wall]]
+point_x = 0.14
+point_z = 0.18
+normal_x = -0.13
+normal_z = 0.048
+material = "glass"
+name = "funnel_right"
+bound_z_low = 0.049
+bound_z_high = 0.181
+
+# ── Standard dump output — per-atom snapshots the analysis reads ─────────────
+# dump/dump_{step}.csv columns: tag,type,x,y,z,vx,vy,vz,fx,fy,fz,radius
+[dump]
+interval = 2000
+format = "text"
+
+[vtp]
+interval = 4000
+
+[output]
+dir = "examples/run/hopper_discharge"
+
+# Single declarative run stage: the driver owns the step loop. 80 000 steps of
+# 2e-5 s = 1.6 s — long enough for a start-up transient, a long steady-flow
+# window, and the empty-out tail.
+[[run]]
+name = "discharge"
+dt = 2.0e-5
+steps = 80000
+thermo = 5000

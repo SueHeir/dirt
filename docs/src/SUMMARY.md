@@ -9,6 +9,10 @@
 - [Your First Simulation](./getting-started/first-simulation.md)
 - [Anatomy of a Config File](./getting-started/config-anatomy.md)
 
+# Tutorials
+
+- [Worked Study: Hopper Discharge Rate](./tutorials/hopper-discharge-study.md)
+
 # The Stack
 
 - [GRASS → SOIL → DIRT](./stack/overview.md)
