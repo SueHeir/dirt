@@ -33,6 +33,28 @@ framework books are where that story lives:
 - The [GRASS book](https://sueheir.github.io/grass) — how to build a
   plugin-based solver from scratch.
 
+## What's validated
+
+DIRT's headline feature is that it tells you where to believe it. It ships a
+suite of `bench_*` examples under `examples/`, each coupling a small simulation
+to an **independent** reference and checking measured quantities against explicit
+tolerances. Every benchmark prints a **PASS/FAIL** verdict, so the suite is a
+regression net rather than a gallery of runs that happen to pass. Each is graded
+by evidence strength:
+
+- **Analytical** — a closed-form reference (Hertz contact duration,
+  Euler–Bernoulli beam deflection, Haff's `T_g ∝ t⁻²` cooling).
+- **Cross-code** — agreement with **LAMMPS** on the same problem (implementation
+  consistency under a shared contact model, not physical truth).
+- **Empirical / law / qualitative** — a scaling exponent or fitted correlation
+  (Beverloo discharge, angle of repose vs. friction).
+
+Every benchmark also states plainly where it is weak, and some stay **red on
+purpose** (e.g. `bench_column_collapse`) rather than being tuned green. These
+tests catch real bugs — the oblique-impact check alone drove two contact-model
+fixes. The full write-up is [Validation & Benchmarks](./reference/validation.md),
+and the authoritative per-figure log is `examples/VALIDATION.md`.
+
 ## What DIRT gives you
 
 `dirt_core` is the batteries-included umbrella crate. Depend on it and you get
