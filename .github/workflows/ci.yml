@@ -1,0 +1,52 @@
+name: CI (test + clippy)
+
+# Continuous integration for the DIRT workspace. Builds, tests, and lints on
+# stock GitHub-hosted runners using `--no-default-features` so no MPI library or
+# C toolchain is required (single-process build, exactly like the README
+# quickstart). A precision feature must always be selected, so `precision-double`
+# is enabled explicitly. Satisfies the JOSS "Automated tests" checklist item;
+# the separate docs.yml only deploys the mdBook.
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+# Cancel superseded runs on the same ref to save CI minutes.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  # grass/soil are resolved as published git dependencies (github.com on the
+  # public mirror); the git CLI is the most reliable fetcher for them on runners.
+  CARGO_NET_GIT_FETCH_WITH_CLI: "true"
+  # No MPI/C toolchain on stock runners: build the single-process backend and a
+  # valid precision (default features would pull in mpi_backend + a C compiler).
+  DIRT_FEATURES: precision-double
+
+jobs:
+  test:
+    name: build + test + clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain (stable + clippy)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Cache cargo build
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build (no default features + precision-double)
+        run: cargo build --workspace --no-default-features --features "$DIRT_FEATURES" --verbose
+
+      - name: Test
+        run: cargo test --workspace --no-default-features --features "$DIRT_FEATURES" --verbose
+
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets --no-default-features --features "$DIRT_FEATURES"
