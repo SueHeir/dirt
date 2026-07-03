@@ -32,10 +32,20 @@ Commands (from anywhere):
     python3 examples/bench_dmt_sjkr_cohesion/sweep.py graph      # validate + plot
     python3 examples/bench_dmt_sjkr_cohesion/sweep.py            # all three
 
-LAMMPS is intentionally NOT run: DIRT's DMT/SJKR are simplified constant- and
-area-force models with no exact LAMMPS counterpart (LAMMPS' jkr is the full
-Maugis-area model with a different force-overlap law), so a code-to-code overlay
-would compare different physics. Validation is against the analytical laws only.
+LAMMPS cross-validation (DMT arm only): if a LAMMPS binary is on PATH, each DMT
+case is ALSO run in LAMMPS `pair granular ... dmt`, whose documented force law is
+    F_ne,dmt = (4/3) E R^{1/2} delta^{1.5} - 4 pi gamma R        (pair_granular.rst)
+with pull-off F = 4 pi gamma R (= critical/most-tensile force). That is *exactly*
+DIRT's DMT law with the standard work-of-adhesion identity w = 2 gamma, so
+    LAMMPS 4 pi gamma R  ==  DIRT 2 pi w R*      (gamma = w/2, R = R* = R/2).
+The DMT pull-off is therefore a clean code-to-code check against an INDEPENDENT
+reference, not just the closed form. LAMMPS drives the free sphere through contact
+under displacement control (fix move) at restitution 1 (zero normal damping), and
+the peak tensile normal force is compared to both DIRT and 2 pi w R*.
+Note: only the DMT *constant pull-off* is cross-validated. SJKR (area-law cohesion)
+and the full JKR contact-area compliance still have no matching LAMMPS force law, so
+those arms remain analytical-only. If no LAMMPS binary is found the DMT arm falls
+back to the analytical check and the cross-validation is skipped (not failed).
 
 Outputs:
     sweep/<case>/config.toml   DIRT configs                  (gitignored)
@@ -49,6 +59,8 @@ References:
     elastic solids", Proc. R. Soc. Lond. A 324:301-313, 1971. (JKR reference)
   For the "simplified JKR" (SJKR) area-proportional cohesion model as implemented
     in DEM codes, see the LIGGGHTS `cohesion sjkr` model documentation.
+  LAMMPS `pair granular` DMT force law + pull-off F = 4*pi*gamma*R:
+    reference/lammps/doc/src/pair_granular.rst (Eq. for F_ne,dmt and F_pulloff).
 """
 
 import os
@@ -86,6 +98,18 @@ JKR_REF_W = 1.0
 
 # ── SJKR arm: sweep the cohesion energy density c [J/m^3 = Pa] ────────────────
 SJKR_C = [1.0e6, 2.0e6, 5.0e6, 1.0e7, 2.0e7]
+
+# ── LAMMPS cross-validation (DMT arm) ────────────────────────────────────────
+# LAMMPS `pair granular ... dmt` uses gamma = surface energy density, and its
+# pull-off is 4*pi*gamma*R.  DIRT's DMT uses the work of adhesion w with pull-off
+# 2*pi*w*R*.  With R = R* and the standard identity w = 2*gamma the two pull-offs
+# are identical, so we feed LAMMPS gamma = w/2 for each DIRT case.
+LAMMPS_BINS = ["lmp_serial", "lmp", "lmp_mpi", "lammps"]
+LMP_DT = 2.0e-9           # s — displacement-controlled, so not a stability limit;
+                          #     small enough to resolve the pull-off at delta->0+.
+LMP_GAP = 2.0e-7          # m — initial surface gap before the driven approach.
+LMP_OVERLAP = 1.0e-7      # m — overlap to drive past (well beyond the pull-off).
+LAMMPS_TOL = 0.02         # 2%: LAMMPS pull-off vs analytical AND vs DIRT.
 
 # ── Validation tolerances ────────────────────────────────────────────────────
 DMT_REL_TOL = 0.02        # 2% per-case: measured vs analytical DMT pull-off
@@ -192,6 +216,107 @@ def write_config(cdir, arm, adhesion_model, energy_line, output_dir):
         ))
 
 
+# ── LAMMPS DMT cross-validation ───────────────────────────────────────────────
+# Two equal spheres; the free one is driven inward under displacement control
+# (`fix move`) at restitution 1 (zero normal damping) so the recorded normal force
+# is purely elastic, exactly as in the DIRT run.  The peak tensile force over the
+# approach equals the DMT pull-off 4*pi*gamma*R (Hertz -> 0 as delta -> 0+).
+LMP_DMT_TEMPLATE = """\
+# Auto-generated LAMMPS DMT pull-off cross-check (w = {w} J/m^2, gamma = w/2)
+units           si
+atom_style      sphere
+atom_modify     map array
+dimension       3
+boundary        f f f
+newton          off
+comm_modify     vel yes
+
+region          simbox block -0.02 0.02 -0.01 0.01 -0.01 0.01 units box
+create_box      1 simbox
+
+create_atoms    1 single 0.0     0.0 0.0 units box    # frozen target
+create_atoms    1 single {x0:.10e} 0.0 0.0 units box  # free sphere, approaches from +x
+set             group all diameter {diam}
+set             group all density  {density}
+
+# dmt: E, eta_n0 (damping prefactor), nu, gamma.  eta_n0 = 0 -> conservative
+# (restitution 1), matching the DIRT run.  gamma = w/2 so 4*pi*gamma*R = 2*pi*w*R*.
+pair_style      granular
+pair_coeff      1 1 dmt {E} 0.0 {nu} {gamma} tangential linear_nohistory 0.0 0.0 damping velocity rolling none twisting none
+
+group           free id 2
+velocity        all set 0.0 0.0 0.0
+fix             mv free move linear -{vx} 0.0 0.0 units box
+timestep        {dt:.10e}
+
+variable        tnow equal time
+variable        x2   equal x[2]
+variable        fx2  equal fx[2]
+fix             rec all print 1 "${{tnow}} ${{x2}} ${{fx2}}" file {trace} screen no title "t x2 fx2"
+
+thermo          200000
+run             {steps}
+"""
+
+
+def find_lammps():
+    """Return the first available LAMMPS binary on PATH, or None."""
+    for b in LAMMPS_BINS:
+        path = shutil.which(b)
+        if path:
+            return path
+    return None
+
+
+def lmp_steps():
+    """Steps to drive the free sphere from the initial gap through the pull-off and
+    a little past it, at LMP_DT."""
+    travel = LMP_GAP + LMP_OVERLAP
+    return int(travel / (APPROACH_VEL * LMP_DT)) + 10
+
+
+def write_lammps_dmt_input(path, w, trace, steps):
+    x0 = 2.0 * RADIUS + LMP_GAP        # centre-to-centre contact at 2R
+    with open(path, "w") as f:
+        f.write(LMP_DMT_TEMPLATE.format(
+            w=w, x0=x0, diam=2.0 * RADIUS, density=DENSITY,
+            E=f"{YOUNGS_MOD:.6e}", nu=POISSON_RATIO, gamma=w / 2.0,
+            vx=APPROACH_VEL, dt=LMP_DT, trace=trace, steps=steps,
+        ))
+
+
+def run_lammps_dmt(lammps, w, cdir):
+    """Run one LAMMPS DMT case; return the measured pull-off magnitude [N] (the
+    peak tensile normal force = -min(fx) over the approach), or None on failure."""
+    os.makedirs(cdir, exist_ok=True)
+    in_path = os.path.join(cdir, "in.lammps")
+    log_path = os.path.join(cdir, "lammps.log")
+    trace = os.path.join(cdir, "lammps_trace.txt")
+    write_lammps_dmt_input(in_path, w, trace, lmp_steps())
+    proc = subprocess.run(
+        [lammps, "-in", in_path, "-log", log_path],
+        cwd=REPO_ROOT, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT,
+    )
+    if proc.returncode != 0 or not os.path.isfile(trace):
+        return None
+    min_fx = None
+    with open(trace) as f:
+        next(f, None)  # header
+        for line in f:
+            parts = line.split()
+            if len(parts) != 3:
+                continue
+            try:
+                fx = float(parts[2])
+            except ValueError:
+                continue
+            if min_fx is None or fx < min_fx:
+                min_fx = fx
+    if min_fx is None or min_fx >= 0.0:
+        return None                     # never went tensile -> no contact captured
+    return abs(min_fx)
+
+
 # ── case identity ────────────────────────────────────────────────────────────
 def dmt_case(w):     return f"dmt_w{w}"
 def jkr_case(w):     return f"jkr_w{w}"
@@ -281,10 +406,29 @@ def start():
         elif tag.startswith("jkr_"):
             jkr_row = row
 
+    # LAMMPS DMT cross-validation: run the same pull-off in `pair granular dmt`.
+    lammps = find_lammps()
+    if lammps is None:
+        print("\nLAMMPS: no binary on PATH — DMT cross-validation skipped "
+              "(analytical check only).")
+    else:
+        print(f"\nLAMMPS DMT cross-validation ({os.path.basename(lammps)}):")
+        for i, row in enumerate(dmt_rows, 1):
+            w = float(row["w"])
+            cdir = os.path.join(SWEEP_DIR, dmt_case(w), "lammps")
+            print(f"  [{i}/{len(dmt_rows)}] w={w:<5} J/m^2", end="  ", flush=True)
+            f_lmp = run_lammps_dmt(lammps, w, cdir)
+            if f_lmp is None:
+                print("FAILED (no tensile force captured)")
+            else:
+                row["f_pulloff_lammps"] = f"{f_lmp:.10e}"
+                print(f"pull-off = {f_lmp:.4e} N")
+
     # DMT arm summary (+ the JKR reference peak, tagged w = "jkr_ref").
     with open(DMT_CSV, "w", newline="") as f:
-        wr = csv.DictWriter(f, fieldnames=["w", "f_peak_tension", "sep_at_peak",
-                                           "r_eff", "radius", "density", "dt"])
+        wr = csv.DictWriter(f, fieldnames=["w", "f_peak_tension", "f_pulloff_lammps",
+                                           "sep_at_peak", "r_eff", "radius",
+                                           "density", "dt"])
         wr.writeheader()
         for row in dmt_rows:
             wr.writerow({k: row.get(k, "") for k in wr.fieldnames})
@@ -375,7 +519,8 @@ def validate_dmt():
     with open(DMT_CSV) as f:
         rows = list(csv.DictReader(f))
 
-    ws, f_meas, jkr_peak = [], [], None
+    ws, f_meas, f_lmp = [], [], []
+    jkr_peak = None
     all_pass = True
     for row in rows:
         if row["w"] == "jkr_ref":
@@ -388,6 +533,8 @@ def validate_dmt():
         status = "PASS" if err <= DMT_REL_TOL else "FAIL"
         all_pass &= status == "PASS"
         ws.append(w); f_meas.append(fm)
+        fl = row.get("f_pulloff_lammps", "")
+        f_lmp.append(float(fl) if fl not in ("", None) else None)
         print(f"  w={w:<5} J/m^2:  F={fm:.4e} vs {ft:.4e} N  (err={err*100:.3f}%)  [{status}]")
 
     slope, r2 = fit_through_origin(ws, f_meas)
@@ -415,8 +562,43 @@ def validate_dmt():
         print(f"    JKR peak  = {jkr_peak:.4e} N   (theory {1.5*math.pi*JKR_REF_W*R_EFF:.4e})")
         print(f"    ratio DMT/JKR = {ratio:.4f}  vs  4/3 = {4/3:.4f}  "
               f"(err={ratio_err*100:.3f}%)  [{rstatus}]")
+
+    # ── LAMMPS cross-validation (independent DEM code) ────────────────────────
+    have_lmp = any(fl is not None for fl in f_lmp)
+    if not have_lmp:
+        print("\n  LAMMPS cross-validation: SKIPPED (no LAMMPS pull-off recorded; "
+              "run 'start' with lmp on PATH). Analytical check only.")
+    else:
+        print(f"\n  LAMMPS `pair granular dmt` cross-validation "
+              f"(pull-off 4*pi*gamma*R, gamma=w/2):")
+        print(f"    {'w':>5} {'LAMMPS':>12} {'analytic':>12} {'DIRT':>12}  "
+              f"{'err(vs anl)':>11} {'err(vs DIRT)':>12}")
+        for w, fm, fl in zip(ws, f_meas, f_lmp):
+            if fl is None:
+                print(f"    {w:>5}  (no LAMMPS result)")
+                all_pass = False
+                continue
+            ft = dmt_analytical(w)
+            e_anl = abs(fl - ft) / ft
+            e_dirt = abs(fl - fm) / fm
+            ok = e_anl <= LAMMPS_TOL and e_dirt <= LAMMPS_TOL
+            all_pass &= ok
+            print(f"    {w:>5} {fl:12.5e} {ft:12.5e} {fm:12.5e}  "
+                  f"{e_anl*100:10.4f}% {e_dirt*100:11.4f}%  "
+                  f"[{'PASS' if ok else 'FAIL'}]")
+        # Aggregate LAMMPS linear fit through origin vs 2*pi*R* (as for DIRT).
+        pairs = [(w, fl) for w, fl in zip(ws, f_lmp) if fl is not None]
+        if len(pairs) >= 2:
+            lw = [p[0] for p in pairs]; lf = [p[1] for p in pairs]
+            lslope, lr2 = fit_through_origin(lw, lf)
+            lserr = abs(lslope - slope_theory) / slope_theory
+            lok = lr2 >= DMT_R2_MIN and lserr <= LAMMPS_TOL
+            all_pass &= lok
+            print(f"    LAMMPS linear fit F=slope*w: slope={lslope:.6e} vs "
+                  f"2*pi*R*={slope_theory:.6e} (err={lserr*100:.3f}%)  "
+                  f"R^2={lr2:.6f}  [{'PASS' if lok else 'FAIL'}]")
     print()
-    return all_pass, (ws, f_meas)
+    return all_pass, (ws, f_meas, f_lmp)
 
 
 def sjkr_analytical_slope(c):
@@ -499,7 +681,7 @@ def plot(dmt_data, sjkr_data):
     save = dict(bbox_inches="tight")
 
     # Plot 1: DMT pull-off vs w (with JKR theory line for contrast).
-    ws, f_meas = dmt_data
+    ws, f_meas, f_lmp = dmt_data
     fig, ax = plt.subplots(figsize=(7, 5))
     wl = np.linspace(0, max(ws) * 1.05, 100)
     ax.plot(wl, [2 * math.pi * w * R_EFF * 1e3 for w in wl], "k-", lw=2,
@@ -508,6 +690,11 @@ def plot(dmt_data, sjkr_data):
             label="JKR theory: F = 1.5π w R*")
     ax.plot(ws, [f * 1e3 for f in f_meas], "o", color="#d62728", ms=8,
             label="DIRT DMT (measured)")
+    lmp_pts = [(w, fl) for w, fl in zip(ws, f_lmp) if fl is not None]
+    if lmp_pts:
+        ax.plot([p[0] for p in lmp_pts], [p[1] * 1e3 for p in lmp_pts], "x",
+                color="#1f77b4", ms=9, mew=2,
+                label="LAMMPS pair granular dmt")
     ax.set_xlabel("Work of adhesion w [J/m$^2$]")
     ax.set_ylabel("Pull-off force [mN]")
     ax.set_title("DMT Pull-off Force vs Work of Adhesion")
