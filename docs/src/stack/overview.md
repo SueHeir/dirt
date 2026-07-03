@@ -3,6 +3,12 @@
 DIRT is deliberately split across three repositories, one per tier. Lower tiers
 never depend on higher ones.
 
+> This page is DIRT's view of the stack — it walks one DEM timestep end to end.
+> For the tier-neutral, canonical version (which tier owns what, and where to
+> start if you are writing your own method), see
+> [How the Stack Fits Together](https://sueheir.github.io/grass/stack/how-the-stack-fits-together.html)
+> in the GRASS book.
+
 ```
 GRASS    framework: App, Plugin, Scheduler, IO, coupling      (no particles)
   └─ SOIL   substrate: Atom, domain decomposition, comm, neighbor lists   (no physics)
