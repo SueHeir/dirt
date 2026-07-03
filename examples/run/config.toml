@@ -1,0 +1,77 @@
+# run/config.toml — two-particle settle, driven entirely by config.
+#
+# Two glass spheres are released just above a floor wall and settle under
+# gravity, bouncing inelastically (restitution 0.3) until they come to rest on
+# the floor. This is a small, fully-bounded case that exercises the generic
+# `run` driver end-to-end — insertion + gravity + wall contact + Hertz-Mindlin —
+# with no per-case Rust: everything below is config.
+#
+#   cargo run --release --example run -- examples/run/config.toml
+
+[comm]
+processors_x = 1
+processors_y = 1
+processors_z = 1
+
+[domain]
+# Small closed-ish box; the floor is a wall (below), the rest is head-room.
+x_low = 0.0
+x_high = 0.04
+y_low = 0.0
+y_high = 0.04
+z_low = 0.0
+z_high = 0.06
+boundary_x = "fixed"
+boundary_y = "fixed"
+boundary_z = "fixed"
+
+[neighbor]
+skin_fraction = 1.2
+bin_size = 0.012          # >= largest particle diameter (0.01 m)
+
+[gravity]
+gx = 0.0
+gy = 0.0
+gz = -9.81                # m/s^2 — pulls the spheres onto the floor
+
+[[dem.materials]]
+name = "glass"
+youngs_mod = 8.7e9        # Pa
+poisson_ratio = 0.3
+restitution = 0.3         # inelastic — settles quickly
+friction = 0.5
+
+# Two spheres dropped from a small block near the middle, a little above the
+# floor. They fall, bounce, and settle side-by-side on the floor wall.
+[[particles.insert]]
+material = "glass"
+count = 2
+radius = 0.005
+density = 2500.0
+region = { type = "block", min = [0.012, 0.012, 0.02], max = [0.028, 0.028, 0.035] }
+seed = 1
+
+# --- floor wall (z = 0, inward normal +z) ---
+[[wall]]
+point_x = 0.0
+point_y = 0.0
+point_z = 0.0
+normal_x = 0.0
+normal_y = 0.0
+normal_z = 1.0
+material = "glass"
+name = "floor"
+
+# --- standard dump output ---
+[dump]
+interval = 2000           # per-atom CSV snapshots -> dump/dump_{step}.csv
+format = "text"
+
+[vtp]
+interval = 2000           # VTP visualization frames
+
+[[run]]
+name = "settle"
+dt = 1.0e-5               # s
+steps = 20000             # 0.2 s — ample time to settle
+thermo = 2000
