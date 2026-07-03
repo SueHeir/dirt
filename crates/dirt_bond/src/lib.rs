@@ -286,6 +286,181 @@ fn default_bond_tolerance() -> f64 { 1.001 }
 fn default_bond_radius_ratio() -> f64 { 1.0 }
 fn default_ghost_cutoff_multiplier() -> f64 { 2.5 }
 
+// ── Config / bond-file parse errors ─────────────────────────────────────────
+
+/// A descriptive error raised while parsing a bond configuration or the
+/// LAMMPS data file it points at.
+///
+/// Every variant names the offending **section** (and line/field where
+/// applicable) so a user who mistyped a config sees an actionable message
+/// instead of a raw `.unwrap()`/`.expect()` panic and a Rust backtrace.
+/// Scientists judge robustness by error quality: a mistyped config should
+/// read like `Bonds section, line 5: field 'tag1' = "x" is not a valid
+/// integer atom tag`, not `thread 'main' panicked at ...`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BondConfigError {
+    /// `format = "..."` named an unsupported bond-file format.
+    UnsupportedFormat {
+        /// The offending format string from the config.
+        format: String,
+    },
+    /// The bond file could not be opened.
+    FileOpen {
+        /// Path from `file = "..."`.
+        path: String,
+        /// Underlying OS error text.
+        source: String,
+    },
+    /// An I/O error occurred while reading a line of the bond file.
+    FileRead {
+        /// Path from `file = "..."`.
+        path: String,
+        /// Underlying OS error text.
+        source: String,
+    },
+    /// A data line in the `Bonds` section had fewer than the four required
+    /// columns (`bond-id  bond-type  atom-tag-1  atom-tag-2`).
+    BondsMissingField {
+        /// 1-based line number within the file.
+        line: usize,
+        /// Number of whitespace-separated columns actually present.
+        found: usize,
+        /// The raw offending line (trimmed).
+        content: String,
+    },
+    /// A numeric field in the `Bonds` section could not be parsed as an
+    /// integer.
+    BondsFieldParse {
+        /// 1-based line number within the file.
+        line: usize,
+        /// Which required field failed (`"tag1"` or `"tag2"`).
+        field: &'static str,
+        /// The raw value that failed to parse.
+        value: String,
+    },
+}
+
+impl std::fmt::Display for BondConfigError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            BondConfigError::UnsupportedFormat { format } => write!(
+                f,
+                "BondConfig: unsupported bond-file format {:?} \
+                 (supported: \"lammps_data\")",
+                format
+            ),
+            BondConfigError::FileOpen { path, source } => write!(
+                f,
+                "BondConfig: failed to open bond file '{}': {}",
+                path, source
+            ),
+            BondConfigError::FileRead { path, source } => write!(
+                f,
+                "BondConfig: failed to read bond file '{}': {}",
+                path, source
+            ),
+            BondConfigError::BondsMissingField { line, found, content } => write!(
+                f,
+                "Bonds section, line {}: expected at least 4 columns \
+                 (bond-id bond-type atom-tag-1 atom-tag-2), found {}: '{}'",
+                line, found, content
+            ),
+            BondConfigError::BondsFieldParse { line, field, value } => write!(
+                f,
+                "Bonds section, line {}: field '{}' = {:?} is not a valid \
+                 non-negative integer",
+                line, field, value
+            ),
+        }
+    }
+}
+
+impl std::error::Error for BondConfigError {}
+
+/// One parsed bond record from the `Bonds` section, before it is resolved
+/// against the local atom map. Fields mirror the LAMMPS data columns
+/// `bond-id  bond-type  atom-tag-1  atom-tag-2` (the id column is not kept).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RawBond {
+    /// Bond type id (column 2); defaults to `0` when non-numeric/blank.
+    pub bond_type: u32,
+    /// Global tag of the first bonded atom (column 3).
+    pub tag1: u32,
+    /// Global tag of the second bonded atom (column 4).
+    pub tag2: u32,
+}
+
+/// Locate and parse the `Bonds` section out of a slice of LAMMPS-data lines.
+///
+/// Returns:
+/// - `Ok(None)` when there is no `Bonds` section at all (a valid file that
+///   simply carries no explicit bonds — nothing to load, not an error);
+/// - `Ok(Some(bonds))` on success;
+/// - `Err(BondConfigError)` with a descriptive, section/line/field-scoped
+///   message when a data line is malformed.
+///
+/// Blank lines, comment lines (`#`), and the section header line itself are
+/// skipped. Parsing of a section stops at the next recognised section header.
+/// This is the panic-free replacement for the previous `.expect()`-based
+/// inline parse, and is what the config-robustness tests exercise directly.
+pub fn parse_bonds_section(lines: &[String]) -> Result<Option<Vec<RawBond>>, BondConfigError> {
+    const SECTION_HEADERS: [&str; 8] = [
+        "Atoms", "Velocities", "Bonds", "Angles", "Dihedrals", "Impropers",
+        "Masses", "Pair Coeffs",
+    ];
+    let is_section_header = |line: &str| -> bool {
+        let t = line.trim();
+        SECTION_HEADERS.iter().any(|h| t.starts_with(h))
+    };
+
+    // Find the last `Bonds` header (mirrors prior behaviour).
+    let mut bonds_start = None;
+    for (i, line) in lines.iter().enumerate() {
+        if line.trim().starts_with("Bonds") {
+            bonds_start = Some(i + 1);
+        }
+    }
+    let bonds_start = match bonds_start {
+        Some(s) => s,
+        None => return Ok(None),
+    };
+
+    let mut bonds = Vec::new();
+    for i in bonds_start..lines.len() {
+        let t = lines[i].trim();
+        if t.is_empty() { continue; }
+        if is_section_header(t) { break; }
+        if t.starts_with('#') { continue; }
+
+        let fields: Vec<&str> = t.split_whitespace().collect();
+        if fields.len() < 4 {
+            return Err(BondConfigError::BondsMissingField {
+                line: i + 1,
+                found: fields.len(),
+                content: t.to_string(),
+            });
+        }
+
+        // Column 2 (bond-type) is optional/lenient: default to 0 when blank
+        // or non-numeric, matching the historical `.unwrap_or(0)`.
+        let bond_type: u32 = fields[1].parse().unwrap_or(0);
+        let tag1: u32 = fields[2].parse().map_err(|_| BondConfigError::BondsFieldParse {
+            line: i + 1,
+            field: "tag1",
+            value: fields[2].to_string(),
+        })?;
+        let tag2: u32 = fields[3].parse().map_err(|_| BondConfigError::BondsFieldParse {
+            line: i + 1,
+            field: "tag2",
+            value: fields[3].to_string(),
+        })?;
+
+        bonds.push(RawBond { bond_type, tag1, tag2 });
+    }
+
+    Ok(Some(bonds))
+}
+
 impl Default for BondConfig {
     fn default() -> Self {
         BondConfig {
@@ -729,42 +904,22 @@ pub fn load_bonds_from_file(
         None => return,
     };
     let format = bond_config.format.as_deref().unwrap_or("lammps_data");
-    if format != "lammps_data" {
-        eprintln!("ERROR: Unsupported bond file format '{}'. Supported: lammps_data", format);
-        std::process::exit(1);
-    }
 
-    let file = File::open(file_path).unwrap_or_else(|e| {
-        eprintln!("ERROR: Failed to open bond file '{}': {}", file_path, e);
-        std::process::exit(1);
-    });
-    let reader = BufReader::new(file);
-    let lines: Vec<String> = reader.lines()
-        .map(|l| l.expect("failed to read line from bond file"))
-        .collect();
-
-    let section_headers = [
-        "Atoms", "Velocities", "Bonds", "Angles", "Dihedrals", "Impropers",
-        "Masses", "Pair Coeffs",
-    ];
-    let is_section_header = |line: &str| -> bool {
-        let t = line.trim();
-        section_headers.iter().any(|h| t.starts_with(h))
-    };
-
-    let mut bonds_start = None;
-    for (i, line) in lines.iter().enumerate() {
-        if line.trim().starts_with("Bonds") {
-            bonds_start = Some(i + 1);
-        }
-    }
-    let bonds_start = match bonds_start {
-        Some(s) => s,
-        None => {
+    // Read + parse the Bonds section through the panic-free path. Any malformed
+    // config (unsupported format, unreadable file, unparseable Bonds line)
+    // surfaces as a descriptive, section/line/field-scoped error — never a raw
+    // `.expect()` backtrace.
+    let raw_bonds = match read_and_parse_bonds(file_path, format) {
+        Ok(Some(b)) => b,
+        Ok(None) => {
             if comm.rank() == 0 {
                 println!("DemBond: no Bonds section found in '{}', skipping", file_path);
             }
             return;
+        }
+        Err(e) => {
+            eprintln!("ERROR: {}", e);
+            std::process::exit(1);
         }
     };
 
@@ -781,19 +936,7 @@ pub fn load_bonds_from_file(
 
     let mut bond_count = 0u64;
 
-    for i in bonds_start..lines.len() {
-        let t = lines[i].trim();
-        if t.is_empty() { continue; }
-        if is_section_header(t) { break; }
-        if t.starts_with('#') { continue; }
-
-        let fields: Vec<&str> = t.split_whitespace().collect();
-        if fields.len() < 4 { continue; }
-
-        let bond_type: u32 = fields[1].parse().unwrap_or(0);
-        let tag1: u32 = fields[2].parse().expect("failed to parse atom tag1 in Bonds section");
-        let tag2: u32 = fields[3].parse().expect("failed to parse atom tag2 in Bonds section");
-
+    for RawBond { bond_type, tag1, tag2 } in raw_bonds {
         let idx1 = match tag_to_local.get(&tag1) { Some(&i) => i, None => continue };
         let idx2 = match tag_to_local.get(&tag2) { Some(&i) => i, None => continue };
 
@@ -822,6 +965,37 @@ pub fn load_bonds_from_file(
             bond_count, file_path
         );
     }
+}
+
+/// Read `file_path` (whose `format` has already been pulled from the config)
+/// and parse its `Bonds` section, returning a descriptive [`BondConfigError`]
+/// for every failure mode instead of panicking or calling `process::exit`.
+///
+/// `Ok(None)` means the file parsed cleanly but carries no `Bonds` section
+/// (nothing to load); `Ok(Some(_))` returns the parsed records. This is the
+/// I/O half of the parse path — the pure text half lives in
+/// [`parse_bonds_section`], which the config-robustness tests drive directly.
+fn read_and_parse_bonds(
+    file_path: &str,
+    format: &str,
+) -> Result<Option<Vec<RawBond>>, BondConfigError> {
+    if format != "lammps_data" {
+        return Err(BondConfigError::UnsupportedFormat { format: format.to_string() });
+    }
+    let file = File::open(file_path).map_err(|e| BondConfigError::FileOpen {
+        path: file_path.to_string(),
+        source: e.to_string(),
+    })?;
+    let reader = BufReader::new(file);
+    let mut lines = Vec::new();
+    for l in reader.lines() {
+        let l = l.map_err(|e| BondConfigError::FileRead {
+            path: file_path.to_string(),
+            source: e.to_string(),
+        })?;
+        lines.push(l);
+    }
+    parse_bonds_section(&lines)
 }
 
 /// Extends `Domain::ghost_cutoff` so bonded partners (and their 1-3
@@ -1422,6 +1596,151 @@ mod tests {
 
     fn build_pair_app(radius: f64, sep: f64, cfg: BondConfig) -> App {
         build_pair_app_with(radius, sep, cfg, [0.0; 3], [0.0; 3])
+    }
+
+    // ── Config robustness: friendly errors instead of panics ────────────────
+
+    /// Split a data-file body into owned lines the way the loader does.
+    fn lines_of(body: &str) -> Vec<String> {
+        body.lines().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn parse_bonds_section_well_formed_ok() {
+        let body = "\
+LAMMPS data file
+
+Bonds
+
+1 1 10 11
+2 1 11 12
+";
+        let parsed = parse_bonds_section(&lines_of(body))
+            .expect("well-formed Bonds section should parse")
+            .expect("a Bonds section is present");
+        assert_eq!(parsed.len(), 2);
+        assert_eq!(parsed[0], RawBond { bond_type: 1, tag1: 10, tag2: 11 });
+        assert_eq!(parsed[1], RawBond { bond_type: 1, tag1: 11, tag2: 12 });
+    }
+
+    #[test]
+    fn parse_bonds_section_no_section_is_ok_none() {
+        // A valid file that simply has no explicit bonds is NOT an error.
+        let body = "LAMMPS data file\n\nMasses\n\n1 1.0\n";
+        let parsed = parse_bonds_section(&lines_of(body))
+            .expect("absence of a Bonds section is not an error");
+        assert!(parsed.is_none(), "expected Ok(None), got {:?}", parsed);
+    }
+
+    /// Acceptance test: at least three distinct malformed configs must each
+    /// yield a **descriptive Err naming the offending section/key** — and none
+    /// may panic. The closure below would unwind the test on any panic, so a
+    /// green run also proves the parse path no longer panics on bad input.
+    #[test]
+    fn malformed_configs_yield_descriptive_errors_not_panics() {
+        struct Case {
+            name: &'static str,
+            body: &'static str,
+            // Substrings the descriptive message MUST contain.
+            must_mention: &'static [&'static str],
+        }
+
+        let cases = [
+            // (1) Unparseable Bonds section: atom tag-1 is not an integer.
+            Case {
+                name: "non-numeric tag1",
+                body: "Bonds\n\n1 1 abc 11\n",
+                must_mention: &["Bonds section", "line", "tag1", "abc"],
+            },
+            // (2) Unparseable Bonds section: atom tag-2 is not an integer.
+            Case {
+                name: "non-numeric tag2",
+                body: "Bonds\n\n1 1 10 xY\n",
+                must_mention: &["Bonds section", "line", "tag2", "xY"],
+            },
+            // (3) Missing required key/column: a Bonds line with only 3 fields.
+            Case {
+                name: "missing required column",
+                body: "Bonds\n\n1 1 10\n",
+                must_mention: &["Bonds section", "line", "4 columns"],
+            },
+            // (4) Unsupported file format named in the config.
+            Case {
+                name: "unsupported format",
+                body: "",
+                must_mention: &["BondConfig", "unsupported", "format"],
+            },
+        ];
+
+        let mut descriptive = 0usize;
+        for case in &cases {
+            // Route each case through the real parse entry points. Catch any
+            // panic so that a regression to `.expect()` fails loudly here
+            // rather than aborting the whole test binary.
+            let result = std::panic::catch_unwind(|| {
+                if case.name == "unsupported format" {
+                    read_and_parse_bonds("/nonexistent.data", "gsd_hoomd")
+                } else {
+                    parse_bonds_section(&lines_of(case.body))
+                }
+            });
+
+            let outcome = result.unwrap_or_else(|_| {
+                panic!("case '{}' PANICKED — parse path must not panic", case.name)
+            });
+
+            let err = match outcome {
+                Err(e) => e,
+                Ok(other) => panic!(
+                    "case '{}' should be an Err, got Ok({:?})",
+                    case.name, other
+                ),
+            };
+
+            let msg = err.to_string();
+            for needle in case.must_mention {
+                assert!(
+                    msg.contains(needle),
+                    "case '{}' error message {:?} should mention {:?}",
+                    case.name, msg, needle
+                );
+            }
+            descriptive += 1;
+        }
+
+        assert!(
+            descriptive >= 3,
+            "expected >=3 malformed configs to yield descriptive errors, got {}",
+            descriptive
+        );
+    }
+
+    #[test]
+    fn bonds_missing_field_error_reports_line_and_count() {
+        // Line 3 (1-based) is the offending short line.
+        let body = "Bonds\n\n7 2\n";
+        let err = parse_bonds_section(&lines_of(body)).unwrap_err();
+        match err {
+            BondConfigError::BondsMissingField { line, found, .. } => {
+                assert_eq!(line, 3);
+                assert_eq!(found, 2);
+            }
+            other => panic!("expected BondsMissingField, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn bonds_field_parse_error_reports_field_and_line() {
+        let body = "Bonds\n\n1 1 10 NaN\n";
+        let err = parse_bonds_section(&lines_of(body)).unwrap_err();
+        match err {
+            BondConfigError::BondsFieldParse { line, field, value } => {
+                assert_eq!(line, 3);
+                assert_eq!(field, "tag2");
+                assert_eq!(value, "NaN");
+            }
+            other => panic!("expected BondsFieldParse, got {:?}", other),
+        }
     }
 
     #[test]
