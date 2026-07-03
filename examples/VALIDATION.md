@@ -417,6 +417,45 @@ periodic slice; absolute pressures are not physical.
 
 ---
 
+---
+
+# Numerical convergence — timestep & particle count
+
+## `bench_convergence` — do the observables stop moving as `dt → 0`, `N → ∞`?
+
+Every benchmark above runs at a single timestep (`0.15 · dt_Rayleigh`) and a single
+particle count. `bench_convergence` closes that gap by re-driving two existing
+binaries over a resolution ladder (it adds no new physics — it reuses
+`bench_hertz_rebound` and `bench_sphere_haff_cooling` through generated configs).
+
+**A. Timestep.** A single sphere strikes a wall at `dt = f · dt_Rayleigh`,
+`f ∈ {0.5 … 0.015}`. For the elastic anchor (COR = 1) the measured contact
+duration and peak overlap converge onto the exact Hertz closed forms — at the
+finest `dt`, `t_c` err ≈ 0.1 % and `δ_max` err ≈ 0.00 % — and the observed order
+of accuracy of `δ_max` is **p ≈ 2.0**, consistent with Velocity-Verlet. The
+solver default `0.15 · dt_R` holds all observables within ~1.3 % of the
+fully-resolved value; the study recommends **`dt ≲ 0.25 · dt_R`** for < 2 %.
+
+![Timestep convergence](bench_convergence/plots/dt_convergence.png)
+
+**B. Particle count.** A free-cooling granular gas is run at `N ∈ {200 … 1600}`
+at fixed volume fraction `φ = 0.07` (box grows with `N`), 4 seeds each. The Haff
+cooling time `t_c` plateaus (Δ = 0.3 % from `N = 800→1600`) while the Haff-fit
+RMS residual and the run-to-run scatter shrink like `~1/√N`; recommended
+**`N ≥ 800`** for < 1 % fit residual and < 3 % scatter at this `φ`.
+
+![Particle-count convergence](bench_convergence/plots/n_convergence.png)
+
+**Honest read:** this is a **numerical** convergence study (does the discrete
+solution approach a limit?), not a new physical validation. Study A's elastic
+anchor is a real analytic check; the damped case and all of Study B are
+self-convergence / finite-size checks against the fully-resolved run, not against
+an independent reference. Box-size convergence is still not tested, and the
+recommended `dt`/`N` are specific to these materials/setups (the procedure
+transfers, the numbers don't).
+
+---
+
 ## What is not validated (scope summary)
 
 - **No direct experimental comparison** — references are analytical, empirical
@@ -426,7 +465,9 @@ periodic slice; absolute pressures are not physical.
   correctness.
 - **Several "analytical" checks are self-consistent** (jkr, fiber_crossover, much of
   rolling_decay; partly sliding_friction).
-- **No convergence studies** (timestep, particle count, box size).
+- **Convergence studies** — timestep and particle count are now covered by
+  `bench_convergence` (see "Numerical convergence" above); **box size** is still
+  untested.
 - **Empirical references** (Beverloo, Bekker) are correlations with fitted constants;
   only forms/exponents are tested.
 - **Other `examples/`** (bonds, fiber_bond, hopper, granular_gas_benchmark,
@@ -473,3 +514,4 @@ will need a benchmark when re-added.)
 | column_collapse | Lube/Lajeunesse (empirical) | empirical scaling | PASS (after wall friction); exponents only |
 | hopper_beverloo | Beverloo (empirical) | empirical correlation | PASS; exponent 1.36 vs 1.5; prefactor untested |
 | plate_sinkage | Bekker (empirical) | empirical / qualitative | PASS; form only; loose bands; softened grains |
+| convergence | finest-dt / large-N limit (+ Hertz anchor) | numerical (self-convergence) | PASS; dt & N convergence; observed order p≈2; box size untested |
