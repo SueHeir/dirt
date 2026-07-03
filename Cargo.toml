@@ -63,6 +63,10 @@ name = "bench_hertz_rebound"
 path = "examples/bench_hertz_rebound/main.rs"
 
 [[example]]
+name = "bench_chung_ooi_impact"
+path = "examples/bench_chung_ooi_impact/main.rs"
+
+[[example]]
 name = "bench_oblique_impact"
 path = "examples/bench_oblique_impact/main.rs"
 

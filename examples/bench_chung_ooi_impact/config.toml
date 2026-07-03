@@ -1,0 +1,69 @@
+# Chung & Ooi (2011) benchmark — Test Case 1 (elastic normal impact of two
+# identical spheres), single standalone case. The sweep driver (sweep.py)
+# generates the full velocity sweep for both Test 1 and Test 2 and gates the
+# results against the Hertz analytical solution.
+#
+# Two identical aluminium-alloy spheres (R = 0.1 m) approach along x with a
+# relative speed of 1 m/s (each 0.5 m/s) and collide elastically (restitution =
+# 1 → pure Hertz, no damping). No gravity, no walls.
+#
+# Run:
+#   cargo run --release --example bench_chung_ooi_impact --no-default-features \
+#       --features precision-double -- examples/bench_chung_ooi_impact/config.toml
+
+[comm]
+processors_x = 1
+processors_y = 1
+processors_z = 1
+
+[domain]
+x_low = -0.5
+x_high = 0.5
+y_low = -0.2
+y_high = 0.2
+z_low = -0.2
+z_high = 0.2
+boundary_x = "fixed"
+boundary_y = "fixed"
+boundary_z = "fixed"
+
+[neighbor]
+skin_fraction = 1.1
+bin_size = 0.25           # >= particle diameter (0.2 m)
+every = 1
+
+[dem]
+contact_model = "hertz"
+
+[[dem.materials]]
+name = "alu_alloy"
+youngs_mod = 7.0e10       # Pa — aluminium alloy (Chung & Ooi 2011)
+poisson_ratio = 0.30
+restitution = 1.0         # perfectly elastic → pure Hertz reference
+friction = 0.0            # normal-only impact
+
+# Left sphere: centre near x = -0.105, launched toward +x at 0.5 m/s.
+[[particles.insert]]
+material = "alu_alloy"
+count = 1
+radius = 0.1
+density = 2700.0          # kg/m^3 — aluminium alloy
+velocity_x = 0.5
+region = { type = "block", min = [-0.105001, -1.0e-6, -1.0e-6], max = [-0.104999, 1.0e-6, 1.0e-6] }
+
+# Right sphere: centre near x = +0.105, launched toward -x at 0.5 m/s.
+[[particles.insert]]
+material = "alu_alloy"
+count = 1
+radius = 0.1
+density = 2700.0
+velocity_x = -0.5
+region = { type = "block", min = [0.104999, -1.0e-6, -1.0e-6], max = [0.105001, 1.0e-6, 1.0e-6] }
+
+[output]
+dir = "examples/bench_chung_ooi_impact"
+
+[run]
+steps = 15000
+dt = 2.0e-6
+thermo = 2000
