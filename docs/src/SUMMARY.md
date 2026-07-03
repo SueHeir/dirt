@@ -5,6 +5,7 @@
 # Getting Started
 
 - [Installation & Building](./getting-started/installation.md)
+- [Run a Simulation from a Config — Zero Rust](./getting-started/run-from-config.md)
 - [Your First Simulation](./getting-started/first-simulation.md)
 - [Anatomy of a Config File](./getting-started/config-anatomy.md)
 
