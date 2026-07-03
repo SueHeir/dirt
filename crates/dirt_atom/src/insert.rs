@@ -59,20 +59,28 @@ fn default_source() -> String {
 #[derive(Deserialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct ColumnMapping {
+    /// Zero-based column index of the x coordinate.
     #[serde(default)]
     pub x: Option<usize>,
+    /// Zero-based column index of the y coordinate.
     #[serde(default)]
     pub y: Option<usize>,
+    /// Zero-based column index of the z coordinate.
     #[serde(default)]
     pub z: Option<usize>,
+    /// Zero-based column index of the particle radius.
     #[serde(default)]
     pub radius: Option<usize>,
+    /// Zero-based column index of the x velocity component.
     #[serde(default)]
     pub vx: Option<usize>,
+    /// Zero-based column index of the y velocity component.
     #[serde(default)]
     pub vy: Option<usize>,
+    /// Zero-based column index of the z velocity component.
     #[serde(default)]
     pub vz: Option<usize>,
+    /// Zero-based column index of the integer atom type.
     #[serde(default)]
     pub atom_type: Option<usize>,
 }
@@ -115,7 +123,9 @@ pub struct InsertConfig {
     pub velocity: Option<f64>,
     /// Directional velocity components (additive with random velocity).
     pub velocity_x: Option<f64>,
+    /// Directional y velocity component (m/s), additive with random velocity.
     pub velocity_y: Option<f64>,
+    /// Directional z velocity component (m/s), additive with random velocity.
     pub velocity_z: Option<f64>,
     /// Insertion region. Defaults to domain bounds (inset by particle radius).
     #[serde(default)]
@@ -162,6 +172,7 @@ pub struct InsertConfig {
 #[derive(Deserialize, Clone, Default)]
 #[serde(deny_unknown_fields)]
 pub struct ParticlesConfig {
+    /// The ordered list of `[[particles.insert]]` blocks to process.
     pub insert: Option<Vec<InsertConfig>>,
 }
 
@@ -169,13 +180,17 @@ pub struct ParticlesConfig {
 
 /// Tracks a single rate-based insertion configuration and its progress.
 pub struct RateInsertEntry {
+    /// The originating insertion configuration for this rate stream.
     pub config: InsertConfig,
+    /// Resolved material-table index for the inserted particles.
     pub mat_idx: u32,
+    /// Running count of particles inserted so far by this entry.
     pub total_inserted: u32,
 }
 
 /// Resource holding all active rate-based insertion entries.
 pub struct RateInsertState {
+    /// One entry per rate-based `[[particles.insert]]` block still active.
     pub entries: Vec<RateInsertEntry>,
 }
 
