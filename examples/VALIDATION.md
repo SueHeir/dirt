@@ -176,6 +176,35 @@ measures that constant. It validates the sweep/linearity wiring, not emergent co
 mechanics (no Maugis contact-area law, hysteretic neck, or adhesive stiffness); the
 flat plateau is that simplification made visible.
 
+## `bench_dmt_sjkr_cohesion` — DMT pull-off & SJKR cohesion (distinct from JKR)
+
+Covers the *other two* attractive branches of `dirt_granular::contact` and exercises
+adhesion-model selection. **DMT arm:** with `adhesion_model = "dmt"` the pull-off is
+measured against `F = 2πwR*` (which, unlike JKR, has no gap regime — the constant
+attraction is realized inside overlap and read at the `δ→0` limit); a JKR reference
+case confirms the DMT/JKR ratio is `4/3` (measured **1.3332**). **SJKR arm:** with
+`cohesion_energy = c` the area-proportional cohesion `F_coh(δ) = c·π·R*·δ` is isolated
+by differencing against a pure-Hertz baseline at matched overlap (both at
+`restitution = 1`, so the shared Hertz term cancels exactly), then checked for
+linearity in `δ` (slope `cπR*`) and in `c` (slope-of-slopes `πR*`).
+
+![DMT pull-off vs w](bench_dmt_sjkr_cohesion/plots/dmt_pulloff_vs_w.png)
+
+*DMT pull-off (markers) on `2πwR*` (solid); JKR `1.5πwR*` (dashed) shown for contrast —
+model selection moves the response between the two lines (ratio 4/3).*
+
+![SJKR cohesion vs overlap](bench_dmt_sjkr_cohesion/plots/sjkr_cohesion_vs_overlap.png)
+
+*Isolated SJKR cohesion (Hertz − SJKR difference, markers) linear in overlap on the
+`c·π·R*·δ` area-law line (solid) for every `c`.*
+
+**Honest read:** like `jkr_adhesion`, the magnitudes match **by construction** — DMT's
+constant `2πwR*` and SJKR's `cπR*δ` are exact closed forms and the test recovers them.
+What this benchmark adds beyond `jkr_adhesion` is coverage of the DMT and SJKR code
+paths and a concrete, non-trivial **model-selection** check (the `4/3` ratio and the
+qualitatively different area-law, which unlike JKR/DMT vanishes at separation). It does
+not validate emergent contact-area mechanics (no Maugis neck or adhesive stiffness).
+
 ## `bench_fiber_crossover` — friction at a bonded-fiber crossover
 
 Two perpendicular bonded-sphere fibers cross at one contact; the upper is dragged
@@ -353,8 +382,6 @@ have their own non-`bench_` examples). The cleanest open gaps:
   benchmark applies a twisting torque.
 - **SDS rolling model** (`rolling_model = "sds"`) — `rolling_decay` tests only the
   `constant`-torque model.
-- **SJKR cohesion** (`cohesion_energy`) — no cohesive benchmark (distinct from JKR/DMT).
-- **DMT adhesion** (`adhesion_model = "dmt"`) — `jkr_adhesion` runs JKR only.
 - **Multi-material mixing** — every config uses a single material, so the per-pair
   geometric/harmonic mixing rules (`e_eff_ij`, `friction_ij`, `beta_ij`, …) are never
   exercised between two *different* materials.
@@ -377,6 +404,7 @@ will need a benchmark when re-added.)
 | sliding_friction | rigid-body slip-to-roll | analytical | PASS; (5/7)v₀ model-independent; a=μg partly self-consistent |
 | rolling_decay | own-model rate + LAMMPS | analytical (self-consistent) | PASS; rate derived from same model |
 | jkr_adhesion | JKR pull-off | analytical (self-consistent) | PASS; measures its own constant force |
+| dmt_sjkr_cohesion | DMT pull-off 2πwR* / SJKR area law cπR*δ | analytical (self-consistent) | PASS; adds DMT+SJKR paths & 4/3 model-selection check |
 | fiber_crossover | Coulomb limit μN | analytical (self-consistent) | PASS; ratio circular vs measured N |
 | sphere/clump/rod haff | Haff law + LAMMPS | law (cross-code) | PASS; −2 not reached; tc unvalidated; clump cross-check calibrated |
 | angle_of_repose | empirical (none exact) | qualitative | PASS; trends only; frozen-bed |
