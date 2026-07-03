@@ -16,9 +16,13 @@ isn't reached.
 law / qualitative* — only a functional form, scaling exponent, or trend, sometimes
 against a correlation with fitted constants.
 
-There is **no direct comparison to experimental data** in this suite; references are
-analytical, empirical correlations, the experimentally-established Maw curve (as a
-theory curve), or LAMMPS.
+References are mostly analytical, empirical correlations, the experimentally-
+established Maw curve (as a theory curve), or LAMMPS. The closest tie to a physical
+experiment is `bench_kharaz_oblique`, which replicates Kharaz et al.'s (2001)
+elastic-rebound protocol and anchors to their **measured** eₙ = 0.98 and μ = 0.092;
+its curve-level check is still against the rigid-body/Maw theory those experimental
+points confirmed, because the paper's per-point scatter lives only in paywalled
+figures.
 
 **These benchmarks catch real bugs.** The oblique-impact validation alone drove two
 contact-model fixes — a tangential damping-sign error that was injecting energy, and
@@ -104,6 +108,31 @@ full regime, not just the gross-sliding limit — the strongest tangential test 
 suite. Still no direct comparison to raw experimental points (it matches the Maw
 *theory* curve), and the projectile is aimed dead-centre so the impact normal is
 exact.
+
+## `bench_kharaz_oblique` — replicate Kharaz, Gorham & Salman (2001)
+
+Reproduces Kharaz et al.'s (2001) elastic-rebound *experimental protocol* — a 5 mm
+alumina sphere on a **flat glass anvil** (a real `dirt_wall` z-plane) at fixed impact
+speed Vᵢ = 3.85 m/s, sweeping the incidence angle — and plots the paper's
+rebound/spin curves: rebound angle, tangential restitution eₜ = v_t′/v_t, and
+non-dimensional rebound spin Rω′/Vᵢ vs incidence angle.
+
+![Kharaz rebound/spin curves](bench_kharaz_oblique/plots/kharaz_rebound_spin.png)
+
+*Normal restitution is flat at eₙ = 0.980 across the whole 5°–80° sweep (matching
+Kharaz's measured 0.98). In the sliding regime (Θᵢ ≳ 32.5°) the rebound angle,
+tangential restitution and spin match the exact rigid-body impulse kinematics to
+three decimals; below it DIRT traces the Maw micro-slip S-curve (eₜ minimum ≈ 0.62
+near 20°, spin peak ≈ 0.39 near 30°) — the characteristic Kharaz shape.*
+
+**Honest read:** the flat wall (vs the frozen sphere used by `bench_oblique_impact`)
+keeps the contact normal +z at all angles, so eₙ is exactly angle-independent — the
+faithful Kharaz geometry. The quantitative check is against the exact rigid-body
+sliding kinematics + the Maw theory Kharaz's data confirmed, anchored to Kharaz's
+**measured** scalars eₙ = 0.98 and μ = 0.092. The paper's per-point glass-anvil
+scatter lives only in its paywalled figures (no open-access copy); if digitised, it
+drops into `kharaz_experiment.csv` and is overlaid automatically. So this is the
+suite's closest tie to a physical experiment, but still not a raw-point comparison.
 
 ## `bench_sliding_friction` — slip-to-roll transition
 
@@ -433,6 +462,7 @@ will need a benchmark when re-added.)
 |---|---|---|---|
 | hertz_rebound | Hertz + LAMMPS | analytical (strong) | PASS; damped vs elastic only; damping mapping calibrated |
 | oblique_impact | Maw 1976 + LAMMPS | analytical + cross-code (strong) | PASS; full S-curve; vs theory not raw experiment |
+| kharaz_oblique | Kharaz 2001 protocol: rigid-body kinematics + Maw, anchored to measured eₙ, μ | analytical + experiment-anchored (strong) | PASS; eₙ=0.980 flat, sliding branch exact; raw glass-anvil points paywalled |
 | sliding_friction | rigid-body slip-to-roll | analytical | PASS; (5/7)v₀ model-independent; a=μg partly self-consistent |
 | rolling_decay | own-model rate + LAMMPS | analytical (self-consistent) | PASS; rate derived from same model |
 | jkr_adhesion | JKR pull-off | analytical (self-consistent) | PASS; measures its own constant force |
