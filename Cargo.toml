@@ -193,3 +193,7 @@ libffi-sys = { version = "2.3.0", features = ["system"], optional = true }
 [[example]]
 name = "mpi_loadbalance_validate"
 path = "examples/mpi_loadbalance_validate/main.rs"
+
+[[example]]
+name = "bench_restart_determinism"
+path = "examples/bench_restart_determinism/main.rs"
