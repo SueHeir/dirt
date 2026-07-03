@@ -1,0 +1,111 @@
+# run/pour_settle.toml — granular pour & settle into an open box.
+#
+# A cloud of glass spheres is inserted (non-overlapping, gravity-driven) in the
+# upper half of a square, open-topped box and released. They fall, collide
+# inelastically, and settle into a static packed bed on the floor. This is the
+# canonical "pour/settle" DEM case — and it runs end-to-end through the SAME
+# generic `run` driver as every other config: no per-case Rust, everything below
+# is a DECLARATIVE description of the scenario. The driver owns the step loop.
+#
+#   cargo run --release --example run -- examples/run/pour_settle.toml
+#
+# Config-driven pieces exercised here:
+#   * geometry      — a box built from 5 plane walls (floor + 4 sides)
+#   * insertion     — a polydisperse particle cloud in a [[particles.insert]] region
+#   * body force    — [gravity]
+#   * plugin select  — GravityPlugin + WallPlugin activate because [gravity]/[[wall]]
+#                     sections are present; all other optional physics stays inert.
+
+[comm]
+processors_x = 1
+processors_y = 1
+processors_z = 1
+
+[domain]
+# Open-topped box: floor + 4 side walls (below). Boundaries are "fixed" so the
+# domain never wraps; the walls provide the actual container faces.
+x_low = 0.0
+x_high = 0.06
+y_low = 0.0
+y_high = 0.06
+z_low = 0.0
+z_high = 0.16
+boundary_x = "fixed"
+boundary_y = "fixed"
+boundary_z = "fixed"
+
+[neighbor]
+skin_fraction = 1.2
+bin_size = 0.011          # >= largest particle diameter (2 * 0.005 = 0.010 m)
+
+[gravity]
+gx = 0.0
+gy = 0.0
+gz = -9.81                # m/s^2 — drives the pour and settling
+
+[[dem.materials]]
+name = "glass"
+youngs_mod = 8.7e9        # Pa
+poisson_ratio = 0.3
+restitution = 0.3         # inelastic — the bed settles to rest quickly
+friction = 0.5
+
+# --- particle cloud: ~200 polydisperse glass beads in the upper box volume ---
+# They are seeded non-overlapping (insertion does overlap rejection) and then
+# fall under gravity into the box below.
+[[particles.insert]]
+material = "glass"
+count = 200
+radius = { distribution = "uniform", min = 0.0035, max = 0.0050 }
+density = 2500.0
+region = { type = "block", min = [0.006, 0.006, 0.07], max = [0.054, 0.054, 0.15] }
+seed = 7
+
+# --- container: floor + 4 side walls (an open-topped box) ---
+[[wall]]                  # floor  (z = 0, normal +z, particles above)
+point_x = 0.0
+point_y = 0.0
+point_z = 0.0
+normal_x = 0.0
+normal_y = 0.0
+normal_z = 1.0
+material = "glass"
+name = "floor"
+
+[[wall]]                  # left   (x = 0, normal +x)
+point_x = 0.0
+normal_x = 1.0
+material = "glass"
+name = "x_low"
+
+[[wall]]                  # right  (x = 0.06, normal -x)
+point_x = 0.06
+normal_x = -1.0
+material = "glass"
+name = "x_high"
+
+[[wall]]                  # front  (y = 0, normal +y)
+point_y = 0.0
+normal_y = 1.0
+material = "glass"
+name = "y_low"
+
+[[wall]]                  # back   (y = 0.06, normal -y)
+point_y = 0.06
+normal_y = -1.0
+material = "glass"
+name = "y_high"
+
+# --- standard dump output ---
+[dump]
+interval = 5000           # per-atom CSV snapshots -> dump/dump_{step}.csv
+format = "text"
+
+[vtp]
+interval = 5000           # VTP visualization frames
+
+[[run]]
+name = "pour_settle"
+dt = 5.0e-6               # s — conservative for glass at this radius
+steps = 80000             # 0.4 s — pour + settle to a static bed
+thermo = 5000

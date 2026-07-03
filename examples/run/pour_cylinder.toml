@@ -1,0 +1,112 @@
+# run/pour_cylinder.toml — bidisperse pour & settle in a cylindrical silo.
+#
+# A SECOND, distinct pour/settle scenario driven by the exact same generic `run`
+# driver — different geometry (a cylinder wall, not a box), different insertion
+# (two materials of different size and density), yet zero per-case Rust. This
+# demonstrates that geometry, insertion and plugin selection are all chosen by
+# the DECLARATIVE config, not by code.
+#
+#   cargo run --release --example run -- examples/run/pour_cylinder.toml
+#
+# Two particle populations (heavy small glass + light large polymer) are poured
+# into an upright cylindrical silo and settle into a mixed bed on the floor.
+
+[comm]
+processors_x = 1
+processors_y = 1
+processors_z = 1
+
+[domain]
+x_low = 0.0
+x_high = 0.06
+y_low = 0.0
+y_high = 0.06
+z_low = 0.0
+z_high = 0.16
+boundary_x = "fixed"
+boundary_y = "fixed"
+boundary_z = "fixed"
+
+[neighbor]
+skin_fraction = 1.2
+bin_size = 0.014          # >= largest particle diameter (2 * 0.006 = 0.012 m)
+
+[gravity]
+gx = 0.0
+gy = 0.0
+gz = -9.81
+
+[[dem.materials]]
+name = "glass"
+youngs_mod = 8.7e9
+poisson_ratio = 0.3
+restitution = 0.3
+friction = 0.5
+
+[[dem.materials]]
+name = "polymer"
+youngs_mod = 2.0e9
+poisson_ratio = 0.4
+restitution = 0.4
+friction = 0.4
+
+# Two guidelines make a multi-population pour seed cleanly (no initial overlaps):
+#   1. Each insertion region radius is kept a full max-particle-radius inside the
+#      silo wall radius (0.028) so no particle is seeded overlapping the wall.
+#   2. Overlap rejection is checked WITHIN one [[particles.insert]] block, not
+#      across blocks, so the two populations are given a clear vertical gap
+#      (0.10 -> 0.115) larger than the sum of their radii (0.004 + 0.006).
+#
+# --- population 1: small, heavy glass beads (lower charge) ---
+[[particles.insert]]
+material = "glass"
+count = 90
+radius = 0.004
+density = 2500.0
+region = { type = "cylinder", center = [0.03, 0.03], radius = 0.020, axis = "z", lo = 0.05, hi = 0.10 }
+seed = 11
+
+# --- population 2: larger, lighter polymer beads (poured on top) ---
+[[particles.insert]]
+material = "polymer"
+count = 25
+radius = 0.006
+density = 1100.0
+region = { type = "cylinder", center = [0.03, 0.03], radius = 0.019, axis = "z", lo = 0.115, hi = 0.155 }
+seed = 23
+
+# --- container: cylindrical silo wall (inside) + floor ---
+[[wall]]
+type = "cylinder"
+axis = "z"
+center = [0.03, 0.03]
+radius = 0.028
+lo = 0.0
+hi = 0.16
+inside = true             # particles live inside the cylinder
+material = "glass"
+name = "silo"
+
+[[wall]]                  # floor (z = 0, normal +z)
+point_x = 0.0
+point_y = 0.0
+point_z = 0.0
+normal_x = 0.0
+normal_y = 0.0
+normal_z = 1.0
+material = "glass"
+name = "floor"
+
+# --- standard dump output ---
+[dump]
+interval = 5000
+format = "text"
+
+[vtp]
+interval = 5000
+
+[[run]]
+name = "pour_cylinder"
+dt = 5.0e-6
+steps = 80000             # 0.4 s
+thermo = 5000
