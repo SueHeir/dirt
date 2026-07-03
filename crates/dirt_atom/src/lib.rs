@@ -73,7 +73,20 @@ use soil_core::{register_atom_data, Atom, AtomData, AtomPlugin, Config, Schedule
 
 pub const SQRT_5_6: f64 = 0.9128709291752768;
 
-// ── Exact coefficient-of-restitution damping (Hertz) ─────────────────────────
+// ── Tsuji (1992) restitution → damping mapping (Hertz) ───────────────────────
+
+/// Tsuji–Tanaka–Ishida (1992) damping coefficient α(e) for a nonlinear Hertz
+/// contact. This is the **same polynomial LAMMPS uses** for `damping tsuji`
+/// (`src/GRANULAR/gran_sub_mod_damping.cpp`, `GranSubModDampingTsuji::init`):
+///
+/// `α(e) = 1.2728 − 4.2783 e + 11.087 e² − 22.348 e³ + 27.467 e⁴ − 18.022 e⁵ + 4.8218 e⁶`
+///
+/// where `e` is the restitution input (the third `hertz/material` argument in
+/// LAMMPS). α(e) is the damping prefactor in `F_damp = α(e)·√(mₑ Fₙ/δ)·vₙ`.
+fn tsuji_alpha(e: f64) -> f64 {
+    1.2728 - 4.2783 * e + 11.087 * e.powi(2) - 22.348 * e.powi(3) + 27.467 * e.powi(4)
+        - 18.022 * e.powi(5) + 4.8218 * e.powi(6)
+}
 
 /// COR of a head-on Hertz collision with the damping DIRT applies
 /// (`f_diss = 2β√(5/6)√(Sₙ mᵣ) vₙ`, `Sₙ = 2E*√(R*δ)`), as a function of β.
@@ -81,6 +94,8 @@ pub const SQRT_5_6: f64 = 0.9128709291752768;
 /// Computed by integrating the dimensionless 1D collision (E*=R*=mᵣ=1, v₀=1):
 /// `δ̈ = −(4/3)δ^{3/2} − 2β√(5/6)√2 · δ^{1/4} · δ̇`. The Tsuji scaling makes this
 /// velocity-independent, so one integration fixes the β↔COR map. RK4, fixed dt.
+/// Used by the tests to verify DIRT's realized COR reproduces LAMMPS `damping tsuji`.
+#[cfg(test)]
 fn hertz_cor_of_beta(beta: f64) -> f64 {
     if beta <= 0.0 {
         return 1.0;
@@ -108,27 +123,28 @@ fn hertz_cor_of_beta(beta: f64) -> f64 {
     v.abs()
 }
 
-/// Invert [`hertz_cor_of_beta`]: the damping ratio β giving an exact restitution
-/// `e_target` for the Hertz contact (DIRT's analogue of LAMMPS `damping
-/// coeff_restitution`). COR(β) decreases monotonically from 1 (β=0), so bisect.
-/// This makes the **input restitution the realized COR**, so DIRT shear/cooling
-/// land on the same kinetic-theory / cross-code line as LAMMPS/LIGGGHTS rather
-/// than on a shifted "realized-e" line.
+/// Damping ratio β for DIRT's Hertz viscoelastic damping that **reproduces
+/// LAMMPS `damping tsuji`** for a restitution input `e_target`.
+///
+/// DIRT applies `F_damp = 2β√(5/6)·√(Sₙ mᵣ)·vₙ` with `Sₙ = 2E*√(R*δ)`, while
+/// LAMMPS `damping tsuji` applies `F_damp = α(e)·√(mₑ Fₙ/δ)·vₙ` with the same
+/// Hertz stiffness (`Fₙ/δ = (4/3)E*√R*·δ^{1/2}`). Equating the two forces
+/// (`mₑ = mᵣ` for a binary collision) gives, after the δ^{1/4} terms cancel,
+///
+/// `2β√(5/6)·√2 = α(e)·√(4/3)`  ⇒  `β = α(e)/√5`.
+///
+/// So feeding both codes the **same nominal restitution** makes them integrate
+/// an *identical* damping force and realize the same (velocity-independent) COR
+/// to integrator precision — the cross-code check in `bench_hertz_rebound`.
+/// (`e` is the Tsuji restitution parameter, LAMMPS's convention; because the
+/// Tsuji polynomial is a fit, the realized COR sits slightly above `e` below
+/// e≈0.9 in *both* codes — a shared property, not a code error.)
 pub fn hertz_beta_for_cor(e_target: f64) -> f64 {
     if e_target >= 0.9999 {
         return 0.0;
     }
     let e = e_target.clamp(1.0e-3, 0.9999);
-    let (mut lo, mut hi) = (0.0_f64, 5.0_f64); // β range; COR(5) ≈ 0
-    for _ in 0..60 {
-        let mid = 0.5 * (lo + hi);
-        if hertz_cor_of_beta(mid) > e {
-            lo = mid; // not enough damping → raise β
-        } else {
-            hi = mid;
-        }
-    }
-    0.5 * (lo + hi)
+    tsuji_alpha(e) / 5.0_f64.sqrt()
 }
 
 // ── Config structs ──────────────────────────────────────────────────────────
@@ -201,8 +217,12 @@ fn default_twisting_model() -> String {
     "constant".to_string()
 }
 
+fn default_limit_damping() -> bool {
+    true
+}
+
 /// TOML `[dem]` — top-level DEM configuration containing material definitions.
-#[derive(Deserialize, Clone, Default)]
+#[derive(Deserialize, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct DemConfig {
     /// List of material definitions, each corresponding to a `[[dem.materials]]` block.
@@ -236,6 +256,31 @@ pub struct DemConfig {
     /// their own `BodyData`, not here, so this flag does not affect them.
     #[serde(default)]
     pub track_orientation: bool,
+    /// Clamp the total normal force to be repulsive-only (≥ 0), i.e. forbid the
+    /// viscoelastic damping term from producing a net *attractive* force near the
+    /// end of a collision. Mirrors LAMMPS `pair granular … limit_damping`.
+    ///
+    /// Default `true` (DIRT's historical behavior). Set `false` to reproduce
+    /// LAMMPS's **default** viscoelastic contact (no tensile cutoff), which is
+    /// required for exact cross-code COR agreement at low restitution — below
+    /// e≈0.9 the damping impulse near separation is large enough that clamping it
+    /// away raises the realized COR by up to ~0.03. See `bench_hertz_rebound`.
+    #[serde(default = "default_limit_damping")]
+    pub limit_damping: bool,
+}
+
+impl Default for DemConfig {
+    fn default() -> Self {
+        DemConfig {
+            materials: None,
+            contact_model: default_contact_model(),
+            adhesion_model: default_adhesion_model(),
+            rolling_model: default_rolling_model(),
+            twisting_model: default_twisting_model(),
+            track_orientation: false,
+            limit_damping: default_limit_damping(),
+        }
+    }
 }
 
 // ── MaterialTable — per-material and per-pair precomputed properties ────────
@@ -283,15 +328,15 @@ pub struct DemConfig {
 ///
 /// # Restitution → damping
 ///
-/// `restitution` is stored as the **target coefficient of restitution (COR)**,
-/// not a damping ratio. In phase 2, `beta_ij[i][j]` is computed by inverting the
-/// exact head-on Hertz collision via [`hertz_beta_for_cor`] — a bisection on the
-/// monotone COR(β) curve of the head-on Hertz model. This makes the **input
-/// restitution the realized COR** of a binary collision, so DIRT's
-/// shear/cooling results land on the same kinetic-theory line as
-/// LAMMPS/LIGGGHTS (`damping coeff_restitution`) rather than on a shifted
-/// "realized-e" line. A plain damping-ratio mapping would not have that
-/// property.
+/// `restitution` is stored as the **restitution input `e`** (the same parameter
+/// LAMMPS's `hertz/material` takes), not a damping ratio. In phase 2,
+/// `beta_ij[i][j]` is derived via [`hertz_beta_for_cor`] as `β = α(e)/√5` with the
+/// Tsuji (1992) polynomial α(e), so DIRT's Hertz normal-damping force is IDENTICAL
+/// to LAMMPS `damping tsuji`. Both codes then realize the same velocity-independent
+/// COR for the same nominal `e` (validated by `bench_hertz_rebound`), keeping
+/// DIRT's shear/cooling results on the same cross-code line as LAMMPS/LIGGGHTS.
+/// Because the Tsuji polynomial is a fit, the realized COR sits slightly above the
+/// nominal `e` below e≈0.9 — a property shared with LAMMPS, not a code error.
 ///
 /// # Config-error convention
 ///
@@ -348,6 +393,10 @@ pub struct MaterialTable {
     pub twisting_model: String,
     /// Track per-sphere orientation (quaternion). Default `false`; see [`DemConfig::track_orientation`].
     pub track_orientation: bool,
+    /// Clamp total normal force to repulsive-only (≥ 0). Default `true`; see
+    /// [`DemConfig::limit_damping`]. `false` reproduces LAMMPS's default
+    /// (no tensile cutoff) for exact cross-code COR at low restitution.
+    pub limit_damping: bool,
     /// Per-material rolling spring stiffness (SDS model).
     pub rolling_stiffness: Vec<f64>,
     /// Per-material rolling damping coefficient (SDS model).
@@ -433,6 +482,7 @@ impl MaterialTable {
             rolling_model: "constant".to_string(),
             twisting_model: "constant".to_string(),
             track_orientation: false,
+            limit_damping: true,
             rolling_stiffness: Vec::new(),
             rolling_damping: Vec::new(),
             twisting_stiffness: Vec::new(),
@@ -606,17 +656,20 @@ impl MaterialTable {
                 // Geometric mean mixing for restitution
                 let e_ij = (self.restitution[i] * self.restitution[j]).sqrt();
                 let log_e = e_ij.ln();
-                // Damping coefficient β from the restitution, so the realized COR
-                // EQUALS the input e (DIRT's analogue of LAMMPS `damping
-                // coeff_restitution`). This matters because T*∝1/(1−e²) near the
-                // elastic limit, so any input-vs-realized gap throws the stress off
-                // and DIRT would land on a separate line from LAMMPS/LIGGGHTS/KT.
-                //   - Hooke (linear): β = -ln(e)/√(π²+ln²e) is exact for a
-                //     constant-stiffness spring-dashpot (velocity-independent).
-                //   - Hertz (nonlinear): the old Tsuji *polynomial* fit realized a
-                //     COR above nominal (e.g. 0.95→0.965). Replace it with a
-                //     numerically EXACT inversion of the Hertz-collision COR(β)
-                //     (`hertz_beta_for_cor`), so input e = realized COR.
+                // Damping coefficient β derived from the restitution so DIRT
+                // integrates the SAME normal-damping force as the reference DEM
+                // code (LAMMPS) for the same nominal restitution input:
+                //   - Hooke (linear): β = -ln(e)/√(π²+ln²e), exact for a
+                //     constant-stiffness spring-dashpot (matches LAMMPS
+                //     `damping coeff_restitution` for the linear contact).
+                //   - Hertz (nonlinear): β = α(e)/√5 with the Tsuji (1992)
+                //     polynomial α(e) (`hertz_beta_for_cor`), which makes DIRT's
+                //     `2β√(5/6)√(Sₙmᵣ)vₙ` damping IDENTICAL to LAMMPS
+                //     `damping tsuji` `α(e)√(mₑFₙ/δ)vₙ`. Both codes then realize
+                //     the same velocity-independent COR (bench_hertz_rebound
+                //     cross-check). A previous exact-COR-inversion mapping made
+                //     realized COR = nominal e, but that DISAGREED with LAMMPS's
+                //     Tsuji model by up to 0.067 — the bug this reconciles.
                 self.beta_ij[i][j] = if self.contact_model == "hertz" {
                     hertz_beta_for_cor(e_ij)
                 } else {
@@ -824,6 +877,7 @@ friction = 0.4
         material_table.rolling_model = dem_config.rolling_model.clone();
         material_table.twisting_model = dem_config.twisting_model.clone();
         material_table.track_orientation = dem_config.track_orientation;
+        material_table.limit_damping = dem_config.limit_damping;
 
         if let Some(ref materials) = dem_config.materials {
             for mat in materials {
@@ -873,8 +927,8 @@ mod tests {
         mt.build_pair_tables();
 
         let e = 0.95_f64;
-        // default contact_model is "hertz" → β set by the exact COR inversion, so
-        // the realized restitution of a Hertz collision equals the input e.
+        // default contact_model is "hertz" → β = α(e)/√5 (Tsuji), matching LAMMPS
+        // `damping tsuji` so the two codes integrate the same damping force.
         let expected_beta = hertz_beta_for_cor(e);
         assert!(
             (mt.beta_ij[0][0] - expected_beta).abs() < 1e-12,
@@ -882,12 +936,20 @@ mod tests {
             expected_beta,
             mt.beta_ij[0][0]
         );
-        // The defining invariant: realized COR(β) ≈ nominal e.
+        // β must equal the Tsuji polynomial over √5.
         assert!(
-            (hertz_cor_of_beta(mt.beta_ij[0][0]) - e).abs() < 2e-3,
-            "realized COR should equal input e={}, got {}",
-            e,
-            hertz_cor_of_beta(mt.beta_ij[0][0])
+            (mt.beta_ij[0][0] - tsuji_alpha(e) / 5.0_f64.sqrt()).abs() < 1e-12,
+            "beta should be α(e)/√5, got {}",
+            mt.beta_ij[0][0]
+        );
+        // The realized COR of a Hertz collision with this β reproduces LAMMPS's
+        // Tsuji restitution: it sits slightly ABOVE nominal below e≈0.9 (shared
+        // polynomial property). At e=0.95 that offset is small (~0.965).
+        let realized = hertz_cor_of_beta(mt.beta_ij[0][0]);
+        assert!(
+            (0.960..=0.970).contains(&realized),
+            "realized COR should be ~0.965 (LAMMPS Tsuji), got {}",
+            realized
         );
         assert!(
             (mt.friction_ij[0][0] - 0.4).abs() < 1e-12,
@@ -922,7 +984,7 @@ mod tests {
             mt.friction_ij[0][1]
         );
 
-        // Geometric mean mixing for restitution -> beta (hertz default → exact COR)
+        // Geometric mean mixing for restitution -> beta (hertz default → Tsuji α/√5)
         let e_mix = (0.95_f64 * 0.8).sqrt();
         let expected_beta = hertz_beta_for_cor(e_mix);
         assert!(

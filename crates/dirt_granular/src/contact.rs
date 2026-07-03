@@ -411,9 +411,15 @@ pub fn contact_force_core(
             let f_cohesion = cohesion_energy * std::f64::consts::PI * delta * r_eff;
             k_n * delta - f_diss_n - f_cohesion // can go negative (attractive)
         } else {
-            // Standard Hertz: repulsive only (clamped to ≥ 0)
+            // Standard Hertz repulsion + viscoelastic damping. With
+            // `limit_damping` (default) the total is clamped to ≥ 0 so damping
+            // can never pull particles together; with it disabled the damping may
+            // go net-attractive near separation, matching LAMMPS's default
+            // `pair granular` (no tensile cutoff) — required for exact cross-code
+            // COR at low restitution (see bench_hertz_rebound).
             let f_diss_n = 2.0 * beta * SQRT_5_6 * (s_n * m_r).sqrt() * v_n;
-            (k_n * delta - f_diss_n).max(0.0)
+            let f_total = k_n * delta - f_diss_n;
+            if material_table.limit_damping { f_total.max(0.0) } else { f_total }
         };
 
         let fn_x = f_n_mag * nx;
@@ -846,7 +852,10 @@ pub fn hooke_contact_force(
             let f_cohesion = cohesion_energy * std::f64::consts::PI * delta * r_eff;
             kn * delta - gamma_n * v_n - f_cohesion
         } else {
-            (kn * delta - gamma_n * v_n).max(0.0)
+            // See the Hertz path: `limit_damping` (default) clamps to repulsive-
+            // only; disabling it matches LAMMPS's default (no tensile cutoff).
+            let f_total = kn * delta - gamma_n * v_n;
+            if material_table.limit_damping { f_total.max(0.0) } else { f_total }
         };
 
         let fn_x = f_n_mag * nx;

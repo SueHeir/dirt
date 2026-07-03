@@ -81,8 +81,9 @@
 //! | JKR / DMT adhesion (Hertz only) | `surface_energy_ij` (γ), `adhesion_model` |
 //! | SJKR cohesion | `cohesion_energy_ij` |
 //!
-//! `restitution` is the **target COR**: `beta_ij` is derived by inverting the
-//! exact head-on Hertz collision (see [`dirt_atom::hertz_beta_for_cor`]).
+//! `restitution` is the **restitution input `e`**: `beta_ij` is derived as
+//! `β = α(e)/√5` with the Tsuji (1992) polynomial, matching LAMMPS `damping tsuji`
+//! (see [`dirt_atom::hertz_beta_for_cor`]).
 //!
 //! # Tangential / rolling / twisting history (canonical frame)
 //!

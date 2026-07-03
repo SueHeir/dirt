@@ -28,6 +28,9 @@ every = 1
 
 [dem]
 contact_model = "hertz"
+# Reproduce LAMMPS's default viscoelastic contact (no tensile cutoff) so the
+# realized COR matches LAMMPS across the restitution range. See sweep.py.
+limit_damping = false
 
 [[dem.materials]]
 name = "glass"
