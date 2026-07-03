@@ -112,6 +112,12 @@
 //! write `use dirt_core::prelude::*;` and have everything you need for a typical
 //! simulation. See the [`prelude`] module docs for the full list.
 
+// Public API documentation-completeness gate: every public item in this crate
+// must carry a doc comment. Enforced on both `cargo build` (rustc) and
+// `cargo doc` (rustdoc; e.g. `RUSTDOCFLAGS="-D missing_docs"`). Document real
+// API intent here — do not add empty doc comments just to satisfy the lint.
+#![deny(missing_docs)]
+
 // ---------------------------------------------------------------------------
 // Sub-crate re-exports
 // ---------------------------------------------------------------------------
