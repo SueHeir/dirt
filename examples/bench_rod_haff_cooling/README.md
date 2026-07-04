@@ -19,8 +19,12 @@ DIRT's contact gives a constant `e`, so the rod gas obeys this `t⁻²` law. The
 diagnostic for "is this Haff's law?" is that **1/√T is linear in t** (this holds
 across the whole decay), whereas the bare log-log slope only reaches −2
 asymptotically at `t ≫ tc`. A dilute gas cools slowly, so a finite run reaches a
-moderate `t/tc` and a slope between −1.7 and −2; the R² of the 1/√T fit is the
-robust validation.
+moderate `t/tc` and a shallower slope; the R² of the 1/√T fit is the robust
+validation. The 4-sphere rod, with its larger `tc` and slower cooling, reaches only
+`t/tc ≈ 5` — where the local slope sits at ≈ −1.59, right on the `−1.6` gate edge —
+so it **FAILs** the `−2.3 < slope < −1.6` late-time-slope check on recent harness
+runs while still passing the Haff-form R² gate (0.9999). See `examples/VALIDATION.md`
+(Tier 2) for the honest read; the gate is not loosened to force a pass.
 
 ## Setup
 
