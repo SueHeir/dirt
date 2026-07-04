@@ -476,6 +476,35 @@ transfers, the numbers don't).
 
 ---
 
+## `bench_mpi_decomposition` — MPI cross-rank correctness
+
+**Reference:** the code's own `1×1×1` (single-rank) trajectory — a
+decomposition-invariance / parallel-correctness check, not a physical one.
+
+A dense, fully-periodic, gravity-off frictional granular gas (~400 glass spheres,
+Hertz–Mindlin, restitution 0.9) is run at three decompositions of the *same* box —
+`1×1×1` (serial), `2×1×1` (2 ranks), `2×2×1` (4 ranks) — and the multi-rank runs
+are compared to the serial reference. With `[neighbor] every=1 check=false
+sort_every=0`, the only thing that differs between runs is the decomposition, so
+the pairwise / reverse-communicated ghost-force reduction order is the sole source
+of disagreement, and that is pure floating-point associativity.
+
+Asserted against `1×1×1`, sampled from the MPI-gathered `[dump]` frames:
+
+- **atom-count / identity** — every gathered frame holds exactly `N` atoms with the
+  reference tag set (migration + ghost exchange never lose or duplicate an atom);
+- **momentum conservation** — gravity off + periodic ⇒ `P = Σ mᵥ` is exact; drift
+  and cross-decomposition mismatch stay at round-off (`~1e-23` relative);
+- **energy** — `KE(t)` matches the reference at every sample (`~1e-15`);
+- **per-atom trajectory** — final velocities and minimum-image positions agree to
+  the FP-associativity floor (measured `pos ~6e-17`, `vel ~8e-14` over 4000 steps).
+
+All well under the `1e-9` gate (the FP floor `bench_restart_determinism` also uses);
+agreement is essentially machine-epsilon, so this is not a loosened band. **Status:
+PASS.** This closes the "MPI domain decomposition" gap formerly listed below.
+
+---
+
 ## What is not validated (scope summary)
 
 - **No direct experimental comparison** — references are analytical, empirical
@@ -510,9 +539,12 @@ have their own non-`bench_` examples). The cleanest open gaps:
 - **Polydispersity / unequal-radius contact** — size distributions (`RadiusSpec`) and
   the unequal-radius `R* = R₁R₂/(R₁+R₂)` are barely touched (all two-body tests use
   equal spheres or sphere-on-wall).
-- **MPI domain decomposition** — all benchmarks run `1×1×1`; cross-rank correctness
-  (ghost exchange, conservation) is untested here.
 - **`dirt_fixes` viscous drag / prescribed motion**, and **GPU-vs-CPU equivalence**.
+
+(MPI domain decomposition — previously listed here as untested — is now covered by
+`bench_mpi_decomposition`: a contact-rich `2×1×1` / `2×2×1` run reproduces the
+`1×1×1` trajectory to the FP floor with momentum, energy, and atom count conserved.
+See its section above.)
 
 (Contact heat conduction was removed from the codebase, so it is no longer a gap; it
 will need a benchmark when re-added.)
@@ -536,3 +568,4 @@ will need a benchmark when re-added.)
 | hopper_beverloo | Beverloo (empirical) | empirical correlation | PASS; exponent 1.36 vs 1.5; prefactor untested |
 | plate_sinkage | Bekker (empirical) | empirical / qualitative | PASS; form only; loose bands; softened grains |
 | convergence | finest-dt / large-N limit (+ Hertz anchor) | numerical (self-convergence) | PASS; dt & N convergence; observed order p≈2; box size untested |
+| mpi_decomposition | own 1×1×1 trajectory | parallel-correctness (decomposition-invariance) | PASS; 2×1×1 & 2×2×1 reproduce serial to FP floor (pos ~6e-17, vel ~8e-14); momentum/energy/atom-count conserved |
