@@ -107,6 +107,24 @@ Hertz contact, so the realized COR differs from the nominal input below e≈0.9;
 codes share that offset, which is why the benchmark checks cross-code agreement and
 velocity-independence rather than realized-vs-nominal.
 
+### Independent cross-check: classic `gran/hertz/history`
+
+The overlay above uses LAMMPS's *modern* `pair_style granular` (`hertz/material`).
+A second, **independent** cross-validation drives the *classic*
+`pair_style gran/hertz/history` / `fix wall/gran hertz/history` path — a separate
+LAMMPS implementation with a different damping law — for true cross-code
+provenance of the Hertz normal contact:
+
+```bash
+$BENCH_PYTHON examples/bench_hertz_rebound/xval_gran_hertz_history.py
+```
+
+It compares COR, contact time, and peak overlap against `data/sweep_results.csv`
+(run `sweep.py start` first) within stated tolerances. See
+[`XVAL_GRAN_HERTZ_HISTORY.md`](XVAL_GRAN_HERTZ_HISTORY.md) for the parameter
+mapping (`Kn = 4G/(3(1−ν)) = (4/3)E*`), the results tables, and the documented
+constant-γ_n vs Tsuji damping-law difference.
+
 ### Single case (default config)
 
 ```bash
