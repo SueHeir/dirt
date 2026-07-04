@@ -8,8 +8,8 @@
 //! cargo run --release --example bench_hertz_rebound --no-default-features -- examples/bench_hertz_rebound/config.toml
 //! ```
 
-use dirt_core::prelude::*;
 use dirt_core::dirt_atom::DemAtom;
+use dirt_core::prelude::*;
 use std::fs;
 use std::io::Write as IoWrite;
 
@@ -132,8 +132,11 @@ fn track_rebound(
         let results_file = format!("{}/data/rebound_results.csv", out_dir);
         let mut f = fs::File::create(&results_file)
             .unwrap_or_else(|e| panic!("Cannot create {}: {}", results_file, e));
-        writeln!(f, "v_impact,v_rebound,cor_measured,contact_time,max_overlap,dt,radius,density")
-            .unwrap();
+        writeln!(
+            f,
+            "v_impact,v_rebound,cor_measured,contact_time,max_overlap,dt,radius,density"
+        )
+        .unwrap();
         writeln!(
             f,
             "{:.10e},{:.10e},{:.10e},{:.10e},{:.10e},{:.10e},{:.10e},{:.10e}",
@@ -152,7 +155,10 @@ fn track_rebound(
         println!("  Impact velocity:  {:.6e} m/s", tracker.v_impact.abs());
         println!("  Rebound velocity: {:.6e} m/s", tracker.v_rebound.abs());
         println!("  COR (measured):   {:.6}", cor_measured);
-        println!("  Contact duration: {:.6e} s ({} steps)", contact_time, contact_steps);
+        println!(
+            "  Contact duration: {:.6e} s ({} steps)",
+            contact_time, contact_steps
+        );
         println!("  Peak overlap:     {:.6e} m", tracker.max_overlap);
         println!("  Timestep dt:      {:.6e} s", dt);
         println!("  Results saved to: {}", results_file);

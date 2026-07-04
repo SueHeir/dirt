@@ -29,8 +29,8 @@
 //! cargo run --release --example bench_jkr_adhesion --no-default-features -- examples/bench_jkr_adhesion/config.toml
 //! ```
 
-use dirt_core::prelude::*;
 use dirt_core::dirt_atom::DemAtom;
+use dirt_core::prelude::*;
 use std::fs;
 use std::io::Write as IoWrite;
 
@@ -103,7 +103,11 @@ fn track_pulloff(
         let mut moving = None;
         let mut frozen = None;
         for i in 0..atoms.nlocal as usize {
-            let v = [atoms.vel[i][0] as f64, atoms.vel[i][1] as f64, atoms.vel[i][2] as f64];
+            let v = [
+                atoms.vel[i][0] as f64,
+                atoms.vel[i][1] as f64,
+                atoms.vel[i][2] as f64,
+            ];
             let speed2 = v[0] * v[0] + v[1] * v[1] + v[2] * v[2];
             if speed2 > 0.0 {
                 moving = Some(atoms.tag[i]);
@@ -144,7 +148,11 @@ fn track_pulloff(
     // the contact force; project onto the line of centers. The sign convention:
     // f·n > 0 pushes the moving sphere outward (repulsion), f·n < 0 pulls it
     // back toward the frozen sphere (adhesion/tension).
-    let fvec = [atoms.force[m][0] as f64, atoms.force[m][1] as f64, atoms.force[m][2] as f64];
+    let fvec = [
+        atoms.force[m][0] as f64,
+        atoms.force[m][1] as f64,
+        atoms.force[m][2] as f64,
+    ];
     let f_n = fvec[0] * n[0] + fvec[1] * n[1] + fvec[2] * n[2];
 
     // Consider the contact "engaged" once a meaningful force is present.
@@ -180,7 +188,10 @@ fn track_pulloff(
     // captured on the approach, so the measurement is valid either way.
     // `cycle_remaining[i]` holds the stage's total step count; `cycle_count[i]`
     // counts steps done, so the last step is when count has reached total - 1.
-    let last_step = match (run_state.cycle_count.first(), run_state.cycle_remaining.first()) {
+    let last_step = match (
+        run_state.cycle_count.first(),
+        run_state.cycle_remaining.first(),
+    ) {
         (Some(&done), Some(&total)) => total > 0 && done + 1 >= total,
         _ => false,
     };
@@ -230,12 +241,7 @@ fn finish(
     writeln!(
         fh,
         "{:.10e},{:.10e},{:.10e},{:.10e},{:.10e},{:.10e}",
-        f_pulloff,
-        tracker.sep_at_pulloff,
-        r_eff,
-        r_i,
-        dem.density[m],
-        atoms.dt,
+        f_pulloff, tracker.sep_at_pulloff, r_eff, r_i, dem.density[m], atoms.dt,
     )
     .unwrap();
 

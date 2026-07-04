@@ -45,7 +45,10 @@ use grass_app::prelude::*;
 use grass_scheduler::prelude::*;
 use serde::Deserialize;
 
-use soil_core::{Accum, Atom, AtomDataRegistry, CommResource, Config, GroupRegistry, ParticleSimScheduleSet, Real, ScheduleSetupSet};
+use soil_core::{
+    Accum, Atom, AtomDataRegistry, CommResource, Config, GroupRegistry, ParticleSimScheduleSet,
+    Real, ScheduleSetupSet,
+};
 use soil_print::Thermo;
 
 // ── Config structs ─────────────────────────────────────────────────────────
@@ -388,7 +391,10 @@ impl Plugin for FixesPlugin {
             .add_setup_system(setup_fixes, ScheduleSetupSet::PostSetup);
 
         if has_move {
-            app.add_update_system(apply_move_linear_pre, ParticleSimScheduleSet::PreInitialIntegration);
+            app.add_update_system(
+                apply_move_linear_pre,
+                ParticleSimScheduleSet::PreInitialIntegration,
+            );
             app.add_update_system(apply_move_linear_post, ParticleSimScheduleSet::PostForce);
         }
         if has_add {
@@ -407,7 +413,10 @@ impl Plugin for FixesPlugin {
             app.add_update_system(apply_cundall, ParticleSimScheduleSet::PostForce);
         }
         if has_nve_limit {
-            app.add_update_system(apply_nve_limit, ParticleSimScheduleSet::PostFinalIntegration);
+            app.add_update_system(
+                apply_nve_limit,
+                ParticleSimScheduleSet::PostFinalIntegration,
+            );
         }
     }
 }
@@ -940,7 +949,10 @@ mod tests {
         app.add_resource(atoms);
         app.add_resource(groups);
         app.add_resource(registry);
-        app.add_update_system(apply_move_linear_pre, ParticleSimScheduleSet::PreInitialIntegration);
+        app.add_update_system(
+            apply_move_linear_pre,
+            ParticleSimScheduleSet::PreInitialIntegration,
+        );
         app.add_update_system(apply_move_linear_post, ParticleSimScheduleSet::PostForce);
         app.organize_systems();
         app.run();
@@ -1063,9 +1075,18 @@ mod tests {
         app.run();
 
         let a = app.get_resource_ref::<Atom>().unwrap();
-        assert!((a.force[0][0] - 4.0 * (1.0 - g)).abs() < 1e-12, "x: along motion -> (1-g)");
-        assert!((a.force[0][1] - 5.0 * (1.0 + g)).abs() < 1e-12, "y: opposing -> (1+g)");
-        assert!((a.force[0][2] - (-6.0) * (1.0 - g)).abs() < 1e-12, "z: along motion -> (1-g)");
+        assert!(
+            (a.force[0][0] - 4.0 * (1.0 - g)).abs() < 1e-12,
+            "x: along motion -> (1-g)"
+        );
+        assert!(
+            (a.force[0][1] - 5.0 * (1.0 + g)).abs() < 1e-12,
+            "y: opposing -> (1+g)"
+        );
+        assert!(
+            (a.force[0][2] - (-6.0) * (1.0 - g)).abs() < 1e-12,
+            "z: along motion -> (1-g)"
+        );
     }
 
     /// Non-viscous damping always dissipates: the post-damping power
@@ -1076,7 +1097,9 @@ mod tests {
         let mut atoms = make_atoms(1);
         atoms.vel[0] = [1.5, -0.7, 2.0];
         atoms.force[0] = [3.0, 4.0, -1.0];
-        let p_before: f64 = (0..3).map(|k| atoms.force[0][k] as f64 * atoms.vel[0][k] as f64).sum();
+        let p_before: f64 = (0..3)
+            .map(|k| atoms.force[0][k] as f64 * atoms.vel[0][k] as f64)
+            .sum();
 
         let groups = make_group_registry("all", vec![true]);
         let mut app = App::new();
@@ -1089,11 +1112,16 @@ mod tests {
         app.run();
 
         let a = app.get_resource_ref::<Atom>().unwrap();
-        let p_after: f64 = (0..3).map(|k| a.force[0][k] as f64 * a.vel[0][k] as f64).sum();
+        let p_after: f64 = (0..3)
+            .map(|k| a.force[0][k] as f64 * a.vel[0][k] as f64)
+            .sum();
         // Every component's contribution to power is reduced (|F*v| along motion
         // shrinks, against motion the force flips further negative-power), so the
         // total mechanical power strictly drops for a nonzero gamma.
-        assert!(p_after < p_before, "power must decrease: {p_after} !< {p_before}");
+        assert!(
+            p_after < p_before,
+            "power must decrease: {p_after} !< {p_before}"
+        );
     }
 
     /// The angular torque is scaled per-component by `1 - gamma_a*sign(T*omega)`,
@@ -1131,13 +1159,27 @@ mod tests {
         app.organize_systems();
         app.run();
 
-        let reg = app.get_resource_ref::<soil_core::AtomDataRegistry>().unwrap();
+        let reg = app
+            .get_resource_ref::<soil_core::AtomDataRegistry>()
+            .unwrap();
         let dem = reg.get::<dirt_atom::DemAtom>().unwrap();
-        assert!((dem.torque[0][0] - 2.0 * (1.0 - ga)).abs() < 1e-12, "Tx along spin -> (1-ga)");
-        assert!((dem.torque[0][1] - 3.0 * (1.0 + ga)).abs() < 1e-12, "Ty opposing -> (1+ga)");
-        assert!((dem.torque[0][2] - (-4.0) * (1.0 - ga)).abs() < 1e-12, "Tz along spin -> (1-ga)");
+        assert!(
+            (dem.torque[0][0] - 2.0 * (1.0 - ga)).abs() < 1e-12,
+            "Tx along spin -> (1-ga)"
+        );
+        assert!(
+            (dem.torque[0][1] - 3.0 * (1.0 + ga)).abs() < 1e-12,
+            "Ty opposing -> (1+ga)"
+        );
+        assert!(
+            (dem.torque[0][2] - (-4.0) * (1.0 - ga)).abs() < 1e-12,
+            "Tz along spin -> (1-ga)"
+        );
         let a = app.get_resource_ref::<Atom>().unwrap();
-        assert!((a.force[0][0] - 5.0 * (1.0 - gl)).abs() < 1e-12, "linear damped by gamma_l");
+        assert!(
+            (a.force[0][0] - 5.0 * (1.0 - gl)).abs() < 1e-12,
+            "linear damped by gamma_l"
+        );
     }
 
     // ── Gravity tests ──────────────────────────────────────────────────────
@@ -1234,7 +1276,10 @@ mod tests {
         app.add_resource(atoms);
         app.add_resource(groups);
         app.add_resource(registry);
-        app.add_update_system(apply_nve_limit, ParticleSimScheduleSet::PostFinalIntegration);
+        app.add_update_system(
+            apply_nve_limit,
+            ParticleSimScheduleSet::PostFinalIntegration,
+        );
         app.organize_systems();
         app.run();
 
@@ -1264,7 +1309,10 @@ mod tests {
         app.add_resource(atoms);
         app.add_resource(groups);
         app.add_resource(registry);
-        app.add_update_system(apply_nve_limit, ParticleSimScheduleSet::PostFinalIntegration);
+        app.add_update_system(
+            apply_nve_limit,
+            ParticleSimScheduleSet::PostFinalIntegration,
+        );
         app.organize_systems();
         app.run();
 
@@ -1288,16 +1336,29 @@ mod tests {
         app.add_resource(atoms);
         app.add_resource(groups);
         app.add_resource(registry);
-        app.add_update_system(apply_nve_limit, ParticleSimScheduleSet::PostFinalIntegration);
+        app.add_update_system(
+            apply_nve_limit,
+            ParticleSimScheduleSet::PostFinalIntegration,
+        );
         app.organize_systems();
         app.run();
 
         let a = app.get_resource_ref::<Atom>().unwrap();
         // Direction should be (3/5, 4/5, 0) = (0.6, 0.8, 0)
         let vmag = (a.vel[0][0].powi(2) + a.vel[0][1].powi(2) + a.vel[0][2].powi(2)).sqrt();
-        assert!((vmag - 1.0).abs() < 1e-12, "vmag should be 1.0, got {}", vmag);
-        assert!((a.vel[0][0] / vmag - 0.6).abs() < 1e-12, "direction x preserved");
-        assert!((a.vel[0][1] / vmag - 0.8).abs() < 1e-12, "direction y preserved");
+        assert!(
+            (vmag - 1.0).abs() < 1e-12,
+            "vmag should be 1.0, got {}",
+            vmag
+        );
+        assert!(
+            (a.vel[0][0] / vmag - 0.6).abs() < 1e-12,
+            "direction x preserved"
+        );
+        assert!(
+            (a.vel[0][1] / vmag - 0.8).abs() < 1e-12,
+            "direction y preserved"
+        );
     }
 
     #[test]
@@ -1313,7 +1374,10 @@ mod tests {
         app.add_resource(atoms);
         app.add_resource(groups);
         app.add_resource(registry);
-        app.add_update_system(apply_nve_limit, ParticleSimScheduleSet::PostFinalIntegration);
+        app.add_update_system(
+            apply_nve_limit,
+            ParticleSimScheduleSet::PostFinalIntegration,
+        );
         app.organize_systems();
         app.run();
 
@@ -1337,14 +1401,23 @@ mod tests {
         app.add_resource(atoms);
         app.add_resource(groups);
         app.add_resource(registry);
-        app.add_update_system(apply_nve_limit, ParticleSimScheduleSet::PostFinalIntegration);
+        app.add_update_system(
+            apply_nve_limit,
+            ParticleSimScheduleSet::PostFinalIntegration,
+        );
         app.organize_systems();
         app.run();
 
         let a = app.get_resource_ref::<Atom>().unwrap();
         // Atom 0: capped to 0.01 / 0.001 = 10.0
-        assert!((a.vel[0][0] - 10.0).abs() < 1e-12, "atom 0 should be capped");
+        assert!(
+            (a.vel[0][0] - 10.0).abs() < 1e-12,
+            "atom 0 should be capped"
+        );
         // Atom 1: unchanged at 100.0
-        assert!((a.vel[1][0] - 100.0).abs() < 1e-12, "atom 1 should be unchanged");
+        assert!(
+            (a.vel[1][0] - 100.0).abs() < 1e-12,
+            "atom 1 should be unchanged"
+        );
     }
 }

@@ -26,8 +26,8 @@ use std::fs;
 use std::io::Write as IoWrite;
 use std::sync::Once;
 
-use dirt_core::prelude::*;
 use dirt_core::dirt_atom::DemAtom;
+use dirt_core::prelude::*;
 
 const NBINS: usize = 40;
 
@@ -66,9 +66,8 @@ fn record_profile(
     let bin_vol = domain.size[0] * domain.size[2] * dy;
     let dem = registry.get::<DemAtom>();
 
-    let bin_of = |y: f64| -> usize {
-        (((y - ylo) / dy).floor() as i64).clamp(0, NBINS as i64 - 1) as usize
-    };
+    let bin_of =
+        |y: f64| -> usize { (((y - ylo) / dy).floor() as i64).clamp(0, NBINS as i64 - 1) as usize };
 
     // Pass 1: per-bin mass, momentum, solid volume.
     let mut m_sum = [0.0f64; NBINS];
@@ -95,7 +94,11 @@ fn record_profile(
         if m_sum[b] <= 0.0 {
             continue;
         }
-        let vbar = [mv[b][0] / m_sum[b], mv[b][1] / m_sum[b], mv[b][2] / m_sum[b]];
+        let vbar = [
+            mv[b][0] / m_sum[b],
+            mv[b][1] / m_sum[b],
+            mv[b][2] / m_sum[b],
+        ];
         let m = atoms.mass[i];
         let vp = [
             atoms.vel[i][0] - vbar[0],
@@ -123,10 +126,9 @@ fn record_profile(
     }
 
     let time = step as f64 * atoms.dt;
-    let out_dir = input
-        .output_dir
-        .clone()
-        .unwrap_or_else(|| "examples/SPH_glass_sphere_calibration/06_conductivity/data".to_string());
+    let out_dir = input.output_dir.clone().unwrap_or_else(|| {
+        "examples/SPH_glass_sphere_calibration/06_conductivity/data".to_string()
+    });
     let path = format!("{}/conductivity_profiles.csv", out_dir);
     static INIT: Once = Once::new();
     INIT.call_once(|| {
@@ -134,12 +136,24 @@ fn record_profile(
         let mut f = fs::File::create(&path).expect("cannot create conductivity_profiles.csv");
         writeln!(f, "step,time,y,phi,T,qy").unwrap();
     });
-    let mut f = fs::OpenOptions::new().append(true).open(&path).expect("cannot open profiles csv");
+    let mut f = fs::OpenOptions::new()
+        .append(true)
+        .open(&path)
+        .expect("cannot open profiles csv");
     for b in 0..NBINS {
         let yc = ylo + (b as f64 + 0.5) * dy;
         let phi = vol_solid[b] / bin_vol;
-        let t = if m_sum[b] > 0.0 { ke[b] / (3.0 * m_sum[b]) } else { 0.0 };
+        let t = if m_sum[b] > 0.0 {
+            ke[b] / (3.0 * m_sum[b])
+        } else {
+            0.0
+        };
         let qy_density = qy[b] / bin_vol;
-        writeln!(f, "{},{:.8e},{:.8e},{:.8e},{:.8e},{:.8e}", step, time, yc, phi, t, qy_density).unwrap();
+        writeln!(
+            f,
+            "{},{:.8e},{:.8e},{:.8e},{:.8e},{:.8e}",
+            step, time, yc, phi, t, qy_density
+        )
+        .unwrap();
     }
 }

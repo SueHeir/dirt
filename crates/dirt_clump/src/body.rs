@@ -103,7 +103,11 @@ impl MultisphereBodyStore {
         let id = id as usize;
         if id < self.map.len() {
             let idx = self.map[id];
-            if idx != usize::MAX { Some(idx) } else { None }
+            if idx != usize::MAX {
+                Some(idx)
+            } else {
+                None
+            }
         } else {
             None
         }
@@ -203,9 +207,21 @@ pub fn angmom_to_omega(
     let lpz = ez[0] * angmom[0] + ez[1] * angmom[1] + ez[2] * angmom[2];
 
     // omega_principal = L_principal / I (guard against zero inertia)
-    let wpx = if moments[0] > 1e-30 { lpx / moments[0] } else { 0.0 };
-    let wpy = if moments[1] > 1e-30 { lpy / moments[1] } else { 0.0 };
-    let wpz = if moments[2] > 1e-30 { lpz / moments[2] } else { 0.0 };
+    let wpx = if moments[0] > 1e-30 {
+        lpx / moments[0]
+    } else {
+        0.0
+    };
+    let wpy = if moments[1] > 1e-30 {
+        lpy / moments[1]
+    } else {
+        0.0
+    };
+    let wpz = if moments[2] > 1e-30 {
+        lpz / moments[2]
+    } else {
+        0.0
+    };
 
     // Rotate back to space frame: omega = R * omega_principal
     [
@@ -223,9 +239,9 @@ pub fn angmom_to_omega(
 fn vecquat(w: [f64; 3], q: [f64; 4]) -> [f64; 4] {
     [
         -w[0] * q[1] - w[1] * q[2] - w[2] * q[3],
-         q[0] * w[0] + w[1] * q[3] - w[2] * q[2],
-         q[0] * w[1] + w[2] * q[1] - w[0] * q[3],
-         q[0] * w[2] + w[0] * q[2] - w[1] * q[1],
+        q[0] * w[0] + w[1] * q[3] - w[2] * q[2],
+        q[0] * w[1] + w[2] * q[1] - w[0] * q[3],
+        q[0] * w[2] + w[0] * q[2] - w[1] * q[1],
     ]
 }
 
@@ -842,8 +858,8 @@ mod tests {
 
         // Compare diagonal elements (within MC noise ~5%)
         for d in 0..3 {
-            let rel_err = (tensor_a[d][d] - tensor_mc[d][d]).abs()
-                / tensor_a[d][d].abs().max(1e-30);
+            let rel_err =
+                (tensor_a[d][d] - tensor_mc[d][d]).abs() / tensor_a[d][d].abs().max(1e-30);
             assert!(
                 rel_err < 0.10,
                 "I[{}][{}]: analytical={}, MC={}, rel_err={}",
@@ -981,15 +997,27 @@ mod tests {
     fn has_overlap_detection() {
         // Non-overlapping
         let spheres_no = vec![
-            ClumpSphereConfig { offset: [-2.0, 0.0, 0.0], radius: 0.5 },
-            ClumpSphereConfig { offset: [2.0, 0.0, 0.0], radius: 0.5 },
+            ClumpSphereConfig {
+                offset: [-2.0, 0.0, 0.0],
+                radius: 0.5,
+            },
+            ClumpSphereConfig {
+                offset: [2.0, 0.0, 0.0],
+                radius: 0.5,
+            },
         ];
         assert!(!has_overlap(&spheres_no));
 
         // Overlapping
         let spheres_yes = vec![
-            ClumpSphereConfig { offset: [-0.3, 0.0, 0.0], radius: 1.0 },
-            ClumpSphereConfig { offset: [0.3, 0.0, 0.0], radius: 1.0 },
+            ClumpSphereConfig {
+                offset: [-0.3, 0.0, 0.0],
+                radius: 1.0,
+            },
+            ClumpSphereConfig {
+                offset: [0.3, 0.0, 0.0],
+                radius: 1.0,
+            },
         ];
         assert!(has_overlap(&spheres_yes));
     }

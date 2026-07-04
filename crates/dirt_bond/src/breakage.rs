@@ -67,10 +67,14 @@ use serde::Deserialize;
 /// for four numbers but matches the rest of the crate's RNG conventions and
 /// is fast at this point in the run (bond creation only).
 pub fn per_bond_uniform_samples(tag_a: u32, tag_b: u32, seed: u64) -> [f64; 4] {
-    use rand::{Rng, SeedableRng};
     use rand::rngs::SmallRng;
+    use rand::{Rng, SeedableRng};
 
-    let (lo, hi) = if tag_a <= tag_b { (tag_a, tag_b) } else { (tag_b, tag_a) };
+    let (lo, hi) = if tag_a <= tag_b {
+        (tag_a, tag_b)
+    } else {
+        (tag_b, tag_a)
+    };
     // Mix seed, lo, hi into a unique 64-bit bond seed via two SplitMix64 rounds.
     // The bit-mixing is good enough that adjacent tag pairs land in
     // uncorrelated parts of the [0,1) domain, which is what the Weibull
@@ -233,14 +237,24 @@ impl ThresholdDistribution {
     pub fn sample(&self, l_bond: f64, u: f64) -> f64 {
         match *self {
             Self::Constant { value } => value,
-            Self::Weibull { mean, m, l_calib, l_min } => {
+            Self::Weibull {
+                mean,
+                m,
+                l_calib,
+                l_min,
+            } => {
                 let l_eff = l_bond.max(l_min).max(f64::MIN_POSITIVE);
                 let size_factor = (l_calib / l_eff).powf(1.0 / m);
                 let u_clamped = u.clamp(1e-15, 1.0 - 1e-15);
                 let scale = mean / gamma_lanczos(1.0 + 1.0 / m);
                 scale * size_factor * (-((1.0 - u_clamped).ln())).powf(1.0 / m)
             }
-            Self::CrackBand { value_ref, l_ref, eps_yield, l_min } => {
+            Self::CrackBand {
+                value_ref,
+                l_ref,
+                eps_yield,
+                l_min,
+            } => {
                 let l_eff = l_bond.max(l_min).max(f64::MIN_POSITIVE);
                 eps_yield + (value_ref - eps_yield) * (l_ref / l_eff)
             }
@@ -275,9 +289,21 @@ pub trait BreakageCriterion: Send + Sync + std::fmt::Debug {
 pub struct Unbreakable;
 
 impl BreakageCriterion for Unbreakable {
-    fn num_thresholds(&self) -> usize { 0 }
-    fn sample(&self, _: f64, _: [f64; 4]) -> BondThresholds { BondThresholds::default() }
-    fn check(&self, _: &BondGeom, _: &BondLoads, _: &BondKinematics, _: &BondThresholds) -> Option<BreakMode> { None }
+    fn num_thresholds(&self) -> usize {
+        0
+    }
+    fn sample(&self, _: f64, _: [f64; 4]) -> BondThresholds {
+        BondThresholds::default()
+    }
+    fn check(
+        &self,
+        _: &BondGeom,
+        _: &BondLoads,
+        _: &BondKinematics,
+        _: &BondThresholds,
+    ) -> Option<BreakMode> {
+        None
+    }
 }
 
 // Helper macro: implement the two-branch criteria (Axial*, Combined*) where
@@ -285,14 +311,18 @@ impl BreakageCriterion for Unbreakable {
 macro_rules! impl_two_branch {
     ($name:ident, $tensile_expr:expr, $shear_expr:expr) => {
         impl BreakageCriterion for $name {
-            fn num_thresholds(&self) -> usize { 2 }
+            fn num_thresholds(&self) -> usize {
+                2
+            }
             fn sample(&self, l_bond: f64, u: [f64; 4]) -> BondThresholds {
                 let t0 = self.tensile.sample(l_bond, u[0]);
                 let t1 = match &self.shear {
                     Some(d) => d.sample(l_bond, u[1]),
                     None => f64::INFINITY,
                 };
-                BondThresholds { t: [t0, t1, 0.0, 0.0] }
+                BondThresholds {
+                    t: [t0, t1, 0.0, 0.0],
+                }
             }
             fn check(
                 &self,
@@ -302,9 +332,13 @@ macro_rules! impl_two_branch {
                 thr: &BondThresholds,
             ) -> Option<BreakMode> {
                 let tensile_val: f64 = $tensile_expr(geom, loads, kin);
-                if tensile_val > thr.t[0] { return Some(BreakMode::Tensile); }
+                if tensile_val > thr.t[0] {
+                    return Some(BreakMode::Tensile);
+                }
                 let shear_val: f64 = $shear_expr(geom, loads, kin);
-                if shear_val > thr.t[1] { return Some(BreakMode::Shear); }
+                if shear_val > thr.t[1] {
+                    return Some(BreakMode::Shear);
+                }
                 None
             }
         }
@@ -337,10 +371,16 @@ pub struct AxialStress {
 }
 impl_two_branch!(
     AxialStress,
-    |g: &BondGeom, l: &BondLoads, _k: &BondKinematics|
-        if g.area > 0.0 { l.f_n.max(0.0) / g.area } else { 0.0 },
-    |g: &BondGeom, l: &BondLoads, _k: &BondKinematics|
-        if g.area > 0.0 { l.f_t_mag / g.area } else { 0.0 }
+    |g: &BondGeom, l: &BondLoads, _k: &BondKinematics| if g.area > 0.0 {
+        l.f_n.max(0.0) / g.area
+    } else {
+        0.0
+    },
+    |g: &BondGeom, l: &BondLoads, _k: &BondKinematics| if g.area > 0.0 {
+        l.f_t_mag / g.area
+    } else {
+        0.0
+    }
 );
 
 /// Tensile/shear failure based on kinematic strain only — no moment / curvature.
@@ -374,13 +414,29 @@ pub struct CombinedStress {
 impl_two_branch!(
     CombinedStress,
     |g: &BondGeom, l: &BondLoads, _k: &BondKinematics| {
-        let axial = if g.area > 0.0 { l.f_n.max(0.0) / g.area } else { 0.0 };
-        let bend  = if g.iben > 0.0 { g.r_b * l.m_bend_mag / g.iben } else { 0.0 };
+        let axial = if g.area > 0.0 {
+            l.f_n.max(0.0) / g.area
+        } else {
+            0.0
+        };
+        let bend = if g.iben > 0.0 {
+            g.r_b * l.m_bend_mag / g.iben
+        } else {
+            0.0
+        };
         axial + bend
     },
     |g: &BondGeom, l: &BondLoads, _k: &BondKinematics| {
-        let shear = if g.area > 0.0 { l.f_t_mag / g.area } else { 0.0 };
-        let tor   = if g.jpol > 0.0 { g.r_b * l.m_tor_mag / g.jpol } else { 0.0 };
+        let shear = if g.area > 0.0 {
+            l.f_t_mag / g.area
+        } else {
+            0.0
+        };
+        let tor = if g.jpol > 0.0 {
+            g.r_b * l.m_tor_mag / g.jpol
+        } else {
+            0.0
+        };
         shear + tor
     }
 );
@@ -399,10 +455,8 @@ pub struct CombinedStrain {
 }
 impl_two_branch!(
     CombinedStrain,
-    |g: &BondGeom, _l: &BondLoads, k: &BondKinematics|
-        k.eps_axial.max(0.0) + g.r_b * k.kappa_bend,
-    |g: &BondGeom, _l: &BondLoads, k: &BondKinematics|
-        k.gamma_shear + g.r_b * k.kappa_tor
+    |g: &BondGeom, _l: &BondLoads, k: &BondKinematics| k.eps_axial.max(0.0) + g.r_b * k.kappa_bend,
+    |g: &BondGeom, _l: &BondLoads, k: &BondKinematics| k.gamma_shear + g.r_b * k.kappa_tor
 );
 
 // ── InteractionLinear family ────────────────────────────────────────────────
@@ -420,13 +474,13 @@ impl_two_branch!(
 #[derive(Clone, Debug)]
 pub struct InteractionLinearForce {
     /// Axial-force-threshold distribution (N).
-    pub axial:   Option<ThresholdDistribution>,
+    pub axial: Option<ThresholdDistribution>,
     /// Shear-force-threshold distribution (N).
-    pub shear:   Option<ThresholdDistribution>,
+    pub shear: Option<ThresholdDistribution>,
     /// Bending-moment-threshold distribution (N·m).
     pub bending: Option<ThresholdDistribution>,
     /// Twist-moment-threshold distribution (N·m).
-    pub twist:   Option<ThresholdDistribution>,
+    pub twist: Option<ThresholdDistribution>,
 }
 
 /// Linear damage-accumulation criterion in stress space. Channels are
@@ -436,13 +490,13 @@ pub struct InteractionLinearForce {
 #[derive(Clone, Debug)]
 pub struct InteractionLinearStress {
     /// Axial-stress-threshold distribution (Pa).
-    pub axial:   Option<ThresholdDistribution>,
+    pub axial: Option<ThresholdDistribution>,
     /// Shear-stress-threshold distribution (Pa).
-    pub shear:   Option<ThresholdDistribution>,
+    pub shear: Option<ThresholdDistribution>,
     /// Bending-stress-threshold distribution (Pa).
     pub bending: Option<ThresholdDistribution>,
     /// Torsion-stress-threshold distribution (Pa).
-    pub twist:   Option<ThresholdDistribution>,
+    pub twist: Option<ThresholdDistribution>,
 }
 
 /// Linear damage-accumulation criterion in strain space. Channels are
@@ -452,13 +506,13 @@ pub struct InteractionLinearStress {
 #[derive(Clone, Debug)]
 pub struct InteractionLinearStrain {
     /// Axial-strain-threshold distribution (dimensionless).
-    pub axial:   Option<ThresholdDistribution>,
+    pub axial: Option<ThresholdDistribution>,
     /// Shear-strain-threshold distribution (dimensionless).
-    pub shear:   Option<ThresholdDistribution>,
+    pub shear: Option<ThresholdDistribution>,
     /// Bending-strain-threshold distribution (dimensionless).
     pub bending: Option<ThresholdDistribution>,
     /// Twist-strain-threshold distribution (dimensionless).
-    pub twist:   Option<ThresholdDistribution>,
+    pub twist: Option<ThresholdDistribution>,
 }
 
 // Helper macro: share the sampling and check logic across the three
@@ -467,16 +521,23 @@ pub struct InteractionLinearStrain {
 macro_rules! impl_interaction_linear {
     ($name:ident, $axial:expr, $shear:expr, $bending:expr, $twist:expr) => {
         impl BreakageCriterion for $name {
-            fn num_thresholds(&self) -> usize { 4 }
+            fn num_thresholds(&self) -> usize {
+                4
+            }
             fn sample(&self, l_bond: f64, u: [f64; 4]) -> BondThresholds {
-                let s = |d: &Option<ThresholdDistribution>, ui: f64|
-                    d.as_ref().map(|x| x.sample(l_bond, ui)).unwrap_or(f64::INFINITY);
-                BondThresholds { t: [
-                    s(&self.axial,   u[0]),
-                    s(&self.shear,   u[1]),
-                    s(&self.bending, u[2]),
-                    s(&self.twist,   u[3]),
-                ] }
+                let s = |d: &Option<ThresholdDistribution>, ui: f64| {
+                    d.as_ref()
+                        .map(|x| x.sample(l_bond, ui))
+                        .unwrap_or(f64::INFINITY)
+                };
+                BondThresholds {
+                    t: [
+                        s(&self.axial, u[0]),
+                        s(&self.shear, u[1]),
+                        s(&self.bending, u[2]),
+                        s(&self.twist, u[3]),
+                    ],
+                }
             }
             fn check(
                 &self,
@@ -486,17 +547,21 @@ macro_rules! impl_interaction_linear {
                 thr: &BondThresholds,
             ) -> Option<BreakMode> {
                 let mut sum = 0.0;
-                let v_axial:   f64 = $axial(geom, loads, kin);
-                let v_shear:   f64 = $shear(geom, loads, kin);
+                let v_axial: f64 = $axial(geom, loads, kin);
+                let v_shear: f64 = $shear(geom, loads, kin);
                 let v_bending: f64 = $bending(geom, loads, kin);
-                let v_twist:   f64 = $twist(geom, loads, kin);
+                let v_twist: f64 = $twist(geom, loads, kin);
                 // Channels with infinite thresholds (i.e. `None` in config) drop
                 // out cleanly since x/∞ = 0.
-                sum += v_axial   / thr.t[0];
-                sum += v_shear   / thr.t[1];
+                sum += v_axial / thr.t[0];
+                sum += v_shear / thr.t[1];
                 sum += v_bending / thr.t[2];
-                sum += v_twist   / thr.t[3];
-                if sum >= 1.0 { Some(BreakMode::Interaction) } else { None }
+                sum += v_twist / thr.t[3];
+                if sum >= 1.0 {
+                    Some(BreakMode::Interaction)
+                } else {
+                    None
+                }
             }
         }
     };
@@ -512,14 +577,26 @@ impl_interaction_linear!(
 
 impl_interaction_linear!(
     InteractionLinearStress,
-    |g: &BondGeom, l: &BondLoads, _k: &BondKinematics|
-        if g.area > 0.0 { l.f_n.max(0.0) / g.area } else { 0.0 },
-    |g: &BondGeom, l: &BondLoads, _k: &BondKinematics|
-        if g.area > 0.0 { l.f_t_mag / g.area } else { 0.0 },
-    |g: &BondGeom, l: &BondLoads, _k: &BondKinematics|
-        if g.iben > 0.0 { g.r_b * l.m_bend_mag / g.iben } else { 0.0 },
-    |g: &BondGeom, l: &BondLoads, _k: &BondKinematics|
-        if g.jpol > 0.0 { g.r_b * l.m_tor_mag / g.jpol } else { 0.0 }
+    |g: &BondGeom, l: &BondLoads, _k: &BondKinematics| if g.area > 0.0 {
+        l.f_n.max(0.0) / g.area
+    } else {
+        0.0
+    },
+    |g: &BondGeom, l: &BondLoads, _k: &BondKinematics| if g.area > 0.0 {
+        l.f_t_mag / g.area
+    } else {
+        0.0
+    },
+    |g: &BondGeom, l: &BondLoads, _k: &BondKinematics| if g.iben > 0.0 {
+        g.r_b * l.m_bend_mag / g.iben
+    } else {
+        0.0
+    },
+    |g: &BondGeom, l: &BondLoads, _k: &BondKinematics| if g.jpol > 0.0 {
+        g.r_b * l.m_tor_mag / g.jpol
+    } else {
+        0.0
+    }
 );
 
 impl_interaction_linear!(
@@ -605,35 +682,47 @@ pub enum BreakageConfig {
     /// See [`InteractionLinearForce`].
     InteractionLinearForce {
         /// Optional axial (normal) force failure threshold.
-        #[serde(default)] axial:   Option<ThresholdDistribution>,
+        #[serde(default)]
+        axial: Option<ThresholdDistribution>,
         /// Optional shear force failure threshold.
-        #[serde(default)] shear:   Option<ThresholdDistribution>,
+        #[serde(default)]
+        shear: Option<ThresholdDistribution>,
         /// Optional bending-moment failure threshold.
-        #[serde(default)] bending: Option<ThresholdDistribution>,
+        #[serde(default)]
+        bending: Option<ThresholdDistribution>,
         /// Optional twisting-moment failure threshold.
-        #[serde(default)] twist:   Option<ThresholdDistribution>,
+        #[serde(default)]
+        twist: Option<ThresholdDistribution>,
     },
     /// See [`InteractionLinearStress`].
     InteractionLinearStress {
         /// Optional axial (normal) stress failure threshold.
-        #[serde(default)] axial:   Option<ThresholdDistribution>,
+        #[serde(default)]
+        axial: Option<ThresholdDistribution>,
         /// Optional shear stress failure threshold.
-        #[serde(default)] shear:   Option<ThresholdDistribution>,
+        #[serde(default)]
+        shear: Option<ThresholdDistribution>,
         /// Optional bending-stress failure threshold.
-        #[serde(default)] bending: Option<ThresholdDistribution>,
+        #[serde(default)]
+        bending: Option<ThresholdDistribution>,
         /// Optional twisting-stress failure threshold.
-        #[serde(default)] twist:   Option<ThresholdDistribution>,
+        #[serde(default)]
+        twist: Option<ThresholdDistribution>,
     },
     /// See [`InteractionLinearStrain`].
     InteractionLinearStrain {
         /// Optional axial (normal) strain failure threshold.
-        #[serde(default)] axial:   Option<ThresholdDistribution>,
+        #[serde(default)]
+        axial: Option<ThresholdDistribution>,
         /// Optional shear strain failure threshold.
-        #[serde(default)] shear:   Option<ThresholdDistribution>,
+        #[serde(default)]
+        shear: Option<ThresholdDistribution>,
         /// Optional bending-strain failure threshold.
-        #[serde(default)] bending: Option<ThresholdDistribution>,
+        #[serde(default)]
+        bending: Option<ThresholdDistribution>,
         /// Optional twisting-strain failure threshold.
-        #[serde(default)] twist:   Option<ThresholdDistribution>,
+        #[serde(default)]
+        twist: Option<ThresholdDistribution>,
     },
 }
 
@@ -642,31 +731,59 @@ impl BreakageConfig {
     pub fn build(&self) -> Box<dyn BreakageCriterion> {
         match self {
             Self::Unbreakable => Box::new(Unbreakable),
-            Self::AxialForce { tensile, shear } =>
-                Box::new(AxialForce { tensile: tensile.clone(), shear: shear.clone() }),
-            Self::AxialStress { tensile, shear } =>
-                Box::new(AxialStress { tensile: tensile.clone(), shear: shear.clone() }),
-            Self::AxialStrain { tensile, shear } =>
-                Box::new(AxialStrain { tensile: tensile.clone(), shear: shear.clone() }),
-            Self::CombinedStress { tensile, shear } =>
-                Box::new(CombinedStress { tensile: tensile.clone(), shear: shear.clone() }),
-            Self::CombinedStrain { tensile, shear } =>
-                Box::new(CombinedStrain { tensile: tensile.clone(), shear: shear.clone() }),
-            Self::InteractionLinearForce { axial, shear, bending, twist } =>
-                Box::new(InteractionLinearForce {
-                    axial: axial.clone(), shear: shear.clone(),
-                    bending: bending.clone(), twist: twist.clone(),
-                }),
-            Self::InteractionLinearStress { axial, shear, bending, twist } =>
-                Box::new(InteractionLinearStress {
-                    axial: axial.clone(), shear: shear.clone(),
-                    bending: bending.clone(), twist: twist.clone(),
-                }),
-            Self::InteractionLinearStrain { axial, shear, bending, twist } =>
-                Box::new(InteractionLinearStrain {
-                    axial: axial.clone(), shear: shear.clone(),
-                    bending: bending.clone(), twist: twist.clone(),
-                }),
+            Self::AxialForce { tensile, shear } => Box::new(AxialForce {
+                tensile: tensile.clone(),
+                shear: shear.clone(),
+            }),
+            Self::AxialStress { tensile, shear } => Box::new(AxialStress {
+                tensile: tensile.clone(),
+                shear: shear.clone(),
+            }),
+            Self::AxialStrain { tensile, shear } => Box::new(AxialStrain {
+                tensile: tensile.clone(),
+                shear: shear.clone(),
+            }),
+            Self::CombinedStress { tensile, shear } => Box::new(CombinedStress {
+                tensile: tensile.clone(),
+                shear: shear.clone(),
+            }),
+            Self::CombinedStrain { tensile, shear } => Box::new(CombinedStrain {
+                tensile: tensile.clone(),
+                shear: shear.clone(),
+            }),
+            Self::InteractionLinearForce {
+                axial,
+                shear,
+                bending,
+                twist,
+            } => Box::new(InteractionLinearForce {
+                axial: axial.clone(),
+                shear: shear.clone(),
+                bending: bending.clone(),
+                twist: twist.clone(),
+            }),
+            Self::InteractionLinearStress {
+                axial,
+                shear,
+                bending,
+                twist,
+            } => Box::new(InteractionLinearStress {
+                axial: axial.clone(),
+                shear: shear.clone(),
+                bending: bending.clone(),
+                twist: twist.clone(),
+            }),
+            Self::InteractionLinearStrain {
+                axial,
+                shear,
+                bending,
+                twist,
+            } => Box::new(InteractionLinearStrain {
+                axial: axial.clone(),
+                shear: shear.clone(),
+                bending: bending.clone(),
+                twist: twist.clone(),
+            }),
         }
     }
 }
@@ -713,16 +830,26 @@ mod tests {
             r_b,
             area: std::f64::consts::PI * r_b * r_b,
             iben: 0.25 * std::f64::consts::PI * r_b.powi(4),
-            jpol: 0.5  * std::f64::consts::PI * r_b.powi(4),
+            jpol: 0.5 * std::f64::consts::PI * r_b.powi(4),
             l0: 2.0e-3,
         }
     }
 
     fn zero_loads() -> BondLoads {
-        BondLoads { f_n: 0.0, f_t_mag: 0.0, m_bend_mag: 0.0, m_tor_mag: 0.0 }
+        BondLoads {
+            f_n: 0.0,
+            f_t_mag: 0.0,
+            m_bend_mag: 0.0,
+            m_tor_mag: 0.0,
+        }
     }
     fn zero_kin() -> BondKinematics {
-        BondKinematics { eps_axial: 0.0, gamma_shear: 0.0, kappa_bend: 0.0, kappa_tor: 0.0 }
+        BondKinematics {
+            eps_axial: 0.0,
+            gamma_shear: 0.0,
+            kappa_bend: 0.0,
+            kappa_tor: 0.0,
+        }
     }
 
     // ── MPI-stable per-bond uniform sampler ─────────────────────────────
@@ -795,7 +922,7 @@ mod tests {
             bins[decile] += 1;
         }
         let expected = n_pairs / 10;
-        let tolerance = (n_pairs as f64 * 0.10) as usize;   // 10 % envelope
+        let tolerance = (n_pairs as f64 * 0.10) as usize; // 10 % envelope
         for (i, &count) in bins.iter().enumerate() {
             assert!(
                 count.abs_diff(expected) <= tolerance,
@@ -813,10 +940,15 @@ mod tests {
         // rank visits the pair first.
         let bonds = [(0, 1), (1, 2), (2, 3), (3, 4), (4, 5)];
         let seed = 0xDEADBEEFu64;
-        let forward: Vec<[f64; 4]> =
-            bonds.iter().map(|(a, b)| per_bond_uniform_samples(*a, *b, seed)).collect();
-        let reverse: Vec<[f64; 4]> =
-            bonds.iter().rev().map(|(a, b)| per_bond_uniform_samples(*a, *b, seed)).collect();
+        let forward: Vec<[f64; 4]> = bonds
+            .iter()
+            .map(|(a, b)| per_bond_uniform_samples(*a, *b, seed))
+            .collect();
+        let reverse: Vec<[f64; 4]> = bonds
+            .iter()
+            .rev()
+            .map(|(a, b)| per_bond_uniform_samples(*a, *b, seed))
+            .collect();
         // forward[i] should equal reverse[N-1-i] for the same bond.
         for i in 0..bonds.len() {
             assert_eq!(forward[i], reverse[bonds.len() - 1 - i]);
@@ -845,11 +977,19 @@ mod tests {
         // Two bonds of different lengths; longer bond should sample a smaller
         // threshold at the same `u` (weakest-link size effect).
         let d = ThresholdDistribution::Weibull {
-            mean: 1.0e9, m: 5.0, l_calib: 1.0e-3, l_min: 0.0,
+            mean: 1.0e9,
+            m: 5.0,
+            l_calib: 1.0e-3,
+            l_min: 0.0,
         };
         let short = d.sample(1.0e-3, 0.5);
-        let long  = d.sample(10.0e-3, 0.5);
-        assert!(long < short, "longer bond ({:.3e}) should be weaker than shorter ({:.3e})", long, short);
+        let long = d.sample(10.0e-3, 0.5);
+        assert!(
+            long < short,
+            "longer bond ({:.3e}) should be weaker than shorter ({:.3e})",
+            long,
+            short
+        );
         // L scales by 10, m = 5, ratio should be 10^{-1/5} ≈ 0.6310.
         let ratio = long / short;
         assert!((ratio - 10f64.powf(-0.2)).abs() < 1e-12);
@@ -861,9 +1001,12 @@ mod tests {
         // (-ln(1-u))^{1/m} = 1 — so the sampled value equals the
         // characteristic strength `mean / Γ(1+1/m)`.
         let d = ThresholdDistribution::Weibull {
-            mean: 5.0e7, m: 5.0, l_calib: 2.0e-3, l_min: 0.0,
+            mean: 5.0e7,
+            m: 5.0,
+            l_calib: 2.0e-3,
+            l_min: 0.0,
         };
-        let u = 1.0 - (-1.0_f64).exp();   // u such that -ln(1-u) = 1
+        let u = 1.0 - (-1.0_f64).exp(); // u such that -ln(1-u) = 1
         let v = d.sample(2.0e-3, u);
         let expected = 5.0e7 / gamma_lanczos(1.0 + 1.0 / 5.0);
         assert!((v - expected).abs() / expected < 1e-12);
@@ -876,7 +1019,10 @@ mod tests {
         // At l_bond = l_ref   = 2 mm: ε_break = 0.02 + 0.04·1  = 0.06.
         // At l_bond = 2·l_ref = 4 mm: ε_break = 0.02 + 0.04·0.5 = 0.04.
         let d = ThresholdDistribution::CrackBand {
-            value_ref: 0.06, l_ref: 2.0e-3, eps_yield: 0.02, l_min: 0.0,
+            value_ref: 0.06,
+            l_ref: 2.0e-3,
+            eps_yield: 0.02,
+            l_min: 0.0,
         };
         let u = 0.5; // unused for deterministic CrackBand
         assert!((d.sample(1.0e-3, u) - 0.10).abs() < 1e-12);
@@ -889,7 +1035,10 @@ mod tests {
         // With eps_yield = 0 the whole threshold scales as l_ref / l_bond,
         // useful for force / stress criteria where there's no elastic anchor.
         let d = ThresholdDistribution::CrackBand {
-            value_ref: 1.0e8, l_ref: 1.0e-3, eps_yield: 0.0, l_min: 0.0,
+            value_ref: 1.0e8,
+            l_ref: 1.0e-3,
+            eps_yield: 0.0,
+            l_min: 0.0,
         };
         let u = 0.5;
         assert!((d.sample(0.5e-3, u) - 2.0e8).abs() / 2.0e8 < 1e-12);
@@ -899,7 +1048,10 @@ mod tests {
     #[test]
     fn crack_band_threshold_l_min_floor() {
         let d = ThresholdDistribution::CrackBand {
-            value_ref: 0.06, l_ref: 2.0e-3, eps_yield: 0.02, l_min: 1.0e-3,
+            value_ref: 0.06,
+            l_ref: 2.0e-3,
+            eps_yield: 0.02,
+            l_min: 1.0e-3,
         };
         let u = 0.5;
         // Below the floor, the threshold is clamped to the at-floor value.
@@ -910,10 +1062,13 @@ mod tests {
     fn weibull_l_min_floor() {
         // A bond shorter than `l_min` should be treated as if it were `l_min`.
         let d = ThresholdDistribution::Weibull {
-            mean: 1.0e9, m: 5.0, l_calib: 1.0e-3, l_min: 5.0e-3,
+            mean: 1.0e9,
+            m: 5.0,
+            l_calib: 1.0e-3,
+            l_min: 5.0e-3,
         };
         let very_short = d.sample(1.0e-9, 0.5);
-        let at_floor   = d.sample(5.0e-3, 0.5);
+        let at_floor = d.sample(5.0e-3, 0.5);
         assert_eq!(very_short, at_floor);
     }
 
@@ -922,8 +1077,18 @@ mod tests {
         let c = Unbreakable;
         let thr = BondThresholds::default();
         let g = geom();
-        let l = BondLoads { f_n: 1.0e30, f_t_mag: 1.0e30, m_bend_mag: 1.0e30, m_tor_mag: 1.0e30 };
-        let k = BondKinematics { eps_axial: 10.0, gamma_shear: 10.0, kappa_bend: 1.0e6, kappa_tor: 1.0e6 };
+        let l = BondLoads {
+            f_n: 1.0e30,
+            f_t_mag: 1.0e30,
+            m_bend_mag: 1.0e30,
+            m_tor_mag: 1.0e30,
+        };
+        let k = BondKinematics {
+            eps_axial: 10.0,
+            gamma_shear: 10.0,
+            kappa_bend: 1.0e6,
+            kappa_tor: 1.0e6,
+        };
         assert!(c.check(&g, &l, &k, &thr).is_none());
     }
 
@@ -931,14 +1096,20 @@ mod tests {
     fn axial_force_tensile_break() {
         let c = AxialForce {
             tensile: ThresholdDistribution::Constant { value: 100.0 },
-            shear:   None,
+            shear: None,
         };
         let thr = c.sample(geom().l0, [0.5; 4]);
         let g = geom();
-        let l = BondLoads { f_n: 150.0, ..zero_loads() };
+        let l = BondLoads {
+            f_n: 150.0,
+            ..zero_loads()
+        };
         assert_eq!(c.check(&g, &l, &zero_kin(), &thr), Some(BreakMode::Tensile));
         // Compression of equal magnitude must not trip the tensile branch.
-        let l = BondLoads { f_n: -150.0, ..zero_loads() };
+        let l = BondLoads {
+            f_n: -150.0,
+            ..zero_loads()
+        };
         assert_eq!(c.check(&g, &l, &zero_kin(), &thr), None);
     }
 
@@ -946,18 +1117,27 @@ mod tests {
     fn axial_stress_threshold() {
         let c = AxialStress {
             tensile: ThresholdDistribution::Constant { value: 1.0e6 },
-            shear:   Some(ThresholdDistribution::Constant { value: 5.0e5 }),
+            shear: Some(ThresholdDistribution::Constant { value: 5.0e5 }),
         };
         let thr = c.sample(geom().l0, [0.5; 4]);
         let g = geom();
         // σ = 0.5e6 < 1e6 — no break.
-        let l = BondLoads { f_n: 0.5e6 * g.area, ..zero_loads() };
+        let l = BondLoads {
+            f_n: 0.5e6 * g.area,
+            ..zero_loads()
+        };
         assert_eq!(c.check(&g, &l, &zero_kin(), &thr), None);
         // σ = 2e6 > 1e6 — tensile break.
-        let l = BondLoads { f_n: 2.0e6 * g.area, ..zero_loads() };
+        let l = BondLoads {
+            f_n: 2.0e6 * g.area,
+            ..zero_loads()
+        };
         assert_eq!(c.check(&g, &l, &zero_kin(), &thr), Some(BreakMode::Tensile));
         // shear stress = 1e6 > 5e5 — shear break.
-        let l = BondLoads { f_t_mag: 1.0e6 * g.area, ..zero_loads() };
+        let l = BondLoads {
+            f_t_mag: 1.0e6 * g.area,
+            ..zero_loads()
+        };
         assert_eq!(c.check(&g, &l, &zero_kin(), &thr), Some(BreakMode::Shear));
     }
 
@@ -965,14 +1145,23 @@ mod tests {
     fn axial_strain_threshold() {
         let c = AxialStrain {
             tensile: ThresholdDistribution::Constant { value: 0.02 },
-            shear:   None,
+            shear: None,
         };
         let thr = c.sample(geom().l0, [0.5; 4]);
         let g = geom();
-        let kin_under = BondKinematics { eps_axial: 0.015, ..zero_kin() };
-        let kin_over  = BondKinematics { eps_axial: 0.025, ..zero_kin() };
+        let kin_under = BondKinematics {
+            eps_axial: 0.015,
+            ..zero_kin()
+        };
+        let kin_over = BondKinematics {
+            eps_axial: 0.025,
+            ..zero_kin()
+        };
         assert_eq!(c.check(&g, &zero_loads(), &kin_under, &thr), None);
-        assert_eq!(c.check(&g, &zero_loads(), &kin_over,  &thr), Some(BreakMode::Tensile));
+        assert_eq!(
+            c.check(&g, &zero_loads(), &kin_over, &thr),
+            Some(BreakMode::Tensile)
+        );
     }
 
     #[test]
@@ -981,15 +1170,21 @@ mod tests {
         // threshold and confirm the sum trips while either alone does not.
         let c = CombinedStress {
             tensile: ThresholdDistribution::Constant { value: 1.0e7 },
-            shear:   None,
+            shear: None,
         };
         let thr = c.sample(geom().l0, [0.5; 4]);
         let g = geom();
         // Axial half: F_n = 0.5e7·A → axial-stress = 0.5e7.
-        let l_axial_only = BondLoads { f_n: 0.5e7 * g.area, ..zero_loads() };
+        let l_axial_only = BondLoads {
+            f_n: 0.5e7 * g.area,
+            ..zero_loads()
+        };
         assert_eq!(c.check(&g, &l_axial_only, &zero_kin(), &thr), None);
         // Bending half: r_b·M_b/I = 0.5e7  ⇒  M_b = 0.5e7·I/r_b.
-        let l_bend_only = BondLoads { m_bend_mag: 0.5e7 * g.iben / g.r_b, ..zero_loads() };
+        let l_bend_only = BondLoads {
+            m_bend_mag: 0.5e7 * g.iben / g.r_b,
+            ..zero_loads()
+        };
         assert_eq!(c.check(&g, &l_bend_only, &zero_kin(), &thr), None);
         // Both at half — sum = 1e7 ≥ threshold (not strictly >, so tweak above).
         let l_both = BondLoads {
@@ -997,7 +1192,10 @@ mod tests {
             m_bend_mag: 0.5e7 * g.iben / g.r_b,
             ..zero_loads()
         };
-        assert_eq!(c.check(&g, &l_both, &zero_kin(), &thr), Some(BreakMode::Tensile));
+        assert_eq!(
+            c.check(&g, &l_both, &zero_kin(), &thr),
+            Some(BreakMode::Tensile)
+        );
     }
 
     #[test]
@@ -1005,20 +1203,29 @@ mod tests {
         // ε_T,max = ε_axial + r_b·|κ_bend|
         let c = CombinedStrain {
             tensile: ThresholdDistribution::Constant { value: 0.02 },
-            shear:   None,
+            shear: None,
         };
         let thr = c.sample(geom().l0, [0.5; 4]);
         let g = geom();
-        let half_axial   = BondKinematics { eps_axial: 0.011, ..zero_kin() };
-        let half_bend    = BondKinematics { kappa_bend: 0.011 / g.r_b, ..zero_kin() };
-        let combined    = BondKinematics {
+        let half_axial = BondKinematics {
+            eps_axial: 0.011,
+            ..zero_kin()
+        };
+        let half_bend = BondKinematics {
+            kappa_bend: 0.011 / g.r_b,
+            ..zero_kin()
+        };
+        let combined = BondKinematics {
             eps_axial: 0.011,
             kappa_bend: 0.011 / g.r_b,
             ..zero_kin()
         };
         assert_eq!(c.check(&g, &zero_loads(), &half_axial, &thr), None);
-        assert_eq!(c.check(&g, &zero_loads(), &half_bend,  &thr), None);
-        assert_eq!(c.check(&g, &zero_loads(), &combined,   &thr), Some(BreakMode::Tensile));
+        assert_eq!(c.check(&g, &zero_loads(), &half_bend, &thr), None);
+        assert_eq!(
+            c.check(&g, &zero_loads(), &combined, &thr),
+            Some(BreakMode::Tensile)
+        );
     }
 
     #[test]
@@ -1026,17 +1233,30 @@ mod tests {
         // Four equal-strength channels, each loaded to 0.3 of its threshold.
         // Sum = 1.2 ≥ 1 — should break.
         let c = InteractionLinearForce {
-            axial:   Some(ThresholdDistribution::Constant { value: 1.0 }),
-            shear:   Some(ThresholdDistribution::Constant { value: 1.0 }),
+            axial: Some(ThresholdDistribution::Constant { value: 1.0 }),
+            shear: Some(ThresholdDistribution::Constant { value: 1.0 }),
             bending: Some(ThresholdDistribution::Constant { value: 1.0 }),
-            twist:   Some(ThresholdDistribution::Constant { value: 1.0 }),
+            twist: Some(ThresholdDistribution::Constant { value: 1.0 }),
         };
         let thr = c.sample(geom().l0, [0.5; 4]);
         let g = geom();
-        let l_below = BondLoads { f_n: 0.2, f_t_mag: 0.2, m_bend_mag: 0.2, m_tor_mag: 0.2 };
+        let l_below = BondLoads {
+            f_n: 0.2,
+            f_t_mag: 0.2,
+            m_bend_mag: 0.2,
+            m_tor_mag: 0.2,
+        };
         assert_eq!(c.check(&g, &l_below, &zero_kin(), &thr), None);
-        let l_above = BondLoads { f_n: 0.3, f_t_mag: 0.3, m_bend_mag: 0.3, m_tor_mag: 0.3 };
-        assert_eq!(c.check(&g, &l_above, &zero_kin(), &thr), Some(BreakMode::Interaction));
+        let l_above = BondLoads {
+            f_n: 0.3,
+            f_t_mag: 0.3,
+            m_bend_mag: 0.3,
+            m_tor_mag: 0.3,
+        };
+        assert_eq!(
+            c.check(&g, &l_above, &zero_kin(), &thr),
+            Some(BreakMode::Interaction)
+        );
     }
 
     #[test]
@@ -1044,58 +1264,72 @@ mod tests {
         // Only the axial channel is active; loading the others to huge values
         // must not contribute to the sum.
         let c = InteractionLinearForce {
-            axial:   Some(ThresholdDistribution::Constant { value: 10.0 }),
-            shear:   None,
+            axial: Some(ThresholdDistribution::Constant { value: 10.0 }),
+            shear: None,
             bending: None,
-            twist:   None,
+            twist: None,
         };
         let thr = c.sample(geom().l0, [0.5; 4]);
         let g = geom();
-        let l = BondLoads { f_n: 5.0, f_t_mag: 1.0e6, m_bend_mag: 1.0e6, m_tor_mag: 1.0e6 };
+        let l = BondLoads {
+            f_n: 5.0,
+            f_t_mag: 1.0e6,
+            m_bend_mag: 1.0e6,
+            m_tor_mag: 1.0e6,
+        };
         assert_eq!(c.check(&g, &l, &zero_kin(), &thr), None);
         let l = BondLoads { f_n: 11.0, ..l };
-        assert_eq!(c.check(&g, &l, &zero_kin(), &thr), Some(BreakMode::Interaction));
+        assert_eq!(
+            c.check(&g, &l, &zero_kin(), &thr),
+            Some(BreakMode::Interaction)
+        );
     }
 
     #[test]
     fn interaction_linear_stress_recovers_clemmer_bpm_rotational() {
         // Each channel at exactly one quarter of its threshold → sum = 1, break.
         let c = InteractionLinearStress {
-            axial:   Some(ThresholdDistribution::Constant { value: 4.0e6 }),
-            shear:   Some(ThresholdDistribution::Constant { value: 4.0e6 }),
+            axial: Some(ThresholdDistribution::Constant { value: 4.0e6 }),
+            shear: Some(ThresholdDistribution::Constant { value: 4.0e6 }),
             bending: Some(ThresholdDistribution::Constant { value: 4.0e6 }),
-            twist:   Some(ThresholdDistribution::Constant { value: 4.0e6 }),
+            twist: Some(ThresholdDistribution::Constant { value: 4.0e6 }),
         };
         let thr = c.sample(geom().l0, [0.5; 4]);
         let g = geom();
         let l = BondLoads {
-            f_n:        1.0e6 * g.area,
-            f_t_mag:    1.0e6 * g.area,
+            f_n: 1.0e6 * g.area,
+            f_t_mag: 1.0e6 * g.area,
             m_bend_mag: 1.0e6 * g.iben / g.r_b,
-            m_tor_mag:  1.0e6 * g.jpol / g.r_b,
+            m_tor_mag: 1.0e6 * g.jpol / g.r_b,
         };
         // sum = 4 · 1e6 / 4e6 = 1.0 → break (sum ≥ 1).
-        assert_eq!(c.check(&g, &l, &zero_kin(), &thr), Some(BreakMode::Interaction));
+        assert_eq!(
+            c.check(&g, &l, &zero_kin(), &thr),
+            Some(BreakMode::Interaction)
+        );
     }
 
     #[test]
     fn interaction_linear_strain_uses_kinematics() {
         // ε_axial + |Δs|/L + r_b·|κ_bend| + r_b·|κ_tor| against unit thresholds.
         let c = InteractionLinearStrain {
-            axial:   Some(ThresholdDistribution::Constant { value: 0.01 }),
-            shear:   Some(ThresholdDistribution::Constant { value: 0.01 }),
+            axial: Some(ThresholdDistribution::Constant { value: 0.01 }),
+            shear: Some(ThresholdDistribution::Constant { value: 0.01 }),
             bending: Some(ThresholdDistribution::Constant { value: 0.01 }),
-            twist:   Some(ThresholdDistribution::Constant { value: 0.01 }),
+            twist: Some(ThresholdDistribution::Constant { value: 0.01 }),
         };
         let thr = c.sample(geom().l0, [0.5; 4]);
         let g = geom();
         // Each contribution = 0.003 → sum = 0.012 / 0.01 × 4 / 4 = 1.2 > 1.
         let k = BondKinematics {
-            eps_axial:   0.003,
+            eps_axial: 0.003,
             gamma_shear: 0.003,
-            kappa_bend:  0.003 / g.r_b,
-            kappa_tor:   0.003 / g.r_b,
+            kappa_bend: 0.003 / g.r_b,
+            kappa_tor: 0.003 / g.r_b,
         };
-        assert_eq!(c.check(&g, &zero_loads(), &k, &thr), Some(BreakMode::Interaction));
+        assert_eq!(
+            c.check(&g, &zero_loads(), &k, &thr),
+            Some(BreakMode::Interaction)
+        );
     }
 }

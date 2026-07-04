@@ -9,14 +9,16 @@
 //! are not integrated, so forces on them are not needed; a sleeper's force on an
 //! awake neighbour is still computed because that pair has one awake member).
 
-use dirt_core::prelude::*;
 use dirt_core::dirt_atom::{self, DemAtom, MaterialTable};
-use dirt_core::dirt_granular::{LARGE_OVERLAP_WARN_THRESHOLD, MAX_OVERLAP_WARNINGS, SQRT_5_6, TANGENTIAL_EPSILON};
+use dirt_core::dirt_granular::{
+    LARGE_OVERLAP_WARN_THRESHOLD, MAX_OVERLAP_WARNINGS, SQRT_5_6, TANGENTIAL_EPSILON,
+};
+use dirt_core::prelude::*;
+use dirt_core::soil_core::Accum;
 use dirt_core::soil_core::{
     register_atom_data, Atom, AtomData, AtomDataRegistry, Neighbor, ParticleSimScheduleSet,
     VirialStress, VirialStressPlugin,
 };
-use dirt_core::soil_core::Accum;
 use std::any::Any;
 
 /// Particle region modes set by the quiescence module each step.
@@ -314,10 +316,7 @@ pub fn quiescent_contact_force(
 
     for (i, j) in neighbor.pairs(nlocal) {
         // ── Optimization B: skip pairs where both particles sleep ──────────
-        if sleep_skip
-            && store.mode[i] == MODE_ASLEEP
-            && j < nlocal
-            && store.mode[j] == MODE_ASLEEP
+        if sleep_skip && store.mode[i] == MODE_ASLEEP && j < nlocal && store.mode[j] == MODE_ASLEEP
         {
             store.n_skipped += 1;
             continue;
@@ -397,8 +396,16 @@ pub fn quiescent_contact_force(
         let nz = dz * inv_dist;
 
         let g_eff = material_table.g_eff_ij[mat_i][mat_j];
-        let inv_m_i = if atoms.inv_mass[i] as f64 > 0.0 { atoms.inv_mass[i] as f64 } else { 1.0 / atoms.mass[i] as f64 };
-        let inv_m_j = if atoms.inv_mass[j] as f64 > 0.0 { atoms.inv_mass[j] as f64 } else { 1.0 / atoms.mass[j] as f64 };
+        let inv_m_i = if atoms.inv_mass[i] as f64 > 0.0 {
+            atoms.inv_mass[i] as f64
+        } else {
+            1.0 / atoms.mass[i] as f64
+        };
+        let inv_m_j = if atoms.inv_mass[j] as f64 > 0.0 {
+            atoms.inv_mass[j] as f64
+        } else {
+            1.0 / atoms.mass[j] as f64
+        };
         let m_r = 1.0 / (inv_m_i + inv_m_j);
 
         let beta = material_table.beta_ij[mat_i][mat_j];

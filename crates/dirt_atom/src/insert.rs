@@ -36,16 +36,16 @@ use std::io::{BufRead, BufReader};
 
 use grass_app::prelude::*;
 use grass_scheduler::prelude::*;
-use rand::SeedableRng;
 use rand::rngs::StdRng;
+use rand::SeedableRng;
 use rand_distr::{Distribution, Normal};
 use serde::Deserialize;
 
-use soil_core::{
-    Atom, AtomDataRegistry, CommResource, CommState, Domain, Real, Region, RunConfig, RunState,
-    ParticleSimScheduleSet, ScheduleSetupSet, StageOverrides,
-};
 use grass_scheduler::prelude::CurrentState;
+use soil_core::{
+    Atom, AtomDataRegistry, CommResource, CommState, Domain, ParticleSimScheduleSet, Real, Region,
+    RunConfig, RunState, ScheduleSetupSet, StageOverrides,
+};
 
 use crate::{DemAtom, MaterialTable, RadiusSpec};
 
@@ -300,9 +300,8 @@ impl SpatialHash {
         // For periodic axes where the box is small (< 3 cell sizes), the standard
         // 3x3x3 neighborhood may miss periodic images. Do a brute-force check
         // against all atoms using minimum-image distances.
-        let needs_pbc_check = (0..3).any(|d| {
-            pbc.is_periodic[d] && pbc.box_size[d] < 3.0 * self.cell_size + min_dist_check
-        });
+        let needs_pbc_check = (0..3)
+            .any(|d| pbc.is_periodic[d] && pbc.box_size[d] < 3.0 * self.cell_size + min_dist_check);
         if needs_pbc_check {
             for idx in 0..positions.len() {
                 let dist_sq = pbc.min_image_dist_sq(pos, &positions[idx]);
@@ -369,8 +368,11 @@ density = 2500.0
             dem_insert_atoms.after("domain_read_input"),
             ScheduleSetupSet::Setup,
         )
-            .add_setup_system(calculate_delta_time, ScheduleSetupSet::PostSetup)
-            .add_update_system(dem_rate_insert, ParticleSimScheduleSet::PreInitialIntegration);
+        .add_setup_system(calculate_delta_time, ScheduleSetupSet::PostSetup)
+        .add_update_system(
+            dem_rate_insert,
+            ParticleSimScheduleSet::PreInitialIntegration,
+        );
     }
 }
 
@@ -398,8 +400,10 @@ fn insert_single_particle(
     atom.cutoff_radius.push(radius as Real);
     atom.image.push([0, 0, 0]);
     atom.is_ghost.push(false);
-    atom.pos.push([pos[0] as Real, pos[1] as Real, pos[2] as Real]);
-    atom.vel.push([vel[0] as Real, vel[1] as Real, vel[2] as Real]);
+    atom.pos
+        .push([pos[0] as Real, pos[1] as Real, pos[2] as Real]);
+    atom.vel
+        .push([vel[0] as Real, vel[1] as Real, vel[2] as Real]);
     atom.force.push([0.0; 3]);
     let mass = density * 4.0 / 3.0 * PI * radius.powi(3);
     atom.mass.push(mass as Real);
@@ -407,7 +411,9 @@ fn insert_single_particle(
     atom.atom_type.push(mat_idx);
     dem_data.radius.push(radius);
     dem_data.density.push(density);
-    dem_data.inv_inertia.push(1.0 / (0.4 * mass * radius * radius));
+    dem_data
+        .inv_inertia
+        .push(1.0 / (0.4 * mass * radius * radius));
     dem_data.quaternion.push([1.0, 0.0, 0.0, 0.0]);
     dem_data.omega.push([0.0; 3]);
     dem_data.ang_mom.push([0.0; 3]);
@@ -503,7 +509,10 @@ pub fn dem_insert_atoms(
     // - First stage: use top-level [particles] (backward compat) or stage overrides
     // - Later stages: only if the stage's [[run]] block explicitly has particles
     let has_stage_particles = index < run_config.num_stages()
-        && run_config.current_stage(index).overrides.contains_key("particles");
+        && run_config
+            .current_stage(index)
+            .overrides
+            .contains_key("particles");
 
     let particles_config: ParticlesConfig = if has_stage_particles || index == 0 {
         stage_overrides.section("particles")
@@ -660,13 +669,7 @@ pub fn dem_insert_atoms(
                         let radius = radius_spec.sample(&mut rng);
                         let candidate = [x, y, z];
 
-                        if spatial_hash.has_overlap(
-                            &candidate,
-                            radius,
-                            &all_pos,
-                            &all_rad,
-                            &pbc,
-                        ) {
+                        if spatial_hash.has_overlap(&candidate, radius, &all_pos, &all_rad, &pbc) {
                             continue;
                         }
 
@@ -736,13 +739,33 @@ fn insert_from_file(
     });
 
     match format {
-        "csv" => read_csv_particles(insert, file_path, atom, dem_data, material_table, domain, max_tag),
-        "lammps_dump" => {
-            read_lammps_dump_particles(insert, file_path, atom, dem_data, material_table, domain, max_tag)
-        }
-        "lammps_data" => {
-            read_lammps_data_particles(insert, file_path, atom, dem_data, material_table, domain, max_tag)
-        }
+        "csv" => read_csv_particles(
+            insert,
+            file_path,
+            atom,
+            dem_data,
+            material_table,
+            domain,
+            max_tag,
+        ),
+        "lammps_dump" => read_lammps_dump_particles(
+            insert,
+            file_path,
+            atom,
+            dem_data,
+            material_table,
+            domain,
+            max_tag,
+        ),
+        "lammps_data" => read_lammps_data_particles(
+            insert,
+            file_path,
+            atom,
+            dem_data,
+            material_table,
+            domain,
+            max_tag,
+        ),
         other => {
             eprintln!(
                 "ERROR: Unknown file format '{}' in [[particles.insert]]. Supported: csv, lammps_dump, lammps_data",
@@ -821,16 +844,19 @@ fn read_csv_particles(
 
         let fields: Vec<&str> = trimmed.split(',').map(|s| s.trim()).collect();
         let parse = |idx: usize, name: &str| -> f64 {
-            fields.get(idx).and_then(|s| s.parse().ok()).unwrap_or_else(|| {
-                eprintln!(
-                    "ERROR: Failed to parse {} (column {}) at line {} of '{}'",
-                    name,
-                    idx,
-                    line_num + 1,
-                    file_path
-                );
-                std::process::exit(1);
-            })
+            fields
+                .get(idx)
+                .and_then(|s| s.parse().ok())
+                .unwrap_or_else(|| {
+                    eprintln!(
+                        "ERROR: Failed to parse {} (column {}) at line {} of '{}'",
+                        name,
+                        idx,
+                        line_num + 1,
+                        file_path
+                    );
+                    std::process::exit(1);
+                })
         };
 
         let x = parse(col_x, "x");
@@ -935,9 +961,8 @@ fn read_lammps_dump_particles(
     let mut count = 0u32;
 
     // Helper to find column index by name
-    let find_col = |names: &[String], name: &str| -> Option<usize> {
-        names.iter().position(|n| n == name)
-    };
+    let find_col =
+        |names: &[String], name: &str| -> Option<usize> { names.iter().position(|n| n == name) };
 
     while let Some(Ok(line)) = lines.next() {
         let trimmed = line.trim();
@@ -982,14 +1007,12 @@ fn read_lammps_dump_particles(
             let vx = parse_col("vx").unwrap_or(0.0);
             let vy = parse_col("vy").unwrap_or(0.0);
             let vz = parse_col("vz").unwrap_or(0.0);
-            let radius = parse_col("radius")
-                .or(default_radius)
-                .unwrap_or_else(|| {
-                    eprintln!(
-                        "ERROR: No 'radius' column in LAMMPS dump and no default radius in config"
-                    );
-                    std::process::exit(1);
-                });
+            let radius = parse_col("radius").or(default_radius).unwrap_or_else(|| {
+                eprintln!(
+                    "ERROR: No 'radius' column in LAMMPS dump and no default radius in config"
+                );
+                std::process::exit(1);
+            });
 
             // Determine material: type_map override → default material
             let row_mat_idx = match parse_col("type") {
@@ -1022,7 +1045,12 @@ fn read_lammps_dump_particles(
 }
 
 /// Parse a field from a LAMMPS data file, with a user-friendly error on failure.
-fn parse_field<T: std::str::FromStr>(value: &str, field_name: &str, line_num: usize, file_path: &str) -> T
+fn parse_field<T: std::str::FromStr>(
+    value: &str,
+    field_name: &str,
+    line_num: usize,
+    file_path: &str,
+) -> T
 where
     T::Err: std::fmt::Display,
 {
@@ -1076,7 +1104,12 @@ fn read_lammps_data_particles(
         .enumerate()
         .map(|(i, l)| {
             l.unwrap_or_else(|e| {
-                eprintln!("ERROR: Failed to read line {} of '{}': {}", i + 1, file_path, e);
+                eprintln!(
+                    "ERROR: Failed to read line {} of '{}': {}",
+                    i + 1,
+                    file_path,
+                    e
+                );
                 std::process::exit(1);
             })
         })
@@ -1132,8 +1165,14 @@ fn read_lammps_data_particles(
     }
 
     let section_headers = [
-        "Atoms", "Velocities", "Bonds", "Angles", "Dihedrals", "Impropers",
-        "Masses", "Pair Coeffs",
+        "Atoms",
+        "Velocities",
+        "Bonds",
+        "Angles",
+        "Dihedrals",
+        "Impropers",
+        "Masses",
+        "Pair Coeffs",
     ];
     let is_section_header = |line: &str| -> bool {
         let trimmed = line.trim();
@@ -1349,7 +1388,11 @@ pub fn dem_rate_insert(
     // the backend, so reduce -max with min and negate.) Each attempt this step
     // consumes one tag slot regardless of acceptance so tags stay unique across
     // ranks without any extra collective.
-    let local_max_tag = if atom.tag.is_empty() { -1.0 } else { atom.get_max_tag() as f64 };
+    let local_max_tag = if atom.tag.is_empty() {
+        -1.0
+    } else {
+        atom.get_max_tag() as f64
+    };
     let base_tag = (-comm.all_reduce_min_f64(-local_max_tag)) as i64 + 1;
     let mut tag_cursor: u32 = base_tag.max(0) as u32;
 
@@ -1358,10 +1401,7 @@ pub fn dem_rate_insert(
             .config
             .rate_interval
             .unwrap_or(1);
-        let start = rate_state.entries[entry_idx]
-            .config
-            .rate_start
-            .unwrap_or(0);
+        let start = rate_state.entries[entry_idx].config.rate_start.unwrap_or(0);
         let rate = rate_state.entries[entry_idx]
             .config
             .rate
@@ -1426,9 +1466,18 @@ pub fn dem_rate_insert(
         let rand_vel = rate_state.entries[entry_idx].config.velocity.unwrap_or(0.0);
         let vel_normal = (rand_vel > 0.0)
             .then(|| Normal::new(0.0, rand_vel).expect("velocity must be non-negative"));
-        let vx = rate_state.entries[entry_idx].config.velocity_x.unwrap_or(0.0);
-        let vy = rate_state.entries[entry_idx].config.velocity_y.unwrap_or(0.0);
-        let vz = rate_state.entries[entry_idx].config.velocity_z.unwrap_or(0.0);
+        let vx = rate_state.entries[entry_idx]
+            .config
+            .velocity_x
+            .unwrap_or(0.0);
+        let vy = rate_state.entries[entry_idx]
+            .config
+            .velocity_y
+            .unwrap_or(0.0);
+        let vz = rate_state.entries[entry_idx]
+            .config
+            .velocity_z
+            .unwrap_or(0.0);
 
         // Seed the candidate stream from (config seed, step, entry) so it is
         // identical on every rank yet varies between insertion events.
@@ -1459,7 +1508,7 @@ pub fn dem_rate_insert(
         let mut all_pos: Vec<[f64; 3]> = Vec::new();
         let mut all_rad: Vec<f64> = Vec::new();
 
-        let mut inserted = 0u32;       // accepted globally
+        let mut inserted = 0u32; // accepted globally
         let mut local_inserted = 0u32; // stored on this rank
         let mut attempts = 0u32;
         let max_attempts = to_insert * 100;

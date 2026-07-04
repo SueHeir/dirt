@@ -22,9 +22,7 @@
 
 use std::any::Any;
 
-
 use soil_core::AtomData;
-
 
 // ── ContactHistoryStore ─────────────────────────────────────────────────────
 
@@ -116,8 +114,13 @@ impl AtomData for ContactHistoryStore {
         for _ in 0..count {
             let tag = buf[pos] as u32;
             let s = [
-                buf[pos + 1], buf[pos + 2], buf[pos + 3],
-                buf[pos + 4], buf[pos + 5], buf[pos + 6], buf[pos + 7],
+                buf[pos + 1],
+                buf[pos + 2],
+                buf[pos + 3],
+                buf[pos + 4],
+                buf[pos + 5],
+                buf[pos + 6],
+                buf[pos + 7],
             ];
             list.push((tag, s, false));
             pos += 8;

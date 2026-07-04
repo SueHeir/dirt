@@ -78,10 +78,10 @@
 use std::collections::HashMap;
 
 use grass_app::prelude::*;
-use soil_core::{Atom, CommResource, Config, RunState, ParticleSimScheduleSet};
-use soil_print::Thermo;
 use grass_scheduler::prelude::*;
 use serde::Deserialize;
+use soil_core::{Atom, CommResource, Config, ParticleSimScheduleSet, RunState};
+use soil_print::Thermo;
 
 // ── Configuration ───────────────────────────────────────────────────────────
 
@@ -162,7 +162,11 @@ impl MeasurePlaneState {
         // Normalize the normal vector to unit length for signed-distance calculations.
         let mag = (def.normal[0].powi(2) + def.normal[1].powi(2) + def.normal[2].powi(2)).sqrt();
         let normal = if mag > 1e-30 {
-            [def.normal[0] / mag, def.normal[1] / mag, def.normal[2] / mag]
+            [
+                def.normal[0] / mag,
+                def.normal[1] / mag,
+                def.normal[2] / mag,
+            ]
         } else {
             [1.0, 0.0, 0.0] // fallback to +x if degenerate
         };
@@ -271,7 +275,11 @@ fn measure_plane_detect_crossings(atoms: Res<Atom>, mut planes: ResMut<MeasurePl
 
             // Compute signed distance: positive means on the normal side of the plane.
             // pos is `Real` (f32 in mixed/single); plane geometry is f64.
-            let p = [atoms.pos[i][0] as f64, atoms.pos[i][1] as f64, atoms.pos[i][2] as f64];
+            let p = [
+                atoms.pos[i][0] as f64,
+                atoms.pos[i][1] as f64,
+                atoms.pos[i][2] as f64,
+            ];
             let dist = plane.signed_distance(&p);
 
             if let Some(&prev_dist) = plane.prev_signed_dist.get(&tag) {
@@ -392,7 +400,8 @@ mod tests {
             report_interval: 100,
         };
         let state = MeasurePlaneState::new(&def);
-        let mag = (state.normal[0].powi(2) + state.normal[1].powi(2) + state.normal[2].powi(2)).sqrt();
+        let mag =
+            (state.normal[0].powi(2) + state.normal[1].powi(2) + state.normal[2].powi(2)).sqrt();
         assert!((mag - 1.0).abs() < 1e-12);
         assert!((state.normal[0] - 0.6).abs() < 1e-12);
         assert!((state.normal[1] - 0.8).abs() < 1e-12);

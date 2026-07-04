@@ -30,16 +30,16 @@ use std::fs;
 use std::io::Write as IoWrite;
 use std::sync::Once;
 
-use dirt_core::prelude::*;
 use dirt_core::dirt_atom::DemAtom;
+use dirt_core::prelude::*;
 
 fn main() {
     let mut app = App::new();
     app.add_plugins(CorePlugins)
         .add_plugins(GranularDefaultPlugins)
-        .add_plugins(GravityPlugin)   // gravity is set to 0 in config; kept for generality
-        .add_plugins(FixesPlugin)     // viscous damping for the settle stage
-        .add_plugins(DeformPlugin);   // the Lees–Edwards xy shear driver
+        .add_plugins(GravityPlugin) // gravity is set to 0 in config; kept for generality
+        .add_plugins(FixesPlugin) // viscous damping for the settle stage
+        .add_plugins(DeformPlugin); // the Lees–Edwards xy shear driver
 
     app.add_update_system(record_shear, ParticleSimScheduleSet::PostFinalIntegration);
     app.start();
@@ -68,7 +68,11 @@ fn record_shear(
 
     // Shear rate γ̇ = Δv / L_y (0 during the settle stage → no profile subtraction).
     let ly = domain.size[1];
-    let gdot = if ly > 0.0 { domain.boundary_vel[0] / ly } else { 0.0 };
+    let gdot = if ly > 0.0 {
+        domain.boundary_vel[0] / ly
+    } else {
+        0.0
+    };
     let y_lo = domain.boundaries_low[1];
     let y_hi = domain.boundaries_high[1];
     let yc = 0.5 * (y_lo + y_hi);
@@ -107,15 +111,16 @@ fn record_shear(
 
     // Reduce across ranks.
     let mut acc = [
-        kin[0], kin[1], kin[2], kin[3], kin[4], kin[5],
-        vir[0], vir[1], vir[2], vir[3], vir[4], vir[5],
-        ke_fluct, m_total, vol_solid,
+        kin[0], kin[1], kin[2], kin[3], kin[4], kin[5], vir[0], vir[1], vir[2], vir[3], vir[4],
+        vir[5], ke_fluct, m_total, vol_solid,
     ];
     for a in acc.iter_mut() {
         *a = comm.all_reduce_sum_f64(*a);
     }
-    let (kin, vir) = ([acc[0], acc[1], acc[2], acc[3], acc[4], acc[5]],
-                      [acc[6], acc[7], acc[8], acc[9], acc[10], acc[11]]);
+    let (kin, vir) = (
+        [acc[0], acc[1], acc[2], acc[3], acc[4], acc[5]],
+        [acc[6], acc[7], acc[8], acc[9], acc[10], acc[11]],
+    );
     let ke_fluct = acc[12];
     let m_total = acc[13];
     let vol_solid = acc[14];
@@ -129,11 +134,20 @@ fn record_shear(
     let n1 = sig[0] - sig[1];
     let n2 = sig[1] - sig[2];
     // von Mises shear stress τ = sqrt(½ σ':σ') from the deviator σ'.
-    let dxx = sig[0] - p; let dyy = sig[1] - p; let dzz = sig[2] - p;
+    let dxx = sig[0] - p;
+    let dyy = sig[1] - p;
+    let dzz = sig[2] - p;
     let tau = (0.5 * (dxx * dxx + dyy * dyy + dzz * dzz)
-        + sig[3] * sig[3] + sig[4] * sig[4] + sig[5] * sig[5]).sqrt();
+        + sig[3] * sig[3]
+        + sig[4] * sig[4]
+        + sig[5] * sig[5])
+        .sqrt();
     // Granular temperature T = (1/3) Σ m|v'|² / Σ m.
-    let t_gran = if m_total > 0.0 { ke_fluct / (3.0 * m_total) } else { 0.0 };
+    let t_gran = if m_total > 0.0 {
+        ke_fluct / (3.0 * m_total)
+    } else {
+        0.0
+    };
     let phi = vol_solid / vol;
 
     if comm.rank() != 0 {
@@ -141,10 +155,9 @@ fn record_shear(
     }
 
     let time = step as f64 * atoms.dt;
-    let out_dir = input
-        .output_dir
-        .clone()
-        .unwrap_or_else(|| "examples/SPH_glass_sphere_calibration/04_enduring_contact/data".to_string());
+    let out_dir = input.output_dir.clone().unwrap_or_else(|| {
+        "examples/SPH_glass_sphere_calibration/04_enduring_contact/data".to_string()
+    });
     let path = format!("{}/enduring_contact_results.csv", out_dir);
 
     static INIT: Once = Once::new();
@@ -158,7 +171,10 @@ fn record_shear(
         .unwrap();
     });
 
-    let mut f = fs::OpenOptions::new().append(true).open(&path).expect("cannot open results csv");
+    let mut f = fs::OpenOptions::new()
+        .append(true)
+        .open(&path)
+        .expect("cannot open results csv");
     writeln!(
         f,
         "{},{:.8e},{:.8e},{:.8e},{:.8e},{:.8e},{:.8e},{:.8e},{:.8e},{:.8e},{:.8e},{:.8e},{:.8e},{:.8e},{:.8e}",

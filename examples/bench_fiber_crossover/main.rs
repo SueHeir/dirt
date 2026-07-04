@@ -25,8 +25,8 @@
 //! cargo run --release --example bench_fiber_crossover --no-default-features -- examples/bench_fiber_crossover/config.toml
 //! ```
 
-use dirt_core::prelude::*;
 use dirt_core::dirt_atom::DemAtom;
+use dirt_core::prelude::*;
 use std::fs::{self, File};
 use std::io::{BufWriter, Write as IoWrite};
 
@@ -146,7 +146,8 @@ fn record_crossover(
             if (atoms.pos[i][0] as f64).abs() < 1.0e-3 && (atoms.pos[i][1] as f64).abs() < 1.0e-3 {
                 mid_upper = Some(i);
             }
-        } else if (atoms.pos[i][0] as f64).abs() < 1.0e-3 && (atoms.pos[i][1] as f64).abs() < 1.0e-3 {
+        } else if (atoms.pos[i][0] as f64).abs() < 1.0e-3 && (atoms.pos[i][1] as f64).abs() < 1.0e-3
+        {
             mid_lower = Some(i);
         }
     }

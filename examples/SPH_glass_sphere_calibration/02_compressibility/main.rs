@@ -27,18 +27,21 @@ use std::fs;
 use std::io::Write as IoWrite;
 use std::sync::Once;
 
-use dirt_core::prelude::*;
 use dirt_core::dirt_atom::DemAtom;
+use dirt_core::prelude::*;
 
 fn main() {
     let mut app = App::new();
     app.add_plugins(CorePlugins)
         .add_plugins(GranularDefaultPlugins)
         .add_plugins(GravityPlugin) // gravity is set to 0 in config; kept for generality
-        .add_plugins(FixesPlugin)   // viscous damping to keep the compression quasi-static
+        .add_plugins(FixesPlugin) // viscous damping to keep the compression quasi-static
         .add_plugins(DeformPlugin); // isotropic inward box compression (vel style on x,y,z)
 
-    app.add_update_system(record_compression, ParticleSimScheduleSet::PostFinalIntegration);
+    app.add_update_system(
+        record_compression,
+        ParticleSimScheduleSet::PostFinalIntegration,
+    );
     app.start();
 }
 
@@ -101,12 +104,9 @@ fn record_compression(
     }
 
     let time = step as f64 * atoms.dt;
-    let out_dir = input
-        .output_dir
-        .clone()
-        .unwrap_or_else(|| {
-            "examples/SPH_glass_sphere_calibration/02_compressibility/data".to_string()
-        });
+    let out_dir = input.output_dir.clone().unwrap_or_else(|| {
+        "examples/SPH_glass_sphere_calibration/02_compressibility/data".to_string()
+    });
     let path = format!("{}/compressibility_results.csv", out_dir);
 
     static INIT: Once = Once::new();
@@ -120,10 +120,5 @@ fn record_compression(
         .append(true)
         .open(&path)
         .expect("cannot open results csv");
-    writeln!(
-        f,
-        "{},{:.8e},{:.8e},{:.8e},{:.8e}",
-        step, time, phi, p, vol
-    )
-    .unwrap();
+    writeln!(f, "{},{:.8e},{:.8e},{:.8e},{:.8e}", step, time, phi, p, vol).unwrap();
 }

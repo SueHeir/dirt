@@ -36,8 +36,8 @@
 //!   --features precision-double -- examples/bench_dmt_sjkr_cohesion/config.toml
 //! ```
 
-use dirt_core::prelude::*;
 use dirt_core::dirt_atom::DemAtom;
+use dirt_core::prelude::*;
 use std::fs;
 use std::io::Write as IoWrite;
 
@@ -110,7 +110,11 @@ fn track_cohesion(
         let mut moving = None;
         let mut frozen = None;
         for i in 0..atoms.nlocal as usize {
-            let v = [atoms.vel[i][0] as f64, atoms.vel[i][1] as f64, atoms.vel[i][2] as f64];
+            let v = [
+                atoms.vel[i][0] as f64,
+                atoms.vel[i][1] as f64,
+                atoms.vel[i][2] as f64,
+            ];
             let speed2 = v[0] * v[0] + v[1] * v[1] + v[2] * v[2];
             if speed2 > 0.0 {
                 moving = Some(atoms.tag[i]);
@@ -150,11 +154,19 @@ fn track_cohesion(
     // Contact normal force on the free sphere, projected onto the line of
     // centers. f·n > 0 pushes the free sphere outward (repulsion), f·n < 0
     // pulls it toward the frozen sphere (adhesion/cohesion/tension).
-    let fvec = [atoms.force[m][0] as f64, atoms.force[m][1] as f64, atoms.force[m][2] as f64];
+    let fvec = [
+        atoms.force[m][0] as f64,
+        atoms.force[m][1] as f64,
+        atoms.force[m][2] as f64,
+    ];
     let f_n = fvec[0] * n[0] + fvec[1] * n[1] + fvec[2] * n[2];
 
     // Relative normal velocity (free minus frozen; frozen is at rest).
-    let vvec = [atoms.vel[m][0] as f64, atoms.vel[m][1] as f64, atoms.vel[m][2] as f64];
+    let vvec = [
+        atoms.vel[m][0] as f64,
+        atoms.vel[m][1] as f64,
+        atoms.vel[m][2] as f64,
+    ];
     let v_n = vvec[0] * n[0] + vvec[1] * n[1] + vvec[2] * n[2];
 
     if f_n.abs() > 0.0 {
@@ -171,7 +183,10 @@ fn track_cohesion(
 
     // Finish once the contact has engaged and cleanly separated (positive gap,
     // force back to zero), or on the last step as a fallback.
-    let last_step = match (run_state.cycle_count.first(), run_state.cycle_remaining.first()) {
+    let last_step = match (
+        run_state.cycle_count.first(),
+        run_state.cycle_remaining.first(),
+    ) {
         (Some(&done), Some(&total)) => total > 0 && done + 1 >= total,
         _ => false,
     };
@@ -221,12 +236,7 @@ fn finish(
     writeln!(
         fh,
         "{:.10e},{:.10e},{:.10e},{:.10e},{:.10e},{:.10e}",
-        f_peak_tension,
-        tracker.sep_at_min,
-        r_eff,
-        r_i,
-        dem.density[m],
-        atoms.dt,
+        f_peak_tension, tracker.sep_at_min, r_eff, r_i, dem.density[m], atoms.dt,
     )
     .unwrap();
 

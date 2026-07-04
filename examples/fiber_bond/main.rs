@@ -41,11 +41,11 @@
 //! decoupled from whether bending or axial channels are running an elastic
 //! or piecewise-plastic envelope.
 
-use dirt_core::prelude::*;
 use dirt_core::dirt_atom::DemAtom;
 use dirt_core::dirt_bond::{BondConfig, BondHistoryStore, BondMetrics};
-use dirt_core::soil_core::BondStore;
 use dirt_core::dirt_fixes::FixesPlugin;
+use dirt_core::prelude::*;
+use dirt_core::soil_core::BondStore;
 use std::f64::consts::PI;
 use std::fs::{self, File};
 use std::io::{BufWriter, Write as IoWrite};
@@ -115,7 +115,10 @@ fn main() {
     // No-op for every other config: the system inspects the output dir name
     // and only applies the Guo three-step force schedule when matched.
     app.add_update_system(apply_three_step_load, ParticleSimScheduleSet::Force);
-    app.add_update_system(record_fiber_state, ParticleSimScheduleSet::PostFinalIntegration);
+    app.add_update_system(
+        record_fiber_state,
+        ParticleSimScheduleSet::PostFinalIntegration,
+    );
 
     app.start();
 }
@@ -137,13 +140,13 @@ fn main() {
 // Activated only for runs whose output dir contains "bending_plastic_guo" —
 // every other config gets a no-op.
 
-const F_PEAK: f64        = -0.6;     // N, downward. Anchor moment F·L = 0.024 N·m, middle moment F·L/2 = 0.012 N·m vs M_p = 0.010 N·m — first ~half of the chain yields, tip deflection stays manageable.
-const T_RAMP: f64        =  5.0e-3;  // ms-scale ramp so the load varies slowly compared to T_bend ≈ 5.5 ms.
-const T_HOLD_END: f64    = 15.0e-3;  // 10 ms hold — ~2 bending periods, enough to reach static deflection.
-const T_UNLOAD_END: f64  = 20.0e-3;  // 5 ms unload ramp.
-const T_CYCLE: f64       = 30.0e-3;  // 20 ms force pulse + 10 ms settle = 30 ms / cycle.
-const N_CYCLES: usize    =  3;
-const TIP_TAG: u32       = 10;       // the rightmost atom in fiber_11_spaced.csv
+const F_PEAK: f64 = -0.6; // N, downward. Anchor moment F·L = 0.024 N·m, middle moment F·L/2 = 0.012 N·m vs M_p = 0.010 N·m — first ~half of the chain yields, tip deflection stays manageable.
+const T_RAMP: f64 = 5.0e-3; // ms-scale ramp so the load varies slowly compared to T_bend ≈ 5.5 ms.
+const T_HOLD_END: f64 = 15.0e-3; // 10 ms hold — ~2 bending periods, enough to reach static deflection.
+const T_UNLOAD_END: f64 = 20.0e-3; // 5 ms unload ramp.
+const T_CYCLE: f64 = 30.0e-3; // 20 ms force pulse + 10 ms settle = 30 ms / cycle.
+const N_CYCLES: usize = 3;
+const TIP_TAG: u32 = 10; // the rightmost atom in fiber_11_spaced.csv
 
 fn three_step_force_at(t: f64) -> f64 {
     if t < 0.0 || t >= (N_CYCLES as f64) * T_CYCLE {
@@ -162,17 +165,17 @@ fn three_step_force_at(t: f64) -> f64 {
     }
 }
 
-fn apply_three_step_load(
-    mut atoms: ResMut<Atom>,
-    input: Res<Input>,
-    run_state: Res<RunState>,
-) {
+fn apply_three_step_load(mut atoms: ResMut<Atom>, input: Res<Input>, run_state: Res<RunState>) {
     let out_dir = input.output_dir.clone().unwrap_or_default();
-    if !out_dir.contains("bending_plastic_guo") { return; }
+    if !out_dir.contains("bending_plastic_guo") {
+        return;
+    }
     let dt = atoms.dt;
     let t = run_state.total_cycle as f64 * dt;
     let f = three_step_force_at(t);
-    if f == 0.0 { return; }
+    if f == 0.0 {
+        return;
+    }
     let nlocal = atoms.nlocal as usize;
     for i in 0..nlocal {
         if atoms.tag[i] == TIP_TAG {
@@ -188,22 +191,25 @@ fn apply_three_step_load(
 /// sample.
 fn find_endpoint_tags_by_initial_x(atoms: &Atom) -> (Option<u32>, Option<u32>) {
     let nlocal = atoms.nlocal as usize;
-    if nlocal == 0 { return (None, None); }
+    if nlocal == 0 {
+        return (None, None);
+    }
     let mut i_left = 0usize;
     let mut i_right = 0usize;
     for i in 1..nlocal {
-        if atoms.pos[i][0] < atoms.pos[i_left][0] { i_left = i; }
-        if atoms.pos[i][0] > atoms.pos[i_right][0] { i_right = i; }
+        if atoms.pos[i][0] < atoms.pos[i_left][0] {
+            i_left = i;
+        }
+        if atoms.pos[i][0] > atoms.pos[i_right][0] {
+            i_right = i;
+        }
     }
     (Some(atoms.tag[i_left]), Some(atoms.tag[i_right]))
 }
 
 /// Find the bond closest to the centre of the fiber. Returns the lower-tag end's
 /// local index and the partner tag.
-fn find_middle_bond(
-    atoms: &Atom,
-    registry: &AtomDataRegistry,
-) -> Option<(usize, u32, u32, f64)> {
+fn find_middle_bond(atoms: &Atom, registry: &AtomDataRegistry) -> Option<(usize, u32, u32, f64)> {
     let bonds = registry.get::<BondStore>()?;
     let nlocal = atoms.nlocal as usize;
     let mut x_lo = f64::INFINITY;
@@ -215,14 +221,21 @@ fn find_middle_bond(
     let x_centre = 0.5 * (x_lo + x_hi);
     let mut best: Option<(usize, u32, u32, f64, f64)> = None;
     for i in 0..nlocal {
-        if i >= bonds.bonds.len() { break; }
+        if i >= bonds.bonds.len() {
+            break;
+        }
         for b in &bonds.bonds[i] {
             // Process each bond once: lower tag is the owner.
-            if atoms.tag[i] >= b.partner_tag { continue; }
+            if atoms.tag[i] >= b.partner_tag {
+                continue;
+            }
             // Partner must also be local for the mid-bond probe — this is OK
             // for our single-rank validation configs.
             let j_opt = (0..nlocal).find(|&k| atoms.tag[k] == b.partner_tag);
-            let j = match j_opt { Some(k) => k, None => continue };
+            let j = match j_opt {
+                Some(k) => k,
+                None => continue,
+            };
             let bond_centre_x = 0.5 * (atoms.pos[i][0] as f64 + atoms.pos[j][0] as f64);
             let d = (bond_centre_x - x_centre).abs();
             let take = match &best {
@@ -313,7 +326,10 @@ fn record_fiber_state(
         // Capture initial positions indexed by atom tag so profile rows can
         // be matched up later regardless of any reordering inside the engine.
         let nlocal = atoms.nlocal as usize;
-        let max_tag = (0..nlocal).map(|i| atoms.tag[i] as usize).max().unwrap_or(0);
+        let max_tag = (0..nlocal)
+            .map(|i| atoms.tag[i] as usize)
+            .max()
+            .unwrap_or(0);
         let mut initial_pos = vec![[0.0f64; 3]; max_tag + 1];
         for i in 0..nlocal {
             initial_pos[atoms.tag[i] as usize] = [
@@ -342,8 +358,10 @@ fn record_fiber_state(
         println!("=== Fiber Bond Validation Harness ===");
         println!("  output         : {}", path);
         println!("  L₀ (end-to-end): {:.6e} m", length0);
-        println!("  middle bond    : tags {}↔{}, r₀ = {:.6e} m",
-            tag_mid_a, tag_mid_b, r0_mid);
+        println!(
+            "  middle bond    : tags {}↔{}, r₀ = {:.6e} m",
+            tag_mid_a, tag_mid_b, r0_mid
+        );
         println!("  bond radius    : {:.6e} m", r_b);
         println!("  area, I_ben    : {:.6e} m², {:.6e} m⁴", area, iben);
         println!("  K_n, K_bend    : {:.6e} N/m, {:.6e} N·m/rad", k_n, k_bend);
@@ -366,21 +384,30 @@ fn record_fiber_state(
                 let tag_a = atoms.tag[i];
                 for entry in &hist.history[i] {
                     // Each bond visited once (canonical: lower-tag end owns).
-                    if tag_a > entry.partner_tag { continue; }
+                    if tag_a > entry.partner_tag {
+                        continue;
+                    }
                     let r0_b = if i < bonds.bonds.len() {
                         bonds.bonds[i]
                             .iter()
                             .find(|b| b.partner_tag == entry.partner_tag)
                             .map(|b| b.r0)
                             .unwrap_or(0.0)
-                    } else { 0.0 };
+                    } else {
+                        0.0
+                    };
                     writeln!(
                         bw,
                         "{},{},{:.8e},{:.8e},{:.8e},{:.8e},{:.8e}",
-                        tag_a, entry.partner_tag, r0_b,
-                        entry.thresholds[0], entry.thresholds[1],
-                        entry.thresholds[2], entry.thresholds[3],
-                    ).ok();
+                        tag_a,
+                        entry.partner_tag,
+                        r0_b,
+                        entry.thresholds[0],
+                        entry.thresholds[1],
+                        entry.thresholds[2],
+                        entry.thresholds[3],
+                    )
+                    .ok();
                 }
             }
             println!("  bond thresholds: {}", thresholds_path);
@@ -388,7 +415,9 @@ fn record_fiber_state(
     }
 
     let step = run_state.total_cycle;
-    if step % rec.record_every != 0 { return; }
+    if step % rec.record_every != 0 {
+        return;
+    }
 
     let dt = atoms.dt;
     let t = step as f64 * dt;
@@ -397,22 +426,40 @@ fn record_fiber_state(
     // robust against engine atom-reordering (neighbour-list rebuilds, MPI
     // exchange, etc.).
     let nlocal_now = atoms.nlocal as usize;
-    let i_left = rec.tag_left.and_then(|t| (0..nlocal_now).find(|&k| atoms.tag[k] == t));
-    let i_right = rec.tag_right.and_then(|t| (0..nlocal_now).find(|&k| atoms.tag[k] == t));
+    let i_left = rec
+        .tag_left
+        .and_then(|t| (0..nlocal_now).find(|&k| atoms.tag[k] == t));
+    let i_right = rec
+        .tag_right
+        .and_then(|t| (0..nlocal_now).find(|&k| atoms.tag[k] == t));
     let (lx, ly, lz, lvx, lvy, lvz) = match i_left {
-        Some(i) => (atoms.pos[i][0] as f64, atoms.pos[i][1] as f64, atoms.pos[i][2] as f64,
-                    atoms.vel[i][0] as f64, atoms.vel[i][1] as f64, atoms.vel[i][2] as f64),
+        Some(i) => (
+            atoms.pos[i][0] as f64,
+            atoms.pos[i][1] as f64,
+            atoms.pos[i][2] as f64,
+            atoms.vel[i][0] as f64,
+            atoms.vel[i][1] as f64,
+            atoms.vel[i][2] as f64,
+        ),
         None => (f64::NAN, f64::NAN, f64::NAN, f64::NAN, f64::NAN, f64::NAN),
     };
     let (rx, ry, rz, rvx, rvy, rvz) = match i_right {
-        Some(i) => (atoms.pos[i][0] as f64, atoms.pos[i][1] as f64, atoms.pos[i][2] as f64,
-                    atoms.vel[i][0] as f64, atoms.vel[i][1] as f64, atoms.vel[i][2] as f64),
+        Some(i) => (
+            atoms.pos[i][0] as f64,
+            atoms.pos[i][1] as f64,
+            atoms.pos[i][2] as f64,
+            atoms.vel[i][0] as f64,
+            atoms.vel[i][1] as f64,
+            atoms.vel[i][2] as f64,
+        ),
         None => (f64::NAN, f64::NAN, f64::NAN, f64::NAN, f64::NAN, f64::NAN),
     };
     let length_global = match (i_left, i_right) {
         (Some(_), Some(_)) => {
-            let dx = rx - lx; let dy = ry - ly; let dz = rz - lz;
-            (dx*dx + dy*dy + dz*dz).sqrt()
+            let dx = rx - lx;
+            let dy = ry - ly;
+            let dz = rz - lz;
+            (dx * dx + dy * dy + dz * dz).sqrt()
         }
         _ => f64::NAN,
     };
@@ -421,51 +468,100 @@ fn record_fiber_state(
     let nlocal = atoms.nlocal as usize;
     let i_a = (0..nlocal).find(|&k| atoms.tag[k] == rec.tag_mid_a);
     let i_b = (0..nlocal).find(|&k| atoms.tag[k] == rec.tag_mid_b);
-    let (length_mid, delta_mid, strain_axial_mid,
-         delta_t_mid_mag, dth_bend_mid_mag, dth_bend_y_mid, dth_twist_mid,
-         theta_p_bend_mid_mag, theta_p_bend_y_mid, eps_p_axial_mid,
-         theta_max_bend_mid, eps_max_axial_mid) =
-        match (i_a, i_b) {
-            (Some(i), Some(j)) => {
-                let dx = atoms.pos[j][0] as f64 - atoms.pos[i][0] as f64;
-                let dy = atoms.pos[j][1] as f64 - atoms.pos[i][1] as f64;
-                let dz = atoms.pos[j][2] as f64 - atoms.pos[i][2] as f64;
-                let len = (dx*dx + dy*dy + dz*dz).sqrt();
-                let delta = len - rec.bond_len_mid0;
-                let strain = delta / rec.bond_len_mid0;
+    let (
+        length_mid,
+        delta_mid,
+        strain_axial_mid,
+        delta_t_mid_mag,
+        dth_bend_mid_mag,
+        dth_bend_y_mid,
+        dth_twist_mid,
+        theta_p_bend_mid_mag,
+        theta_p_bend_y_mid,
+        eps_p_axial_mid,
+        theta_max_bend_mid,
+        eps_max_axial_mid,
+    ) = match (i_a, i_b) {
+        (Some(i), Some(j)) => {
+            let dx = atoms.pos[j][0] as f64 - atoms.pos[i][0] as f64;
+            let dy = atoms.pos[j][1] as f64 - atoms.pos[i][1] as f64;
+            let dz = atoms.pos[j][2] as f64 - atoms.pos[i][2] as f64;
+            let len = (dx * dx + dy * dy + dz * dz).sqrt();
+            let delta = len - rec.bond_len_mid0;
+            let strain = delta / rec.bond_len_mid0;
 
-                let hist = registry.expect::<BondHistoryStore>("record_fiber_state");
-                let entry = hist.history.get(i)
-                    .and_then(|v| v.iter().find(|h| h.partner_tag == rec.tag_mid_b));
-                let (dt_m, dth_bm, dth_y, dth_tw, tpb, tpb_y, epa, tmb, ema) = match entry {
-                    Some(h) => {
-                        let dt_m = (h.delta_t[0].powi(2) + h.delta_t[1].powi(2) + h.delta_t[2].powi(2)).sqrt();
-                        let nhat = [dx / len, dy / len, dz / len];
-                        let dn = h.delta_theta[0]*nhat[0]
-                               + h.delta_theta[1]*nhat[1]
-                               + h.delta_theta[2]*nhat[2];
-                        let dth_bend = [
-                            h.delta_theta[0] - dn * nhat[0],
-                            h.delta_theta[1] - dn * nhat[1],
-                            h.delta_theta[2] - dn * nhat[2],
-                        ];
-                        let dth_bm = (dth_bend[0].powi(2) + dth_bend[1].powi(2) + dth_bend[2].powi(2)).sqrt();
-                        // y-component (signed) of bending vectors — for 2D
-                        // bending in the xz-plane (load in −z, fiber along x),
-                        // all bending lives in this single component.
-                        let dth_y = dth_bend[1];
-                        let tpb = (h.theta_p_bend[0].powi(2)
-                                 + h.theta_p_bend[1].powi(2)
-                                 + h.theta_p_bend[2].powi(2)).sqrt();
-                        let tpb_y = h.theta_p_bend[1];
-                        (dt_m, dth_bm, dth_y, dn, tpb, tpb_y, h.eps_p_axial, h.theta_max_bend, h.eps_max_axial)
-                    }
-                    None => (f64::NAN, f64::NAN, f64::NAN, f64::NAN, f64::NAN, f64::NAN, f64::NAN, f64::NAN, f64::NAN),
-                };
-                (len, delta, strain, dt_m, dth_bm, dth_y, dth_tw, tpb, tpb_y, epa, tmb, ema)
-            }
-            _ => (f64::NAN, f64::NAN, f64::NAN, f64::NAN, f64::NAN, f64::NAN, f64::NAN, f64::NAN, f64::NAN, f64::NAN, f64::NAN, f64::NAN),
-        };
+            let hist = registry.expect::<BondHistoryStore>("record_fiber_state");
+            let entry = hist
+                .history
+                .get(i)
+                .and_then(|v| v.iter().find(|h| h.partner_tag == rec.tag_mid_b));
+            let (dt_m, dth_bm, dth_y, dth_tw, tpb, tpb_y, epa, tmb, ema) = match entry {
+                Some(h) => {
+                    let dt_m =
+                        (h.delta_t[0].powi(2) + h.delta_t[1].powi(2) + h.delta_t[2].powi(2)).sqrt();
+                    let nhat = [dx / len, dy / len, dz / len];
+                    let dn = h.delta_theta[0] * nhat[0]
+                        + h.delta_theta[1] * nhat[1]
+                        + h.delta_theta[2] * nhat[2];
+                    let dth_bend = [
+                        h.delta_theta[0] - dn * nhat[0],
+                        h.delta_theta[1] - dn * nhat[1],
+                        h.delta_theta[2] - dn * nhat[2],
+                    ];
+                    let dth_bm =
+                        (dth_bend[0].powi(2) + dth_bend[1].powi(2) + dth_bend[2].powi(2)).sqrt();
+                    // y-component (signed) of bending vectors — for 2D
+                    // bending in the xz-plane (load in −z, fiber along x),
+                    // all bending lives in this single component.
+                    let dth_y = dth_bend[1];
+                    let tpb = (h.theta_p_bend[0].powi(2)
+                        + h.theta_p_bend[1].powi(2)
+                        + h.theta_p_bend[2].powi(2))
+                    .sqrt();
+                    let tpb_y = h.theta_p_bend[1];
+                    (
+                        dt_m,
+                        dth_bm,
+                        dth_y,
+                        dn,
+                        tpb,
+                        tpb_y,
+                        h.eps_p_axial,
+                        h.theta_max_bend,
+                        h.eps_max_axial,
+                    )
+                }
+                None => (
+                    f64::NAN,
+                    f64::NAN,
+                    f64::NAN,
+                    f64::NAN,
+                    f64::NAN,
+                    f64::NAN,
+                    f64::NAN,
+                    f64::NAN,
+                    f64::NAN,
+                ),
+            };
+            (
+                len, delta, strain, dt_m, dth_bm, dth_y, dth_tw, tpb, tpb_y, epa, tmb, ema,
+            )
+        }
+        _ => (
+            f64::NAN,
+            f64::NAN,
+            f64::NAN,
+            f64::NAN,
+            f64::NAN,
+            f64::NAN,
+            f64::NAN,
+            f64::NAN,
+            f64::NAN,
+            f64::NAN,
+            f64::NAN,
+            f64::NAN,
+        ),
+    };
 
     let bonds_broken = bond_metrics.total_bonds_broken;
     let bond_count = bond_metrics.bond_count;
@@ -492,17 +588,44 @@ fn record_fiber_state(
              {:.8e},{:.8e},\
              {:.8e},{:.8e},{:.8e},{:.8e},{:.8e},{:.8e},{:.8e},\
              {},{}",
-            step, t,
-            lx, ly, lz, lvx, lvy, lvz,
-            rx, ry, rz, rvx, rvy, rvz,
-            length_global, length_mid, delta_mid, strain_axial_mid,
-            delta_t_mid_mag, dth_bend_mid_mag, dth_bend_y_mid, dth_twist_mid,
-            theta_p_bend_mid_mag, theta_p_bend_y_mid, eps_p_axial_mid,
-            theta_max_bend_mid, eps_max_axial_mid,
-            r_b, area, iben, k_n, k_bend,
-            length0, bond_len_mid0,
-            bond_count, bonds_broken,
-        ).ok();
+            step,
+            t,
+            lx,
+            ly,
+            lz,
+            lvx,
+            lvy,
+            lvz,
+            rx,
+            ry,
+            rz,
+            rvx,
+            rvy,
+            rvz,
+            length_global,
+            length_mid,
+            delta_mid,
+            strain_axial_mid,
+            delta_t_mid_mag,
+            dth_bend_mid_mag,
+            dth_bend_y_mid,
+            dth_twist_mid,
+            theta_p_bend_mid_mag,
+            theta_p_bend_y_mid,
+            eps_p_axial_mid,
+            theta_max_bend_mid,
+            eps_max_axial_mid,
+            r_b,
+            area,
+            iben,
+            k_n,
+            k_bend,
+            length0,
+            bond_len_mid0,
+            bond_count,
+            bonds_broken,
+        )
+        .ok();
     }
 
     // Profile snapshot: every sample, overwrite `profile.csv` with the
@@ -520,10 +643,15 @@ fn record_fiber_state(
                 bw,
                 "{},{:.8e},{:.8e},{:.8e},{:.8e},{:.8e},{:.8e},{:.8e}",
                 atoms.tag[i],
-                p0[0], p0[1], p0[2],
-                atoms.pos[i][0], atoms.pos[i][1], atoms.pos[i][2],
+                p0[0],
+                p0[1],
+                p0[2],
+                atoms.pos[i][0],
+                atoms.pos[i][1],
+                atoms.pos[i][2],
                 atoms.mass[i],
-            ).ok();
+            )
+            .ok();
         }
     }
 }

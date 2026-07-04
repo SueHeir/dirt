@@ -82,7 +82,7 @@ pub struct PlasticityConfig {
     pub bending: Option<BendingPlasticityConfig>,
     /// Axial-plasticity sub-config. `None` ⇒ axial is purely elastic.
     #[serde(default)]
-    pub axial:   Option<AxialPlasticityConfig>,
+    pub axial: Option<AxialPlasticityConfig>,
 }
 
 /// Bending-channel plasticity configuration.
@@ -189,11 +189,22 @@ impl BendingPlasticity {
                 let m_p = (4.0 / 3.0) * yield_stress * r_b.powi(3);
                 (k_e * theta_e_mag).min(m_p)
             }
-            Self::Piecewise { breakpoint_strains, slope_multipliers, length_calibration } => {
+            Self::Piecewise {
+                breakpoint_strains,
+                slope_multipliers,
+                length_calibration,
+            } => {
                 // ε = θ · (r_b / l_b) → θ_break = ε_break · l_b / r_b.
                 let scale = if r_b > 0.0 { l_b / r_b } else { 0.0 };
                 let length_rescale = length_rescale_factor(*length_calibration, l_b);
-                evaluate_piecewise(theta_e_mag, k_e, breakpoint_strains, slope_multipliers, scale, length_rescale)
+                evaluate_piecewise(
+                    theta_e_mag,
+                    k_e,
+                    breakpoint_strains,
+                    slope_multipliers,
+                    scale,
+                    length_rescale,
+                )
             }
         }
     }
@@ -225,11 +236,22 @@ impl AxialPlasticity {
     /// rescaling); otherwise it is ignored.
     pub fn envelope(&self, eps_e_mag: f64, k_eff: f64, l_bond: f64) -> f64 {
         match self {
-            Self::Piecewise { breakpoint_strains, slope_multipliers, length_calibration } => {
+            Self::Piecewise {
+                breakpoint_strains,
+                slope_multipliers,
+                length_calibration,
+            } => {
                 // For axial the strain breakpoints already live in ε-space,
                 // so the conversion factor is unity.
                 let length_rescale = length_rescale_factor(*length_calibration, l_bond);
-                evaluate_piecewise(eps_e_mag, k_eff, breakpoint_strains, slope_multipliers, 1.0, length_rescale)
+                evaluate_piecewise(
+                    eps_e_mag,
+                    k_eff,
+                    breakpoint_strains,
+                    slope_multipliers,
+                    1.0,
+                    length_rescale,
+                )
             }
         }
     }
@@ -275,7 +297,11 @@ fn evaluate_piecewise(
         Some(&e) => e,
         None => return k_e * x_mag,
     };
-    let inv_rescale = if length_rescale > 0.0 { 1.0 / length_rescale } else { 1.0 };
+    let inv_rescale = if length_rescale > 0.0 {
+        1.0 / length_rescale
+    } else {
+        1.0
+    };
     let mut f_acc = 0.0;
     let mut x_prev = 0.0;
     let mut slope = k_e;
@@ -308,7 +334,7 @@ pub struct BondPlasticityModel {
     /// Active bending-plasticity model, or `None` if bending is purely elastic.
     pub bending: Option<BendingPlasticity>,
     /// Active axial-plasticity model, or `None` if axial is purely elastic.
-    pub axial:   Option<AxialPlasticity>,
+    pub axial: Option<AxialPlasticity>,
 }
 
 impl BondPlasticityModel {
@@ -319,14 +345,18 @@ impl BondPlasticityModel {
     /// and length agreement; panics on invalid config.
     pub fn from_config(cfg: Option<&PlasticityConfig>, youngs_modulus: Option<f64>) -> Self {
         let mut out = Self::default();
-        let cfg = match cfg { Some(c) => c, None => return out };
+        let cfg = match cfg {
+            Some(c) => c,
+            None => return out,
+        };
         out.bending = cfg.bending.as_ref().map(|b| match b {
-            BendingPlasticityConfig::GuoBending { yield_stress } =>
-                BendingPlasticity::GuoBending { yield_stress: *yield_stress },
+            BendingPlasticityConfig::GuoBending { yield_stress } => BendingPlasticity::GuoBending {
+                yield_stress: *yield_stress,
+            },
             BendingPlasticityConfig::GuoTrilinear { yield_stress } => {
                 let e_b = youngs_modulus.expect(
                     "[bonds] youngs_modulus must be set when using \
-                     [bonds.plasticity.bending] kind = \"guo_trilinear\""
+                     [bonds.plasticity.bending] kind = \"guo_trilinear\"",
                 );
                 let eps_e = yield_stress / e_b;
                 // Guo Eq. 33 in ε-space: ε_p / ε_e = (32 − 3π) / (3π).
@@ -338,7 +368,11 @@ impl BondPlasticityModel {
                     length_calibration: None,
                 }
             }
-            BendingPlasticityConfig::Piecewise { breakpoint_strains, slope_multipliers, length_calibration } => {
+            BendingPlasticityConfig::Piecewise {
+                breakpoint_strains,
+                slope_multipliers,
+                length_calibration,
+            } => {
                 validate_piecewise("bending", breakpoint_strains, slope_multipliers);
                 BendingPlasticity::Piecewise {
                     breakpoint_strains: breakpoint_strains.clone(),
@@ -348,7 +382,11 @@ impl BondPlasticityModel {
             }
         });
         out.axial = cfg.axial.as_ref().map(|a| match a {
-            AxialPlasticityConfig::Piecewise { breakpoint_strains, slope_multipliers, length_calibration } => {
+            AxialPlasticityConfig::Piecewise {
+                breakpoint_strains,
+                slope_multipliers,
+                length_calibration,
+            } => {
                 validate_piecewise("axial", breakpoint_strains, slope_multipliers);
                 AxialPlasticity::Piecewise {
                     breakpoint_strains: breakpoint_strains.clone(),
@@ -363,7 +401,8 @@ impl BondPlasticityModel {
 
 fn validate_piecewise(channel: &str, breaks: &[f64], slopes: &[f64]) {
     assert_eq!(
-        breaks.len(), slopes.len(),
+        breaks.len(),
+        slopes.len(),
         "[bonds.plasticity.{channel}] Piecewise: `breakpoint_strains` and \
          `slope_multipliers` must have equal length",
     );
@@ -399,8 +438,9 @@ pub fn update_bending(
     r_b: f64,
     l_b: f64,
 ) -> ([f64; 3], [f64; 3], f64) {
-    let theta_bend_mag2 =
-        theta_bend[0] * theta_bend[0] + theta_bend[1] * theta_bend[1] + theta_bend[2] * theta_bend[2];
+    let theta_bend_mag2 = theta_bend[0] * theta_bend[0]
+        + theta_bend[1] * theta_bend[1]
+        + theta_bend[2] * theta_bend[2];
     let theta_bend_mag = theta_bend_mag2.sqrt();
     let theta_max_new = theta_max_bend.max(theta_bend_mag);
 
@@ -425,9 +465,17 @@ pub fn update_bending(
         (m, theta_p_bend, theta_max_new)
     } else {
         let scale = m_env_mag / m_trial_mag;
-        let m = [k_e * theta_e[0] * scale, k_e * theta_e[1] * scale, k_e * theta_e[2] * scale];
+        let m = [
+            k_e * theta_e[0] * scale,
+            k_e * theta_e[1] * scale,
+            k_e * theta_e[2] * scale,
+        ];
         let elastic_offset = m_env_mag / k_e;
-        let dir = [theta_e[0] / theta_e_mag, theta_e[1] / theta_e_mag, theta_e[2] / theta_e_mag];
+        let dir = [
+            theta_e[0] / theta_e_mag,
+            theta_e[1] / theta_e_mag,
+            theta_e[2] / theta_e_mag,
+        ];
         let theta_p_new = [
             theta_bend[0] - elastic_offset * dir[0],
             theta_bend[1] - elastic_offset * dir[1],
@@ -501,7 +549,9 @@ mod tests {
     }
 
     fn guo(sigma_y: f64) -> BendingPlasticity {
-        BendingPlasticity::GuoBending { yield_stress: sigma_y }
+        BendingPlasticity::GuoBending {
+            yield_stress: sigma_y,
+        }
     }
 
     // ── Envelope shape ──────────────────────────────────────────────────────
@@ -532,7 +582,7 @@ mod tests {
         let (r_b, l_b, _, k_e, _, _) = fixture();
         let model = BendingPlasticity::Piecewise {
             breakpoint_strains: vec![0.01, 0.02, 0.03],
-            slope_multipliers:  vec![0.5,  0.1,  0.0],
+            slope_multipliers: vec![0.5, 0.1, 0.0],
             length_calibration: None,
         };
         let scale = l_b / r_b;
@@ -553,11 +603,11 @@ mod tests {
         let (_r, _l, _, _, k_n, e_b) = fixture();
         let l0 = 2.0e-3;
         let area = std::f64::consts::PI * (1.0e-3_f64).powi(2);
-        let k_eff = k_n * l0;        // = E_b · A
+        let k_eff = k_n * l0; // = E_b · A
         assert!((k_eff - e_b * area).abs() / k_eff < 1e-12);
         let model = AxialPlasticity::Piecewise {
             breakpoint_strains: vec![0.01, 0.02, 0.03],
-            slope_multipliers:  vec![0.5,  0.1,  0.0],
+            slope_multipliers: vec![0.5, 0.1, 0.0],
             length_calibration: None,
         };
         let f_at_1 = k_eff * 0.01;
@@ -616,15 +666,29 @@ mod tests {
 
         // Partial unload.
         let theta_unload = [theta_load[0] - 0.5 * theta_yield, 0.0, 0.0];
-        let (m_unload, _, _) =
-            update_bending(theta_unload, theta_p_load, theta_max_load, k_e, &model, r_b, l_b);
+        let (m_unload, _, _) = update_bending(
+            theta_unload,
+            theta_p_load,
+            theta_max_load,
+            k_e,
+            &model,
+            r_b,
+            l_b,
+        );
         let theta_e_after = theta_unload[0] - residual;
         assert!((m_unload[0] - k_e * theta_e_after).abs() / (k_e * theta_e_after).abs() < 1e-12);
 
         // Reverse past negative yield.
         let theta_reverse = [residual - 2.0 * theta_yield, 0.0, 0.0];
-        let (m_rev, theta_p_rev, _) =
-            update_bending(theta_reverse, theta_p_load, theta_max_load, k_e, &model, r_b, l_b);
+        let (m_rev, theta_p_rev, _) = update_bending(
+            theta_reverse,
+            theta_p_load,
+            theta_max_load,
+            k_e,
+            &model,
+            r_b,
+            l_b,
+        );
         assert!((m_rev[0].abs() - m_p).abs() / m_p < 1e-12);
         assert!(m_rev[0] < 0.0);
         let expected_anchor = theta_reverse[0] + theta_yield;
@@ -639,17 +703,28 @@ mod tests {
         let sigma_y = 5.0e6;
         let e_b = 1.0e9;
         let cfg = PlasticityConfig {
-            bending: Some(BendingPlasticityConfig::GuoTrilinear { yield_stress: sigma_y }),
+            bending: Some(BendingPlasticityConfig::GuoTrilinear {
+                yield_stress: sigma_y,
+            }),
             axial: None,
         };
         let model = BondPlasticityModel::from_config(Some(&cfg), Some(e_b));
-        let bending = model.bending.expect("trilinear should produce a bending model");
+        let bending = model
+            .bending
+            .expect("trilinear should produce a bending model");
 
         // It should expand to a Piecewise with the right breakpoints.
         match bending {
-            BendingPlasticity::Piecewise { ref breakpoint_strains, ref slope_multipliers, .. } => {
-                assert_eq!(slope_multipliers, &vec![0.5, 0.0],
-                    "trilinear → slopes [K_e/2, 0]");
+            BendingPlasticity::Piecewise {
+                ref breakpoint_strains,
+                ref slope_multipliers,
+                ..
+            } => {
+                assert_eq!(
+                    slope_multipliers,
+                    &vec![0.5, 0.0],
+                    "trilinear → slopes [K_e/2, 0]"
+                );
                 let pi = std::f64::consts::PI;
                 let eps_e_expected = sigma_y / e_b;
                 let eps_p_expected = eps_e_expected * (32.0 - 3.0 * pi) / (3.0 * pi);
@@ -691,7 +766,7 @@ mod tests {
 
         let model = BendingPlasticity::Piecewise {
             breakpoint_strains: vec![eps_e, eps_p],
-            slope_multipliers:  vec![0.5,   0.0],
+            slope_multipliers: vec![0.5, 0.0],
             length_calibration: None,
         };
         assert!((model.envelope(theta_e, k_e, r_b, l_b) - m_e).abs() / m_e < 1e-10);
@@ -707,7 +782,7 @@ mod tests {
         let l0 = 2.0e-3;
         let model = AxialPlasticity::Piecewise {
             breakpoint_strains: vec![0.01],
-            slope_multipliers:  vec![0.0],
+            slope_multipliers: vec![0.0],
             length_calibration: None,
         };
         let eps_axial = 0.005;
@@ -724,7 +799,7 @@ mod tests {
         let l0 = 2.0e-3;
         let model = AxialPlasticity::Piecewise {
             breakpoint_strains: vec![0.01],
-            slope_multipliers:  vec![0.0],
+            slope_multipliers: vec![0.0],
             length_calibration: None,
         };
         let k_eff = k_n * l0;
@@ -741,7 +816,7 @@ mod tests {
         let l0 = 2.0e-3;
         let model = AxialPlasticity::Piecewise {
             breakpoint_strains: vec![0.01],
-            slope_multipliers:  vec![0.0],
+            slope_multipliers: vec![0.0],
             length_calibration: None,
         };
         let k_eff = k_n * l0;
@@ -758,7 +833,7 @@ mod tests {
         let l0 = 2.0e-3;
         let model = AxialPlasticity::Piecewise {
             breakpoint_strains: vec![0.01],
-            slope_multipliers:  vec![0.0],
+            slope_multipliers: vec![0.0],
             length_calibration: None,
         };
         let k_eff = k_n * l0;
@@ -770,8 +845,7 @@ mod tests {
         assert!((f_unload - 0.5 * f_yield).abs() / f_yield < 1e-12);
         assert!((eps_p_after - eps_p_load).abs() < 1e-15);
         // Continue all the way to ε = 0 → ε_e = −0.02 → F = −f_yield.
-        let (f_zero, eps_p_zero, _) =
-            update_axial(0.0, eps_p_load, eps_max_load, k_n, l0, &model);
+        let (f_zero, eps_p_zero, _) = update_axial(0.0, eps_p_load, eps_max_load, k_n, l0, &model);
         assert!((f_zero - (-f_yield)).abs() / f_yield < 1e-12);
         assert!((eps_p_zero - 0.01).abs() / 0.01 < 1e-12);
     }
@@ -783,7 +857,7 @@ mod tests {
         let l0 = 2.0e-3;
         let model = AxialPlasticity::Piecewise {
             breakpoint_strains: vec![0.01, 0.02, 0.03],
-            slope_multipliers:  vec![0.5,  0.1,  0.0],
+            slope_multipliers: vec![0.5, 0.1, 0.0],
             length_calibration: None,
         };
         let k_eff = k_n * l0;
@@ -791,21 +865,27 @@ mod tests {
             let f1 = k_eff * 0.01;
             let f2 = f1 + 0.5 * k_eff * 0.01;
             let f3 = f2 + 0.1 * k_eff * 0.01;
-            if eps <= 0.01 { k_eff * eps }
-            else if eps <= 0.02 { f1 + 0.5 * k_eff * (eps - 0.01) }
-            else if eps <= 0.03 { f2 + 0.1 * k_eff * (eps - 0.02) }
-            else { f3 }
+            if eps <= 0.01 {
+                k_eff * eps
+            } else if eps <= 0.02 {
+                f1 + 0.5 * k_eff * (eps - 0.01)
+            } else if eps <= 0.03 {
+                f2 + 0.1 * k_eff * (eps - 0.02)
+            } else {
+                f3
+            }
         };
         let mut eps_p = 0.0;
         let mut eps_max = 0.0;
         for eps in [0.005, 0.01, 0.015, 0.02, 0.025, 0.03, 0.05, 0.10_f64] {
-            let (f, eps_p_new, eps_max_new) =
-                update_axial(eps, eps_p, eps_max, k_n, l0, &model);
+            let (f, eps_p_new, eps_max_new) = update_axial(eps, eps_p, eps_max, k_n, l0, &model);
             let expected = f_at(eps);
             assert!(
                 (f - expected).abs() / expected.max(1e-30) < 1e-10,
                 "axial envelope mismatch at ε = {}: got {} vs expected {}",
-                eps, f, expected,
+                eps,
+                f,
+                expected,
             );
             eps_p = eps_p_new;
             eps_max = eps_max_new;
@@ -822,13 +902,12 @@ mod tests {
         let l0 = 2.0e-3;
         let model = AxialPlasticity::Piecewise {
             breakpoint_strains: vec![0.01, 0.02, 0.03],
-            slope_multipliers:  vec![0.5,  0.1,  0.0],
+            slope_multipliers: vec![0.5, 0.1, 0.0],
             length_calibration: None,
         };
         let k_eff = k_n * l0;
         // Monotonic to 0.02 — cap should be 0.015·k_eff.
-        let (_, eps_p_load, eps_max_load) =
-            update_axial(0.02, 0.0, 0.0, k_n, l0, &model);
+        let (_, eps_p_load, eps_max_load) = update_axial(0.02, 0.0, 0.0, k_n, l0, &model);
         let f_cap = 0.015 * k_eff;
         // Go all the way to ε = -0.02 (symmetric extremum). Trial elastic
         // force is way past the cap, so we yield on the negative side at the
@@ -841,7 +920,7 @@ mod tests {
         // Now push to ε = -0.025 — past prior |ε_max| of 0.02. Cap grows.
         let (f_grow, _, eps_max_grow) =
             update_axial(-0.025, _eps_p_rev, eps_max_rev, k_n, l0, &model);
-        let expected_cap = 0.015 * k_eff + 0.1 * k_eff * 0.005;   // segment 3 slope
+        let expected_cap = 0.015 * k_eff + 0.1 * k_eff * 0.005; // segment 3 slope
         assert!((f_grow.abs() - expected_cap).abs() / expected_cap < 1e-12);
         assert!((eps_max_grow - 0.025).abs() / 0.025 < 1e-12);
     }
@@ -856,19 +935,19 @@ mod tests {
         let l0 = 2.0e-3;
         let model_off = AxialPlasticity::Piecewise {
             breakpoint_strains: vec![0.02, 0.04],
-            slope_multipliers:  vec![0.3,  0.0],
+            slope_multipliers: vec![0.3, 0.0],
             length_calibration: None,
         };
         let model_on_at_calib = AxialPlasticity::Piecewise {
             breakpoint_strains: vec![0.02, 0.04],
-            slope_multipliers:  vec![0.3,  0.0],
+            slope_multipliers: vec![0.3, 0.0],
             length_calibration: Some(l0),
         };
         let k_eff = k_n * l0;
         // At l_bond = l_calib, length_rescale = 1 ⇒ identical envelopes.
         for eps in [0.005_f64, 0.02, 0.03, 0.04, 0.10] {
             let v_off = model_off.envelope(eps, k_eff, l0);
-            let v_on  = model_on_at_calib.envelope(eps, k_eff, l0);
+            let v_on = model_on_at_calib.envelope(eps, k_eff, l0);
             assert!(
                 (v_off - v_on).abs() / v_off.max(1e-30) < 1e-15,
                 "rescaling at l_bond = l_calib must be a no-op (eps = {eps}: off = {v_off}, on = {v_on})",
@@ -888,7 +967,7 @@ mod tests {
         let l_ref = 2.0e-3;
         let model = AxialPlasticity::Piecewise {
             breakpoint_strains: vec![0.02, 0.04],
-            slope_multipliers:  vec![0.3,  0.0],
+            slope_multipliers: vec![0.3, 0.0],
             length_calibration: Some(l_ref),
         };
 
@@ -915,13 +994,15 @@ mod tests {
         // rescale as 1/α to keep σ invariant in plastic-displacement space).
         let l_short = l_ref / 2.0;
         let k_eff_short = k_n * l_short;
-        let alpha_short = l_ref / l_short;       // = 2
+        let alpha_short = l_ref / l_short; // = 2
         let slope_h_short = 0.3 / alpha_short * k_eff_short;
-        let f_y         = f_at(0.02,  l_short);
+        let f_y = f_at(0.02, l_short);
         let f_eps_0_055 = f_at(0.055, l_short);
-        let expected    = f_y + slope_h_short * (0.055 - 0.02);
-        assert!((f_eps_0_055 - expected).abs() / expected < 1e-12,
-            "rescaled hardening slope at l_ref/2: f(0.055) = {f_eps_0_055}, expected {expected}");
+        let expected = f_y + slope_h_short * (0.055 - 0.02);
+        assert!(
+            (f_eps_0_055 - expected).abs() / expected < 1e-12,
+            "rescaled hardening slope at l_ref/2: f(0.055) = {f_eps_0_055}, expected {expected}"
+        );
         // Just above 0.06: on the plateau (slope = 0), value frozen at f(0.06).
         let f_eps_0_07 = f_at(0.07, l_short);
         let f_eps_0_06 = f_at(0.06, l_short);
@@ -932,7 +1013,7 @@ mod tests {
         // assert — and it directly implies fracture-energy invariance ∫F du.
         // k_eff = E·A is constant across bond lengths (K_n = E·A/L₀ scales
         // inversely with L₀, so K_n · L₀ = E·A is fixed).
-        let k_eff = k_n * 2.0e-3;     // E·A, the material-invariant constant
+        let k_eff = k_n * 2.0e-3; // E·A, the material-invariant constant
         for &u in &[1.0e-5_f64, 2.0e-5, 3.0e-5, 4.0e-5, 5.0e-5, 6.0e-5, 8.0e-5] {
             let f_for = |l_bond: f64| {
                 let eps = u / l_bond + 0.02;
@@ -940,11 +1021,15 @@ mod tests {
             };
             let f_short = f_for(l_ref / 2.0);
             let f_calib = f_for(l_ref);
-            let f_long  = f_for(2.0 * l_ref);
-            assert!((f_short - f_calib).abs() / f_calib.abs() < 1e-12,
-                "F(u={u:.2e}) should be l_bond-invariant: l_ref/2 → {f_short}, l_ref → {f_calib}");
-            assert!((f_long - f_calib).abs() / f_calib.abs() < 1e-12,
-                "F(u={u:.2e}) should be l_bond-invariant: 2·l_ref → {f_long}, l_ref → {f_calib}");
+            let f_long = f_for(2.0 * l_ref);
+            assert!(
+                (f_short - f_calib).abs() / f_calib.abs() < 1e-12,
+                "F(u={u:.2e}) should be l_bond-invariant: l_ref/2 → {f_short}, l_ref → {f_calib}"
+            );
+            assert!(
+                (f_long - f_calib).abs() / f_calib.abs() < 1e-12,
+                "F(u={u:.2e}) should be l_bond-invariant: 2·l_ref → {f_long}, l_ref → {f_calib}"
+            );
         }
     }
 
@@ -957,12 +1042,12 @@ mod tests {
         let l_ref = 2.0e-3;
         let model = AxialPlasticity::Piecewise {
             breakpoint_strains: vec![0.02, 0.04],
-            slope_multipliers:  vec![0.3,  0.0],
+            slope_multipliers: vec![0.3, 0.0],
             length_calibration: Some(l_ref),
         };
-        let k_eff = k_n * 2.0e-3;     // E·A, length-invariant
+        let k_eff = k_n * 2.0e-3; // E·A, length-invariant
         let energy = |l_bond: f64| {
-            let u_max = 0.02 * l_ref * 2.0;       // = 8e-5 m
+            let u_max = 0.02 * l_ref * 2.0; // = 8e-5 m
             let n = 200_000;
             let mut e = 0.0;
             let du = u_max / n as f64;
@@ -976,13 +1061,17 @@ mod tests {
         };
         let e_short = energy(l_ref / 2.0);
         let e_calib = energy(l_ref);
-        let e_long  = energy(2.0 * l_ref);
+        let e_long = energy(2.0 * l_ref);
         let rel = |a: f64, b: f64| (a - b).abs() / a.max(b);
-        assert!(rel(e_short, e_calib) < 1e-4,
+        assert!(
+            rel(e_short, e_calib) < 1e-4,
             "∫F du: l_ref/2 vs l_ref: {e_short} vs {e_calib}, rel diff {}",
-            rel(e_short, e_calib));
-        assert!(rel(e_long, e_calib) < 1e-4,
+            rel(e_short, e_calib)
+        );
+        assert!(
+            rel(e_long, e_calib) < 1e-4,
             "∫F du: 2·l_ref vs l_ref: {e_long} vs {e_calib}, rel diff {}",
-            rel(e_long, e_calib));
+            rel(e_long, e_calib)
+        );
     }
 }

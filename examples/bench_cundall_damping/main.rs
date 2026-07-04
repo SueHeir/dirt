@@ -62,7 +62,12 @@ struct CundallTracker {
 
 impl CundallTracker {
     fn new() -> Self {
-        Self { tag: None, spin_set: false, rows: Vec::new(), written: false }
+        Self {
+            tag: None,
+            spin_set: false,
+            rows: Vec::new(),
+            written: false,
+        }
     }
 }
 
@@ -136,7 +141,9 @@ fn record(
     let dt = atoms.dt;
     let step = run_state.total_cycle;
     let t = step as f64 * dt;
-    tracker.rows.push((t, atoms.vel[i][2] as f64, dem.omega[i][2]));
+    tracker
+        .rows
+        .push((t, atoms.vel[i][2] as f64, dem.omega[i][2]));
 
     let last_step = run_config.current_stage(0).steps as usize;
     if step + 1 >= last_step {

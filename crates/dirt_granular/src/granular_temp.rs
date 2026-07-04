@@ -23,7 +23,7 @@ use std::{
 use grass_app::prelude::*;
 use grass_scheduler::prelude::*;
 
-use soil_core::{Atom, CommResource, Input, RunConfig, RunState, ParticleSimScheduleSet};
+use soil_core::{Atom, CommResource, Input, ParticleSimScheduleSet, RunConfig, RunState};
 
 /// Plugin that outputs granular temperature to `data/GranularTemp.txt`.
 ///
@@ -34,7 +34,10 @@ pub struct GranularTempPlugin;
 
 impl Plugin for GranularTempPlugin {
     fn build(&self, app: &mut App) {
-        app.add_update_system(print_granular_temperature, ParticleSimScheduleSet::PreExchange);
+        app.add_update_system(
+            print_granular_temperature,
+            ParticleSimScheduleSet::PreExchange,
+        );
     }
 }
 
@@ -50,8 +53,10 @@ pub fn print_granular_temperature(
     input: Res<Input>,
 ) {
     let index = scheduler_manager.index;
-    let thermo_interval = run_config.current_stage(index)
-        .overrides.get("thermo")
+    let thermo_interval = run_config
+        .current_stage(index)
+        .overrides
+        .get("thermo")
         .and_then(|v| v.as_integer())
         .map(|i| i as usize)
         .unwrap_or(100);
@@ -90,12 +95,15 @@ pub fn print_granular_temperature(
     for i in 0..nlocal {
         local_ke += 0.5
             * atoms.mass[i] as f64
-            * ((atoms.vel[i][0] as f64).powi(2) + (atoms.vel[i][1] as f64).powi(2) + (atoms.vel[i][2] as f64).powi(2));
+            * ((atoms.vel[i][0] as f64).powi(2)
+                + (atoms.vel[i][1] as f64).powi(2)
+                + (atoms.vel[i][2] as f64).powi(2));
     }
     let global_ke = comm.all_reduce_sum_f64(local_ke);
 
     // Total momentum magnitude (should be ~conserved)
-    let mom_mag = (global_mv_x * global_mv_x + global_mv_y * global_mv_y + global_mv_z * global_mv_z).sqrt();
+    let mom_mag =
+        (global_mv_x * global_mv_x + global_mv_y * global_mv_y + global_mv_z * global_mv_z).sqrt();
 
     if comm.rank() != 0 {
         return;

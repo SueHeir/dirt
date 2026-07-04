@@ -164,7 +164,6 @@ pub use soil_print;
 /// Velocity Verlet time integration for translational degrees of freedom.
 pub use soil_verlet;
 
-
 use grass_app::prelude::*;
 
 /// Core simulation infrastructure plugin group.
@@ -254,18 +253,26 @@ pub mod prelude {
     pub use crate::CorePlugins;
 
     // DEM plugins and config types
-    pub use dirt_atom::{DemAtomPlugin, DemConfig, MaterialTable};
     pub use dirt_atom::{DemAtomInsertPlugin, ParticlesConfig};
+    pub use dirt_atom::{DemAtomPlugin, DemConfig, MaterialTable};
     pub use dirt_bond::DemBondPlugin;
-    pub use dirt_clump::{ClumpPlugin, ClumpRegistry, ClumpAtom, ClumpDef, MultisphereBody, MultisphereBodyStore};
-    pub use dirt_granular::{GranularDefaultPlugins, HertzMindlinContactPlugin, RotationalDynamicsPlugin, GranularTempPlugin};
+    pub use dirt_clump::{
+        ClumpAtom, ClumpDef, ClumpPlugin, ClumpRegistry, MultisphereBody, MultisphereBodyStore,
+    };
     pub use dirt_contact_analysis::{ContactAnalysisConfig, ContactAnalysisPlugin};
+    pub use dirt_granular::{
+        GranularDefaultPlugins, GranularTempPlugin, HertzMindlinContactPlugin,
+        RotationalDynamicsPlugin,
+    };
     pub use dirt_measure_plane::{MeasurePlaneDef, MeasurePlanePlugin, MeasurePlanes};
     pub use dirt_wall::{WallDef, WallMotion, WallPlane, WallPlugin, Walls};
 
     // Shared infrastructure plugins
+    pub use dirt_fixes::{
+        AddForceDef, FixesPlugin, FixesRegistry, FreezeDef, GravityConfig, GravityPlugin,
+        MoveLinearDef, SetForceDef, ViscousDef,
+    };
     pub use soil_deform::{DeformConfig, DeformPlugin, DeformState};
-    pub use dirt_fixes::{AddForceDef, FixesPlugin, FixesRegistry, FreezeDef, GravityConfig, GravityPlugin, MoveLinearDef, SetForceDef, ViscousDef};
     pub use soil_fixes::{PinDef, PinRegistry, PinState, SoilFixesPlugin};
 
     // Derive macros
@@ -278,7 +285,7 @@ pub mod prelude {
     pub use soil_print::*;
     // Re-export the ParticleSimScheduleSet enum explicitly so downstream users
     // can access it without ambiguity with the ScheduleSet trait from grass_scheduler.
-    pub use soil_core::ParticleSimScheduleSet;
     pub use grass_scheduler::prelude::*;
+    pub use soil_core::ParticleSimScheduleSet;
     pub use soil_verlet::*;
 }

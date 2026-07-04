@@ -616,13 +616,11 @@ impl Plugin for WallPlugin {
                     toml::Value::Array(arr) => arr
                         .iter()
                         .enumerate()
-                        .map(|(idx, v)| {
-                            match v.clone().try_into::<WallDef>() {
-                                Ok(w) => w,
-                                Err(e) => {
-                                    eprintln!("ERROR: failed to parse [[wall]] entry {}: {}", idx, e);
-                                    std::process::exit(1);
-                                }
+                        .map(|(idx, v)| match v.clone().try_into::<WallDef>() {
+                            Ok(w) => w,
+                            Err(e) => {
+                                eprintln!("ERROR: failed to parse [[wall]] entry {}: {}", idx, e);
+                                std::process::exit(1);
                             }
                         })
                         .collect(),
@@ -674,11 +672,17 @@ impl Plugin for WallPlugin {
                             "y" | "Y" => 1,
                             "z" | "Z" => 2,
                             _ => {
-                                eprintln!("ERROR: cylinder wall axis must be x, y, or z, got '{}'", axis_str);
+                                eprintln!(
+                                    "ERROR: cylinder wall axis must be x, y, or z, got '{}'",
+                                    axis_str
+                                );
                                 std::process::exit(1);
                             }
                         };
-                        let center_vec = w.center.as_ref().expect("cylinder wall requires 'center' [c0, c1]");
+                        let center_vec = w
+                            .center
+                            .as_ref()
+                            .expect("cylinder wall requires 'center' [c0, c1]");
                         if center_vec.len() < 2 {
                             eprintln!("ERROR: cylinder wall 'center' must have 2 elements");
                             std::process::exit(1);
@@ -702,7 +706,10 @@ impl Plugin for WallPlugin {
                         });
                     }
                     "sphere" => {
-                        let center_vec = w.center.as_ref().expect("sphere wall requires 'center' [x, y, z]");
+                        let center_vec = w
+                            .center
+                            .as_ref()
+                            .expect("sphere wall requires 'center' [x, y, z]");
                         if center_vec.len() < 3 {
                             eprintln!("ERROR: sphere wall 'center' must have 3 elements");
                             std::process::exit(1);
@@ -737,11 +744,15 @@ impl Plugin for WallPlugin {
                     }
                     // Default to plane for unrecognized types (backwards compatibility)
                     "plane" | _ => {
-                        let mag =
-                            (w.normal_x * w.normal_x + w.normal_y * w.normal_y + w.normal_z * w.normal_z)
-                                .sqrt();
+                        let mag = (w.normal_x * w.normal_x
+                            + w.normal_y * w.normal_y
+                            + w.normal_z * w.normal_z)
+                            .sqrt();
                         if mag <= 1e-15 {
-                            eprintln!("ERROR: wall normal vector must be non-zero (wall material '{}')", w.material);
+                            eprintln!(
+                                "ERROR: wall normal vector must be non-zero (wall material '{}')",
+                                w.material
+                            );
                             std::process::exit(1);
                         }
                         let nx = w.normal_x / mag;
@@ -818,8 +829,14 @@ impl Plugin for WallPlugin {
 
         app.add_resource(walls);
         app.add_update_system(wall_move, ParticleSimScheduleSet::PreInitialIntegration);
-        app.add_update_system(wall_zero_force_accumulators, ParticleSimScheduleSet::PreForce);
-        app.add_update_system(wall_contact_force.label("wall_contact"), ParticleSimScheduleSet::Force);
+        app.add_update_system(
+            wall_zero_force_accumulators,
+            ParticleSimScheduleSet::PreForce,
+        );
+        app.add_update_system(
+            wall_contact_force.label("wall_contact"),
+            ParticleSimScheduleSet::Force,
+        );
     }
 }
 
@@ -847,7 +864,10 @@ pub fn wall_move(mut walls: ResMut<Walls>, atoms: Res<Atom>) {
                 wall.point_y += wall.velocity[1] * dt;
                 wall.point_z += wall.velocity[2] * dt;
             }
-            WallMotion::Oscillate { amplitude, frequency } => {
+            WallMotion::Oscillate {
+                amplitude,
+                frequency,
+            } => {
                 let phase = 2.0 * std::f64::consts::PI * frequency * (time + dt);
                 let disp = amplitude * phase.sin();
                 wall.point_x = wall.origin[0] + disp * wall.normal_x;
@@ -861,7 +881,11 @@ pub fn wall_move(mut walls: ResMut<Walls>, atoms: Res<Atom>) {
                     vel_mag * wall.normal_z,
                 ];
             }
-            WallMotion::Servo { target_force, max_velocity, gain } => {
+            WallMotion::Servo {
+                target_force,
+                max_velocity,
+                gain,
+            } => {
                 let error = target_force - wall.force_accumulator;
                 let vel_mag = (gain * error).clamp(-max_velocity, max_velocity);
                 wall.velocity = [
@@ -1024,7 +1048,11 @@ fn wall_rolling_torque(
     }
     // Rolling angular velocity = particle spin minus its normal (twisting) part.
     let odn = omega[0] * n[0] + omega[1] * n[1] + omega[2] * n[2];
-    let roll = [omega[0] - odn * n[0], omega[1] - odn * n[1], omega[2] - odn * n[2]];
+    let roll = [
+        omega[0] - odn * n[0],
+        omega[1] - odn * n[1],
+        omega[2] - odn * n[2],
+    ];
     let tau_max = mu_r * f_n.abs() * radius;
 
     if sds {
@@ -1177,9 +1205,7 @@ pub fn wall_contact_force(
             let v_rel_x = atoms.vel[i][0] as f64 - wall.velocity[0];
             let v_rel_y = atoms.vel[i][1] as f64 - wall.velocity[1];
             let v_rel_z = atoms.vel[i][2] as f64 - wall.velocity[2];
-            let v_n = v_rel_x * wall.normal_x
-                + v_rel_y * wall.normal_y
-                + v_rel_z * wall.normal_z;
+            let v_n = v_rel_x * wall.normal_x + v_rel_y * wall.normal_y + v_rel_z * wall.normal_z;
 
             let beta = material_table.beta_ij[mat_i][wall_mat];
             let cohesion_energy = material_table.cohesion_energy_ij[mat_i][wall_mat];
@@ -1200,8 +1226,7 @@ pub fn wall_contact_force(
                 }
             } else if cohesion_energy > 0.0 {
                 let f_diss = 2.0 * beta * SQRT_5_6 * (s_n * m_r).sqrt() * v_n;
-                let f_cohesion =
-                    cohesion_energy * std::f64::consts::PI * delta * r_eff;
+                let f_cohesion = cohesion_energy * std::f64::consts::PI * delta * r_eff;
                 k_n * delta - f_diss - f_cohesion
             } else {
                 let f_diss = 2.0 * beta * SQRT_5_6 * (s_n * m_r).sqrt() * v_n;
@@ -1209,7 +1234,11 @@ pub fn wall_contact_force(
                 // lets the damping go net-attractive near separation, matching
                 // LAMMPS `fix wall/gran` default (no tensile cutoff).
                 let f_total = k_n * delta - f_diss;
-                if material_table.limit_damping { f_total.max(0.0) } else { f_total }
+                if material_table.limit_damping {
+                    f_total.max(0.0)
+                } else {
+                    f_total
+                }
             };
 
             // Force direction: along wall normal (pushes atom away from wall)
@@ -1243,7 +1272,18 @@ pub fn wall_contact_force(
                 let key = (0u8, wall_idx, atoms.tag[i]);
                 let old = old_springs.get(&key).copied().unwrap_or([0.0; 3]);
                 let (ft, tau, ns) = wall_tangential_force(
-                    n, v_rel, dem.omega[i], radius, delta, f_net, m_r, g_eff, mu, beta, dt, old,
+                    n,
+                    v_rel,
+                    dem.omega[i],
+                    radius,
+                    delta,
+                    f_net,
+                    m_r,
+                    g_eff,
+                    mu,
+                    beta,
+                    dt,
+                    old,
                 );
                 atoms.force[i][0] += ft[0] as Accum;
                 atoms.force[i][1] += ft[1] as Accum;
@@ -1263,8 +1303,16 @@ pub fn wall_contact_force(
                 let key = (0u8, wall_idx, atoms.tag[i]);
                 let old_rd = old_rolling.get(&key).copied().unwrap_or([0.0; 3]);
                 let (tr, new_rd) = wall_rolling_torque(
-                    [wall.normal_x, wall.normal_y, wall.normal_z], dem.omega[i], radius, f_net,
-                    mu_r, k_roll, gamma_roll, sds, dt, old_rd,
+                    [wall.normal_x, wall.normal_y, wall.normal_z],
+                    dem.omega[i],
+                    radius,
+                    f_net,
+                    mu_r,
+                    k_roll,
+                    gamma_roll,
+                    sds,
+                    dt,
+                    old_rd,
                 );
                 dem.torque[i][0] += tr[0];
                 dem.torque[i][1] += tr[1];
@@ -1378,7 +1426,11 @@ pub fn wall_contact_force(
                 // lets the damping go net-attractive near separation, matching
                 // LAMMPS `fix wall/gran` default (no tensile cutoff).
                 let f_total = k_n * delta - f_diss;
-                if material_table.limit_damping { f_total.max(0.0) } else { f_total }
+                if material_table.limit_damping {
+                    f_total.max(0.0)
+                } else {
+                    f_total
+                }
             };
 
             atoms.force[i][0] += (f_net * nx) as Accum;
@@ -1398,8 +1450,16 @@ pub fn wall_contact_force(
                         atoms.vel[i][1] as f64,
                         atoms.vel[i][2] as f64,
                     ],
-                    dem.omega[i], radius, delta, f_net, m_r, g_eff,
-                    mu, beta, dt, old,
+                    dem.omega[i],
+                    radius,
+                    delta,
+                    f_net,
+                    m_r,
+                    g_eff,
+                    mu,
+                    beta,
+                    dt,
+                    old,
                 );
                 atoms.force[i][0] += ft[0] as Accum;
                 atoms.force[i][1] += ft[1] as Accum;
@@ -1419,7 +1479,15 @@ pub fn wall_contact_force(
                 let key = (1u8, cyl_idx, atoms.tag[i]);
                 let old_rd = old_rolling.get(&key).copied().unwrap_or([0.0; 3]);
                 let (tr, new_rd) = wall_rolling_torque(
-                    [nx, ny, nz], dem.omega[i], radius, f_net, mu_r, k_roll, gamma_roll, sds, dt,
+                    [nx, ny, nz],
+                    dem.omega[i],
+                    radius,
+                    f_net,
+                    mu_r,
+                    k_roll,
+                    gamma_roll,
+                    sds,
+                    dt,
                     old_rd,
                 );
                 dem.torque[i][0] += tr[0];
@@ -1502,7 +1570,11 @@ pub fn wall_contact_force(
                 // lets the damping go net-attractive near separation, matching
                 // LAMMPS `fix wall/gran` default (no tensile cutoff).
                 let f_total = k_n * delta - f_diss;
-                if material_table.limit_damping { f_total.max(0.0) } else { f_total }
+                if material_table.limit_damping {
+                    f_total.max(0.0)
+                } else {
+                    f_total
+                }
             };
 
             atoms.force[i][0] += (f_net * nx) as Accum;
@@ -1522,8 +1594,16 @@ pub fn wall_contact_force(
                         atoms.vel[i][1] as f64,
                         atoms.vel[i][2] as f64,
                     ],
-                    dem.omega[i], radius, delta, f_net, m_r, g_eff,
-                    mu, beta, dt, old,
+                    dem.omega[i],
+                    radius,
+                    delta,
+                    f_net,
+                    m_r,
+                    g_eff,
+                    mu,
+                    beta,
+                    dt,
+                    old,
                 );
                 atoms.force[i][0] += ft[0] as Accum;
                 atoms.force[i][1] += ft[1] as Accum;
@@ -1543,7 +1623,15 @@ pub fn wall_contact_force(
                 let key = (2u8, sph_idx, atoms.tag[i]);
                 let old_rd = old_rolling.get(&key).copied().unwrap_or([0.0; 3]);
                 let (tr, new_rd) = wall_rolling_torque(
-                    [nx, ny, nz], dem.omega[i], radius, f_net, mu_r, k_roll, gamma_roll, sds, dt,
+                    [nx, ny, nz],
+                    dem.omega[i],
+                    radius,
+                    f_net,
+                    mu_r,
+                    k_roll,
+                    gamma_roll,
+                    sds,
+                    dt,
                     old_rd,
                 );
                 dem.torque[i][0] += tr[0];
@@ -1631,7 +1719,11 @@ pub fn wall_contact_force(
                 // lets the damping go net-attractive near separation, matching
                 // LAMMPS `fix wall/gran` default (no tensile cutoff).
                 let f_total = k_n * delta - f_diss;
-                if material_table.limit_damping { f_total.max(0.0) } else { f_total }
+                if material_table.limit_damping {
+                    f_total.max(0.0)
+                } else {
+                    f_total
+                }
             };
 
             atoms.force[i][0] += (f_net * nx) as Accum;
@@ -1651,8 +1743,16 @@ pub fn wall_contact_force(
                         atoms.vel[i][1] as f64,
                         atoms.vel[i][2] as f64,
                     ],
-                    dem.omega[i], radius, delta, f_net, m_r, g_eff,
-                    mu, beta, dt, old,
+                    dem.omega[i],
+                    radius,
+                    delta,
+                    f_net,
+                    m_r,
+                    g_eff,
+                    mu,
+                    beta,
+                    dt,
+                    old,
                 );
                 atoms.force[i][0] += ft[0] as Accum;
                 atoms.force[i][1] += ft[1] as Accum;
@@ -1672,7 +1772,15 @@ pub fn wall_contact_force(
                 let key = (3u8, reg_idx, atoms.tag[i]);
                 let old_rd = old_rolling.get(&key).copied().unwrap_or([0.0; 3]);
                 let (tr, new_rd) = wall_rolling_torque(
-                    [nx, ny, nz], dem.omega[i], radius, f_net, mu_r, k_roll, gamma_roll, sds, dt,
+                    [nx, ny, nz],
+                    dem.omega[i],
+                    radius,
+                    f_net,
+                    mu_r,
+                    k_roll,
+                    gamma_roll,
+                    sds,
+                    dt,
                     old_rd,
                 );
                 dem.torque[i][0] += tr[0];
@@ -1699,9 +1807,9 @@ pub fn wall_contact_force(
 mod tests {
     use super::*;
     use dirt_atom::DemAtom;
+    use dirt_test_utils::{make_material_table, push_dem_test_atom};
     use soil_core::region::Region;
     use soil_core::{Atom, AtomDataRegistry};
-    use dirt_test_utils::{make_material_table, push_dem_test_atom};
 
     fn make_wall_plane(
         point_x: f64,
@@ -1994,7 +2102,10 @@ mod tests {
         let amplitude = 0.002;
         let frequency = 50.0;
         let mut plane = make_wall_plane(0.0, 0.0, 0.1, 0.0, 0.0, 1.0);
-        plane.motion = WallMotion::Oscillate { amplitude, frequency };
+        plane.motion = WallMotion::Oscillate {
+            amplitude,
+            frequency,
+        };
 
         let mut walls = make_walls(vec![plane]);
 
@@ -2161,7 +2272,13 @@ mod tests {
 
         // Particle near the wall of a z-cylinder centered at (0.005, 0.005), radius 0.004
         // Place particle at radial distance 0.0035 from axis (gap = 0.004 - 0.0035 = 0.0005 < radius)
-        push_dem_test_atom(&mut atom, &mut dem, 0, [0.005 + 0.0035, 0.005, 0.005], radius);
+        push_dem_test_atom(
+            &mut atom,
+            &mut dem,
+            0,
+            [0.005 + 0.0035, 0.005, 0.005],
+            radius,
+        );
         atom.nlocal = 1;
         atom.natoms = 1;
 
@@ -2238,8 +2355,13 @@ mod tests {
         app.run();
 
         let atom = app.get_resource_ref::<Atom>().unwrap();
-        let f_mag = (atom.force[0][0].powi(2) + atom.force[0][1].powi(2) + atom.force[0][2].powi(2)).sqrt();
-        assert!(f_mag < 1e-15, "no force when not touching cylinder wall, got {}", f_mag);
+        let f_mag =
+            (atom.force[0][0].powi(2) + atom.force[0][1].powi(2) + atom.force[0][2].powi(2)).sqrt();
+        assert!(
+            f_mag < 1e-15,
+            "no force when not touching cylinder wall, got {}",
+            f_mag
+        );
     }
 
     #[test]
@@ -2249,7 +2371,13 @@ mod tests {
         let radius = 0.001;
 
         // Particle near the wall of a sphere centered at (0.005, 0.005, 0.005), radius 0.004
-        push_dem_test_atom(&mut atom, &mut dem, 0, [0.005 + 0.0035, 0.005, 0.005], radius);
+        push_dem_test_atom(
+            &mut atom,
+            &mut dem,
+            0,
+            [0.005 + 0.0035, 0.005, 0.005],
+            radius,
+        );
         atom.nlocal = 1;
         atom.natoms = 1;
 
@@ -2320,8 +2448,13 @@ mod tests {
         app.run();
 
         let atom = app.get_resource_ref::<Atom>().unwrap();
-        let f_mag = (atom.force[0][0].powi(2) + atom.force[0][1].powi(2) + atom.force[0][2].powi(2)).sqrt();
-        assert!(f_mag < 1e-15, "no force when not touching sphere wall, got {}", f_mag);
+        let f_mag =
+            (atom.force[0][0].powi(2) + atom.force[0][1].powi(2) + atom.force[0][2].powi(2)).sqrt();
+        assert!(
+            f_mag < 1e-15,
+            "no force when not touching sphere wall, got {}",
+            f_mag
+        );
     }
 
     // ══════════════════════════════════════════════════════════════════════
@@ -2383,7 +2516,9 @@ mod tests {
             // Force should be purely radial (no z component)
             assert!(
                 fz.abs() < 1e-12,
-                "angle={:.1}: no z force expected, got {:.6e}", angle, fz
+                "angle={:.1}: no z force expected, got {:.6e}",
+                angle,
+                fz
             );
 
             // Force direction should point toward axis center
@@ -2396,12 +2531,17 @@ mod tests {
             assert!(
                 f_dot_r < 0.0,
                 "angle={:.1}: force should point inward, f·r_hat={:.6e}",
-                angle, f_dot_r
+                angle,
+                f_dot_r
             );
 
             // Force magnitude should be nonzero
             let f_mag = (fx * fx + fy * fy).sqrt();
-            assert!(f_mag > 0.0, "angle={:.1}: force magnitude should be nonzero", angle);
+            assert!(
+                f_mag > 0.0,
+                "angle={:.1}: force magnitude should be nonzero",
+                angle
+            );
         }
     }
 
@@ -2453,7 +2593,8 @@ mod tests {
         app.run();
 
         let atom = app.get_resource_ref::<Atom>().unwrap();
-        let f_mag = (atom.force[0][0].powi(2) + atom.force[0][1].powi(2) + atom.force[0][2].powi(2)).sqrt();
+        let f_mag =
+            (atom.force[0][0].powi(2) + atom.force[0][1].powi(2) + atom.force[0][2].powi(2)).sqrt();
         assert!(
             f_mag < 1e-15,
             "No force outside axial bounds: f_mag={:.6e}",
@@ -2473,9 +2614,15 @@ mod tests {
 
         // Test positions along different axes
         let directions: Vec<[f64; 3]> = vec![
-            [1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0],
-            [-1.0, 0.0, 0.0], [0.0, -1.0, 0.0], [0.0, 0.0, -1.0],
-            [1.0, 1.0, 0.0], [1.0, 0.0, 1.0], [0.0, 1.0, 1.0],
+            [1.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+            [0.0, 0.0, 1.0],
+            [-1.0, 0.0, 0.0],
+            [0.0, -1.0, 0.0],
+            [0.0, 0.0, -1.0],
+            [1.0, 1.0, 0.0],
+            [1.0, 0.0, 1.0],
+            [0.0, 1.0, 1.0],
             [1.0, 1.0, 1.0],
         ];
 
@@ -2532,7 +2679,8 @@ mod tests {
             assert!(
                 f_dot_r < 0.0,
                 "dir={:?}: force should point toward center, f·r_hat={:.6e}",
-                dir, f_dot_r
+                dir,
+                f_dot_r
             );
         }
     }
@@ -2568,7 +2716,8 @@ mod tests {
         app.run();
 
         let atom = app.get_resource_ref::<Atom>().unwrap();
-        let f_mag = (atom.force[0][0].powi(2) + atom.force[0][1].powi(2) + atom.force[0][2].powi(2)).sqrt();
+        let f_mag =
+            (atom.force[0][0].powi(2) + atom.force[0][1].powi(2) + atom.force[0][2].powi(2)).sqrt();
         assert!(
             f_mag < 1e-10,
             "Force at exact contact should be ~zero, got {:.6e}",
@@ -2634,7 +2783,13 @@ mod tests {
         let radius = 0.001;
 
         // Particle near sphere wall surface (inside sphere of radius 0.004)
-        push_dem_test_atom(&mut atom, &mut dem, 0, [0.005 + 0.0035, 0.005, 0.005], radius);
+        push_dem_test_atom(
+            &mut atom,
+            &mut dem,
+            0,
+            [0.005 + 0.0035, 0.005, 0.005],
+            radius,
+        );
         atom.nlocal = 1;
         atom.natoms = 1;
 
@@ -2708,8 +2863,13 @@ mod tests {
         app.run();
 
         let atom = app.get_resource_ref::<Atom>().unwrap();
-        let f_mag = (atom.force[0][0].powi(2) + atom.force[0][1].powi(2) + atom.force[0][2].powi(2)).sqrt();
-        assert!(f_mag < 1e-15, "no force when far from region wall, got {}", f_mag);
+        let f_mag =
+            (atom.force[0][0].powi(2) + atom.force[0][1].powi(2) + atom.force[0][2].powi(2)).sqrt();
+        assert!(
+            f_mag < 1e-15,
+            "no force when far from region wall, got {}",
+            f_mag
+        );
     }
 
     #[test]
@@ -2766,7 +2926,13 @@ mod tests {
         // Cone: z-axis, rad_lo=0.004 at z=0, rad_hi=0.002 at z=0.01
         // At z=0.005, radius = 0.003
         // Place particle at radial distance 0.0028 from axis (gap = 0.003 - 0.0028 = 0.0002 < radius)
-        push_dem_test_atom(&mut atom, &mut dem, 0, [0.005 + 0.0028, 0.005, 0.005], radius);
+        push_dem_test_atom(
+            &mut atom,
+            &mut dem,
+            0,
+            [0.005 + 0.0028, 0.005, 0.005],
+            radius,
+        );
         atom.nlocal = 1;
         atom.natoms = 1;
 

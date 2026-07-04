@@ -24,13 +24,17 @@ fn main() {
         .unwrap_or(0);
 
     let mut app = App::new();
-    app.add_plugins(CorePlugins).add_plugins(GranularDefaultPlugins);
+    app.add_plugins(CorePlugins)
+        .add_plugins(GranularDefaultPlugins);
     if every > 0 {
         // Rebalance the x-decomposition by particle count every `every` steps.
         app.add_plugins(LoadBalancePlugin { every, nbins: 64 });
     }
     app.add_resource(DumpInfo { every });
-    app.add_update_system(dump_final_state, ParticleSimScheduleSet::PostFinalIntegration);
+    app.add_update_system(
+        dump_final_state,
+        ParticleSimScheduleSet::PostFinalIntegration,
+    );
     app.start();
 }
 

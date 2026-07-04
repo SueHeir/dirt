@@ -14,14 +14,14 @@
 //!     examples/bond_cantilever/config.toml
 //! ```
 
-use dirt_core::prelude::*;
 use dirt_core::dirt_bond::BondMetrics;
+use dirt_core::prelude::*;
 use dirt_core::soil_core::BondStore;
 use std::fs::{self, File};
 use std::io::{BufWriter, Write as IoWrite};
 
 const EXPECTED_BONDS: usize = 9; // 10 atoms → 9 bonds
-const TIP_TAG: u32 = 9;          // free-end tag (CSV assigns 0..9)
+const TIP_TAG: u32 = 9; // free-end tag (CSV assigns 0..9)
 
 struct Recorder {
     writer: Option<BufWriter<File>>,
@@ -54,7 +54,10 @@ fn main() {
         .add_plugins(DemBondPlugin);
 
     app.add_resource(Recorder::new());
-    app.add_update_system(record_cantilever, ParticleSimScheduleSet::PostFinalIntegration);
+    app.add_update_system(
+        record_cantilever,
+        ParticleSimScheduleSet::PostFinalIntegration,
+    );
 
     app.start();
 }
@@ -74,8 +77,7 @@ fn record_cantilever(
     }
 
     // Collective: bond counters must be reduced on every rank at the same step.
-    let global_bond_count =
-        comm.all_reduce_sum_f64(bond_metrics.bond_count as f64) as usize;
+    let global_bond_count = comm.all_reduce_sum_f64(bond_metrics.bond_count as f64) as usize;
     let global_missing =
         comm.all_reduce_sum_f64(bond_metrics.missing_partner_skips as f64) as usize;
 
@@ -119,7 +121,7 @@ fn record_cantilever(
                 let dx = atoms.pos[j][0] as f64 - atoms.pos[i][0] as f64;
                 let dy = atoms.pos[j][1] as f64 - atoms.pos[i][1] as f64;
                 let dz = atoms.pos[j][2] as f64 - atoms.pos[i][2] as f64;
-                let dist = (dx*dx + dy*dy + dz*dz).sqrt();
+                let dist = (dx * dx + dy * dy + dz * dz).sqrt();
                 let strain = ((dist - b.r0) / b.r0).abs();
                 if strain > max_s {
                     max_s = strain;
@@ -187,12 +189,7 @@ fn record_cantilever(
         };
         println!(
             "  step {:>7}  tip_z={:+.3e}  max_strain={:.3e}  bonds={}  missing={}  {}",
-            step,
-            global_tip_z,
-            max_strain,
-            global_bond_count,
-            global_missing,
-            status
+            step, global_tip_z, max_strain, global_bond_count, global_missing, status
         );
     }
 }

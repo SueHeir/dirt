@@ -48,7 +48,12 @@ struct PerfTracker {
 
 impl PerfTracker {
     fn new() -> Self {
-        Self { started: false, t0: None, step0: 0, n_global: 0.0 }
+        Self {
+            started: false,
+            t0: None,
+            step0: 0,
+            n_global: 0.0,
+        }
     }
 }
 
@@ -60,7 +65,10 @@ fn main() {
         .add_plugins(WallPlugin); // bed scenario stands on a floor wall; gas has none
 
     app.add_resource(PerfTracker::new());
-    app.add_update_system(record_throughput, ParticleSimScheduleSet::PostFinalIntegration);
+    app.add_update_system(
+        record_throughput,
+        ParticleSimScheduleSet::PostFinalIntegration,
+    );
 
     app.start();
 }

@@ -34,7 +34,10 @@ struct SinkageTracker {
 
 impl SinkageTracker {
     fn new() -> Self {
-        Self { z_contact: None, file: None }
+        Self {
+            z_contact: None,
+            file: None,
+        }
     }
 }
 
@@ -98,7 +101,10 @@ fn record_sinkage(
             .unwrap_or_else(|e| panic!("Cannot create {}: {}", results_file, e));
         writeln!(f, "time,sinkage,force").unwrap();
         tracker.file = Some(f);
-        println!("=== Plate Sinkage: contact at z = {:.6e} m, streaming results ===", plate.point_z);
+        println!(
+            "=== Plate Sinkage: contact at z = {:.6e} m, streaming results ===",
+            plate.point_z
+        );
     }
 
     let z_contact = tracker.z_contact.unwrap();

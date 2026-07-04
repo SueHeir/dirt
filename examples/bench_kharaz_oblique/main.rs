@@ -22,8 +22,8 @@
 //!     --features precision-double -- examples/bench_kharaz_oblique/config.toml
 //! ```
 
-use dirt_core::prelude::*;
 use dirt_core::dirt_atom::DemAtom;
+use dirt_core::prelude::*;
 use std::fs;
 use std::io::Write as IoWrite;
 
@@ -154,10 +154,19 @@ fn track_kharaz(
         .unwrap();
 
         println!("=== Kharaz oblique impact (flat anvil, n = +z) ===");
-        println!("  v_n impact:  {:.6} m/s   v_t impact: {:.6} m/s", tracker.vn_impact, tracker.vt_impact);
-        println!("  v_n rebound: {:.6} m/s   v_t rebound:{:.6} m/s", tracker.vn_rebound, tracker.vt_rebound);
+        println!(
+            "  v_n impact:  {:.6} m/s   v_t impact: {:.6} m/s",
+            tracker.vn_impact, tracker.vt_impact
+        );
+        println!(
+            "  v_n rebound: {:.6} m/s   v_t rebound:{:.6} m/s",
+            tracker.vn_rebound, tracker.vt_rebound
+        );
         println!("  omega_y:     {:.6} rad/s", tracker.omega_y_rebound);
-        println!("  contact time:{:.6e} s ({} steps)", contact_time, contact_steps);
+        println!(
+            "  contact time:{:.6e} s ({} steps)",
+            contact_time, contact_steps
+        );
         println!("  results -> {}", results_file);
     }
 
