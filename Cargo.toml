@@ -83,6 +83,10 @@ name = "bench_twisting_friction"
 path = "examples/bench_twisting_friction/main.rs"
 
 [[example]]
+name = "bench_marshall_twisting"
+path = "examples/bench_marshall_twisting/main.rs"
+
+[[example]]
 name = "bench_clump_haff_cooling"
 path = "examples/bench_clump_haff_cooling/main.rs"
 

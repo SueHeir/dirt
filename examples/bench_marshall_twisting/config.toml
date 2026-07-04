@@ -1,0 +1,99 @@
+# Marshall twisting spin-down benchmark — validates the DERIVED-coefficient
+# Marshall twisting model (twisting_model = "marshall") against its EXACT
+# analytical spin-down rate.
+#
+# Two identical spheres are stacked along +z. The LOWER sphere is a frozen
+# anchor ([[freeze]] — cannot translate or spin), the UPPER sphere rests on it
+# under gravity and is given a pure twisting spin ω = (0,0,ω0) about the contact
+# normal n̂ = +ẑ. A pure twist has zero contact-point slip, so no tangential or
+# rolling force acts; the only contact torque is the Marshall twisting couple.
+#
+# Marshall (LAMMPS pair_granular, Marshall 2009 eqs 32-33) derives the twisting
+# coefficients from the tangential (Mindlin) model and the Hertz contact radius
+# a = √(R* δ):   k_twist = ½ k_t a²,  γ_twist = ½ γ_t a²,  μ_twist = (2/3) a μ_t.
+# In the saturated regime the couple is τ_tw = μ_twist·F_n. With F_n = m g,
+# r_eff = R/2 (so a = √(R δ / 2)) and I = (2/5) m R², the spin decays at the exact
+# constant rate
+#
+#     α = dω/dt = (5/3)·a μ_t g / R².
+#
+# NOTE: the tangential friction μ_t (the [dem.materials] `friction`) is what
+# drives the Marshall cap — it is the swept variable here (sweep.py). No
+# twisting_stiffness/twisting_damping/twisting_friction inputs are used; Marshall
+# derives everything from the tangential model.
+#
+# The upper sphere's seating (static Hertz overlap ⇒ F_n = m g) and its initial
+# spin are set in main.rs (no omega knob in [[particles.insert]]). This standalone
+# config runs a single μ_t = 0.5 case; sweep.py generates the μ_t sweep.
+#
+# Run:
+#   cargo run --release --example bench_marshall_twisting --no-default-features --features precision-double -- examples/bench_marshall_twisting/config.toml
+
+[comm]
+processors_x = 1
+processors_y = 1
+processors_z = 1
+
+[domain]
+x_low = -0.05
+x_high = 0.05
+y_low = -0.05
+y_high = 0.05
+z_low = 0.0
+z_high = 0.05
+boundary_x = "fixed"
+boundary_y = "fixed"
+boundary_z = "fixed"
+
+[neighbor]
+skin_fraction = 1.1
+bin_size = 0.02
+every = 1
+
+[gravity]
+gz = -9.81
+
+[dem]
+contact_model = "hertz"
+twisting_model = "marshall"   # the model under test — coeffs derived from tangential (Mindlin)
+
+[[dem.materials]]
+name = "grain"
+youngs_mod = 1.0e8        # Pa — soft (keeps dt large; a and the decay rate follow from the seating)
+poisson_ratio = 0.3
+restitution = 0.3         # damps the tiny normal settling transient quickly
+friction = 0.5            # μ_t — the TANGENTIAL friction that drives μ_twist; swept by sweep.py
+twisting_friction = 0.0   # unused by the Marshall model (kept 0 for clarity)
+
+# Lower sphere: frozen anchor at (0,0,0.010). R = 5 mm.
+[[particles.insert]]
+material = "grain"
+count = 1
+radius = 0.005
+density = 2500.0
+region = { type = "block", min = [-1.0e-6, -1.0e-6, 0.0099990], max = [1.0e-6, 1.0e-6, 0.0100010] }
+
+# Upper sphere: the twisting mover, inserted just above the anchor. main.rs seats
+# it at the exact static overlap and sets the spin at step 0.
+[[particles.insert]]
+material = "grain"
+count = 1
+radius = 0.005
+density = 2500.0
+region = { type = "block", min = [-1.0e-6, -1.0e-6, 0.0199970], max = [1.0e-6, 1.0e-6, 0.0199990] }
+
+# Group + freeze on the lower sphere only (region hugs z = 0.010).
+[[group]]
+name = "anchor"
+region = { type = "block", min = [-0.002, -0.002, 0.008], max = [0.002, 0.002, 0.012] }
+
+[[freeze]]
+group = "anchor"
+
+[output]
+dir = "examples/bench_marshall_twisting"
+
+[run]
+steps = 40000
+thermo = 20000
+dt = 1.0e-5
