@@ -316,9 +316,19 @@ the full partition, including the skipped transient.*
 *4-sphere rods (asymmetric inertia). Same construction; DIRT and LAMMPS track the same
 cooling law.*
 
-**Honest read:** the cooling *form* is well supported, but the **−2 asymptote is not
-directly reached** — these dilute gases cool only to `t/tc ≈ 8–9` (local slope ~−1.6),
-so we rely on the fit curve (which embodies −2) lying on the data. `tc` is only an
+**Honest read:** the cooling *form* is well supported (`1/√T` linear, **R² ≈ 0.9994–0.9999**
+on every run of all three benches), but the **−2 asymptote is only partly reached** — these
+dilute gases cool to a finite `t/tc`, where the *local* log-log slope is still short of −2.
+Spheres and clumps cool far enough (`t/tc ≈ 5` and `≈ 11`, slopes ≈ **−1.88** and **−1.79**)
+to land inside the `−2.3 < slope < −1.6` gate and **PASS**. The 4-sphere rod, with its larger
+`tc` and slower cooling, reaches only `t/tc ≈ 5` with slope **≈ −1.59** — which sits right on
+the `−1.6` edge and **straddles it run-to-run**: `bench_rod_haff_cooling` **FAILs** the
+late-time-slope check on recent harness runs (e.g. slope −1.572, −1.579, −1.594 > −1.6 →
+`sweep.py graph` exits 1; the R² gate still passes at 0.9999). This is a genuine
+**known-limitation FAIL**, not a Haff-form failure: the rod's asymmetric inertia and slow
+cooling mean the finite window never reaches deep enough into `t ≫ tc` for the slope to
+clear −1.6 reliably. The bench is retained in regression as an honest, visible FAIL rather
+than reported green; the gate is **not** loosened to manufacture a pass. `tc` is only an
 order-of-magnitude match to kinetic theory (a printed diagnostic). Single realizations;
 a many-body gas is chaotic, so only curve-level agreement is meaningful. For clumps/rods
 the LAMMPS cross-check is **calibrated** (the rigid velocity projection otherwise starts
@@ -519,7 +529,8 @@ will need a benchmark when re-added.)
 | jkr_adhesion | JKR pull-off | analytical (self-consistent) | PASS; measures its own constant force |
 | dmt_sjkr_cohesion | DMT pull-off 2πwR* / SJKR area law cπR*δ | analytical (self-consistent) | PASS; adds DMT+SJKR paths & 4/3 model-selection check |
 | fiber_crossover | Coulomb limit μN | analytical (self-consistent) | PASS; ratio circular vs measured N |
-| sphere/clump/rod haff | Haff law + LAMMPS | law (cross-code) | PASS; −2 not reached; tc unvalidated; clump cross-check calibrated |
+| sphere/clump haff | Haff law + LAMMPS | law (cross-code) | PASS; R²≈0.9999, slope −1.88 / −1.79 at t/tc≈5 / 11; −2 not fully reached; tc unvalidated; clump cross-check calibrated |
+| rod haff | Haff law + LAMMPS | law (cross-code) | FAIL (known limitation); Haff R²=0.9999 but late-time slope ≈−1.59 at t/tc≈5 straddles/misses the −2.3<slope<−1.6 gate; exits 1 |
 | angle_of_repose | empirical (none exact) | qualitative | PASS; trends only; frozen-bed |
 | column_collapse | Lube/Lajeunesse (empirical) | empirical scaling | FAIL (known limitation); linear exponent 1.57 vs 1.0 outside ±0.25 band; exits 1 |
 | hopper_beverloo | Beverloo (empirical) | empirical correlation | PASS; exponent 1.36 vs 1.5; prefactor untested |
