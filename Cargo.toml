@@ -200,6 +200,7 @@ panic = "abort"
 [dependencies]
 dirt_core = { path = "./crates/dirt_core", default-features = false }
 serde = { version = "1", features = ["derive"] }
+toml = "0.8"
 dirt_clump = { path = "./crates/dirt_clump" }
 dirt_measure_plane = { path = "./crates/dirt_measure_plane" }
 soil_derive = { git = "ssh://git@192.168.0.170:2222/SueHeir/soil.git", branch = "main" }
@@ -217,3 +218,7 @@ path = "examples/mpi_loadbalance_validate/main.rs"
 [[example]]
 name = "bench_restart_determinism"
 path = "examples/bench_restart_determinism/main.rs"
+
+[[example]]
+name = "bench_nohistory_tangential"
+path = "examples/bench_nohistory_tangential/main.rs"

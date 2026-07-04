@@ -466,26 +466,39 @@ pub fn contact_force_core(
             None => [0.0; 7],
         };
 
-        // Convert stored spring from canonical form to local (i,j) frame
-        let mut sx = sign * stored[0];
-        let mut sy = sign * stored[1];
-        let mut sz = sign * stored[2];
-        // Rotate spring into current tangent plane (remove normal component)
-        let s_dot_n = sx*nx + sy*ny + sz*nz;
-        sx -= s_dot_n * nx; sy -= s_dot_n * ny; sz -= s_dot_n * nz;
-        // Integrate tangential velocity into spring displacement
-        sx += vt_x * dt;
-        sy += vt_y * dt;
-        sz += vt_z * dt;
-
-        // Coulomb cap on spring: |k_t s| ≤ μ |F_n|
-        let s_mag = (sx*sx + sy*sy + sz*sz).sqrt();
-        let f_t_spring_mag = k_t * s_mag;
+        // Tangential spring displacement (history model). For the history-free
+        // `linear_nohistory` model the spring is identically zero, so the force
+        // collapses to the velocity-Coulomb law
+        //   F_t = -min(μ |F_n|, γ_t |v_t|) t̂ ,   t̂ = v_t / |v_t|
+        // (LAMMPS pair_granular `tangential linear_nohistory`, and the classic
+        // `pair gran/hooke`) — the force depends only on the instantaneous
+        // relative tangential velocity, with NO accumulated displacement.
+        let nohistory = material_table.tangential_model == "linear_nohistory";
         let f_t_max = mu * f_n_mag.abs();
-        if f_t_spring_mag > f_t_max && f_t_spring_mag > TANGENTIAL_EPSILON {
-            let scale = f_t_max / f_t_spring_mag;
-            sx *= scale; sy *= scale; sz *= scale;
-        }
+        let (sx, sy, sz) = if nohistory {
+            (0.0, 0.0, 0.0)
+        } else {
+            // Convert stored spring from canonical form to local (i,j) frame
+            let mut sx = sign * stored[0];
+            let mut sy = sign * stored[1];
+            let mut sz = sign * stored[2];
+            // Rotate spring into current tangent plane (remove normal component)
+            let s_dot_n = sx*nx + sy*ny + sz*nz;
+            sx -= s_dot_n * nx; sy -= s_dot_n * ny; sz -= s_dot_n * nz;
+            // Integrate tangential velocity into spring displacement
+            sx += vt_x * dt;
+            sy += vt_y * dt;
+            sz += vt_z * dt;
+
+            // Coulomb cap on spring: |k_t s| ≤ μ |F_n|
+            let s_mag = (sx*sx + sy*sy + sz*sz).sqrt();
+            let f_t_spring_mag = k_t * s_mag;
+            if f_t_spring_mag > f_t_max && f_t_spring_mag > TANGENTIAL_EPSILON {
+                let scale = f_t_max / f_t_spring_mag;
+                sx *= scale; sy *= scale; sz *= scale;
+            }
+            (sx, sy, sz)
+        };
 
         // Tangential damping coefficient: γ_t = 2 β √(5/6) √(k_t m_r)
         let gamma_t = 2.0 * SQRT_5_6 * beta * (k_t * m_r).sqrt();
@@ -935,26 +948,35 @@ pub fn hooke_contact_force(
             None => [0.0; 7],
         };
 
-        let mut sx = sign * stored[0];
-        let mut sy = sign * stored[1];
-        let mut sz = sign * stored[2];
-        let s_dot_n = sx * nx + sy * ny + sz * nz;
-        sx -= s_dot_n * nx;
-        sy -= s_dot_n * ny;
-        sz -= s_dot_n * nz;
-        sx += vt_x * dt;
-        sy += vt_y * dt;
-        sz += vt_z * dt;
-
-        let s_mag = (sx * sx + sy * sy + sz * sz).sqrt();
-        let f_t_spring_mag = kt * s_mag;
+        // History-free `linear_nohistory` tangential model → zero spring (see the
+        // Hertz path above); the force reduces to velocity-Coulomb with no
+        // accumulated displacement. "history" keeps the incremental Hooke spring.
+        let nohistory = material_table.tangential_model == "linear_nohistory";
         let f_t_max = mu * f_n_mag.abs();
-        if f_t_spring_mag > f_t_max && f_t_spring_mag > TANGENTIAL_EPSILON {
-            let scale = f_t_max / f_t_spring_mag;
-            sx *= scale;
-            sy *= scale;
-            sz *= scale;
-        }
+        let (sx, sy, sz) = if nohistory {
+            (0.0, 0.0, 0.0)
+        } else {
+            let mut sx = sign * stored[0];
+            let mut sy = sign * stored[1];
+            let mut sz = sign * stored[2];
+            let s_dot_n = sx * nx + sy * ny + sz * nz;
+            sx -= s_dot_n * nx;
+            sy -= s_dot_n * ny;
+            sz -= s_dot_n * nz;
+            sx += vt_x * dt;
+            sy += vt_y * dt;
+            sz += vt_z * dt;
+
+            let s_mag = (sx * sx + sy * sy + sz * sz).sqrt();
+            let f_t_spring_mag = kt * s_mag;
+            if f_t_spring_mag > f_t_max && f_t_spring_mag > TANGENTIAL_EPSILON {
+                let scale = f_t_max / f_t_spring_mag;
+                sx *= scale;
+                sy *= scale;
+                sz *= scale;
+            }
+            (sx, sy, sz)
+        };
 
         let gamma_t = 2.0 * SQRT_5_6 * beta * (kt * m_r).sqrt();
         let mut ft_x = kt * sx + gamma_t * vt_x;
@@ -1341,6 +1363,70 @@ mod tests {
         let dem = registry.expect::<DemAtom>("test");
         let t_mag = (dem.torque[0][0].powi(2) + dem.torque[0][1].powi(2) + dem.torque[0][2].powi(2)).sqrt();
         assert!(t_mag > 0.0, "torque on atom 0");
+    }
+
+    /// The `linear_nohistory` tangential model must keep the tangential spring
+    /// displacement identically zero (velocity-Coulomb, LAMMPS `pair_granular`
+    /// `tangential linear_nohistory`), while the default `history` (Mindlin) model
+    /// accumulates it. Both are driven with the same sub-Coulomb tangential slip.
+    #[test]
+    fn linear_nohistory_has_no_spring_accumulation() {
+        let radius = 0.001;
+        let build = || {
+            let mut atom = Atom::new();
+            let mut dem = DemAtom::new();
+            let mut hist = ContactHistoryStore::new();
+            atom.dt = 1e-7;
+            push_test_atom_with_history(&mut atom, &mut dem, &mut hist, 0, [0.0, 0.0, 0.0], radius);
+            push_test_atom_with_history(&mut atom, &mut dem, &mut hist, 1, [0.00185, 0.0, 0.0], radius);
+            atom.vel[1][1] = 0.001; // small tangential slip, below the Coulomb cap
+            atom.nlocal = 2;
+            atom.natoms = 2;
+            let mut nb = Neighbor::new();
+            nb.neighbor_offsets = vec![0, 1, 1];
+            nb.neighbor_indices = vec![1];
+            let mut reg = AtomDataRegistry::new();
+            reg.register(dem);
+            reg.register(hist);
+            (atom, nb, reg)
+        };
+        let spring_mag = |reg: &AtomDataRegistry| -> f64 {
+            let h = reg.expect::<ContactHistoryStore>("spring");
+            let s = h.contacts[0]
+                .iter()
+                .find(|(t, _, _)| *t == 1)
+                .map(|(_, s, _)| *s)
+                .unwrap_or([0.0; 7]);
+            (s[0] * s[0] + s[1] * s[1] + s[2] * s[2]).sqrt()
+        };
+
+        // History (Mindlin): the tangential spring accumulates over the contact.
+        let mut mt_h = make_material_table();
+        mt_h.tangential_model = "history".to_string();
+        let (mut a, nb, reg) = build();
+        for _ in 0..20 {
+            a.force[0] = [0.0; 3];
+            a.force[1] = [0.0; 3];
+            contact_force_core(&mut a, &nb, &reg, &mt_h, None, ForcePass::All);
+        }
+        let xi_history = spring_mag(&reg);
+        assert!(xi_history > 0.0, "history model must accumulate spring, got {xi_history:e}");
+
+        // linear_nohistory: spring stays exactly zero; force is still present.
+        let mut mt_nh = make_material_table();
+        mt_nh.tangential_model = "linear_nohistory".to_string();
+        let (mut a2, nb2, reg2) = build();
+        for _ in 0..20 {
+            a2.force[0] = [0.0; 3];
+            a2.force[1] = [0.0; 3];
+            contact_force_core(&mut a2, &nb2, &reg2, &mt_nh, None, ForcePass::All);
+        }
+        let xi_nohistory = spring_mag(&reg2);
+        assert_eq!(xi_nohistory, 0.0, "linear_nohistory must not accumulate spring");
+        assert!(
+            (a2.force[0][1] as f64).abs() > 0.0,
+            "linear_nohistory must still produce a tangential (velocity-Coulomb) force"
+        );
     }
 
     #[test]

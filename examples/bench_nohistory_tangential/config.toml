@@ -1,0 +1,33 @@
+# History-free (linear_nohistory) tangential contact model benchmark.
+#
+# This is a DECLARATIVE description of a controlled contact-mechanics experiment.
+# Two glass spheres are held at a FIXED normal overlap (constant normal force) and
+# subjected to a prescribed, reversing relative TANGENTIAL velocity — a triangle
+# "load / unload / reverse" path along which contact history would normally matter.
+#
+# The recorder (`main.rs`) evaluates the DIRT pair contact force at every step for
+# BOTH tangential models and writes the per-step tangential force, normal force and
+# stored spring displacement to a CSV. `sweep.py` then checks that the
+# `linear_nohistory` model reproduces the documented LAMMPS `pair_granular`
+# velocity-Coulomb law with ZERO displacement accumulation, while the history
+# (Mindlin) model accumulates displacement and is path-dependent.
+#
+# LAMMPS reference (doc/src/pair_granular.rst, "tangential linear_nohistory"):
+#   F_t = -min(mu_t * F_n0, |F_t,damp|) * t_hat ,   F_t,damp = -eta_t * v_t,rel
+# i.e. the tangential force depends only on the INSTANTANEOUS relative tangential
+# velocity, Coulomb-capped at mu*|F_n|, with no accumulated tangential spring.
+
+[material]
+name = "glass"
+youngs_mod = 70.0e9        # Pa — soda-lime glass
+poisson_ratio = 0.22
+restitution = 0.3          # sets the Hertz/Mindlin damping ratio beta
+friction = 0.5             # mu — sliding (Coulomb) friction coefficient
+
+[scenario]
+radius = 0.005             # m — both spheres, R = 5 mm
+overlap = 2.0e-5           # m — FIXED normal overlap delta (=> constant F_n)
+dt = 1.0e-6               # s — timestep used to integrate the history spring
+v_amp = 3.0               # m/s — tangential velocity triangle amplitude (+/- V)
+legs = 4                  # number of linear ramp legs: 0->+V->-V->+V->-V
+steps_per_leg = 1000      # steps per ramp leg
