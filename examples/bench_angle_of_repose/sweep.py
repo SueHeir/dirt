@@ -23,10 +23,12 @@ the bottom layer from sliding out, so the pile holds a slope — no frozen
 particle bed is needed. See README "Assumptions".
 
 Commands (from anywhere):
-    python3 examples/bench_angle_of_repose/sweep.py generate   # write per-case configs
-    python3 examples/bench_angle_of_repose/sweep.py start      # build + run all sims -> CSV
-    python3 examples/bench_angle_of_repose/sweep.py graph      # validate + plot
-    python3 examples/bench_angle_of_repose/sweep.py            # all three, in order
+    python3 examples/bench_angle_of_repose/sweep.py            # BOUNDED smoke gate (PASS/FAIL), the harness default
+    python3 examples/bench_angle_of_repose/sweep.py smoke      # same as no-arg: fast coarse theta_r(mu) trend gate
+    python3 examples/bench_angle_of_repose/sweep.py full       # full sweep: generate + run + validate + plot
+    python3 examples/bench_angle_of_repose/sweep.py generate   # write per-case configs (full)
+    python3 examples/bench_angle_of_repose/sweep.py start      # build + run all sims -> CSV (full)
+    python3 examples/bench_angle_of_repose/sweep.py graph      # validate + plot (full)
 
 Each (mu) case is run REPS times with independent random packs (the inserter is
 entropy-seeded), so the spread of theta_r is a direct reproducibility measure.
@@ -232,7 +234,7 @@ count = {heap_count}
 radius = {radius}
 density = {density}
 velocity_z = -0.1
-region = {{ type = "cylinder", center = [0.0, 0.0], radius = {ins_r}, axis = "z", lo = 0.003, hi = 0.14 }}
+{seed_line}region = {{ type = "cylinder", center = [0.0, 0.0], radius = {ins_r}, axis = "z", lo = 0.003, hi = 0.14 }}
 [output]
 dir = "{outdir}"
 [vtp]
@@ -344,13 +346,21 @@ def find_lammps():
     return None
 
 
+# Optional deterministic insert seed. The full sweep leaves this None so the
+# per-case configs are byte-identical to before (the inserter then uses its
+# default seed = 0); the bounded smoke gate sets it so its single rep is exactly
+# reproducible run-to-run.
+INSERT_SEED = None
+
+
 def _dirt_config(mu, outdir):
+    seed_line = "" if INSERT_SEED is None else f"seed = {INSERT_SEED}\n"
     return TOML_TEMPLATE.format(
         gz=GZ, youngs=YOUNGS_MOD, nu=POISSON, e_n=RESTITUTION, mu=mu,
         mu_r=ROLLING_FRICTION, k_roll=ROLLING_STIFFNESS, gamma_roll=ROLLING_DAMPING,
         cyl_r=CYL_RADIUS,
         heap_count=HEAP_COUNT, radius=RADIUS, density=DENSITY,
-        ins_r=CYL_RADIUS - 1.5 * RADIUS, outdir=outdir,
+        ins_r=CYL_RADIUS - 1.5 * RADIUS, outdir=outdir, seed_line=seed_line,
     )
 
 
@@ -826,23 +836,134 @@ def graph():
     return ok
 
 
+# -- Bounded smoke / CI gate ----------------------------------------------------
+# The full sweep is 6 mu x 3 reps = 18 heap-formation runs (plus the optional
+# LAMMPS cross-code leg), each a ~1200-grain pour-settle-lift that relaxes on a
+# real settle/rest detector — so it legitimately overran the 1800 s automation cap
+# every hourly run (exit 124) and validated nothing. `sweep.py` with NO argument
+# now runs a BOUNDED gate on the SAME material, geometry and physics: a coarse
+# 3-point mu grid, ONE deterministic rep (seeded pack), and no LAMMPS. It fits the
+# same repose angle theta_r(mu) the full run measures and asserts the robust,
+# physically-guaranteed qualitative laws:
+#   * the frictionless collapse deposits nearly flat (theta_r ~ 0),
+#   * every frictional case holds a real slope in the sensible band, and
+#   * theta_r rises across the mu range (coarse monotone trend).
+# It completes in ~3 min and prints ALL CHECKS PASSED / CHECKS FAILED.
+#
+# This is an ADDITIVE breakage gate, NOT a replacement for the full validation.
+# It deliberately does NOT assert the fine, mu-resolved monotonicity between
+# adjacent close friction values (the subtle mid-mu behaviour) or the run-to-run
+# reproducibility spread — those, with their tolerances, remain the full run's job
+# (validate(), unchanged, still run via `sweep.py full`). It reuses the SAME
+# physical bounds as validate() (ANGLE_LO_DEG/ANGLE_HI_DEG/LOWMU_MAX_DEG/
+# MONOTONIC_SLACK_DEG) — nothing is loosened.
+SMOKE_MU_LIST = [0.0, 0.3, 0.5]   # coarse span: frictionless -> mid -> high friction
+SMOKE_SEED = 12345                # deterministic pack for a reproducible gate
+
+
+def smoke():
+    """Bounded fast gate (the harness default): form a heap at a coarse mu grid
+    (one deterministic rep each) and assert the robust theta_r(mu) laws. Prints
+    'ALL CHECKS PASSED' / 'CHECKS FAILED' and exits 0/1."""
+    global MU_LIST, REPS, INSERT_SEED, SWEEP_DIR, DATA_DIR, SWEEP_CSV
+    MU_LIST = SMOKE_MU_LIST
+    REPS = 1                       # deterministic pack -> a single rep is exact
+    INSERT_SEED = SMOKE_SEED
+    # Keep smoke artifacts out of the full run's dirs (both are gitignored).
+    SWEEP_DIR = os.path.join(SCRIPT_DIR, "sweep", "smoke")
+    DATA_DIR = os.path.join(SCRIPT_DIR, "data", "smoke")
+    SWEEP_CSV = os.path.join(DATA_DIR, "repose_sweep.csv")
+    os.makedirs(DATA_DIR, exist_ok=True)
+
+    print(f"Building {EXAMPLE} (release)...", flush=True)
+    subprocess.run(["cargo", "build", "--release", "--example", EXAMPLE,
+                    "--no-default-features", "--features", "precision-double"],
+                   cwd=REPO_ROOT, check=True)
+    generate()
+
+    rows = []
+    for mu in MU_LIST:
+        cdir = case_dir(mu, 0)
+        print(f"  mu={mu:<4} rep=0", end="  ", flush=True)
+        res = _run_dirt(cdir)
+        if res is None:
+            print("DIRT FAILED / no heap recorded")
+            continue
+        xs, ys, zs, rad = _load_positions(res)
+        r_c, h_s, base, diam = heap_profile(xs, ys, zs, rad)
+        theta, r_toe = fit_angle(r_c, h_s, base, diam)
+        rows.append({"mu": mu, "theta_deg": theta, "r_toe": r_toe, "n": len(xs)})
+        print(f"theta_r = {theta:5.2f} deg  (r_toe={r_toe*1e3:.1f} mm, N={len(xs)})")
+
+    print("\n=== Angle-of-repose smoke gate (coarse theta_r(mu) trend) ===")
+    print(f"  material: E={YOUNGS_MOD:.1e} Pa  nu={POISSON}  e={RESTITUTION}  "
+          f"rolling(sds): k_roll={ROLLING_STIFFNESS:g} mu_roll={ROLLING_FRICTION:g}")
+    print(f"  {'mu':>6}{'theta_r(deg)':>14}{'r_toe(mm)':>12}{'N':>7}")
+    for r in rows:
+        print(f"  {r['mu']:>6.2f}{r['theta_deg']:>14.2f}{r['r_toe']*1e3:>12.1f}{r['n']:>7d}")
+
+    thetas = {r["mu"]: r["theta_deg"] for r in rows}
+    checks = []
+
+    # 0. every case formed a heap and came to rest (data recorded).
+    checks.append((len(rows) == len(MU_LIST),
+                   f"all {len(MU_LIST)} cases recorded a settled heap ({len(rows)} ok)"))
+
+    # 1. frictionless collapse is nearly flat (theta_r small).
+    mu0_ok = 0.0 in thetas and thetas[0.0] <= LOWMU_MAX_DEG
+    checks.append((mu0_ok,
+                   f"frictionless heap flat: theta_r(mu=0) = "
+                   f"{thetas.get(0.0, float('nan')):.2f} <= {LOWMU_MAX_DEG} deg"))
+
+    # 2. every frictional case holds a real slope in the sensible band.
+    fric = [(mu, thetas[mu]) for mu in MU_LIST if mu > 0.0 and mu in thetas]
+    band_ok = bool(fric) and all(ANGLE_LO_DEG <= t <= ANGLE_HI_DEG for _, t in fric)
+    checks.append((band_ok,
+                   f"every frictional case in [{ANGLE_LO_DEG:.0f},{ANGLE_HI_DEG:.0f}] deg "
+                   f"({', '.join(f'{t:.1f}' for _, t in fric)})"))
+
+    # 3. coarse monotone trend: theta_r non-decreasing across the mu grid
+    #    (same slack as validate()), and a net increase lowest -> highest.
+    ordered = [thetas[mu] for mu in MU_LIST if mu in thetas]
+    mono = all(ordered[i + 1] >= ordered[i] - MONOTONIC_SLACK_DEG
+               for i in range(len(ordered) - 1))
+    net = len(ordered) >= 2 and ordered[-1] > ordered[0] + 1.0
+    checks.append((mono and net,
+                   f"theta_r rises across mu (coarse monotone, "
+                   f"{ordered[0]:.1f} -> {ordered[-1]:.1f} deg)"))
+
+    npass = sum(1 for ok, _ in checks if ok)
+    for ok, msg in checks:
+        print(f"  [{'PASS' if ok else 'FAIL'}] {msg}")
+    ok = all(ok for ok, _ in checks)
+    print(f"\n{npass}/{len(checks)} checks passed")
+    print("ALL CHECKS PASSED" if ok else "CHECKS FAILED")
+    sys.exit(0 if ok else 1)
+
+
+def full():
+    generate()
+    start()
+    print()
+    sys.exit(0 if graph() else 1)
+
+
 # -- dispatch -------------------------------------------------------------------
 def main():
-    cmd = sys.argv[1] if len(sys.argv) > 1 else "all"
-    if cmd == "generate":
+    cmd = sys.argv[1] if len(sys.argv) > 1 else "smoke"
+    if cmd == "smoke":
+        smoke()
+    elif cmd == "generate":
         generate()
     elif cmd == "start":
         start()
     elif cmd == "graph":
         sys.exit(0 if graph() else 1)
-    elif cmd == "all":
-        generate()
-        start()
-        print()
-        sys.exit(0 if graph() else 1)
+    elif cmd in ("all", "full"):
+        full()
     else:
         print(f"Unknown command: {cmd!r}")
-        print("Usage: sweep.py [generate|start|graph]   (no arg = all three)")
+        print("Usage: sweep.py [smoke|full|generate|start|graph]   (no arg = smoke gate)")
         sys.exit(2)
 
 
