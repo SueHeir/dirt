@@ -12,7 +12,7 @@
 //! | Normal      | Hertz (nonlinear), Hooke (linear)         |
 //! | Tangential  | Mindlin incremental spring + Coulomb cap  |
 //! | Rolling     | Constant torque, SDS (spring-dashpot-slider) |
-//! | Twisting    | Constant torque, SDS (spring-dashpot-slider) |
+//! | Twisting    | Constant torque, SDS (spring-dashpot-slider), Marshall (derived from tangential) |
 //! | Adhesion    | JKR, DMT                                  |
 //! | Cohesion    | SJKR (area-proportional)                  |
 //!
@@ -607,7 +607,54 @@ pub fn contact_force_core(
         }
 
         // ── Twisting friction torque ─────────────────────────────────────
-        if mu_tw > 0.0 {
+        // Three selectable models (material_table.twisting_model):
+        //   "constant" / "sds"  — user-supplied coefficients (gated on μ_tw > 0);
+        //   "marshall"           — coefficients DERIVED from the active tangential
+        //                          (Mindlin) model, no separate twist inputs.
+        if material_table.twisting_model == "marshall" {
+            // Marshall (2009) twisting, per LAMMPS pair_granular `twisting marshall`
+            // (doc/src/pair_granular.rst §twisting, Marshall2009 eqs 32-33). The
+            // twisting stiffness/damping/friction are expressed in terms of the
+            // tangential (sliding) coefficients and the Hertz contact radius
+            // a = √(R* δ):
+            //     k_twist = ½ k_t a²,  γ_twist = ½ γ_t a²,  μ_twist = (2/3) a μ_t
+            // with k_t, γ_t the tangential spring/damping computed above and μ_t
+            // the tangential friction coefficient. Below the cap the couple is
+            // the spring–dashpot τ = −k_twist ξ − γ_twist Ω; it is then truncated
+            // to |τ| ≤ μ_twist F_n and the angular displacement rescaled to the
+            // critical value (identical bookkeeping to the SDS slider).
+            if delta > 0.0 {
+                let twist_vel = or_dot_n;
+                let a_sq = delta * r_eff; // a² = (√(R* δ))²
+                let a = a_sq.sqrt(); // Hertz contact radius
+                let k_twist = 0.5 * k_t * a_sq;
+                let gamma_twist = 0.5 * gamma_t * a_sq;
+                let mu_twist = (2.0 / 3.0) * a * mu; // μ = tangential friction coeff
+
+                twist_disp += twist_vel * dt;
+
+                let mut tau_twist = -k_twist * twist_disp - gamma_twist * twist_vel;
+                let tau_max = mu_twist * f_n_mag.abs();
+                if tau_twist.abs() > tau_max {
+                    tau_twist = tau_twist.signum() * tau_max;
+                    if k_twist > TANGENTIAL_EPSILON {
+                        twist_disp = (tau_twist + gamma_twist * twist_vel) / (-k_twist);
+                    }
+                }
+
+                let tt_x = tau_twist * nx;
+                let tt_y = tau_twist * ny;
+                let tt_z = tau_twist * nz;
+                dem.torque[i][0] += tt_x;
+                dem.torque[i][1] += tt_y;
+                dem.torque[i][2] += tt_z;
+                if newton {
+                    dem.torque[j][0] -= tt_x;
+                    dem.torque[j][1] -= tt_y;
+                    dem.torque[j][2] -= tt_z;
+                }
+            }
+        } else if mu_tw > 0.0 {
             let twist_vel = or_dot_n; // twisting component of relative angular velocity
             let sds_twisting = material_table.twisting_model == "sds";
             if sds_twisting {
@@ -1020,8 +1067,42 @@ pub fn hooke_contact_force(
             }
         }
 
-        // Twisting friction
-        if mu_tw > 0.0 {
+        // Twisting friction (see the Hertz-Mindlin path for model semantics).
+        if material_table.twisting_model == "marshall" {
+            // Marshall (2009) derived-coefficient twisting on the linear (Hooke)
+            // tangential model: k_twist = ½ k_t a², γ_twist = ½ γ_t a²,
+            // μ_twist = (2/3) a μ_t with a = √(R* δ) and k_t = kt, γ_t the Hooke
+            // tangential spring/damping computed above.
+            let twist_vel = or_dot_n;
+            let a_sq = delta * r_eff;
+            let a = a_sq.sqrt();
+            let k_twist = 0.5 * kt * a_sq;
+            let gamma_twist = 0.5 * gamma_t * a_sq;
+            let mu_twist = (2.0 / 3.0) * a * mu;
+
+            twist_disp += twist_vel * dt;
+
+            let mut tau_twist = -k_twist * twist_disp - gamma_twist * twist_vel;
+            let tau_max = mu_twist * f_n_mag.abs();
+            if tau_twist.abs() > tau_max {
+                tau_twist = tau_twist.signum() * tau_max;
+                if k_twist > TANGENTIAL_EPSILON {
+                    twist_disp = (tau_twist + gamma_twist * twist_vel) / (-k_twist);
+                }
+            }
+
+            let tt_x = tau_twist * nx;
+            let tt_y = tau_twist * ny;
+            let tt_z = tau_twist * nz;
+            dem.torque[i][0] += tt_x;
+            dem.torque[i][1] += tt_y;
+            dem.torque[i][2] += tt_z;
+            if newton {
+                dem.torque[j][0] -= tt_x;
+                dem.torque[j][1] -= tt_y;
+                dem.torque[j][2] -= tt_z;
+            }
+        } else if mu_tw > 0.0 {
             let twist_vel = or_dot_n;
             let sds_twisting = material_table.twisting_model == "sds";
             if sds_twisting {
@@ -2075,6 +2156,131 @@ mod tests {
             torque_with_preload.abs() > torque_no_preload.abs(),
             "preloaded twisting spring should increase torque: no_preload={}, preloaded={}",
             torque_no_preload, torque_with_preload
+        );
+    }
+
+    /// Marshall twisting material: tangential friction `friction` drives the
+    /// derived twisting cap; the SDS twist stiffness/damping inputs are provided
+    /// deliberately so tests can confirm the Marshall model *ignores* them.
+    fn make_material_table_marshall_twisting(
+        friction: f64,
+        twist_stiff: f64,
+        twist_damp: f64,
+    ) -> MaterialTable {
+        let mut mt = MaterialTable::new();
+        mt.twisting_model = "marshall".to_string();
+        mt.add_material_with_sds(
+            "glass", 8.7e9, 0.3, 0.95,
+            friction, // tangential μ_t — Marshall derives μ_twist = (2/3) a μ_t from this
+            0.0,      // rolling_friction
+            0.0, 0.0,
+            0.0,      // twisting_friction (unused by Marshall)
+            0.0, 0.0, // kn, kt (Hertz path ignores these)
+            0.0, 0.0, // rolling sds
+            twist_stiff, twist_damp, // twisting sds — must NOT affect Marshall
+        );
+        mt.build_pair_tables();
+        mt
+    }
+
+    /// Run one Marshall-twisting contact step and return the twisting torque on
+    /// atom 0 (about the contact normal x̂). `preload` seeds the stored twisting
+    /// spring displacement; a large value forces the saturated (capped) regime.
+    fn run_marshall_twist(mt: MaterialTable, omega_x: f64, preload: f64) -> f64 {
+        let mut app = App::new();
+        let radius = 0.001;
+        let mut atom = Atom::new();
+        let mut dem = DemAtom::new();
+        let mut hist = ContactHistoryStore::new();
+        atom.dt = 1e-7;
+
+        push_test_atom_with_history(&mut atom, &mut dem, &mut hist, 0, [0.0, 0.0, 0.0], radius);
+        push_test_atom_with_history(&mut atom, &mut dem, &mut hist, 1, [0.0019, 0.0, 0.0], radius);
+        dem.omega[0] = [omega_x, 0.0, 0.0]; // spin about contact normal x̂
+        atom.nlocal = 2;
+        atom.natoms = 2;
+
+        if preload != 0.0 {
+            hist.contacts[0].push((1, [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, preload], false));
+        }
+
+        let mut neighbor = Neighbor::new();
+        neighbor.neighbor_offsets = vec![0, 1, 1];
+        neighbor.neighbor_indices = vec![1];
+
+        let mut registry = AtomDataRegistry::new();
+        registry.register(dem);
+        registry.register(hist);
+
+        app.add_resource(atom);
+        app.add_resource(neighbor);
+        app.add_resource(registry);
+        app.add_resource(mt);
+        app.add_update_system(hertz_mindlin_contact_force, ParticleSimScheduleSet::Force);
+        app.organize_systems();
+        app.run();
+
+        let reg = app.get_resource_ref::<AtomDataRegistry>().unwrap();
+        let tq = reg.expect::<DemAtom>("test").torque[0][0];
+        tq
+    }
+
+    #[test]
+    fn marshall_twisting_opposes_spin() {
+        // Spin about the contact normal (x̂) → Marshall twisting couple opposes it.
+        let tq = run_marshall_twist(make_material_table_marshall_twisting(0.4, 0.0, 0.0), 10.0, 0.0);
+        assert!(
+            tq < 0.0,
+            "Marshall twisting torque should oppose spin about x, got {}",
+            tq
+        );
+    }
+
+    #[test]
+    fn marshall_twisting_ignores_sds_inputs() {
+        // The Marshall coefficients are DERIVED from the tangential model, so the
+        // SDS twisting_stiffness / twisting_damping material inputs must have no
+        // effect. Drive into the saturated (capped) regime with a large preload so
+        // the torque equals the derived cap τ_max = μ_twist·F_n, then confirm two
+        // wildly different SDS-input tables give the identical torque.
+        let tq_zero = run_marshall_twist(
+            make_material_table_marshall_twisting(0.4, 0.0, 0.0), 10.0, 1.0,
+        );
+        let tq_huge = run_marshall_twist(
+            make_material_table_marshall_twisting(0.4, 1.0e9, 1.0e6), 10.0, 1.0,
+        );
+        assert!(tq_zero < 0.0, "should oppose spin, got {}", tq_zero);
+        assert!(
+            (tq_zero - tq_huge).abs() <= 1e-12 * tq_zero.abs().max(1e-30),
+            "Marshall torque must ignore SDS twist inputs: zero-input={}, huge-input={}",
+            tq_zero, tq_huge
+        );
+    }
+
+    #[test]
+    fn marshall_twisting_cap_scales_with_tangential_friction() {
+        // μ_twist = (2/3) a μ_t, so in the saturated regime the cap scales linearly
+        // with the tangential friction coefficient: doubling μ_t doubles |τ|, and
+        // μ_t = 0 gives zero twisting couple (Marshall ties the cap to sliding).
+        let tq_mu04 = run_marshall_twist(
+            make_material_table_marshall_twisting(0.4, 0.0, 0.0), 10.0, 1.0,
+        );
+        let tq_mu08 = run_marshall_twist(
+            make_material_table_marshall_twisting(0.8, 0.0, 0.0), 10.0, 1.0,
+        );
+        let tq_mu00 = run_marshall_twist(
+            make_material_table_marshall_twisting(0.0, 0.0, 0.0), 10.0, 1.0,
+        );
+        let ratio = tq_mu08 / tq_mu04;
+        assert!(
+            (ratio - 2.0).abs() < 1e-6,
+            "doubling μ_t should double the Marshall cap: ratio={}",
+            ratio
+        );
+        assert!(
+            tq_mu00.abs() < 1e-12,
+            "μ_t = 0 should give zero Marshall twisting torque, got {}",
+            tq_mu00
         );
     }
 
