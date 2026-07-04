@@ -83,6 +83,51 @@ on the line.*
 a viscoelastic damping *mapping* that is calibrated, not derived. Contact-duration
 accuracy is floored at ~1–2 % by timestep quantization.
 
+## `bench_hooke_rebound` — linear-spring normal rebound (exact damped closed form)
+
+Exercises the **Hooke** normal contact (`contact_model = "hooke"`, per-material
+`kn`/`kt`) — the linear spring-dashpot branch of `contact.rs` that every other
+benchmark leaves untouched (they all use Hertz). Two identical spheres collide
+head-on; the driver sweeps input restitution (0.3–1.0) and relative impact
+velocity (0.5–4 m/s) and gates the measured COR, contact duration, and peak
+overlap against the **exact** analytical collision. Unlike Hertz, the linear
+contact is a constant-coefficient damped harmonic oscillator, so it *has* a
+closed-form solution with no free constants:
+
+- **COR = e** exactly, because DIRT derives the Hooke damping ratio as the exact
+  linear inversion `β = −ln e/√(π²+ln²e)`, and `exp(−πβ/√(1−β²)) = e`.
+- **Contact duration** `t_c = π/ω_d = √(π²+ln²e)·√(m_eff/kn)` (half the damped
+  period), **velocity-independent** — the signature of a linear contact.
+- **Peak overlap** `δ_max = (v/ω_d)·e^(−βω₀t*)·sin(ω_d t*)`, scaling linearly with
+  the impact speed.
+
+Across all 20 cases the simulation matches every one of these to **≤ 0.05 %**
+(COR to within 0.0005, contact time and overlap to a few 0.01 %), and both COR and
+`t_c` are flat across impact speed to < 0.05 %.
+
+![Measured vs input COR](bench_hooke_rebound/plots/cor_validation.png)
+
+*Measured COR vs input restitution at four speeds. Points sit on the `COR = e` line
+exactly and independently of velocity — the linear contact realizes its input
+restitution with no calibration bias (contrast the Hertz/Tsuji rise above the line).*
+
+![Contact duration](bench_hooke_rebound/plots/contact_duration.png)
+
+*Contact duration vs input restitution against `t_c = π/ω_d`. Points lie on the
+analytical curve at every velocity (curves for the four speeds coincide), confirming
+the velocity-independent half-period of the damped linear oscillator.*
+
+![Peak overlap](bench_hooke_rebound/plots/peak_overlap.png)
+
+*Peak overlap vs impact velocity for each restitution. The linear `δ_max ∝ v`
+scaling and the damping-dependent slope both match the closed form.*
+
+**Honest read:** this is the strongest normal-contact check in the suite — an exact
+damped closed form (not just the elastic limit, and not a calibrated mapping), so it
+validates the linear stiffness, the restitution→damping derivation, and the
+integrator simultaneously. It shares `bench_hertz_rebound`'s ~1–2 % contact-duration
+floor from timestep quantization, but here the resolved error is far below it.
+
 ## `bench_oblique_impact` — tangential contact vs Maw (1976)
 
 A spin-free projectile strikes a frozen sphere obliquely; sweeping the incidence
@@ -498,8 +543,6 @@ transfers, the numbers don't).
 Physics DIRT exposes that no `bench_*` currently exercises (bonds excluded — they
 have their own non-`bench_` examples). The cleanest open gaps:
 
-- **Hooke (linear-spring) contact** (`contact_model = "hooke"`, `kn`/`kt`) — every
-  benchmark uses Hertz.
 - **Twisting friction** (`twisting_friction`; both `constant` and `sds`) — no
   benchmark applies a twisting torque.
 - **SDS rolling model** (`rolling_model = "sds"`) — `rolling_decay` tests only the
@@ -522,6 +565,7 @@ will need a benchmark when re-added.)
 | Example | Reference | Tier | Status / main gap |
 |---|---|---|---|
 | hertz_rebound | Hertz + LAMMPS | analytical (strong) | PASS; damped vs elastic only; damping mapping calibrated |
+| hooke_rebound | linear damped-oscillator collision (COR=e, t_c=π/ω_d, δ_max) | analytical (strong, exact) | PASS; exact closed form (not just elastic), COR/t_c/overlap ≤0.05%; velocity-independence confirmed |
 | oblique_impact | Maw 1976 + LAMMPS | analytical + cross-code (strong) | PASS; full S-curve; vs theory not raw experiment |
 | kharaz_oblique | Kharaz 2001 protocol: rigid-body kinematics + Maw, anchored to measured eₙ, μ | analytical + experiment-anchored (strong) | PASS; eₙ=0.980 flat, sliding branch exact; raw glass-anvil points paywalled |
 | sliding_friction | rigid-body slip-to-roll | analytical | PASS; (5/7)v₀ model-independent; a=μg partly self-consistent |

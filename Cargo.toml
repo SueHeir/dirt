@@ -222,3 +222,7 @@ path = "examples/bench_restart_determinism/main.rs"
 [[example]]
 name = "bench_nohistory_tangential"
 path = "examples/bench_nohistory_tangential/main.rs"
+
+[[example]]
+name = "bench_hooke_rebound"
+path = "examples/bench_hooke_rebound/main.rs"
