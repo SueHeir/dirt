@@ -1,14 +1,18 @@
 # DIRT
 
-**A Rust granular-DEM engine that resolves every contact individually —
-cross-checked against LAMMPS and closed-form theory.**
+**A LAMMPS-validated granular-DEM code you can actually read and extend —
+built as composable Rust plugins on the GRASS framework, not a script-driven
+black box.**
 
-DIRT — the *Discrete-element Interaction-Resolved Toolkit* — simulates granular
-matter by computing each inter-particle contact force directly: Hertz–Mindlin
-contact, rotational dynamics, parallel bonds, walls, multisphere clumps, heat
-conduction, and contact analysis. It rides the [SOIL](https://github.com/SueHeir/soil)
-substrate for the method-agnostic machinery (atom data, domain decomposition,
-halo exchange, neighbor lists) and adds only the granular physics. It is a
+DIRT — the *Discrete-element Interaction-Resolved Toolkit* — is a research DEM
+code. The physics — Hertz–Mindlin contact, rotational dynamics, parallel bonds,
+walls, multisphere clumps, contact analysis — is a set of
+plugins you assemble in Rust and cross-check against LAMMPS and closed-form
+theory. It rides the [SOIL](https://github.com/SueHeir/soil) substrate (atom
+data, domain decomposition, halo exchange, neighbor lists) and the
+[GRASS](https://github.com/SueHeir/grass) scheduler, so adding or customizing
+physics means writing one more system function — not authoring a bespoke input
+script. It is a
 ground-up Rust reimplementation building on roughly two years of prior DEM
 development (formerly MDDEM).
 
@@ -41,8 +45,10 @@ model carries to any other solver on the stack. The
 adds a real custom system (remove a blocker wall when the bed goes quiet) in a
 dozen lines.
 
-> Prefer config files to code? There's a zero-Rust runner too — see
-> [below](#dont-want-to-write-rust). It's a convenience, not the main path.
+> Prefer config files to code? A prebuilt driver runs the shipped scenarios and
+> parameter sweeps from TOML with no recompile — see
+> [Run scenarios and sweeps from config](#run-scenarios-and-sweeps-from-config-no-recompile).
+> It's a convenience for canned runs, not the main path.
 
 ## Trust: what's actually validated
 
@@ -94,22 +100,37 @@ Everything past the contact force is a plugin you add only if you want it:
   add/set-force.
 - **Diagnostics** — coordination number, fabric tensor, rattlers, measurement
   planes for flux and profiles.
-- **Heat** — granular conduction through contacts.
 
-## Don't want to write Rust?
+## Run scenarios and sweeps from config (no recompile)
 
-If you'd rather describe a run than compile one, DIRT ships a single generic
-`run` driver that assembles the standard plugin stack and takes every
-case-specific detail from a **TOML config** you pass on the command line:
+`examples/run` is a prebuilt driver that assembles the full plugin stack —
+contact, gravity, walls, fixes, box deformation — and reads every case-specific
+detail from a **declarative TOML config**, so you can run the shipped scenarios
+(settle, pour, cylinder pour, Lees–Edwards shear, uniaxial compression) without
+writing or recompiling any Rust:
 
 ```bash
 cargo run --release --example run -- examples/run/pour_settle.toml
 ```
 
-The config is **declarative** — you *describe* geometry, materials, insertion,
-walls, body forces, and duration; you never *script* a step sequence (the driver
-owns the loop). Swap the config path to run a different scenario with the same
-binary. Details: [Run from a Config — Zero Rust](docs/src/getting-started/run-from-config.md).
+Two things this prebuilt driver gives you that a hand-written `main.rs` does not:
+
+- **Toggle physics without recompiling.** A hand-written program fixes its plugin
+  set at compile time; to add walls or deformation you edit Rust and rebuild. The
+  driver pre-adds the superset, and each plugin stays inert unless its config
+  section is present — so settle → pour → shear are chosen purely by the TOML.
+- **Parameter sweeps are one binary + N configs.** Point the same binary at a
+  series of TOMLs varying volume fraction, friction, or strain rate and nothing
+  recompiles. (This is the pattern the validation suite runs — each `bench_*`
+  builds one example binary, then loops it over a config tree.) For a deformation
+  run, the declarative `[loading]` block lets the driver derive the step count
+  and own the deform loop for you.
+
+The config is declarative throughout: you *describe* geometry, materials,
+insertion, walls, body forces, and loading; you never *script* a step sequence.
+Reach for a custom plugin instead when you need physics or a measurement the
+shipped stack doesn't already have. Details:
+[Run from a Config](docs/src/getting-started/run-from-config.md).
 
 ## The stack
 
@@ -139,9 +160,9 @@ themselves:
 - **[SOIL](https://github.com/SueHeir/soil)** — Write your own particle method
   without hand-writing domain decomposition, halo exchange, migration, and
   neighbor lists — declare your state once, SOIL carries it through all of it.
-- **[DIRT](https://github.com/SueHeir/dirt)** — A Rust granular-DEM engine that
-  resolves every contact individually — cross-checked against LAMMPS and
-  closed-form theory.
+- **[DIRT](https://github.com/SueHeir/dirt)** — A LAMMPS-validated granular-DEM
+  code you can read and extend — composable Rust plugins on the GRASS framework,
+  not a script-driven black box.
 
 **Where to start:** to *run* granular simulations, start at
 [DIRT](https://github.com/SueHeir/dirt), the batteries-included physics tier; to
@@ -161,13 +182,18 @@ the build.
 ```bash
 git clone https://github.com/SueHeir/dirt
 cd dirt
-cargo run --release --example hello_bed --no-default-features -- examples/hello_bed/config.toml
+cargo run --release --example hello_bed \
+  --no-default-features --features precision-double \
+  -- examples/hello_bed/config.toml
 ```
 
-`--no-default-features` disables the `mpi_backend` feature and builds a
-single-process binary — the fastest way to get running, with no C compiler or
-MPI library required. Drop it once you have an MPI toolchain and want multi-rank
-domain-decomposed runs:
+The default feature set is `["mpi_backend", "precision-double"]`.
+`--no-default-features` turns off `mpi_backend` and builds a single-process
+binary — the fastest way to get running, with no C compiler or MPI library
+required — but it also drops `precision-double`, which the solver requires, so
+you re-add it explicitly with `--features precision-double`. Drop
+`--no-default-features` entirely once you have an MPI toolchain and want
+multi-rank domain-decomposed runs:
 
 ```bash
 cargo build --release           # mpi_backend on by default
@@ -196,25 +222,11 @@ useful when you want to reach for one directly:
 | [`dirt_fixes`](crates/dirt_fixes/README.md) | DEM group fixes: add/set force, freeze, pin, prescribed motion, viscous damping, gravity |
 | [`dirt_test_utils`](crates/dirt_test_utils/README.md) | shared test helpers |
 
-## How to cite
+## Citing
 
-If you use DIRT in academic work, please cite the version you used so results
-stay reproducible. Machine-readable metadata lives in
-[`CITATION.cff`](CITATION.cff) (GitHub renders a "Cite this repository" button
-from it); per-version changes are in [`CHANGELOG.md`](CHANGELOG.md).
-
-```bibtex
-@software{suehr_dirt_2026,
-  author  = {Suehr, Elizabeth},
-  title   = {{DIRT — Discrete-element Interaction-Resolved Toolkit}},
-  version = {0.1.3},
-  year    = {2026},
-  url     = {https://github.com/SueHeir/dirt},
-  license = {MIT OR Apache-2.0}
-}
-```
-
-Update `version` (and `year`) to match the release you actually ran.
+Machine-readable metadata is in [`CITATION.cff`](CITATION.cff) (GitHub renders a
+"Cite this repository" button from it); please cite the version you ran, with
+per-version changes in [`CHANGELOG.md`](CHANGELOG.md). A JOSS paper is planned.
 
 ## License
 

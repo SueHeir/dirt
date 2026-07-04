@@ -101,7 +101,7 @@ calibrated from restitution.
 |---|---|---|
 | `none` (default) | ✅ `pair_granular.rst:784`; `.h:38` | ✅ (default is **constant-torque**) |
 | **SDS** twisting (`τ=−k ξ−γΩ`, capped `μ_tw F_n`) | ✅ `sds` — `pair_granular.rst:786`; `.h:58` | ✅ `twisting_model="sds"` — `crates/dirt_granular/src/contact.rs:606` |
-| **Marshall** twisting (coeffs derived from tangential model) | ✅ `marshall` — `pair_granular.rst:818`; `GranSubModTwistingMarshall` `.h:46` | ❌ — searched; DIRT has no Marshall-derived twist. Uses explicit SDS/constant coefficients instead |
+| **Marshall** twisting (coeffs derived from tangential model) | ✅ `marshall` — `pair_granular.rst:818`; `GranSubModTwistingMarshall` `.h:46` | ✅ `twisting_model="marshall"` — `crates/dirt_granular/src/contact.rs:614` (`k_twist=½k_t a²`, `γ_twist=½γ_t a²`, `μ_twist=⅔ a μ_t`; Hooke path 1071). Validated by `examples/bench_marshall_twisting` |
 | **Constant-torque** twisting (`τ=μ_tw|F_n|R*`) | ❌ | ✅ default — `crates/dirt_granular/src/contact.rs:638` |
 | Twisting history slot | ✅ implicit | ✅ `crates/dirt_granular/src/tangential.rs:46` (`[6]`) |
 
@@ -206,8 +206,13 @@ Rough parity on rigid clumps.
    `fix_granular_mdr.cpp`) — DIRT has no plastic normal contact.
 3. **Mindlin `force`-form history and `mindlin_rescale` unloading variants**
    (`pair_granular.rst:645, 675`) — DIRT stores displacement history only.
-4. **Marshall twisting** (coeffs derived from the tangential model,
-   `pair_granular.rst:818`) — DIRT has SDS/constant twist but not the derived form.
+4. ~~**Marshall twisting** (coeffs derived from the tangential model,
+   `pair_granular.rst:818`)~~ — ✅ **CLOSED**: `twisting_model="marshall"`
+   (`crates/dirt_granular/src/contact.rs:614`) derives `k_twist=½k_t a²`,
+   `γ_twist=½γ_t a²`, `μ_twist=⅔ a μ_t` from the active tangential model;
+   validated by `examples/bench_marshall_twisting` (spin-down vs the analytical
+   Marshall torque, 0.02% error). DIRT now has all three twist forms
+   (constant / SDS / Marshall).
 5. ~~**`linear_nohistory` tangential** (`pair_granular.rst:488`) — DIRT is always
    history-based.~~ **Closed:** `tangential_model = "linear_nohistory"` adds the
    history-free velocity-Coulomb law (`examples/bench_nohistory_tangential`).

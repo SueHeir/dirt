@@ -61,7 +61,7 @@
 //! contact_model = "hertz"     # "hertz" (default) or "hooke"
 //! adhesion_model = "jkr"      # "jkr" (default) or "dmt" (only when surface_energy > 0)
 //! rolling_model = "constant"  # "constant" (default) or "sds"
-//! twisting_model = "constant" # "constant" (default) or "sds"
+//! twisting_model = "constant" # "constant" (default), "sds", or "marshall" (coeffs derived from tangential)
 //! ```
 //!
 //! # Material-parameter reference

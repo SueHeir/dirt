@@ -1,0 +1,81 @@
+# Cundall non-viscous global damping benchmark — validates the [[cundall]] fix
+# (dirt_fixes) against its exact analytical effect on a single free particle.
+#
+# A lone sphere (no walls, no contacts) is launched straight up (+z) under
+# gravity AND given an initial spin about +z with a constant applied torque
+# (the torque is applied in main.rs; there is no "angular gravity" fix). The
+# [[cundall]] fix damps BOTH the (gravity) force and the (applied) torque
+# component-by-component per Cundall/LAMMPS `fix damping/cundall`:
+#
+#   F_k <- F_k * (1 - gamma_l * sign(F_k*v_k))
+#   T_k <- T_k * (1 - gamma_a * sign(T_k*omega_k))
+#
+# Rising vs falling (and spin-down vs spin-up) exercise BOTH sign branches, so
+# the motion is piecewise-constant-acceleration with the exact rates
+#   a_up   = -g (1 + gamma_l),   a_down = -g (1 - gamma_l)
+#   alpha_down = T_z (1 + gamma_a)/I,  alpha_up = T_z (1 - gamma_a)/I
+# which sweep.py fits and checks. This is the default single-case config; the
+# PASS/FAIL sweep over several gamma values is driven by sweep.py.
+#
+# Run:
+#   cargo run --release --example bench_cundall_damping --no-default-features \
+#     --features precision-double -- examples/bench_cundall_damping/config.toml
+
+[comm]
+processors_x = 1
+processors_y = 1
+processors_z = 1
+
+[domain]
+# Generous box: the sphere rises ~0.4 m and falls to ~-0.1 m over the run.
+x_low = -0.05
+x_high = 0.05
+y_low = -0.05
+y_high = 0.05
+z_low = -0.6
+z_high = 0.6
+boundary_x = "fixed"
+boundary_y = "fixed"
+boundary_z = "fixed"
+
+[neighbor]
+skin_fraction = 1.1
+bin_size = 0.05
+every = 1
+
+[gravity]
+gz = -9.81
+
+[dem]
+contact_model = "hertz"
+
+[[dem.materials]]
+name = "grain"
+youngs_mod = 1.0e8       # unused (no contacts) but required by the DEM plugin
+poisson_ratio = 0.3
+restitution = 0.5
+friction = 0.5
+
+# The single free sphere, launched straight up at 3 m/s. main.rs adds the
+# initial spin and constant torque about +z.
+[[particles.insert]]
+material = "grain"
+count = 1
+radius = 0.005
+density = 2500.0
+velocity_z = 3.0
+region = { type = "block", min = [-0.002, -0.002, -0.002], max = [0.002, 0.002, 0.002] }
+
+# The fix under test: Cundall non-viscous global damping on all atoms.
+[[cundall]]
+group = "all"
+gamma_l = 0.5
+gamma_a = 0.5
+
+[output]
+dir = "examples/bench_cundall_damping"
+
+[run]
+steps = 6000
+thermo = 2000
+dt = 1.0e-4
