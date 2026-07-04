@@ -6,7 +6,7 @@ black box.**
 
 DIRT — the *Discrete-element Interaction-Resolved Toolkit* — is a research DEM
 code. The physics — Hertz–Mindlin contact, rotational dynamics, parallel bonds,
-walls, multisphere clumps, heat conduction, contact analysis — is a set of
+walls, multisphere clumps, contact analysis — is a set of
 plugins you assemble in Rust and cross-check against LAMMPS and closed-form
 theory. It rides the [SOIL](https://github.com/SueHeir/soil) substrate (atom
 data, domain decomposition, halo exchange, neighbor lists) and the
@@ -100,7 +100,6 @@ Everything past the contact force is a plugin you add only if you want it:
   add/set-force.
 - **Diagnostics** — coordination number, fabric tensor, rattlers, measurement
   planes for flux and profiles.
-- **Heat** — granular conduction through contacts.
 
 ## Run scenarios and sweeps from config (no recompile)
 
