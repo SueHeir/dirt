@@ -14,6 +14,7 @@ docs/book/
 **/data/
 **/out/
 **/sweep/
+**/xval/
 *.csv
 !**/sweep.py
 schedule.dot
