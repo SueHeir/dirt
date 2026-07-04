@@ -1133,6 +1133,13 @@ pub fn bond_force(
 
     let pflags = domain.periodic_flags();
     let box_size = domain.size;
+    // Triclinic (Lees–Edwards) tilt factors [xy, xz, yz]. When the box is
+    // sheared, minimum-image must account for the tilt: wrapping a bond across
+    // the y (gradient) seam also shifts x by `xy`. Ignoring it makes a
+    // seam-spanning bond's separation drift with the accumulating tilt, which
+    // injects a spurious, strain-growing force (energy blow-up under shear).
+    let tilt = domain.tilt;
+    let triclinic = domain.triclinic;
 
     let nlocal = atoms.nlocal as usize;
     if bonds.bonds.len() < nlocal { return; }
@@ -1193,9 +1200,31 @@ pub fn bond_force(
                 atoms.pos[j][1] as f64 - atoms.pos[i][1] as f64,
                 atoms.pos[j][2] as f64 - atoms.pos[i][2] as f64,
             ];
-            for k in 0..3 {
-                if pflags[k] {
-                    dxv[k] -= box_size[k] * (dxv[k] / box_size[k]).round();
+            if triclinic {
+                // Triclinic minimum image: map the separation into fractional
+                // (lamda) coordinates via H⁻¹ (H upper-triangular with the tilt
+                // factors), wrap each periodic component to nearest, map back.
+                // Tilt factors [xy, xz, yz] are lengths; the fractional λ are
+                // dimensionless. H·λ (matching Domain::from_lamda): dx = Lx·λx +
+                // xy·λy + xz·λz, dy = Ly·λy + yz·λz, dz = Lz·λz.
+                let [xy, xz, yz] = tilt;
+                let lz = if box_size[2] != 0.0 { dxv[2] / box_size[2] } else { 0.0 };
+                let ly = if box_size[1] != 0.0 { (dxv[1] - yz * lz) / box_size[1] } else { 0.0 };
+                let lx = if box_size[0] != 0.0 { (dxv[0] - xy * ly - xz * lz) / box_size[0] } else { 0.0 };
+                let mut lam = [lx, ly, lz];
+                for k in 0..3 {
+                    if pflags[k] {
+                        lam[k] -= lam[k].round();
+                    }
+                }
+                dxv[0] = box_size[0] * lam[0] + xy * lam[1] + xz * lam[2];
+                dxv[1] = box_size[1] * lam[1] + yz * lam[2];
+                dxv[2] = box_size[2] * lam[2];
+            } else {
+                for k in 0..3 {
+                    if pflags[k] {
+                        dxv[k] -= box_size[k] * (dxv[k] / box_size[k]).round();
+                    }
                 }
             }
             let dx = dxv[0]; let dy = dxv[1]; let dz = dxv[2];

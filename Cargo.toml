@@ -135,6 +135,10 @@ name = "bench_lebc_shear"
 path = "examples/bench_lebc_shear/main.rs"
 
 [[example]]
+name = "monkey_shear"
+path = "examples/monkey_shear/main.rs"
+
+[[example]]
 name = "bench_granular_conductivity"
 path = "examples/bench_granular_conductivity/main.rs"
 
