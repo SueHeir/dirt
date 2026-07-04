@@ -220,6 +220,10 @@ name = "bench_restart_determinism"
 path = "examples/bench_restart_determinism/main.rs"
 
 [[example]]
+name = "bench_mpi_decomposition"
+path = "examples/bench_mpi_decomposition/main.rs"
+
+[[example]]
 name = "bench_nohistory_tangential"
 path = "examples/bench_nohistory_tangential/main.rs"
 
