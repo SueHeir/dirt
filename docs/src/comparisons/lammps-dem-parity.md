@@ -78,7 +78,7 @@ calibrated from restitution.
 
 | Feature | LAMMPS | DIRT |
 |---|---|---|
-| `linear_nohistory` (velocity Coulomb, no history) | ✅ `pair_granular.rst:488`; `.h:59` | ❌ — DIRT tangential is always history-based |
+| `linear_nohistory` (velocity Coulomb, no history) | ✅ `pair_granular.rst:488`; `.h:59` | ✅ selectable `tangential_model = "linear_nohistory"` — history-free `F_t = -min(μ\|F_n\|, γ_t\|v_t\|) t̂`, zero accumulated ξ — `crates/dirt_granular/src/contact.rs` (tangential block); validated by `examples/bench_nohistory_tangential` |
 | `linear_history` (spring on accumulated ξ) | ✅ `pair_granular.rst:550`; `.h:71` | ✅ Hooke-path linear `k_t` + Coulomb cap — `crates/dirt_granular/src/contact.rs:722` (tangential block) |
 | **Mindlin** (adds contact-radius `a`, `k_t=8G*`) | ✅ `pair_granular.rst:613`; `.h:98` | ✅ incremental spring-history + Coulomb cap `μ|F_n|`, damping `γ_t=2β√(5/6)√(k_t m_r)` — `crates/dirt_granular/src/contact.rs:432` (`k_t` ~348, damping 484) |
 | `mindlin/force` (history stored as elastic force) | ✅ `pair_granular.rst:645`; `.h:112` | ❌ — DIRT stores tangential *displacement* history (`crates/dirt_granular/src/tangential.rs:49` `ContactHistoryStore`), not the force form |
@@ -208,8 +208,9 @@ Rough parity on rigid clumps.
    (`pair_granular.rst:645, 675`) — DIRT stores displacement history only.
 4. **Marshall twisting** (coeffs derived from the tangential model,
    `pair_granular.rst:818`) — DIRT has SDS/constant twist but not the derived form.
-5. **`linear_nohistory` tangential** (`pair_granular.rst:488`) — DIRT is always
-   history-based.
+5. ~~**`linear_nohistory` tangential** (`pair_granular.rst:488`) — DIRT is always
+   history-based.~~ **Closed:** `tangential_model = "linear_nohistory"` adds the
+   history-free velocity-Coulomb law (`examples/bench_nohistory_tangential`).
 6. **Cundall non-viscous global damping** (`fix_damping_cundall.cpp`).
 7. **Hooke-normal walls** and **curved/region-wall twisting + JKR/DMT**
    (currently plane-only, `crates/dirt_wall/src/lib.rs:1204, 1173`).

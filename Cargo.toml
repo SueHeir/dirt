@@ -47,6 +47,10 @@ name = "clump_dimer_drop"
 path = "examples/clump_dimer_drop/main.rs"
 
 [[example]]
+name = "monkey_barrel"
+path = "examples/monkey_barrel/main.rs"
+
+[[example]]
 name = "wall_servo_lid"
 path = "examples/wall_servo_lid/main.rs"
 
@@ -184,6 +188,7 @@ panic = "abort"
 [dependencies]
 dirt_core = { path = "./crates/dirt_core", default-features = false }
 serde = { version = "1", features = ["derive"] }
+toml = "0.8"
 dirt_clump = { path = "./crates/dirt_clump" }
 dirt_measure_plane = { path = "./crates/dirt_measure_plane" }
 soil_derive = { git = "ssh://git@192.168.0.170:2222/SueHeir/soil.git", branch = "main" }
@@ -201,3 +206,7 @@ path = "examples/mpi_loadbalance_validate/main.rs"
 [[example]]
 name = "bench_restart_determinism"
 path = "examples/bench_restart_determinism/main.rs"
+
+[[example]]
+name = "bench_nohistory_tangential"
+path = "examples/bench_nohistory_tangential/main.rs"

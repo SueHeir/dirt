@@ -221,6 +221,10 @@ fn default_rolling_model() -> String {
     "constant".to_string()
 }
 
+fn default_tangential_model() -> String {
+    "history".to_string()
+}
+
 fn default_twisting_model() -> String {
     "constant".to_string()
 }
@@ -252,6 +256,19 @@ pub struct DemConfig {
     /// Twisting friction model: "constant" (default) or "sds".
     #[serde(default = "default_twisting_model")]
     pub twisting_model: String,
+    /// Tangential friction model: "history" (default) or "linear_nohistory".
+    ///
+    /// - **history** (default): the incremental Mindlin tangential spring — the
+    ///   force accumulates the sliding displacement `ξ` over the contact lifetime
+    ///   (`F_t = k_t ξ + γ_t v_t`, Coulomb-capped). This is DIRT's historical path
+    ///   and mirrors LAMMPS `pair_granular … tangential linear_history/mindlin`.
+    /// - **linear_nohistory**: a history-free velocity-Coulomb law mirroring LAMMPS
+    ///   `pair_granular … tangential linear_nohistory` (and the classic
+    ///   `pair gran/hooke`). The tangential force is `F_t = -min(μ |F_n|, γ_t |v_t|) t̂`
+    ///   with **no** accumulated spring displacement — the force depends only on the
+    ///   instantaneous relative tangential velocity. Rolling/twisting are unaffected.
+    #[serde(default = "default_tangential_model")]
+    pub tangential_model: String,
     /// Track per-sphere orientation (quaternion). Default `false`.
     ///
     /// A sphere is rotationally symmetric, so its orientation never enters any
@@ -285,6 +302,7 @@ impl Default for DemConfig {
             adhesion_model: default_adhesion_model(),
             rolling_model: default_rolling_model(),
             twisting_model: default_twisting_model(),
+            tangential_model: default_tangential_model(),
             track_orientation: false,
             limit_damping: default_limit_damping(),
         }
@@ -412,6 +430,9 @@ pub struct MaterialTable {
     pub rolling_model: String,
     /// Twisting friction model: "constant" or "sds".
     pub twisting_model: String,
+    /// Tangential friction model: "history" (Mindlin spring) or "linear_nohistory"
+    /// (velocity-Coulomb, no accumulated displacement). See [`DemConfig::tangential_model`].
+    pub tangential_model: String,
     /// Track per-sphere orientation (quaternion). Default `false`; see [`DemConfig::track_orientation`].
     pub track_orientation: bool,
     /// Clamp total normal force to repulsive-only (≥ 0). Default `true`; see
@@ -502,6 +523,7 @@ impl MaterialTable {
             adhesion_model: "jkr".to_string(),
             rolling_model: "constant".to_string(),
             twisting_model: "constant".to_string(),
+            tangential_model: "history".to_string(),
             track_orientation: false,
             limit_damping: true,
             rolling_stiffness: Vec::new(),
@@ -897,6 +919,7 @@ friction = 0.4
         material_table.adhesion_model = dem_config.adhesion_model.clone();
         material_table.rolling_model = dem_config.rolling_model.clone();
         material_table.twisting_model = dem_config.twisting_model.clone();
+        material_table.tangential_model = dem_config.tangential_model.clone();
         material_table.track_orientation = dem_config.track_orientation;
         material_table.limit_damping = dem_config.limit_damping;
 
