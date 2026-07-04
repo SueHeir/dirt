@@ -182,6 +182,14 @@ pub struct ClumpInsertConfig {
     /// Insertion region. Defaults to domain bounds inset by effective clump radius.
     #[serde(default)]
     pub region: Option<Region>,
+    /// When `true`, each inserted clump is given an independent, uniformly random
+    /// 3-D orientation (its definition offsets are rotated by a random unit
+    /// quaternion). Default `false` — all clumps share the definition orientation.
+    /// Randomising is essential for shape-anisotropic bodies (e.g. hooking
+    /// "monkeys"): identically-oriented anisotropic clumps interlock coherently
+    /// and jam/overlap on compaction, whereas random orientations pack naturally.
+    #[serde(default)]
+    pub random_orientation: bool,
 }
 
 /// TOML `[clump]` — top-level clump configuration.
@@ -388,6 +396,20 @@ impl Plugin for ClumpPlugin {
             ParticleSimScheduleSet::Exchange,
         );
 
+        // Affinely remap body COMs when the box RESIZES (e.g. `[deform]` erate
+        // compression). `apply_deform` remaps the sub-sphere *atoms* and the box,
+        // but a rigid body is driven by its COM (the sub-spheres are re-rigidified
+        // from it each step), so without this the clumps ignore the compaction and
+        // the shrinking box overruns them into an overlap blow-up. A no-op for pure
+        // Lees–Edwards shear (tilt only, size unchanged) and for undeformed runs.
+        app.add_resource(ClumpBoxState::default());
+        app.add_update_system(
+            remap_bodies_on_box_resize
+                .label("remap_bodies_on_box_resize")
+                .before("integrate_bodies_initial"),
+            ParticleSimScheduleSet::InitialIntegration,
+        );
+
         // Body initial integration (half-kick + drift + quaternion update)
         app.add_update_system(
             integrate_bodies_initial.label("integrate_bodies_initial"),
@@ -564,6 +586,54 @@ fn integrate_bodies_final(atoms: Res<Atom>, mut bodies: ResMut<MultisphereBodySt
     for body in &mut bodies.bodies {
         body::integrate_body_final(body, dt);
     }
+}
+
+/// Tracks the box bounds seen on the previous step so [`remap_bodies_on_box_resize`]
+/// can detect a resize and apply the matching affine COM transform.
+#[derive(Default)]
+pub struct ClumpBoxState {
+    prev_low: [f64; 3],
+    prev_size: [f64; 3],
+    initialized: bool,
+}
+
+/// Affinely remap rigid-body COMs when the simulation box is resized by
+/// `[deform]` (erate/vel/final). `apply_deform` moves the sub-sphere atoms and
+/// the box each step, but a clump's motion is carried by its COM (the sub-spheres
+/// are re-rigidified from `COM + R·offset` afterwards), so the box change must be
+/// applied to the COM too — using the *same* centered-affine map as the atom
+/// remap: `com' = new_center + (com − old_center)·(new_size/old_size)`.
+///
+/// Size-preserving deformation (Lees–Edwards xy shear tilts the box but keeps each
+/// edge length) yields `scale = 1` on every axis → exact no-op, so shear and
+/// undeformed runs are untouched (no numerical drift).
+fn remap_bodies_on_box_resize(
+    mut bodies: ResMut<MultisphereBodyStore>,
+    domain: Res<Domain>,
+    mut state: ResMut<ClumpBoxState>,
+) {
+    let new_low = domain.boundaries_low;
+    let new_size = domain.size;
+    if !state.initialized {
+        state.prev_low = new_low;
+        state.prev_size = new_size;
+        state.initialized = true;
+        return;
+    }
+    for d in 0..3 {
+        let old_size = state.prev_size[d];
+        if old_size <= 0.0 || (new_size[d] - old_size).abs() <= 1e-15 * old_size {
+            continue; // axis unchanged (shear / no deform)
+        }
+        let old_center = state.prev_low[d] + 0.5 * old_size;
+        let new_center = new_low[d] + 0.5 * new_size[d];
+        let scale = new_size[d] / old_size;
+        for body in &mut bodies.bodies {
+            body.com_pos[d] = new_center + (body.com_pos[d] - old_center) * scale;
+        }
+    }
+    state.prev_low = new_low;
+    state.prev_size = new_size;
 }
 
 /// Wrap body COM through periodic boundaries and update body image flags.
@@ -951,7 +1021,17 @@ fn clump_insert_atoms(
     mut body_store: ResMut<MultisphereBodyStore>,
     clump_config: Res<ClumpTopConfig>,
     material_table: Res<dirt_atom::MaterialTable>,
+    scheduler_manager: Res<SchedulerManager>,
 ) {
+    // Setup systems re-run at the start of every `[[run]]` stage. Clumps must be
+    // inserted only once, at the first stage — otherwise each subsequent stage
+    // (e.g. compress, shear) would insert another `count` clumps (and, with a
+    // now-tight box, spin in the non-overlapping-placement retry loop). This
+    // mirrors the stage-0 guard in `dem_insert_atoms` for `[[particles.insert]]`.
+    if scheduler_manager.index != 0 {
+        return;
+    }
+
     let inserts = match clump_config.insert {
         Some(ref v) => v,
         None => return,
@@ -1064,6 +1144,39 @@ fn clump_insert_atoms(
             if overlaps {
                 continue;
             }
+
+            // Optional per-clump random orientation: rotate the definition's
+            // offsets by a uniformly random unit quaternion (Shoemake). The
+            // bounding radius is unchanged, so the overlap check above still
+            // holds; the rotated offsets become the body frame (identity body
+            // quaternion), which keeps the inertia tensor consistent.
+            let rotated_def;
+            let def: &ClumpDef = if insert.random_orientation {
+                let u1 = rng.random_range(0.0..1.0f64);
+                let u2 = rng.random_range(0.0..1.0f64);
+                let u3 = rng.random_range(0.0..1.0f64);
+                let two_pi = std::f64::consts::TAU;
+                let q = [
+                    (1.0 - u1).sqrt() * (two_pi * u2).sin(),
+                    (1.0 - u1).sqrt() * (two_pi * u2).cos(),
+                    u1.sqrt() * (two_pi * u3).sin(),
+                    u1.sqrt() * (two_pi * u3).cos(),
+                ];
+                rotated_def = ClumpDef {
+                    name: def.name.clone(),
+                    spheres: def
+                        .spheres
+                        .iter()
+                        .map(|s| ClumpSphereConfig {
+                            offset: quat_rotate(q, s.offset),
+                            radius: s.radius,
+                        })
+                        .collect(),
+                };
+                &rotated_def
+            } else {
+                def
+            };
 
             // Generate velocity
             let vel = if let Some(v_mag) = insert.velocity {
