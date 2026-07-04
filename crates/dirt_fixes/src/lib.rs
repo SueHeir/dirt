@@ -13,6 +13,7 @@
 //! | [`MoveLinearDef`] | `[[move_linear]]` | Moves atoms at a constant velocity |
 //! | [`FreezeDef`] | `[[freeze]]` | Full immobilization — zeros velocity, force, and (for DEM atoms) angular velocity and torque |
 //! | [`ViscousDef`] | `[[viscous]]` | Applies velocity-proportional damping (F = −γv) |
+//! | [`CundallDef`] | `[[cundall]]` | Applies Cundall non-viscous global damping (per-component force ×(1−γ_l·sign(F·v)), torque ×(1−γ_a·sign(T·ω))) |
 //! | [`NveLimitDef`] | `[[nve_limit]]` | Caps per-step displacement (`vmax = max_displacement/dt`), direction-preserving; writes `n_limited` to thermo |
 //! | [`GravityConfig`] | `[gravity]` | Applies gravitational body force (F = mg) |
 //!
@@ -25,7 +26,7 @@
 //!
 //! - `move_linear` runs in **PreInitialIntegration** (to set velocity before position update)
 //!   and **PostForce** (to zero force so FinalIntegration doesn't alter velocity).
-//! - `addforce`, `setforce`, `freeze`, and `viscous` all run in **PostForce**.
+//! - `addforce`, `setforce`, `freeze`, `viscous`, and `cundall` all run in **PostForce**.
 //! - `nve_limit` runs in **PostFinalIntegration** (clamps velocity after the
 //!   timestep's final integration).
 //! - `gravity` runs in **Force**.
@@ -196,6 +197,54 @@ pub struct ViscousDef {
     pub gamma: f64,
 }
 
+/// Applies Cundall **non-viscous** global damping to atoms in a group.
+///
+/// Unlike velocity-proportional [`ViscousDef`] damping, this scheme damps a
+/// dimensionless *fraction* of the current force/torque, applied
+/// component-by-component and keyed to the sign of the mechanical power in that
+/// component. Following Cundall (1987) — as implemented in LAMMPS
+/// `fix damping/cundall`, Yade, and PFC — the damped force/torque is
+///
+/// ```text
+/// F_k <- F_k * (1 - gamma_l * sign(F_k * v_k))       k in {x, y, z}
+/// T_k <- T_k * (1 - gamma_a * sign(T_k * omega_k))
+/// ```
+///
+/// where `sign(x) = +1` for `x >= 0` and `-1` otherwise (matching the LAMMPS
+/// convention). The damping therefore *reduces* a component's force when it acts
+/// along the motion (accelerating) and *increases* it when it opposes the motion
+/// (decelerating), so mechanical power is always non-positive and kinetic energy
+/// monotonically dissipates. Because the coefficients are dimensionless and
+/// velocity-independent, the scheme damps regions of different natural frequency
+/// equally and vanishes for steady uniform motion — the standard tool for
+/// quasi-static DEM settling / energy minimization.
+///
+/// The torque terms apply only when a `DemAtom` (rotational state) is present;
+/// the linear force terms always apply. This runs in `PostForce`, after all
+/// force/torque contributions are accumulated, exactly like LAMMPS's
+/// `POST_FORCE` fix.
+///
+/// # TOML Configuration
+///
+/// ```toml
+/// [[cundall]]
+/// group = "all"     # (required) name of the atom group
+/// gamma_l = 0.8     # linear damping fraction in [0, 1] (default: 0.0)
+/// gamma_a = 0.8     # angular damping fraction in [0, 1] (default: 0.0)
+/// ```
+#[derive(Deserialize, Clone, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct CundallDef {
+    /// Name of the atom group this fix applies to.
+    pub group: String,
+    /// Linear (force) damping fraction γ_l, dimensionless, in [0, 1]. Default: 0.0.
+    #[serde(default = "default_zero")]
+    pub gamma_l: f64,
+    /// Angular (torque) damping fraction γ_a, dimensionless, in [0, 1]. Default: 0.0.
+    #[serde(default = "default_zero")]
+    pub gamma_a: f64,
+}
+
 /// `[[nve_limit]]` — cap the per-timestep displacement of a group.
 ///
 /// Each step, any atom whose speed would carry it more than
@@ -247,6 +296,8 @@ pub struct FixesRegistry {
     pub freezes: Vec<FreezeDef>,
     /// All `[[viscous]]` definitions.
     pub viscous: Vec<ViscousDef>,
+    /// All `[[cundall]]` definitions.
+    pub cundall: Vec<CundallDef>,
     /// All `[[nve_limit]]` definitions.
     pub nve_limit: Vec<NveLimitDef>,
 }
@@ -286,7 +337,12 @@ impl Plugin for FixesPlugin {
 
 # [[nve_limit]]
 # group = "all"
-# max_displacement = 0.0001  # max distance any atom can move per step"#,
+# max_displacement = 0.0001  # max distance any atom can move per step
+
+# [[cundall]]
+# group = "all"
+# gamma_l = 0.8   # non-viscous linear damping fraction (Cundall/LAMMPS), [0,1]
+# gamma_a = 0.8   # non-viscous angular damping fraction, [0,1]"#,
         )
     }
 
@@ -301,6 +357,7 @@ impl Plugin for FixesPlugin {
             move_linears: config.parse_array::<MoveLinearDef>("move_linear"),
             freezes: config.parse_array::<FreezeDef>("freeze"),
             viscous: config.parse_array::<ViscousDef>("viscous"),
+            cundall: config.parse_array::<CundallDef>("cundall"),
             nve_limit: config.parse_array::<NveLimitDef>("nve_limit"),
         };
 
@@ -311,6 +368,7 @@ impl Plugin for FixesPlugin {
             || !registry.move_linears.is_empty()
             || !registry.freezes.is_empty()
             || !registry.viscous.is_empty()
+            || !registry.cundall.is_empty()
             || !registry.nve_limit.is_empty();
 
         if !has_any {
@@ -323,6 +381,7 @@ impl Plugin for FixesPlugin {
         let has_set = !registry.set_forces.is_empty();
         let has_freeze = !registry.freezes.is_empty();
         let has_viscous = !registry.viscous.is_empty();
+        let has_cundall = !registry.cundall.is_empty();
         let has_nve_limit = !registry.nve_limit.is_empty();
 
         app.add_resource(registry)
@@ -343,6 +402,9 @@ impl Plugin for FixesPlugin {
         }
         if has_viscous {
             app.add_update_system(apply_viscous, ParticleSimScheduleSet::PostForce);
+        }
+        if has_cundall {
+            app.add_update_system(apply_cundall, ParticleSimScheduleSet::PostForce);
         }
         if has_nve_limit {
             app.add_update_system(apply_nve_limit, ParticleSimScheduleSet::PostFinalIntegration);
@@ -374,6 +436,9 @@ fn setup_fixes(registry: Res<FixesRegistry>, comm: Res<CommResource>, groups: Re
     }
     for f in &registry.viscous {
         groups.validate_name(&f.group, "fix viscous");
+    }
+    for f in &registry.cundall {
+        groups.validate_name(&f.group, "fix cundall");
     }
     for f in &registry.nve_limit {
         groups.validate_name(&f.group, "fix nve_limit");
@@ -407,6 +472,12 @@ fn setup_fixes(registry: Res<FixesRegistry>, comm: Res<CommResource>, groups: Re
     }
     for f in &registry.viscous {
         println!("Fix viscous: group='{}', gamma={}", f.group, f.gamma);
+    }
+    for f in &registry.cundall {
+        println!(
+            "Fix cundall: group='{}', gamma_l={}, gamma_a={}",
+            f.group, f.gamma_l, f.gamma_a
+        );
     }
     for f in &registry.nve_limit {
         println!(
@@ -555,6 +626,61 @@ fn apply_viscous(
     }
 }
 
+/// Applies Cundall non-viscous global damping (see [`CundallDef`]).
+///
+/// For each group atom and each Cartesian component `k`, the accumulated force
+/// and torque are scaled by a dimensionless fraction keyed to the sign of the
+/// component's mechanical power, replicating LAMMPS `fix damping/cundall`:
+///
+/// ```text
+/// F_k <- F_k * (1 - gamma_l * sign(F_k * v_k))
+/// T_k <- T_k * (1 - gamma_a * sign(T_k * omega_k))   (only if DemAtom present)
+/// ```
+///
+/// with `sign(x) = +1` when `x >= 0`, else `-1` — the exact LAMMPS
+/// `(f*v >= 0.0) ? 1 : -1` convention. Runs in `PostForce`, after every
+/// force/torque contribution (including gravity) is accumulated, so it damps the
+/// total force just as the LAMMPS `POST_FORCE` fix does.
+fn apply_cundall(
+    mut atoms: ResMut<Atom>,
+    atom_data: Res<AtomDataRegistry>,
+    registry: Res<FixesRegistry>,
+    groups: Res<GroupRegistry>,
+) {
+    let nlocal = atoms.nlocal as usize;
+    // Borrow rotational state once (if present) to damp torque.
+    let mut dem_opt = atom_data.get_mut::<dirt_atom::DemAtom>();
+
+    for def in &registry.cundall {
+        let group = groups.expect(&def.group);
+        let gamma_l = def.gamma_l;
+        let gamma_a = def.gamma_a;
+        for i in 0..nlocal {
+            if !group.mask[i] {
+                continue;
+            }
+            // Linear force: F_k *= 1 - gamma_l * sign(F_k * v_k).
+            for k in 0..3 {
+                let f = atoms.force[i][k] as f64;
+                let v = atoms.vel[i][k] as f64;
+                let signf = if f * v >= 0.0 { 1.0 } else { -1.0 };
+                atoms.force[i][k] = (f * (1.0 - gamma_l * signf)) as Accum;
+            }
+            // Angular torque: T_k *= 1 - gamma_a * sign(T_k * omega_k).
+            if let Some(ref mut dem) = dem_opt {
+                if i < dem.torque.len() && i < dem.omega.len() {
+                    for k in 0..3 {
+                        let t = dem.torque[i][k];
+                        let w = dem.omega[i][k];
+                        let signt = if t * w >= 0.0 { 1.0 } else { -1.0 };
+                        dem.torque[i][k] = t * (1.0 - gamma_a * signt);
+                    }
+                }
+            }
+        }
+    }
+}
+
 /// Cap maximum displacement per timestep by scaling velocity.
 /// Preserves direction; only reduces magnitude when `|v| * dt > max_displacement`.
 fn apply_nve_limit(
@@ -688,6 +814,7 @@ mod tests {
             move_linears: vec![],
             freezes: vec![],
             viscous: vec![],
+            cundall: vec![],
             nve_limit: vec![],
         };
 
@@ -730,6 +857,7 @@ mod tests {
             move_linears: vec![],
             freezes: vec![],
             viscous: vec![],
+            cundall: vec![],
             nve_limit: vec![],
         };
 
@@ -766,6 +894,7 @@ mod tests {
                 group: "frozen".to_string(),
             }],
             viscous: vec![],
+            cundall: vec![],
             nve_limit: vec![],
         };
 
@@ -802,6 +931,7 @@ mod tests {
             }],
             freezes: vec![],
             viscous: vec![],
+            cundall: vec![],
             nve_limit: vec![],
         };
 
@@ -841,6 +971,7 @@ mod tests {
                 group: "all".to_string(),
                 gamma: 0.1,
             }],
+            cundall: vec![],
             nve_limit: vec![],
         };
 
@@ -871,6 +1002,7 @@ mod tests {
                 group: "all".to_string(),
                 gamma: 0.1,
             }],
+            cundall: vec![],
             nve_limit: vec![],
         };
 
@@ -886,6 +1018,126 @@ mod tests {
         assert!((a.force[0][0]).abs() < 1e-15);
         assert!((a.force[0][1]).abs() < 1e-15);
         assert!((a.force[0][2]).abs() < 1e-15);
+    }
+
+    // ── Cundall non-viscous damping tests ───────────────────────────────────
+
+    fn cundall_registry(group: &str, gamma_l: f64, gamma_a: f64) -> FixesRegistry {
+        FixesRegistry {
+            add_forces: vec![],
+            set_forces: vec![],
+            move_linears: vec![],
+            freezes: vec![],
+            viscous: vec![],
+            cundall: vec![CundallDef {
+                group: group.to_string(),
+                gamma_l,
+                gamma_a,
+            }],
+            nve_limit: vec![],
+        }
+    }
+
+    /// The linear force is scaled per-component by `1 - gamma_l*sign(F*v)`:
+    /// reduced when force acts along motion, amplified when it opposes motion.
+    /// Matches LAMMPS `fix damping/cundall` `f *= 1 - gamma_l*signf`.
+    #[test]
+    fn test_cundall_linear_signed_force() {
+        let mut atoms = make_atoms(2);
+        // Component signs chosen to hit all three cases:
+        //  x: F>0, v>0  -> F*v>0 -> *(1-g)   (accelerating, damped down)
+        //  y: F>0, v<0  -> F*v<0 -> *(1+g)   (opposing, amplified)
+        //  z: F<0, v<0  -> F*v>0 -> *(1-g)
+        atoms.vel[0] = [2.0, -3.0, -1.0];
+        atoms.force[0] = [4.0, 5.0, -6.0];
+
+        let groups = make_group_registry("all", vec![true, false]);
+        let g = 0.25_f64;
+        let mut app = App::new();
+        app.add_resource(atoms);
+        app.add_resource(groups);
+        app.add_resource(soil_core::AtomDataRegistry::new()); // no DemAtom -> linear only
+        app.add_resource(cundall_registry("all", g, 0.5));
+        app.add_update_system(apply_cundall, ParticleSimScheduleSet::PostForce);
+        app.organize_systems();
+        app.run();
+
+        let a = app.get_resource_ref::<Atom>().unwrap();
+        assert!((a.force[0][0] - 4.0 * (1.0 - g)).abs() < 1e-12, "x: along motion -> (1-g)");
+        assert!((a.force[0][1] - 5.0 * (1.0 + g)).abs() < 1e-12, "y: opposing -> (1+g)");
+        assert!((a.force[0][2] - (-6.0) * (1.0 - g)).abs() < 1e-12, "z: along motion -> (1-g)");
+    }
+
+    /// Non-viscous damping always dissipates: the post-damping power
+    /// sum_k F_k*v_k must not exceed the pre-damping power (component-wise it is
+    /// never increased in the direction of motion).
+    #[test]
+    fn test_cundall_dissipates_power() {
+        let mut atoms = make_atoms(1);
+        atoms.vel[0] = [1.5, -0.7, 2.0];
+        atoms.force[0] = [3.0, 4.0, -1.0];
+        let p_before: f64 = (0..3).map(|k| atoms.force[0][k] as f64 * atoms.vel[0][k] as f64).sum();
+
+        let groups = make_group_registry("all", vec![true]);
+        let mut app = App::new();
+        app.add_resource(atoms);
+        app.add_resource(groups);
+        app.add_resource(soil_core::AtomDataRegistry::new());
+        app.add_resource(cundall_registry("all", 0.8, 0.0));
+        app.add_update_system(apply_cundall, ParticleSimScheduleSet::PostForce);
+        app.organize_systems();
+        app.run();
+
+        let a = app.get_resource_ref::<Atom>().unwrap();
+        let p_after: f64 = (0..3).map(|k| a.force[0][k] as f64 * a.vel[0][k] as f64).sum();
+        // Every component's contribution to power is reduced (|F*v| along motion
+        // shrinks, against motion the force flips further negative-power), so the
+        // total mechanical power strictly drops for a nonzero gamma.
+        assert!(p_after < p_before, "power must decrease: {p_after} !< {p_before}");
+    }
+
+    /// The angular torque is scaled per-component by `1 - gamma_a*sign(T*omega)`,
+    /// applied only when a `DemAtom` is present. Linear force damping is
+    /// unaffected by gamma_a and vice versa.
+    #[test]
+    fn test_cundall_angular_signed_torque() {
+        use dirt_test_utils::push_dem_test_atom;
+        let mut atoms = Atom::new();
+        atoms.dt = 1e-6;
+        let mut dem = dirt_atom::DemAtom::new();
+        push_dem_test_atom(&mut atoms, &mut dem, 0, [0.0; 3], 0.01);
+        atoms.nlocal = 1;
+        atoms.natoms = 1;
+        // omega/torque signs to hit both branches:
+        //  x: T>0, w>0 -> *(1-ga);  y: T>0, w<0 -> *(1+ga);  z: T<0, w<0 -> *(1-ga)
+        dem.omega[0] = [1.0, -1.0, -2.0];
+        dem.torque[0] = [2.0, 3.0, -4.0];
+        // A linear force too, to confirm gamma_l is applied independently.
+        atoms.vel[0] = [1.0, 0.0, 0.0];
+        atoms.force[0] = [5.0, 0.0, 0.0];
+
+        let mut registry = soil_core::AtomDataRegistry::new();
+        registry.register(dem);
+
+        let groups = make_group_registry("all", vec![true]);
+        let ga = 0.3_f64;
+        let gl = 0.1_f64;
+        let mut app = App::new();
+        app.add_resource(atoms);
+        app.add_resource(groups);
+        app.add_resource(registry);
+        app.add_resource(cundall_registry("all", gl, ga));
+        app.add_update_system(apply_cundall, ParticleSimScheduleSet::PostForce);
+        app.organize_systems();
+        app.run();
+
+        let reg = app.get_resource_ref::<soil_core::AtomDataRegistry>().unwrap();
+        let dem = reg.get::<dirt_atom::DemAtom>().unwrap();
+        assert!((dem.torque[0][0] - 2.0 * (1.0 - ga)).abs() < 1e-12, "Tx along spin -> (1-ga)");
+        assert!((dem.torque[0][1] - 3.0 * (1.0 + ga)).abs() < 1e-12, "Ty opposing -> (1+ga)");
+        assert!((dem.torque[0][2] - (-4.0) * (1.0 - ga)).abs() < 1e-12, "Tz along spin -> (1-ga)");
+        let a = app.get_resource_ref::<Atom>().unwrap();
+        assert!((a.force[0][0] - 5.0 * (1.0 - gl)).abs() < 1e-12, "linear damped by gamma_l");
     }
 
     // ── Gravity tests ──────────────────────────────────────────────────────
@@ -959,6 +1211,7 @@ mod tests {
             move_linears: vec![],
             freezes: vec![],
             viscous: vec![],
+            cundall: vec![],
             nve_limit: vec![NveLimitDef {
                 group: group.to_string(),
                 max_displacement,
