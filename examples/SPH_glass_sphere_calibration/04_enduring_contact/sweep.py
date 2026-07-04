@@ -22,10 +22,12 @@ toward jamming (this gap was seen opening at Φ≈0.43 in bench_lebc_shear). It 
 the rate-independent branch the granular-temperature de-fluidization model consumes.
 
 Commands (from anywhere):
+    python3 examples/SPH_glass_sphere_calibration/04_enduring_contact/sweep.py          # BOUNDED smoke gate (PASS/FAIL) — the harness default
+    python3 examples/SPH_glass_sphere_calibration/04_enduring_contact/sweep.py smoke    # same as no-arg: fast σ_contact self-consistency gate
+    python3 examples/SPH_glass_sphere_calibration/04_enduring_contact/sweep.py full     # full sweep: generate + run + σ_contact(Φ) validation/plot
     python3 examples/SPH_glass_sphere_calibration/04_enduring_contact/sweep.py generate
     python3 examples/SPH_glass_sphere_calibration/04_enduring_contact/sweep.py start
     python3 examples/SPH_glass_sphere_calibration/04_enduring_contact/sweep.py graph
-    python3 examples/SPH_glass_sphere_calibration/04_enduring_contact/sweep.py   # all three
 
 Outputs:
     sweep/<case>/config.toml                       per-case configs        (gitignored)
@@ -444,15 +446,102 @@ def graph():
         sys.exit(1)
 
 
+# ── Bounded smoke / CI gate ──────────────────────────────────────────────────
+# A fast, bounded shear run (the harness default). It shears a few frictional
+# cases spanning dilute→dense to a modest total strain and asserts that the
+# enduring-contact stress decomposition σ_contact = p_DEM − p_KT(Φ,T) is
+# self-consistent and physical per case. Runs in a few minutes (vs the 1800 s
+# timeout of the full 7-Φ sweep, whose shear stage alone is ~1.5M steps per case
+# at γ̇=100). The full σ_contact(Φ) branch-opening validation (validate()/graph())
+# is unchanged and still run via `sweep.py full`.
+SMOKE = dict(
+    PHI_GRID=[0.30, 0.45, 0.55],   # dilute→dense span (full: 7 Φ from 0.30 to 0.60)
+    TARGET_STRAIN=10.0,            # full: 30
+    SETTLE_STEPS=10_000,           # full: 20_000
+    COMPRESS_STEPS=30_000,         # full: 60_000
+)
+# Physically-motivated smoke bounds. σ_contact/p_DEM is the enduring-contact
+# fraction: collisional KT should explain most of the dilute pressure (fraction
+# near 0, small negative allowed for noise) and cannot exceed the total (≤1). The
+# steady-drift bound matches the full run's own steadiness criterion (0.20).
+SMOKE_FRAC_LO, SMOKE_FRAC_HI = -0.25, 1.0
+SMOKE_DRIFT_MAX = 0.20
+
+
+def smoke():
+    """Bounded fast gate: shear a few dilute→dense frictional cases and assert the
+    enduring-contact decomposition is self-consistent per case (p_DEM > 0, a
+    physical residual fraction, steady window) and that the branch opens with Φ
+    (densest σ_contact exceeds the dilute floor). Prints
+    'ALL CHECKS PASSED' / 'CHECKS FAILED' and exits 0/1."""
+    global PHI_GRID, TARGET_STRAIN, SETTLE_STEPS, COMPRESS_STEPS
+    global DATA_DIR, SWEEP_DIR
+    PHI_GRID = SMOKE["PHI_GRID"]
+    TARGET_STRAIN = SMOKE["TARGET_STRAIN"]
+    SETTLE_STEPS = SMOKE["SETTLE_STEPS"]
+    COMPRESS_STEPS = SMOKE["COMPRESS_STEPS"]
+    # Keep smoke artifacts out of the full run's dirs (both are gitignored).
+    DATA_DIR = os.path.join(SCRIPT_DIR, "data", "smoke")
+    SWEEP_DIR = os.path.join(SCRIPT_DIR, "sweep", "smoke")
+    os.makedirs(DATA_DIR, exist_ok=True)
+
+    generate()
+    build()
+    exe = os.path.join(REPO_ROOT, "target", "release", "examples", EXAMPLE)
+    for phi in all_cases():
+        case = case_name(phi)
+        cfg = os.path.join(SWEEP_DIR, case, "config.toml")
+        log = os.path.join(SWEEP_DIR, case, "run.log")
+        print(f"running {case} ...", flush=True)
+        with open(log, "w") as lf:
+            r = subprocess.run([exe, cfg], cwd=REPO_ROOT, stdout=lf, stderr=subprocess.STDOUT)
+        if r.returncode != 0:
+            print(f"  {case}: solver exited {r.returncode} (see {log})")
+
+    pts = collect()   # sorted by measured Φ; each has p_dem, p_kt, sigma_contact, frac_contact, drift
+
+    print("\n=== Enduring-contact smoke gate (σ_contact = p_DEM − p_KT self-consistency) ===")
+    print(f"  {'Φ':>6} {'p_DEM':>12} {'p_KT':>12} {'σ_contact':>12} {'σ/p_DEM':>8} {'drift':>7}")
+    per_case_ok = []
+    for p in pts:
+        steady = p.get("drift", 1.0) < SMOKE_DRIFT_MAX
+        physical = (p["p_dem"] > 0.0 and math.isfinite(p["sigma_contact"])
+                    and SMOKE_FRAC_LO <= p["frac_contact"] <= SMOKE_FRAC_HI)
+        ok = steady and physical
+        per_case_ok.append(ok)
+        print(f"  {p['phi']:6.3f} {p['p_dem']:12.4e} {p['p_kt']:12.4e} "
+              f"{p['sigma_contact']:12.4e} {p['frac_contact']:8.2f} "
+              f"{100*p.get('drift', float('nan')):6.0f}%  [{'PASS' if ok else 'FAIL'}]")
+
+    checks = []
+    checks.append((len(pts) >= 3, f"cases with steady data: {len(pts)} (need >=3)"))
+    checks.append((bool(per_case_ok) and all(per_case_ok),
+                   f"every case: p_DEM>0, σ/p_DEM in [{SMOKE_FRAC_LO}, {SMOKE_FRAC_HI}], "
+                   f"drift < {int(SMOKE_DRIFT_MAX*100)}%"))
+    grew = bool(pts) and pts[-1]["sigma_contact"] > pts[0]["sigma_contact"]
+    checks.append((grew, "enduring-contact branch opens with Φ "
+                   f"(σ_contact: {pts[0]['sigma_contact']:.3e} → {pts[-1]['sigma_contact']:.3e})"
+                   if pts else "no data"))
+    npass = sum(1 for ok, _ in checks if ok)
+    for ok, msg in checks:
+        print(f"  [{'PASS' if ok else 'FAIL'}] {msg}")
+    ok = all(ok for ok, _ in checks)
+    print(f"\n{npass}/{len(checks)} checks passed")
+    print("ALL CHECKS PASSED" if ok else "CHECKS FAILED")
+    sys.exit(0 if ok else 1)
+
+
 def main():
-    cmd = sys.argv[1] if len(sys.argv) > 1 else "all"
-    if cmd == "generate":
+    cmd = sys.argv[1] if len(sys.argv) > 1 else "smoke"
+    if cmd == "smoke":
+        smoke()
+    elif cmd == "generate":
         generate()
     elif cmd == "start":
         start()
     elif cmd == "graph":
         graph()
-    elif cmd == "all":
+    elif cmd in ("all", "full"):
         generate(); start(); graph()
     else:
         print(__doc__); sys.exit(1)

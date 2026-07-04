@@ -19,13 +19,16 @@ friction (μ_p=0.16) the extra dissipation steepens the T(y) gradient enough to
 measure κ.
 
 Commands:
-    python3 examples/SPH_glass_sphere_calibration/06_conductivity/sweep.py start   # build + run
-    python3 examples/SPH_glass_sphere_calibration/06_conductivity/sweep.py graph   # profiles + κ(Φ)
-    python3 examples/SPH_glass_sphere_calibration/06_conductivity/sweep.py         # both
+    python3 examples/SPH_glass_sphere_calibration/06_conductivity/sweep.py         # BOUNDED smoke gate (PASS/FAIL) — the harness default
+    python3 examples/SPH_glass_sphere_calibration/06_conductivity/sweep.py smoke   # same as no-arg: fast κ-vs-KT gate on config.smoke.toml
+    python3 examples/SPH_glass_sphere_calibration/06_conductivity/sweep.py full    # full scientific run (config.toml): profiles + κ(Φ)
+    python3 examples/SPH_glass_sphere_calibration/06_conductivity/sweep.py start   # build + run the full config only
+    python3 examples/SPH_glass_sphere_calibration/06_conductivity/sweep.py graph   # profiles + κ(Φ) from the full run
 
 Outputs:
-    data/conductivity_profiles.csv     per-y-bin time series      (gitignored)
-    plots/profiles.png, kappa_of_phi.png                          (tracked)
+    data/conductivity_profiles.csv       per-y-bin time series (full run)   (gitignored)
+    data/smoke/conductivity_profiles.csv per-y-bin time series (smoke gate) (gitignored)
+    plots/profiles.png, kappa_of_phi.png                                    (tracked)
 
 NOTE on κ extraction: the conduction–dissipation balance attributes ALL dissipation
 to the KT collisional term Γ(Φ,T). Frictional dissipation is real here (it is what
@@ -45,7 +48,9 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.abspath(os.path.join(SCRIPT_DIR, "..", "..", ".."))
 EXAMPLE = "sphcal_conductivity"
 CONFIG = os.path.join(SCRIPT_DIR, "config.toml")
+SMOKE_CONFIG = os.path.join(SCRIPT_DIR, "config.smoke.toml")
 DATA = os.path.join(SCRIPT_DIR, "data", "conductivity_profiles.csv")
+SMOKE_DATA = os.path.join(SCRIPT_DIR, "data", "smoke", "conductivity_profiles.csv")
 PLOT_DIR = os.path.join(SCRIPT_DIR, "plots")
 
 # Must match config.toml (canonical glass material).
@@ -84,9 +89,9 @@ def start():
     subprocess.run([exe, CONFIG], cwd=REPO_ROOT, check=True)
 
 
-def steady_profiles(frac=0.5):
+def steady_profiles(frac=0.5, path=None):
     """Time-average each y-bin over the steady window (last `frac` of snapshots)."""
-    rows = list(csv.DictReader(open(DATA)))
+    rows = list(csv.DictReader(open(path or DATA)))
     steps = sorted({int(r["step"]) for r in rows})
     keep = set(steps[int(len(steps) * frac):])
     acc = {}  # y -> [phi_sum, T_sum, qy_sum, n]
@@ -157,14 +162,118 @@ def graph():
         print(f"κ* range (energy-balance): {min(k_eb):.2f}–{max(k_eb):.2f} over Φ {min(phis):.3f}–{max(phis):.3f}")
 
 
+def measure_kappa(ys, phi, T, qy):
+    """Extract the Fourier-law conductivity κ*(Φ) from steady profiles via the
+    conduction–dissipation balance (identical math to graph()). Returns parallel
+    lists (phis, k_eb, k_kin, k_kt) over the bins with a resolvable downward
+    T-gradient."""
+    n = len(ys)
+    if n < 3:
+        return [], [], [], []
+    dy = ys[1] - ys[0]
+    Gamma = [dissipation(phi[i], T[i], E) for i in range(n)]
+    q_up = [0.0] * n
+    run = 0.0
+    for i in range(n - 1, -1, -1):
+        run += Gamma[i] * dy
+        q_up[i] = run
+    phis, k_eb, k_kin, k_kt = [], [], [], []
+    for i in range(1, n - 1):
+        dTdy = (T[i + 1] - T[i - 1]) / (2 * dy)
+        if dTdy >= 0 or T[i] <= 0 or phi[i] < 0.02 or phi[i] > 0.62:
+            continue
+        norm = RHO_S * D_MEAN * math.sqrt(T[i])
+        phis.append(phi[i])
+        k_eb.append(q_up[i] / (-dTdy) / norm)
+        k_kin.append(qy[i] / (-dTdy) / norm)
+        k_kt.append(kt_kappa_star(phi[i], E))
+    return phis, k_eb, k_kin, k_kt
+
+
+# ── Bounded smoke / CI gate ──────────────────────────────────────────────────
+# Physically-motivated smoke bounds (deterministic single-process run). These are
+# the SAME bounds used by the reviewer-approved bench_granular_conductivity gate,
+# which runs the identical experiment and κ math on the identical glass material.
+MIN_BINS = 2                     # need at least two heights with a resolvable T-gradient
+RATIO_LO, RATIO_HI = 0.4, 6.0    # median κ*_EB / κ*_KT must be order-unity
+
+
+def smoke():
+    """Bounded fast gate (the harness default). Runs the shallow config.smoke.toml
+    to a steady fluidized state and asserts that the measured Fourier-law
+    conductivity κ*(Φ) is positive, finite, and within order-unity of kinetic
+    theory (Lun/Gidaspow). This is a smoke/CI check — it catches gross breakage
+    (NaN, wrong sign, order-of-magnitude error) fast; the full κ*(Φ)-vs-KT
+    scientific run (`sweep.py full`, config.toml) is unchanged.
+
+    Reports 'ALL CHECKS PASSED' / 'CHECKS FAILED' and exits 0/1 for the harness."""
+    subprocess.run(["cargo", "build", "--release", "--no-default-features",
+                    "--features", "precision-double", "--example", EXAMPLE],
+                   cwd=REPO_ROOT, check=True)
+    exe = os.path.join(REPO_ROOT, "target", "release", "examples", EXAMPLE)
+    os.makedirs(os.path.dirname(SMOKE_DATA), exist_ok=True)
+    if os.path.isfile(SMOKE_DATA):
+        os.remove(SMOKE_DATA)
+    subprocess.run([exe, SMOKE_CONFIG], cwd=REPO_ROOT, check=True)
+
+    if not os.path.isfile(SMOKE_DATA):
+        print("SMOKE: no profile output written")
+        print("CHECKS FAILED")
+        sys.exit(1)
+
+    ys, phi, T, qy = steady_profiles(frac=0.5, path=SMOKE_DATA)
+    phis, k_eb, k_kin, k_kt = measure_kappa(ys, phi, T, qy)
+
+    checks = []
+    checks.append((len(phis) >= MIN_BINS,
+                   f"resolvable T-gradient bins: {len(phis)} (need ≥{MIN_BINS})"))
+
+    finite_pos = bool(k_eb) and all(math.isfinite(k) and k > 0 for k in k_eb)
+    checks.append((finite_pos, f"κ*_EB positive & finite in all {len(k_eb)} bins"))
+
+    ratio = float("nan")
+    if k_eb and all(k > 0 for k in k_kt):
+        ratios = sorted(e / k for e, k in zip(k_eb, k_kt))
+        m = len(ratios) // 2
+        ratio = ratios[m] if len(ratios) % 2 else 0.5 * (ratios[m - 1] + ratios[m])
+    ratio_ok = math.isfinite(ratio) and RATIO_LO <= ratio <= RATIO_HI
+    checks.append((ratio_ok,
+                   f"median κ*_EB/κ*_KT = {ratio:.2f} in [{RATIO_LO}, {RATIO_HI}]"))
+
+    print("\n=== Granular-conductivity smoke gate (Fourier-law κ vs KT) ===")
+    if phis:
+        print(f"  Φ range {min(phis):.3f}–{max(phis):.3f}, "
+              f"κ*_EB {min(k_eb):.2f}–{max(k_eb):.2f}, "
+              f"κ*_KT {min(k_kt):.2f}–{max(k_kt):.2f}")
+        print(f"  kinetic-flux cross-check κ*_kin (median) = "
+              f"{sorted(k_kin)[len(k_kin)//2]:.2f}")
+    npass = sum(1 for ok, _ in checks if ok)
+    for ok, msg in checks:
+        print(f"  [{'PASS' if ok else 'FAIL'}] {msg}")
+    ok = all(ok for ok, _ in checks)
+    print(f"\n{npass}/{len(checks)} checks passed")
+    print("ALL CHECKS PASSED" if ok else "CHECKS FAILED")
+    sys.exit(0 if ok else 1)
+
+
+def full():
+    start(); graph()
+
+
 def main():
-    cmd = sys.argv[1] if len(sys.argv) > 1 else "all"
-    if cmd == "start":
+    cmd = sys.argv[1] if len(sys.argv) > 1 else "smoke"
+    if cmd == "smoke":
+        smoke()
+    elif cmd == "start":
         start()
     elif cmd == "graph":
         graph()
+    elif cmd in ("full", "all"):
+        full()
     else:
-        start(); graph()
+        print(f"Unknown command: {cmd!r}")
+        print("Usage: sweep.py [smoke|full|start|graph]   (no arg = smoke gate)")
+        sys.exit(2)
 
 
 if __name__ == "__main__":

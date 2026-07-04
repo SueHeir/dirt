@@ -64,11 +64,30 @@ within ~1 decade of the KT reference over the resolved Φ band.
 # single-case standalone run:
 cargo run --release --example sphcal_conductivity --no-default-features -- examples/SPH_glass_sphere_calibration/06_conductivity/config.toml
 
-# or the driver (build + run + analyze):
-python3 examples/SPH_glass_sphere_calibration/06_conductivity/sweep.py start
-python3 examples/SPH_glass_sphere_calibration/06_conductivity/sweep.py graph
-python3 examples/SPH_glass_sphere_calibration/06_conductivity/sweep.py          # both
+# the driver:
+python3 examples/SPH_glass_sphere_calibration/06_conductivity/sweep.py          # BOUNDED smoke gate (PASS/FAIL) — no arg
+python3 examples/SPH_glass_sphere_calibration/06_conductivity/sweep.py smoke    # same as no-arg
+python3 examples/SPH_glass_sphere_calibration/06_conductivity/sweep.py full     # full scientific run (config.toml): profiles + κ(Φ)
+python3 examples/SPH_glass_sphere_calibration/06_conductivity/sweep.py start    # build + run the full config only
+python3 examples/SPH_glass_sphere_calibration/06_conductivity/sweep.py graph    # profiles + κ(Φ) from the full run
 ```
+
+### Bounded smoke gate (CI)
+
+The full run (3000 grains, 45 mm column, 4M steps at dt=1e-7 ≈ 0.4 s of drive)
+legitimately overran the 1800 s automation cap every hourly run — and, before this
+change, the driver had **no PASS/FAIL at all** (it only plotted), so the harness
+result was an unexplained TIMEOUT that validated nothing. `sweep.py` with **no
+argument** now runs a **bounded gate** on the shallower
+[`config.smoke.toml`](config.smoke.toml) (800 grains, 30 mm column, 800k steps at
+dt=2e-7 ≈ 0.16 s): it reaches a steady fluidized state and asserts the measured
+Fourier-law conductivity `κ*(Φ)` is positive, finite, and within order-unity of
+kinetic theory (median `κ*_EB/κ*_KT` ∈ [0.4, 6.0]). It completes in ~50 s and
+prints `ALL CHECKS PASSED` / `CHECKS FAILED` (exit 0/1). A representative validated
+pass: median `κ*_EB/κ*_KT = 1.87` over Φ ≈ 0.28–0.35. The full κ*(Φ)-vs-KT
+scientific run (`config.toml`) is **unchanged** and still run via `sweep.py full`.
+These are the same bounds and κ math as the reviewer-approved
+`bench_granular_conductivity` gate, which runs the identical experiment.
 
 The recorder streams horizontal-slab profiles to `data/conductivity_profiles.csv`:
 per y-bin Φ(y), the granular temperature `T(y) = ⅓⟨|v − v̄_bin|²⟩` (per-bin
