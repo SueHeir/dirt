@@ -80,14 +80,34 @@ Single representative case:
 cargo run --release --example sphcal_enduring_contact --no-default-features -- examples/SPH_glass_sphere_calibration/04_enduring_contact/config.toml
 ```
 
-Full sweep (generate configs → run → validate + plot):
+Bounded smoke gate (the harness default) / full sweep:
 
 ```bash
-python3 examples/SPH_glass_sphere_calibration/04_enduring_contact/sweep.py            # all three
+python3 examples/SPH_glass_sphere_calibration/04_enduring_contact/sweep.py            # BOUNDED smoke gate (PASS/FAIL) — no arg
+python3 examples/SPH_glass_sphere_calibration/04_enduring_contact/sweep.py smoke      # same as no-arg
+python3 examples/SPH_glass_sphere_calibration/04_enduring_contact/sweep.py full       # full σ_contact(Φ) sweep: generate + run + validate + plot
+# or the full run individually:
 python3 examples/SPH_glass_sphere_calibration/04_enduring_contact/sweep.py generate
 python3 examples/SPH_glass_sphere_calibration/04_enduring_contact/sweep.py start
 python3 examples/SPH_glass_sphere_calibration/04_enduring_contact/sweep.py graph
 ```
+
+### Bounded smoke gate (CI)
+
+The full 7-Φ sweep is a **long-form calibration run**: its shear stage alone is
+~1.5M steps per case at γ̇=100 (strain 30), so it legitimately overran the 1800 s
+automation cap every hourly run and validated *nothing*. `sweep.py` with **no
+argument** now runs a **bounded gate**: 3 frictional cases spanning dilute→dense
+(Φ ∈ {0.30, 0.45, 0.55}, γ̇ = 100 s⁻¹) sheared to total strain 10. It asserts the
+enduring-contact decomposition σ_contact = p_DEM − p_KT(Φ,T) is self-consistent
+and physical per case — `p_DEM > 0`, residual fraction σ_contact/p_DEM ∈
+[−0.25, 1.0], steady window (drift < 20%) — **and** that the branch opens with Φ
+(densest σ_contact exceeds the dilute floor). It prints `ALL CHECKS PASSED` /
+`CHECKS FAILED` (exit 0/1) and completes in ~14 min, under the cap. A representative
+validated pass: σ_contact/p_DEM = 0.05 → 0.15 → 0.39 across Φ ≈ 0.29 → 0.43 → 0.52
+(the branch opening, exactly the deliverable's physics). The full σ_contact(Φ)
+branch-opening validation and plots are **unchanged** and still run via
+`sweep.py full`.
 
 ## Expected Plots
 

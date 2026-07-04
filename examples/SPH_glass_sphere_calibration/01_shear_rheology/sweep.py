@@ -13,10 +13,12 @@ This is the FRICTIONAL/production rheometer (canonical glass μ_p = 0.16). The
 frictionless kinetic-theory cross-check lives in examples/bench_lebc_shear.
 
 Commands (from anywhere):
+    python3 examples/SPH_glass_sphere_calibration/01_shear_rheology/sweep.py          # BOUNDED smoke gate (PASS/FAIL) — the harness default
+    python3 examples/SPH_glass_sphere_calibration/01_shear_rheology/sweep.py smoke    # same as no-arg: fast steady stress-ratio μ gate
+    python3 examples/SPH_glass_sphere_calibration/01_shear_rheology/sweep.py full     # full sweep: generate + run + average/fit/plot
     python3 examples/SPH_glass_sphere_calibration/01_shear_rheology/sweep.py generate
     python3 examples/SPH_glass_sphere_calibration/01_shear_rheology/sweep.py start
     python3 examples/SPH_glass_sphere_calibration/01_shear_rheology/sweep.py graph
-    python3 examples/SPH_glass_sphere_calibration/01_shear_rheology/sweep.py   # all three
 
 Outputs:
     sweep/<case>/config.toml                         per-case configs   (gitignored)
@@ -443,15 +445,98 @@ def graph():
         sys.exit(1)
 
 
+# ── Bounded smoke / CI gate ──────────────────────────────────────────────────
+# A fast, bounded shear run (the harness default). It shears a few frictional
+# cases only to a modest total strain and asserts that each reaches a steady,
+# physical macroscopic friction (shear-stress ratio) μ = |σ_xy|/P. Runs in a few
+# minutes (vs the 1800 s timeout of the full 20-case (Φ,γ̇) sweep, whose shear
+# stage alone is up to 15M steps per case at γ̇=10). The full production μ(I)/Φ(I)
+# fit (graph()) is unchanged and still run via `sweep.py full`. These are the same
+# physically-motivated bounds used by the reviewer-approved bench_lebc_shear gate
+# on the identical canonical glass material (μ_p = 0.16).
+SMOKE = dict(
+    PHI_GRID=[0.20, 0.30, 0.40],   # 3 frictional cases (full: 5 Φ × 4 γ̇ = 20)
+    GDOT_GRID=[100.0],             # same shear rate as the full sweep
+    TARGET_STRAIN=10.0,            # full: 30 — enough here for a steady plateau
+    SETTLE_STEPS=10_000,           # full: 20_000
+    COMPRESS_STEPS=30_000,         # full: 60_000
+)
+# Smoke bounds on the steady shear-stress ratio μ = |σ_xy|/P for frictional
+# (μ_p = 0.16) glass beads in dense inertial shear: a physical macroscopic
+# friction, non-trivial and non-absurd, from a plateaued averaging window. This
+# is an ADDITIVE breakage gate; the μ(I)/Φ(I) fit ordering lives in the full run.
+SMOKE_MU_LO, SMOKE_MU_HI = 0.15, 0.90
+SMOKE_DRIFT_MAX = 0.15   # |Δp| across the averaging window ⇒ steady (matches full-run criterion)
+
+
+def smoke():
+    """Bounded fast gate: shear a few frictional cases and assert a steady,
+    physical shear-stress ratio μ = |σ_xy|/P per case. Prints
+    'ALL CHECKS PASSED' / 'CHECKS FAILED' and exits 0/1."""
+    global PHI_GRID, GDOT_GRID, TARGET_STRAIN, SETTLE_STEPS, COMPRESS_STEPS
+    global DATA_DIR, SWEEP_DIR
+    PHI_GRID = SMOKE["PHI_GRID"]
+    GDOT_GRID = SMOKE["GDOT_GRID"]
+    TARGET_STRAIN = SMOKE["TARGET_STRAIN"]
+    SETTLE_STEPS = SMOKE["SETTLE_STEPS"]
+    COMPRESS_STEPS = SMOKE["COMPRESS_STEPS"]
+    # Keep smoke artifacts out of the full run's dirs (both are gitignored).
+    DATA_DIR = os.path.join(SCRIPT_DIR, "data", "smoke")
+    SWEEP_DIR = os.path.join(SCRIPT_DIR, "sweep", "smoke")
+    os.makedirs(DATA_DIR, exist_ok=True)
+
+    generate()
+    build()
+    exe = os.path.join(REPO_ROOT, "target", "release", "examples", EXAMPLE)
+    for phi, gdot in all_cases():
+        case = case_name(phi, gdot)
+        cfg = os.path.join(SWEEP_DIR, case, "config.toml")
+        log = os.path.join(SWEEP_DIR, case, "run.log")
+        print(f"running {case} ...", flush=True)
+        with open(log, "w") as lf:
+            r = subprocess.run([exe, cfg], cwd=REPO_ROOT, stdout=lf, stderr=subprocess.STDOUT)
+        if r.returncode != 0:
+            print(f"  {case}: solver exited {r.returncode} (see {log})")
+
+    pts = collect()
+
+    print("\n=== Lees-Edwards shear smoke gate (steady stress ratio mu = |sxy|/P) ===")
+    print(f"  {'Phi_t':>6}{'I':>10}{'mu':>8}{'P':>12}{'drift':>8}{'phi':>7}")
+    per_case_ok = []
+    for p in sorted(pts, key=lambda d: d["phi_target"]):
+        steady = p.get("drift", 1.0) < SMOKE_DRIFT_MAX
+        muok = SMOKE_MU_LO <= p["mu"] <= SMOKE_MU_HI and p["p"] > 0.0
+        ok = steady and muok
+        per_case_ok.append(ok)
+        print(f"  {p['phi_target']:>6.2f}{p['I']:>10.3e}{p['mu']:>8.3f}{p['p']:>12.3e}"
+              f"{p.get('drift', float('nan'))*100:>7.0f}%{p['phi']:>7.3f}  "
+              f"[{'PASS' if ok else 'FAIL'}]")
+
+    checks = []
+    checks.append((len(pts) >= 3, f"cases with steady data: {len(pts)} (need >=3)"))
+    checks.append((bool(per_case_ok) and all(per_case_ok),
+                   f"every case: {SMOKE_MU_LO} <= mu <= {SMOKE_MU_HI}, P>0, "
+                   f"drift < {int(SMOKE_DRIFT_MAX*100)}%"))
+    npass = sum(1 for ok, _ in checks if ok)
+    for ok, msg in checks:
+        print(f"  [{'PASS' if ok else 'FAIL'}] {msg}")
+    ok = all(ok for ok, _ in checks)
+    print(f"\n{npass}/{len(checks)} checks passed")
+    print("ALL CHECKS PASSED" if ok else "CHECKS FAILED")
+    sys.exit(0 if ok else 1)
+
+
 def main():
-    cmd = sys.argv[1] if len(sys.argv) > 1 else "all"
-    if cmd == "generate":
+    cmd = sys.argv[1] if len(sys.argv) > 1 else "smoke"
+    if cmd == "smoke":
+        smoke()
+    elif cmd == "generate":
         generate()
     elif cmd == "start":
         start()
     elif cmd == "graph":
         graph()
-    elif cmd == "all":
+    elif cmd in ("all", "full"):
         generate(); start(); graph()
     else:
         print(__doc__); sys.exit(1)

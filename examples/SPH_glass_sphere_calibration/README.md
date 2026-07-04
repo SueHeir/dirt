@@ -42,6 +42,30 @@ density        = 2500.0   # kg/m³ (glass)
 validation gate the calibrated SPH must also reproduce; (8) feeds the **nonlocal
 cooperativity** branch (creep below yield) — `coop_amplitude` in MaterialParams.
 
+## Automation harness: bounded smoke gates vs. full calibration runs
+
+Several of these deliverables are **long-form calibration sweeps** — multi-case
+(Φ, γ̇) grids or deep-bed runs whose scientific point is a fitted closure, not a
+single fast check. Run in full they take far longer than the 1800 s per-bench cap
+the hourly automation harness enforces (it runs each `sweep.py`), so they
+**timed out every run and validated nothing**. Following the same pattern already
+adopted for `bench_lebc_shear` / `bench_granular_conductivity` / `bench_hopper_beverloo`,
+`sweep.py` with **no argument** now runs a **bounded smoke gate** with a genuine
+PASS/FAIL, and the full calibration is preserved behind an explicit `full` command:
+
+| # | deliverable | `sweep.py` (no-arg) gate | full run | asserted criterion |
+|---|---|---|---|---|
+| 1 | shear rheology | bounded gate | `sweep.py full` | steady, physical μ = \|σ_xy\|/P ∈ [0.15, 0.90] per case |
+| 4 | enduring contact | bounded gate | `sweep.py full` | σ_contact = p_DEM − p_KT(Φ,T) self-consistent + branch opens with Φ |
+| 6 | conductivity | bounded gate | `sweep.py full` | Fourier-law κ*(Φ) > 0, finite, order-unity vs KT |
+
+The full runs (config.toml sweeps, fits, and plots) are **unchanged** and remain
+the scientific calibration; the gates are additive fast breakage checks, never a
+substitute for them. Deliverables 2 and 5 already complete inside the cap and gate
+directly; 3 and 7 are tracked separately (angle-of-repose and column-collapse
+honesty goals). Each subfolder README documents its own gate under
+**“Bounded smoke gate (CI)”**.
+
 ## Layout (per subfolder, following the dirt-example conventions)
 
 ```

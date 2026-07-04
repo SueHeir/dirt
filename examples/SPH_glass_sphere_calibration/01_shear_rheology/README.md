@@ -84,15 +84,31 @@ cargo build --release --no-default-features --example sphcal_shear_rheology
 ./target/release/examples/sphcal_shear_rheology examples/SPH_glass_sphere_calibration/01_shear_rheology/config.toml
 ```
 
-Full sweep (generate configs → run → validate + fit + plot):
+Bounded smoke gate (the harness default) / full sweep:
 
 ```bash
-python3 examples/SPH_glass_sphere_calibration/01_shear_rheology/sweep.py            # all three
-# or individually:
+python3 examples/SPH_glass_sphere_calibration/01_shear_rheology/sweep.py            # BOUNDED smoke gate (PASS/FAIL) — no arg
+python3 examples/SPH_glass_sphere_calibration/01_shear_rheology/sweep.py smoke      # same as no-arg
+python3 examples/SPH_glass_sphere_calibration/01_shear_rheology/sweep.py full       # full μ(I)/Φ(I) sweep: generate + run + validate + fit + plot
+# or the full run individually:
 python3 examples/SPH_glass_sphere_calibration/01_shear_rheology/sweep.py generate
 python3 examples/SPH_glass_sphere_calibration/01_shear_rheology/sweep.py start
 python3 examples/SPH_glass_sphere_calibration/01_shear_rheology/sweep.py graph
 ```
+
+### Bounded smoke gate (CI)
+
+The full 20-case (Φ×γ̇) sweep is a **long-form calibration run**: its shear stage
+alone is up to ~15M steps per case at γ̇=10 (strain-controlled), so it legitimately
+overran the 1800 s automation cap every hourly run and validated *nothing*.
+`sweep.py` with **no argument** now runs a **bounded gate**: 3 frictional cases
+(Φ ∈ {0.20, 0.30, 0.40}, γ̇ = 100 s⁻¹) sheared to total strain 10. It asserts each
+reaches a **steady** (drift < 15%), **physical** macroscopic friction
+μ = |σ_xy|/P ∈ [0.15, 0.90] with P > 0, and prints `ALL CHECKS PASSED` /
+`CHECKS FAILED` (exit 0/1). It completes in ~8 min, well under the cap. These are
+the same physically-motivated bounds the reviewer-approved `bench_lebc_shear` gate
+uses on the identical canonical glass material. The full μ(I)/Φ(I) fit and its
+closure-ordering checks are **unchanged** and still run via `sweep.py full`.
 
 ## Expected Plots
 
