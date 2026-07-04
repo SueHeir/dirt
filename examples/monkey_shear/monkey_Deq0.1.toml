@@ -11,8 +11,10 @@
 #   sub-sphere volume sum = 6.844410e-04 m^3  -> overlap 23.6 %
 #   sub-sphere radius     = min 8.544486e-03  max 2.485669e-02 m
 #   intra-monkey bonds @ tol 1.1 (bonds_per_monkey) = 97
-#   -> dt from r_min: reference d=0.5mm/E=7e7/dt=2e-7 scales linearly to ~6.84e-06s;
-#      campaign uses dt=1.5e-06s (monkeys) for a safety margin incl. bonds.
+#   contact-Rayleigh(r_min)      = 2.762e-04 s
+#   bond-network critical dt     = 3.508e-05 s  (E_bond=7.0e+07 weld)
+#   -> monkey dt = 0.02·min(above)·Φ-margin  (see tools/gen_series.py);
+#      e.g. Φ=0.05 → 5.79e-07s, Φ=0.4 → 3.22e-07s (settle/shear).
 #
 # Reusable clump definition: [[clump.insert]] references it (rigid type); the bpm
 # type expands the same sub-spheres to a per-monkey CSV via gen_series.py.
