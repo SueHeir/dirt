@@ -98,7 +98,31 @@ def control(outdir, steps, dump_interval=0, restart_read=False):
 
 # ── process runner ───────────────────────────────────────────────────────────
 
+def refresh_soil():
+    # This bench's continuity checks (4-5) pass ONLY against a soil that carries
+    # the `unpack_all_from_restart` truncate-before-unpack fix (soil PR #2). dirt's
+    # Cargo.lock is gitignored (not committed), so a stale lock left in the shared
+    # checkout can silently pin a *pre-fix* soil main revision -- the build then
+    # succeeds but restart drops per-contact tangential + rotational state, and the
+    # bench reports a FAIL that looks like a physics regression but is really a
+    # dependency-staleness artifact. A determinism/restart guard must never build
+    # against an arbitrary soil rev, so re-pin the soil crates to current main
+    # before building. (Bumping the shared lock to latest main is the intended
+    # state -- every dirt bench tracks soil `branch = "main"`.)
+    print("Refreshing soil dependency to current main (restart fix must be present) ...")
+    r = subprocess.run(
+        ["cargo", "update", "-p", "soil_core", "-p", "soil_print"],
+        cwd=REPO_ROOT,
+    )
+    if r.returncode != 0:
+        # Non-fatal: offline / Gitea unreachable. The build below still uses the
+        # existing lock; if that lock predates the fix, checks 4-5 will FAIL loudly
+        # rather than silently passing -- which is the correct, honest signal.
+        print("WARNING: could not refresh soil (offline?); building against existing lock")
+
+
 def build():
+    refresh_soil()
     print("Building bench_restart_determinism (precision-double) ...")
     subprocess.run(
         ["cargo", "build", "--release", "--example", EXAMPLE,
