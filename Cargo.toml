@@ -79,6 +79,10 @@ name = "bench_rolling_decay"
 path = "examples/bench_rolling_decay/main.rs"
 
 [[example]]
+name = "bench_cundall_damping"
+path = "examples/bench_cundall_damping/main.rs"
+
+[[example]]
 name = "bench_twisting_friction"
 path = "examples/bench_twisting_friction/main.rs"
 
