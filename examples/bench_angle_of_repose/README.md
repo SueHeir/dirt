@@ -159,21 +159,52 @@ The "lift the cylinder" protocol, per case:
 
 ## How to Run
 
-Everything is driven by `sweep.py` (run from anywhere). With no argument it runs
-all three stages in order.
+Everything is driven by `sweep.py` (run from anywhere). With **no argument** it
+runs the **bounded smoke gate** (the harness default); `full` runs the complete
+sweep.
 
 ```bash
-# Everything: generate configs → build & run → validate & plot
-python3 examples/bench_angle_of_repose/sweep.py
+python3 examples/bench_angle_of_repose/sweep.py            # BOUNDED smoke gate (PASS/FAIL) — the harness default
+python3 examples/bench_angle_of_repose/sweep.py smoke      # same as no-arg
+python3 examples/bench_angle_of_repose/sweep.py full       # full sweep: generate → run → validate → plot
 
-# Or one stage at a time:
-python3 examples/bench_angle_of_repose/sweep.py generate   # write sweep/<case>/config.toml
-python3 examples/bench_angle_of_repose/sweep.py start       # build, run all cases -> data/*.csv
-python3 examples/bench_angle_of_repose/sweep.py graph        # fit θ_r, validate, write plots/
+# Or one full-sweep stage at a time:
+python3 examples/bench_angle_of_repose/sweep.py generate   # write sweep/<case>/config.toml (full)
+python3 examples/bench_angle_of_repose/sweep.py start       # build, run all cases -> data/*.csv (full)
+python3 examples/bench_angle_of_repose/sweep.py graph        # fit θ_r, validate, write plots/ (full)
 ```
 
 `graph` re-reads `data/repose_sweep.csv` (and `data/lammps_results.csv` if it
 exists), so you can re-validate and re-plot without re-running the simulations.
+
+### Bounded smoke gate (CI)
+
+The full sweep is 6 μ × 3 reps = 18 pour-settle-lift heap runs (plus the optional
+LAMMPS leg), each a ~1200-grain collapse relaxed on a real settle/rest detector —
+so it legitimately overran the 1800 s automation cap every hourly run (exit 124)
+and validated nothing. `sweep.py` with **no argument** now runs a **bounded gate**
+on the **same material, geometry and physics**: a coarse 3-point μ grid
+(μ = 0, 0.3, 0.5), **one deterministic (seeded) rep** each, and no LAMMPS. It fits
+the same θ_r(μ) the full run measures and asserts the robust qualitative laws —
+the frictionless collapse is nearly flat (θ_r(0) ≤ 8°), every frictional case
+holds a real slope in the sensible band [10°, 40°], and θ_r rises across the μ
+range (coarse monotone trend). It completes in **~3.5 min** (~13 s/step-poll ×
+3 cases) and prints `ALL CHECKS PASSED`/`CHECKS FAILED` (exit 0/1). Measured:
+
+```
+  mu   theta_r(deg)   N
+  0.00     0.00     1200     frictionless → flat
+  0.30    11.40     1200     holds a slope, in band
+  0.50    13.48     1200     steeper, in band
+```
+
+This is an **additive breakage gate**, not a replacement for the full validation:
+it deliberately does **not** assert the fine, μ-resolved monotonicity between
+adjacent close friction values, nor the reproducibility spread — those, with
+their tolerances (see *Validation Criteria*), remain the full run's job and are
+**unchanged** (`sweep.py full`). It reuses the **same physical bounds** as
+`validate()`; nothing is loosened. Smoke artifacts land in gitignored
+`data/smoke` and `sweep/smoke`.
 
 ### Cross-code overlay (optional LAMMPS leg)
 
