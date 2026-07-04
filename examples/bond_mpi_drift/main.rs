@@ -23,8 +23,8 @@
 //!     examples/bond_mpi_drift/config.toml
 //! ```
 
-use dirt_core::prelude::*;
 use dirt_core::dirt_bond::BondMetrics;
+use dirt_core::prelude::*;
 use std::fs::{self, File};
 use std::io::{BufWriter, Write as IoWrite};
 
@@ -88,7 +88,8 @@ fn record_drift(
 
     let global_nlocal = comm.all_reduce_sum_f64(atoms.nlocal as f64) as usize;
     let global_bond_count = comm.all_reduce_sum_f64(bond_metrics.bond_count as f64) as usize;
-    let global_missing = comm.all_reduce_sum_f64(bond_metrics.missing_partner_skips as f64) as usize;
+    let global_missing =
+        comm.all_reduce_sum_f64(bond_metrics.missing_partner_skips as f64) as usize;
 
     if global_bond_count < rec.min_bond_count {
         rec.min_bond_count = global_bond_count;
@@ -128,7 +129,12 @@ fn record_drift(
         writeln!(
             w,
             "{},{:.8e},{},{},{},{}",
-            step, t, global_nlocal, global_bond_count, global_missing, comm.size()
+            step,
+            t,
+            global_nlocal,
+            global_bond_count,
+            global_missing,
+            comm.size()
         )
         .ok();
     }

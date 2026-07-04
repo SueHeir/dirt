@@ -34,7 +34,10 @@ struct HopperBeverlooConfig {
 
 impl Default for HopperBeverlooConfig {
     fn default() -> Self {
-        Self { orifice_z: 0.0, sample_interval: 2000 }
+        Self {
+            orifice_z: 0.0,
+            sample_interval: 2000,
+        }
     }
 }
 
@@ -81,8 +84,13 @@ fn main() {
         .add_plugins(GranularDefaultPlugins)
         .add_plugins(GravityPlugin)
         .add_plugins(WallPlugin)
-        .add_plugins(StatesPlugin::new(Phase::Filling, ParticleSimScheduleSet::PostFinalIntegration))
-        .add_plugins(StageAdvancePlugin::<Phase>::new(ParticleSimScheduleSet::PostFinalIntegration));
+        .add_plugins(StatesPlugin::new(
+            Phase::Filling,
+            ParticleSimScheduleSet::PostFinalIntegration,
+        ))
+        .add_plugins(StageAdvancePlugin::<Phase>::new(
+            ParticleSimScheduleSet::PostFinalIntegration,
+        ));
 
     let (orifice_z, sample_interval) = read_tracker_params(&mut app);
     app.add_resource(DischargeTracker::new(orifice_z, sample_interval));
@@ -193,8 +201,7 @@ fn write_csv(tracker: &DischargeTracker, input: &Input, rank: i32) {
     let data_dir = format!("{}/data", out_dir);
     fs::create_dir_all(&data_dir).ok();
     let path = format!("{}/hopper_beverloo_results.csv", data_dir);
-    let mut f = fs::File::create(&path)
-        .unwrap_or_else(|e| panic!("Cannot create {}: {}", path, e));
+    let mut f = fs::File::create(&path).unwrap_or_else(|e| panic!("Cannot create {}: {}", path, e));
     writeln!(f, "time,count,mass").unwrap();
     for (t, c, m) in &tracker.rows {
         writeln!(f, "{:.10e},{},{:.10e}", t, c, m).unwrap();

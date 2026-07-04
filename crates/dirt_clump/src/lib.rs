@@ -120,14 +120,14 @@ use std::collections::HashMap;
 use std::f64::consts::PI;
 
 use grass_app::prelude::*;
-use soil_derive::AtomData;
 use grass_scheduler::prelude::*;
-use serde::Deserialize;
 use rand::Rng;
+use serde::Deserialize;
+use soil_derive::AtomData;
 
 use soil_core::{
-    register_atom_data, Atom, AtomData, AtomDataRegistry, CommResource, Config, Domain, Region,
-    RunState, ParticleSimScheduleSet, ScheduleSetupSet, Real, Accum,
+    register_atom_data, Accum, Atom, AtomData, AtomDataRegistry, CommResource, Config, Domain,
+    ParticleSimScheduleSet, Real, Region, RunState, ScheduleSetupSet,
 };
 
 #[cfg(feature = "mpi_backend")]
@@ -137,10 +137,9 @@ use dirt_atom::DemAtom;
 
 pub mod body;
 pub use body::{
-    MultisphereBody, MultisphereBodyStore,
-    compute_inertia_tensor_analytical, compute_inertia_tensor_montecarlo,
-    has_overlap, diagonalize_inertia, jacobi_eigendecomposition,
-    rotation_matrix_to_quaternion,
+    compute_inertia_tensor_analytical, compute_inertia_tensor_montecarlo, diagonalize_inertia,
+    has_overlap, jacobi_eigendecomposition, rotation_matrix_to_quaternion, MultisphereBody,
+    MultisphereBodyStore,
 };
 
 // ── Configuration ────────────────────────────────────────────────────────────
@@ -309,10 +308,7 @@ pub fn cross(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
 /// does **not** use it; the body-creation path uses the full tensor from
 /// [`compute_inertia_tensor_analytical`] / [`compute_inertia_tensor_montecarlo`]
 /// instead. Prefer those for any new code.
-pub fn compute_clump_inertia(
-    spheres: &[ClumpSphereConfig],
-    density: f64,
-) -> (f64, f64) {
+pub fn compute_clump_inertia(spheres: &[ClumpSphereConfig], density: f64) -> (f64, f64) {
     let (mass, tensor) = compute_inertia_tensor_analytical(spheres, density);
     let avg = (tensor[0][0] + tensor[1][1] + tensor[2][2]) / 3.0;
     (mass, avg)
@@ -363,8 +359,7 @@ impl Plugin for ClumpPlugin {
         // Set minimum ghost cutoff for clumps BEFORE neighbor_setup computes bins.
         // neighbor_setup will use max(its_value, domain.ghost_cutoff).
         app.add_setup_system(
-            extend_ghost_cutoff_for_clumps
-                .label("extend_ghost_cutoff_for_clumps"),
+            extend_ghost_cutoff_for_clumps.label("extend_ghost_cutoff_for_clumps"),
             ScheduleSetupSet::Setup,
         );
 
@@ -381,9 +376,7 @@ impl Plugin for ClumpPlugin {
 
         // Body exchange: migrate bodies whose COM left the local subdomain.
         app.add_update_system(
-            exchange_bodies
-                .label("exchange_bodies")
-                .before("exchange"),
+            exchange_bodies.label("exchange_bodies").before("exchange"),
             ParticleSimScheduleSet::Exchange,
         );
 
@@ -479,8 +472,10 @@ fn extend_ghost_cutoff_for_clumps(
     let mut max_r_bound: f64 = 0.0;
     for def in &clump_registry.defs {
         for sphere in &def.spheres {
-            let r = (sphere.offset[0].powi(2) + sphere.offset[1].powi(2) + sphere.offset[2].powi(2)).sqrt()
-                + sphere.radius;
+            let r =
+                (sphere.offset[0].powi(2) + sphere.offset[1].powi(2) + sphere.offset[2].powi(2))
+                    .sqrt()
+                    + sphere.radius;
             max_r_bound = max_r_bound.max(r);
         }
     }
@@ -654,11 +649,15 @@ fn pbc_multisphere_bodies(mut bodies: ResMut<MultisphereBodyStore>, domain: Res<
                     if lam[d] < 0.0 {
                         lam[d] += 1.0;
                         body.image[d] -= 1;
-                        if d == 1 { dy -= 1; }
+                        if d == 1 {
+                            dy -= 1;
+                        }
                     } else if lam[d] >= 1.0 {
                         lam[d] -= 1.0;
                         body.image[d] += 1;
-                        if d == 1 { dy += 1; }
+                        if d == 1 {
+                            dy += 1;
+                        }
                     }
                 }
             }
@@ -999,7 +998,10 @@ fn check_lost_clump_atoms(
         if actual != expected {
             eprintln!(
                 "WARNING: Body {} has {}/{} atoms on rank {}",
-                body.id, actual, expected, comm.rank()
+                body.id,
+                actual,
+                expected,
+                comm.rank()
             );
         }
     }
@@ -1050,7 +1052,11 @@ fn clump_insert_atoms(
             panic!(
                 "Clump definition '{}' not found. Available: {:?}",
                 insert.definition,
-                clump_registry.defs.iter().map(|d| &d.name).collect::<Vec<_>>()
+                clump_registry
+                    .defs
+                    .iter()
+                    .map(|d| &d.name)
+                    .collect::<Vec<_>>()
             );
         });
 
@@ -1269,7 +1275,11 @@ pub fn insert_clump(
         principal_moments,
         principal_axes,
         total_mass,
-        inv_mass: if total_mass > 0.0 { 1.0 / total_mass } else { 0.0 },
+        inv_mass: if total_mass > 0.0 {
+            1.0 / total_mass
+        } else {
+            0.0
+        },
         force: [0.0; 3],
         torque: [0.0; 3],
         image: [0; 3],
@@ -1294,8 +1304,12 @@ pub fn insert_clump(
         atoms.tag.push(sub_tag);
         atoms.atom_type.push(atom_type);
         atoms.origin_index.push(0);
-        atoms.pos.push([sub_pos[0] as Real, sub_pos[1] as Real, sub_pos[2] as Real]);
-        atoms.vel.push([com_vel[0] as Real, com_vel[1] as Real, com_vel[2] as Real]);
+        atoms
+            .pos
+            .push([sub_pos[0] as Real, sub_pos[1] as Real, sub_pos[2] as Real]);
+        atoms
+            .vel
+            .push([com_vel[0] as Real, com_vel[1] as Real, com_vel[2] as Real]);
         atoms.force.push([0.0 as Accum; 3]);
         atoms.mass.push(sub_mass as Real);
         atoms.inv_mass.push(0.0 as Real); // Sub-spheres don't integrate via Verlet
@@ -1355,8 +1369,8 @@ pub fn is_body_atom(clump_data: &ClumpAtom, i: usize) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use soil_core::{Atom, AtomDataRegistry};
     use dirt_atom::DemAtom;
+    use soil_core::{Atom, AtomDataRegistry};
 
     /// Non-overlapping dimer (center distance > r1 + r2) for deterministic tests.
     fn make_dimer_def() -> ClumpDef {
@@ -1376,7 +1390,12 @@ mod tests {
     }
 
     fn setup_clump_test() -> (Atom, DemAtom, ClumpAtom, MultisphereBodyStore) {
-        (Atom::new(), DemAtom::new(), ClumpAtom::new(), MultisphereBodyStore::new())
+        (
+            Atom::new(),
+            DemAtom::new(),
+            ClumpAtom::new(),
+            MultisphereBodyStore::new(),
+        )
     }
 
     #[test]
@@ -1428,8 +1447,16 @@ mod tests {
         let def = make_dimer_def();
 
         let count = insert_clump(
-            &mut atoms, &mut dem, &mut clump, &mut bodies, &def,
-            [0.0, 0.0, 0.0], [0.0; 3], 2500.0, 0, 1,
+            &mut atoms,
+            &mut dem,
+            &mut clump,
+            &mut bodies,
+            &def,
+            [0.0, 0.0, 0.0],
+            [0.0; 3],
+            2500.0,
+            0,
+            1,
         );
 
         assert_eq!(count, 2, "Should insert 2 sub-spheres (no parent atom)");
@@ -1469,8 +1496,16 @@ mod tests {
         let def = make_dimer_def();
 
         insert_clump(
-            &mut atoms, &mut dem, &mut clump, &mut bodies, &def,
-            [0.0, 0.0, 0.0], [0.0; 3], 2500.0, 0, 1,
+            &mut atoms,
+            &mut dem,
+            &mut clump,
+            &mut bodies,
+            &def,
+            [0.0, 0.0, 0.0],
+            [0.0; 3],
+            2500.0,
+            0,
+            1,
         );
 
         // Atoms 0 and 1 are in same body
@@ -1485,12 +1520,28 @@ mod tests {
         let def = make_dimer_def();
 
         insert_clump(
-            &mut atoms, &mut dem, &mut clump, &mut bodies, &def,
-            [0.0, 0.0, 0.0], [0.0; 3], 2500.0, 0, 1,
+            &mut atoms,
+            &mut dem,
+            &mut clump,
+            &mut bodies,
+            &def,
+            [0.0, 0.0, 0.0],
+            [0.0; 3],
+            2500.0,
+            0,
+            1,
         );
         insert_clump(
-            &mut atoms, &mut dem, &mut clump, &mut bodies, &def,
-            [0.01, 0.0, 0.0], [0.0; 3], 2500.0, 0, 2,
+            &mut atoms,
+            &mut dem,
+            &mut clump,
+            &mut bodies,
+            &def,
+            [0.01, 0.0, 0.0],
+            [0.0; 3],
+            2500.0,
+            0,
+            2,
         );
 
         // Sub-spheres from different bodies not excluded
@@ -1504,8 +1555,16 @@ mod tests {
         let def = make_dimer_def();
 
         insert_clump(
-            &mut atoms, &mut dem, &mut clump, &mut bodies, &def,
-            [0.0, 0.0, 0.0], [0.0; 3], 2500.0, 0, 1,
+            &mut atoms,
+            &mut dem,
+            &mut clump,
+            &mut bodies,
+            &def,
+            [0.0, 0.0, 0.0],
+            [0.0; 3],
+            2500.0,
+            0,
+            1,
         );
 
         // Apply force to sub-sphere 0 (at x = -0.0015)
@@ -1554,8 +1613,16 @@ mod tests {
         let def = make_dimer_def();
 
         insert_clump(
-            &mut atoms, &mut dem, &mut clump, &mut bodies, &def,
-            [0.0, 0.0, 0.0], [0.0; 3], 2500.0, 0, 1,
+            &mut atoms,
+            &mut dem,
+            &mut clump,
+            &mut bodies,
+            &def,
+            [0.0, 0.0, 0.0],
+            [0.0; 3],
+            2500.0,
+            0,
+            1,
         );
 
         // Rotate body 90° about z-axis
@@ -1571,7 +1638,10 @@ mod tests {
         app.add_resource(atoms);
         app.add_resource(registry);
         app.add_resource(bodies);
-        app.add_update_system(update_clump_positions, ParticleSimScheduleSet::PostFinalIntegration);
+        app.add_update_system(
+            update_clump_positions,
+            ParticleSimScheduleSet::PostFinalIntegration,
+        );
         app.organize_systems();
         app.run();
 
@@ -1594,8 +1664,16 @@ mod tests {
 
         let com_pos = [0.0, 0.0, 0.1];
         insert_clump(
-            &mut atoms, &mut dem, &mut clump, &mut bodies, &def,
-            com_pos, [0.0; 3], 2500.0, 0, 1,
+            &mut atoms,
+            &mut dem,
+            &mut clump,
+            &mut bodies,
+            &def,
+            com_pos,
+            [0.0; 3],
+            2500.0,
+            0,
+            1,
         );
         atoms.dt = 1e-6;
 
@@ -1638,8 +1716,16 @@ mod tests {
         let def = make_dimer_def();
 
         insert_clump(
-            &mut atoms, &mut dem, &mut clump, &mut bodies, &def,
-            [0.0, 0.0, 0.0], [1.0, 0.0, 0.0], 2500.0, 0, 1,
+            &mut atoms,
+            &mut dem,
+            &mut clump,
+            &mut bodies,
+            &def,
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            2500.0,
+            0,
+            1,
         );
 
         bodies.bodies[0].omega = [0.0, 0.0, 100.0];
@@ -1652,7 +1738,10 @@ mod tests {
         app.add_resource(atoms);
         app.add_resource(registry);
         app.add_resource(bodies);
-        app.add_update_system(update_clump_positions, ParticleSimScheduleSet::PostFinalIntegration);
+        app.add_update_system(
+            update_clump_positions,
+            ParticleSimScheduleSet::PostFinalIntegration,
+        );
         app.organize_systems();
         app.run();
 
@@ -1670,8 +1759,16 @@ mod tests {
         let def = make_dimer_def();
 
         insert_clump(
-            &mut atoms, &mut dem, &mut clump, &mut bodies, &def,
-            [0.0, 0.0, 0.0], [0.0; 3], 2500.0, 0, 1,
+            &mut atoms,
+            &mut dem,
+            &mut clump,
+            &mut bodies,
+            &def,
+            [0.0, 0.0, 0.0],
+            [0.0; 3],
+            2500.0,
+            0,
+            1,
         );
 
         // Force in y on right sub-sphere (at x = +0.0015)

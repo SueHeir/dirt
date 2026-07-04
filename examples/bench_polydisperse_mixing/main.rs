@@ -27,8 +27,8 @@
 //! contact normal is taken from the line of centres at first contact), so the
 //! measurement does not depend on which atom index ends up first.
 
-use dirt_core::prelude::*;
 use dirt_core::dirt_atom::DemAtom;
+use dirt_core::prelude::*;
 use std::fs;
 use std::io::Write as IoWrite;
 
@@ -91,7 +91,10 @@ fn main() {
         .add_plugins(FixesPlugin); // enables [[freeze]] for the frozen-target friction cases
 
     app.add_resource(CollisionTracker::new());
-    app.add_update_system(track_collision, ParticleSimScheduleSet::PostFinalIntegration);
+    app.add_update_system(
+        track_collision,
+        ParticleSimScheduleSet::PostFinalIntegration,
+    );
 
     app.start();
 }
@@ -112,12 +115,32 @@ fn track_collision(
     let step = run_state.total_cycle;
 
     // Order the two atoms by tag so "particle 1" is always the first CSV row.
-    let (i1, i2) = if atoms.tag[0] <= atoms.tag[1] { (0, 1) } else { (1, 0) };
+    let (i1, i2) = if atoms.tag[0] <= atoms.tag[1] {
+        (0, 1)
+    } else {
+        (1, 0)
+    };
 
-    let p1 = [atoms.pos[i1][0] as f64, atoms.pos[i1][1] as f64, atoms.pos[i1][2] as f64];
-    let p2 = [atoms.pos[i2][0] as f64, atoms.pos[i2][1] as f64, atoms.pos[i2][2] as f64];
-    let v1 = [atoms.vel[i1][0] as f64, atoms.vel[i1][1] as f64, atoms.vel[i1][2] as f64];
-    let v2 = [atoms.vel[i2][0] as f64, atoms.vel[i2][1] as f64, atoms.vel[i2][2] as f64];
+    let p1 = [
+        atoms.pos[i1][0] as f64,
+        atoms.pos[i1][1] as f64,
+        atoms.pos[i1][2] as f64,
+    ];
+    let p2 = [
+        atoms.pos[i2][0] as f64,
+        atoms.pos[i2][1] as f64,
+        atoms.pos[i2][2] as f64,
+    ];
+    let v1 = [
+        atoms.vel[i1][0] as f64,
+        atoms.vel[i1][1] as f64,
+        atoms.vel[i1][2] as f64,
+    ];
+    let v2 = [
+        atoms.vel[i2][0] as f64,
+        atoms.vel[i2][1] as f64,
+        atoms.vel[i2][2] as f64,
+    ];
 
     let d = [p2[0] - p1[0], p2[1] - p1[1], p2[2] - p1[2]];
     let dist = dot(&d, &d).sqrt();
@@ -162,7 +185,11 @@ fn track_collision(
         let dv_post = [v2[0] - v1[0], v2[1] - v1[1], v2[2] - v1[2]];
         let vn_impact = dot(&dv_pre, &n); // negative: approaching
         let vn_rebound = dot(&dv_post, &n);
-        let cor = if vn_impact != 0.0 { (vn_rebound / vn_impact).abs() } else { 0.0 };
+        let cor = if vn_impact != 0.0 {
+            (vn_rebound / vn_impact).abs()
+        } else {
+            0.0
+        };
 
         // Impulse delivered to particle 1: J = m1 (v1_post − v1_pre).
         let j1 = [
@@ -210,12 +237,21 @@ fn track_collision(
         .unwrap();
 
         println!("=== Polydisperse mixing collision ===");
-        println!("  r1, r2:            {:.4e}, {:.4e} m", tracker.r1, tracker.r2);
-        println!("  m1, m2:            {:.4e}, {:.4e} kg", tracker.m1, tracker.m2);
+        println!(
+            "  r1, r2:            {:.4e}, {:.4e} m",
+            tracker.r1, tracker.r2
+        );
+        println!(
+            "  m1, m2:            {:.4e}, {:.4e} kg",
+            tracker.m1, tracker.m2
+        );
         println!("  |v_n| impact:      {:.6e} m/s", vn_impact.abs());
         println!("  |v_n| rebound:     {:.6e} m/s", vn_rebound.abs());
         println!("  COR (normal):      {:.6}", cor);
-        println!("  Contact duration:  {:.6e} s ({} steps)", contact_time, contact_steps);
+        println!(
+            "  Contact duration:  {:.6e} s ({} steps)",
+            contact_time, contact_steps
+        );
         println!("  Peak overlap:      {:.6e} m", tracker.max_overlap);
         println!(
             "  |Jt|, |Jn|:        {:.6e}, {:.6e}  (Jt/Jn = {:.6})",

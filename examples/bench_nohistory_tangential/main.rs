@@ -66,7 +66,11 @@ struct ScenarioCfg {
 /// Build a two-sphere system at fixed overlap with the given tangential model.
 /// Returns `(atoms, neighbor, registry)`. Sphere 0 at the origin, sphere 1 along
 /// +x at centre distance `2R − δ` so the overlap is exactly `δ`.
-fn build_system(mat: &MaterialCfg, sc: &ScenarioCfg, tangential_model: &str) -> (Atom, Neighbor, AtomDataRegistry, MaterialTable) {
+fn build_system(
+    mat: &MaterialCfg,
+    sc: &ScenarioCfg,
+    tangential_model: &str,
+) -> (Atom, Neighbor, AtomDataRegistry, MaterialTable) {
     let mut mt = MaterialTable::new();
     mt.contact_model = "hertz".to_string();
     mt.tangential_model = tangential_model.to_string();
@@ -137,12 +141,7 @@ fn tangential_velocity(step: usize, sc: &ScenarioCfg) -> f64 {
     a + (b - a) * frac
 }
 
-fn run_model(
-    mat: &MaterialCfg,
-    sc: &ScenarioCfg,
-    tangential_model: &str,
-    out: &mut fs::File,
-) {
+fn run_model(mat: &MaterialCfg, sc: &ScenarioCfg, tangential_model: &str, out: &mut fs::File) {
     let (mut atom, nb, reg, mt) = build_system(mat, sc, tangential_model);
     let total_steps = sc.legs * sc.steps_per_leg;
 
@@ -191,18 +190,21 @@ fn main() {
         .unwrap_or_else(|| "examples/bench_nohistory_tangential/config.toml".to_string());
     let text = fs::read_to_string(&config_path)
         .unwrap_or_else(|e| panic!("cannot read {config_path}: {e}"));
-    let cfg: Config = toml::from_str(&text)
-        .unwrap_or_else(|e| panic!("cannot parse {config_path}: {e}"));
+    let cfg: Config =
+        toml::from_str(&text).unwrap_or_else(|e| panic!("cannot parse {config_path}: {e}"));
 
     let out_dir = "examples/bench_nohistory_tangential/data";
     fs::create_dir_all(out_dir).ok();
     let results = format!("{out_dir}/nohistory_tangential_results.csv");
-    let mut f = fs::File::create(&results)
-        .unwrap_or_else(|e| panic!("cannot create {results}: {e}"));
+    let mut f =
+        fs::File::create(&results).unwrap_or_else(|e| panic!("cannot create {results}: {e}"));
     writeln!(f, "model,step,vt,fn,ft,xi").unwrap();
 
     println!("=== history-free tangential model benchmark ===");
-    println!("  material: {} (mu = {})", cfg.material.name, cfg.material.friction);
+    println!(
+        "  material: {} (mu = {})",
+        cfg.material.name, cfg.material.friction
+    );
     println!(
         "  fixed overlap = {:.3e} m, V = {} m/s, {} legs x {} steps",
         cfg.scenario.overlap, cfg.scenario.v_amp, cfg.scenario.legs, cfg.scenario.steps_per_leg

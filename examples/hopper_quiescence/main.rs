@@ -93,7 +93,9 @@ fn main() {
 
     if let Some(atoms) = app.get_resource_ref::<Atom>() {
         let nlocal = atoms.nlocal as usize;
-        let discharged = (0..nlocal).filter(|&i| (atoms.pos[i][2] as f64) < GATE_Z).count();
+        let discharged = (0..nlocal)
+            .filter(|&i| (atoms.pos[i][2] as f64) < GATE_Z)
+            .count();
         println!(
             "FINAL: {} particles, {} discharged below gate",
             nlocal, discharged
@@ -112,11 +114,18 @@ fn main() {
         if nlocal > 0 {
             println!(
                 "FINAL z: min={:.4} p25={:.4} p50={:.4} p75={:.4} max={:.4}",
-                zs[0], zs[nlocal / 4], zs[nlocal / 2], zs[3 * nlocal / 4], zs[nlocal - 1]
+                zs[0],
+                zs[nlocal / 4],
+                zs[nlocal / 2],
+                zs[3 * nlocal / 4],
+                zs[nlocal - 1]
             );
             println!(
                 "FINAL |v|: p50={:.4} p90={:.4} p99={:.4} max={:.4}",
-                vs[nlocal / 2], vs[nlocal * 9 / 10], vs[nlocal * 99 / 100], vs[nlocal - 1]
+                vs[nlocal / 2],
+                vs[nlocal * 9 / 10],
+                vs[nlocal * 99 / 100],
+                vs[nlocal - 1]
             );
         }
     }
@@ -182,9 +191,7 @@ fn write_stats(
         let v = atoms.vel[i];
         ke += 0.5
             * atoms.mass[i] as f64
-            * (v[0] as f64 * v[0] as f64
-                + v[1] as f64 * v[1] as f64
-                + v[2] as f64 * v[2] as f64);
+            * (v[0] as f64 * v[0] as f64 + v[1] as f64 * v[1] as f64 + v[2] as f64 * v[2] as f64);
         if (atoms.pos[i][2] as f64) < GATE_Z {
             discharged += 1;
         }

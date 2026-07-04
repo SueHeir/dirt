@@ -24,8 +24,8 @@
 //! cargo run --release --example bench_sliding_friction --no-default-features -- examples/bench_sliding_friction/config.toml
 //! ```
 
-use dirt_core::prelude::*;
 use dirt_core::dirt_atom::DemAtom;
+use dirt_core::prelude::*;
 use std::fs;
 use std::io::Write as IoWrite;
 
@@ -98,7 +98,11 @@ fn record(
         writeln!(
             f,
             "{:.10e},{:.10e},{:.10e},{:.10e},{}",
-            t, vx, omega_y, r, if in_contact { 1 } else { 0 }
+            t,
+            vx,
+            omega_y,
+            r,
+            if in_contact { 1 } else { 0 }
         )
         .unwrap();
     }

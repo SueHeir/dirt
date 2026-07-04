@@ -18,8 +18,8 @@ use std::fs;
 use std::io::Write;
 use std::sync::Once;
 
-use dirt_core::prelude::*;
 use dirt_core::dirt_atom::DemAtom;
+use dirt_core::prelude::*;
 
 fn main() {
     let mut app = App::new();
@@ -97,8 +97,16 @@ fn record(
     }
     let ke_rot = comm.all_reduce_sum_f64(ke_rot);
 
-    let t_trans = if m_total > 0.0 { ke_trans / (3.0 * m_total) } else { 0.0 };
-    let t_rot = if m_total > 0.0 { ke_rot / (3.0 * m_total) } else { 0.0 };
+    let t_trans = if m_total > 0.0 {
+        ke_trans / (3.0 * m_total)
+    } else {
+        0.0
+    };
+    let t_rot = if m_total > 0.0 {
+        ke_rot / (3.0 * m_total)
+    } else {
+        0.0
+    };
     let t_total = t_trans + t_rot;
 
     if comm.rank() != 0 {

@@ -105,7 +105,9 @@ impl RadiusDistribution {
                         return values[i];
                     }
                 }
-                *values.last().expect("discrete distribution must have at least one value")
+                *values
+                    .last()
+                    .expect("discrete distribution must have at least one value")
             }
         }
     }
@@ -194,8 +196,7 @@ mod tests {
 
     #[test]
     fn radius_spec_discrete_deserialization() {
-        let toml_str =
-            r#"radius = { distribution = "discrete", values = [0.001, 0.0015], weights = [0.7, 0.3] }"#;
+        let toml_str = r#"radius = { distribution = "discrete", values = [0.001, 0.0015], weights = [0.7, 0.3] }"#;
         #[derive(Deserialize)]
         struct Wrapper {
             radius: RadiusSpec,

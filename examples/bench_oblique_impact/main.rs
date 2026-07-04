@@ -22,8 +22,8 @@
 //! cargo run --release --example bench_oblique_impact --no-default-features -- examples/bench_oblique_impact/config.toml
 //! ```
 
-use dirt_core::prelude::*;
 use dirt_core::dirt_atom::DemAtom;
+use dirt_core::prelude::*;
 use std::fs;
 use std::io::Write as IoWrite;
 
@@ -104,7 +104,11 @@ fn track_oblique(
     if tracker.projectile_tag.is_none() {
         let mut best = (0usize, 0.0f64);
         for i in 0..atoms.nlocal as usize {
-            let vi = [atoms.vel[i][0] as f64, atoms.vel[i][1] as f64, atoms.vel[i][2] as f64];
+            let vi = [
+                atoms.vel[i][0] as f64,
+                atoms.vel[i][1] as f64,
+                atoms.vel[i][2] as f64,
+            ];
             let s = dot(vi, vi);
             if s > best.1 {
                 best = (i, s);
@@ -118,7 +122,11 @@ fn track_oblique(
     };
     let t = (0..atoms.nlocal as usize).find(|&i| i != p).unwrap();
 
-    let vel = [atoms.vel[p][0] as f64, atoms.vel[p][1] as f64, atoms.vel[p][2] as f64];
+    let vel = [
+        atoms.vel[p][0] as f64,
+        atoms.vel[p][1] as f64,
+        atoms.vel[p][2] as f64,
+    ];
 
     // Line-of-centers from target → projectile, and center overlap.
     let d = [
@@ -137,7 +145,11 @@ fn track_oblique(
     // step,overlap,fn,ft_mag,ft_signed,vt_x,omega_y).
     if in_contact && std::env::var("DIRT_TRACE").is_ok() {
         let n = [d[0] / dist, d[1] / dist, d[2] / dist];
-        let f = [atoms.force[p][0] as f64, atoms.force[p][1] as f64, atoms.force[p][2] as f64];
+        let f = [
+            atoms.force[p][0] as f64,
+            atoms.force[p][1] as f64,
+            atoms.force[p][2] as f64,
+        ];
         let fn_ = dot(f, n);
         let ftv = [f[0] - fn_ * n[0], f[1] - fn_ * n[1], f[2] - fn_ * n[2]];
         let ft_mag = dot(ftv, ftv).sqrt();
@@ -170,7 +182,7 @@ fn track_oblique(
         let n = [d[0] / dist, d[1] / dist, d[2] / dist];
         let v = tracker.prev_vel;
         let vn = -dot(v, n); // closing speed (positive when approaching)
-        // tangential part of pre-contact velocity
+                             // tangential part of pre-contact velocity
         let vt_vec = [v[0] + vn * n[0], v[1] + vn * n[1], v[2] + vn * n[2]];
         let vt_mag = dot(vt_vec, vt_vec).sqrt();
         let that = if vt_mag > 1e-12 {
@@ -231,10 +243,19 @@ fn track_oblique(
         .unwrap();
 
         println!("=== Oblique Impact Results (impact frame) ===");
-        println!("  v_n impact:  {:.6} m/s   v_t impact: {:.6} m/s", tracker.vn_impact, tracker.vt_impact);
-        println!("  v_n rebound: {:.6} m/s   v_t rebound:{:.6} m/s", tracker.vn_rebound, tracker.vt_rebound);
+        println!(
+            "  v_n impact:  {:.6} m/s   v_t impact: {:.6} m/s",
+            tracker.vn_impact, tracker.vt_impact
+        );
+        println!(
+            "  v_n rebound: {:.6} m/s   v_t rebound:{:.6} m/s",
+            tracker.vn_rebound, tracker.vt_rebound
+        );
         println!("  omega_y:     {:.6} rad/s", tracker.omega_y_rebound);
-        println!("  contact time:{:.6e} s ({} steps)", contact_time, contact_steps);
+        println!(
+            "  contact time:{:.6e} s ({} steps)",
+            contact_time, contact_steps
+        );
         println!("  results -> {}", results_file);
     }
 

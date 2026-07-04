@@ -69,9 +69,9 @@ pub use radius::*;
 use std::f64::consts::PI;
 
 use grass_app::prelude::*;
-use soil_derive::AtomData;
 use grass_scheduler::prelude::*;
 use serde::Deserialize;
+use soil_derive::AtomData;
 
 use soil_core::{register_atom_data, Atom, AtomData, AtomPlugin, Config, ScheduleSetupSet};
 
@@ -93,7 +93,8 @@ pub const SQRT_5_6: f64 = 0.9128709291752768;
 /// LAMMPS). α(e) is the damping prefactor in `F_damp = α(e)·√(mₑ Fₙ/δ)·vₙ`.
 fn tsuji_alpha(e: f64) -> f64 {
     1.2728 - 4.2783 * e + 11.087 * e.powi(2) - 22.348 * e.powi(3) + 27.467 * e.powi(4)
-        - 18.022 * e.powi(5) + 4.8218 * e.powi(6)
+        - 18.022 * e.powi(5)
+        + 4.8218 * e.powi(6)
 }
 
 /// COR of a head-on Hertz collision with the damping DIRT applies
@@ -109,9 +110,13 @@ fn hertz_cor_of_beta(beta: f64) -> f64 {
         return 1.0;
     }
     let c = 2.0 * beta * SQRT_5_6 * std::f64::consts::SQRT_2; // damping prefactor
-    // acceleration of the overlap coordinate (only while in contact, δ>0)
+                                                              // acceleration of the overlap coordinate (only while in contact, δ>0)
     let acc = |d: f64, v: f64| -> f64 {
-        if d <= 0.0 { 0.0 } else { -(4.0 / 3.0) * d.powf(1.5) - c * d.powf(0.25) * v }
+        if d <= 0.0 {
+            0.0
+        } else {
+            -(4.0 / 3.0) * d.powf(1.5) - c * d.powf(0.25) * v
+        }
     };
     let dt = 1.0e-4;
     // δ = overlap (grows on approach): start at contact with δ̇ = +1 (approaching).
@@ -119,8 +124,14 @@ fn hertz_cor_of_beta(beta: f64) -> f64 {
     for _ in 0..2_000_000 {
         // RK4 on (d, v) with d' = v, v' = acc(d, v)
         let (k1d, k1v) = (v, acc(d, v));
-        let (k2d, k2v) = (v + 0.5 * dt * k1v, acc(d + 0.5 * dt * k1d, v + 0.5 * dt * k1v));
-        let (k3d, k3v) = (v + 0.5 * dt * k2v, acc(d + 0.5 * dt * k2d, v + 0.5 * dt * k2v));
+        let (k2d, k2v) = (
+            v + 0.5 * dt * k1v,
+            acc(d + 0.5 * dt * k1d, v + 0.5 * dt * k1v),
+        );
+        let (k3d, k3v) = (
+            v + 0.5 * dt * k2v,
+            acc(d + 0.5 * dt * k2d, v + 0.5 * dt * k2v),
+        );
         let (k4d, k4v) = (v + dt * k3v, acc(d + dt * k3d, v + dt * k3v));
         d += dt / 6.0 * (k1d + 2.0 * k2d + 2.0 * k3d + k4d);
         v += dt / 6.0 * (k1v + 2.0 * k2v + 2.0 * k3v + k4v);
@@ -551,7 +562,16 @@ impl MaterialTable {
         rolling_friction: f64,
         cohesion_energy: f64,
     ) -> u32 {
-        self.add_material_full(name, youngs_mod, poisson_ratio, restitution, friction, rolling_friction, cohesion_energy, 0.0)
+        self.add_material_full(
+            name,
+            youngs_mod,
+            poisson_ratio,
+            restitution,
+            friction,
+            rolling_friction,
+            cohesion_energy,
+            0.0,
+        )
     }
 
     /// Adds a material with basic properties plus surface energy. Returns the material index.
@@ -569,8 +589,17 @@ impl MaterialTable {
         surface_energy: f64,
     ) -> u32 {
         self.add_material_extended(
-            name, youngs_mod, poisson_ratio, restitution, friction,
-            rolling_friction, cohesion_energy, surface_energy, 0.0, 0.0, 0.0,
+            name,
+            youngs_mod,
+            poisson_ratio,
+            restitution,
+            friction,
+            rolling_friction,
+            cohesion_energy,
+            surface_energy,
+            0.0,
+            0.0,
+            0.0,
         )
     }
 
@@ -592,9 +621,21 @@ impl MaterialTable {
         kt: f64,
     ) -> u32 {
         self.add_material_with_sds(
-            name, youngs_mod, poisson_ratio, restitution, friction,
-            rolling_friction, cohesion_energy, surface_energy, twisting_friction,
-            kn, kt, 0.0, 0.0, 0.0, 0.0,
+            name,
+            youngs_mod,
+            poisson_ratio,
+            restitution,
+            friction,
+            rolling_friction,
+            cohesion_energy,
+            surface_energy,
+            twisting_friction,
+            kn,
+            kt,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
         )
     }
 
@@ -735,8 +776,9 @@ impl MaterialTable {
                     (self.surface_energy[i] * self.surface_energy[j]).sqrt();
 
                 // Geometric mean mixing for twisting friction
-                self.twisting_friction_ij[i][j] =
-                    (self.twisting_friction[i].max(0.0) * self.twisting_friction[j].max(0.0)).sqrt();
+                self.twisting_friction_ij[i][j] = (self.twisting_friction[i].max(0.0)
+                    * self.twisting_friction[j].max(0.0))
+                .sqrt();
 
                 // Effective Young's modulus (Hertz)
                 let nu_i = self.poisson_ratio[i];

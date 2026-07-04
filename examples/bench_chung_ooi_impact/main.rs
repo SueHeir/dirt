@@ -25,8 +25,8 @@
 //! cases the net force on particle 0 (no gravity, no other contacts) is the
 //! contact force, so its peak magnitude is the maximum contact force.
 
-use dirt_core::prelude::*;
 use dirt_core::dirt_atom::DemAtom;
+use dirt_core::prelude::*;
 use std::fs;
 use std::io::Write as IoWrite;
 
@@ -192,9 +192,15 @@ fn track_impact(
 
         println!("=== Chung & Ooi (2011) Impact Results ===");
         println!("  Particles:        {}", atoms.nlocal);
-        println!("  Impact velocity:  {:.6e} m/s (relative, normal)", tracker.v_impact);
+        println!(
+            "  Impact velocity:  {:.6e} m/s (relative, normal)",
+            tracker.v_impact
+        );
         println!("  Max contact force:{:.6e} N", tracker.max_force);
-        println!("  Contact duration: {:.6e} s ({} steps)", contact_time, contact_steps);
+        println!(
+            "  Contact duration: {:.6e} s ({} steps)",
+            contact_time, contact_steps
+        );
         println!("  Peak overlap:     {:.6e} m", tracker.max_overlap);
         println!("  Timestep dt:      {:.6e} s", dt);
         println!("  Results saved to: {}", results_file);

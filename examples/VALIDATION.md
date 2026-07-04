@@ -218,6 +218,40 @@ the code applies, so it confirms the integrator reproduces the model's own coeff
 not the rolling model vs experiment. The frozen sphere is legitimate here (it defines
 the curvature / `r_eff`). LAMMPS overlay is printed, not asserted.
 
+## `bench_sds_rolling` — SDS (spring-dashpot-slider) rolling model
+
+`bench_rolling_decay` above exercises only the `constant`-torque rolling model; this bench
+covers `rolling_model = "sds"` (contact.rs). An upper sphere on a frozen anchor is seated at
+the static Hertz overlap (`F_n = m g`) and given a pure rolling spin about a horizontal axis;
+sliding friction is off, so the only ⊥-normal couple is the SDS rolling resistance. Two
+regimes are validated against the model's *own* closed form (F_n = m g, r_eff = R/2,
+I = (2/5) m R²):
+
+- **Elastic (cap disengaged):** the couple `τ = −k_r δ − γ_r ω` makes the spin obey the exact
+  damped oscillator `I δ̈ + γ_r δ̇ + k_r δ = 0`. The over-damped case gives an exponential ω
+  decay (dominant eigenvalue |s₁| = 194.3 s⁻¹) matched to **0.10 %** of ω₀; the under-damped
+  case *oscillates* — the spring reverses the spin — matched to **0.56 %**. A springless
+  (k_r = 0) control is off by 2.4 % / 131 %, so the rolling spring is genuinely exercised.
+- **Coulomb cap (slider saturated):** under a large sustained spin the couple holds at
+  `τ_max = μ_r F_n r_eff`, giving the exact constant rate `α = (5/4) μ_r g / R`. The fitted
+  saturated slope matches to **0.00 %** across μ_r ∈ {0.05, 0.10, 0.20}.
+
+![Elastic decay](bench_sds_rolling/plots/sds_rolling_elastic.png)
+
+*Rolling spin ω(t) for the over- and under-damped elastic cases (DIRT points) on the exact
+damped-oscillator solution (black); the springless k=0 curve (red dotted) is clearly wrong.*
+
+![Coulomb cap](bench_sds_rolling/plots/sds_rolling_cap.png)
+
+*Saturated spin-down for three μ_r on the analytical `α = (5/4) μ_r g / R` lines (dotted).*
+
+**Honest read:** **self-consistent by design** — the acceptance is to validate the SDS model
+against *its own* analytical rate/steady state, which is what the elastic eigenvalues and the
+Coulomb cap are. The springless control makes the elastic check discriminating (it fails if
+the spring term is dropped). The same SDS rolling model is documented in LAMMPS
+`pair_granular` (rolling `sds`); the analytical dynamics here are model-defining, not
+DIRT-specific.
+
 ## `bench_jkr_adhesion` — adhesive pull-off
 
 Two glass spheres approach, adhere, and separate; the peak tensile (pull-off) force is
@@ -502,8 +536,6 @@ have their own non-`bench_` examples). The cleanest open gaps:
   benchmark uses Hertz.
 - **Twisting friction** (`twisting_friction`; both `constant` and `sds`) — no
   benchmark applies a twisting torque.
-- **SDS rolling model** (`rolling_model = "sds"`) — `rolling_decay` tests only the
-  `constant`-torque model.
 - **Multi-material mixing** — every config uses a single material, so the per-pair
   geometric/harmonic mixing rules (`e_eff_ij`, `friction_ij`, `beta_ij`, …) are never
   exercised between two *different* materials.
@@ -526,6 +558,7 @@ will need a benchmark when re-added.)
 | kharaz_oblique | Kharaz 2001 protocol: rigid-body kinematics + Maw, anchored to measured eₙ, μ | analytical + experiment-anchored (strong) | PASS; eₙ=0.980 flat, sliding branch exact; raw glass-anvil points paywalled |
 | sliding_friction | rigid-body slip-to-roll | analytical | PASS; (5/7)v₀ model-independent; a=μg partly self-consistent |
 | rolling_decay | own-model rate + LAMMPS | analytical (self-consistent) | PASS; rate derived from same model |
+| sds_rolling | own-model damped-oscillator + Coulomb cap | analytical (self-consistent) | PASS; elastic ω(t) to 0.1 %/0.56 % (springless control 2.4 %/131 %), cap slope 0.00 % |
 | jkr_adhesion | JKR pull-off | analytical (self-consistent) | PASS; measures its own constant force |
 | dmt_sjkr_cohesion | DMT pull-off 2πwR* / SJKR area law cπR*δ | analytical (self-consistent) | PASS; adds DMT+SJKR paths & 4/3 model-selection check |
 | fiber_crossover | Coulomb limit μN | analytical (self-consistent) | PASS; ratio circular vs measured N |

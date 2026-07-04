@@ -232,7 +232,10 @@ fn expand_loading(table: &mut toml::Table) {
 /// Build an `{ style = "erate", rate = <rate> }` axis-deform inline table.
 fn erate_axis(rate: f64) -> toml::Value {
     let mut t = toml::Table::new();
-    t.insert("style".to_string(), toml::Value::String("erate".to_string()));
+    t.insert(
+        "style".to_string(),
+        toml::Value::String("erate".to_string()),
+    );
     t.insert("rate".to_string(), toml::Value::Float(rate));
     toml::Value::Table(t)
 }

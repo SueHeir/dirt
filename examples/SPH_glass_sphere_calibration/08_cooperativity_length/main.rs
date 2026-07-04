@@ -29,8 +29,8 @@ use std::fs;
 use std::io::Write as IoWrite;
 use std::sync::Once;
 
-use dirt_core::prelude::*;
 use dirt_core::dirt_atom::DemAtom;
+use dirt_core::prelude::*;
 
 /// Grain diameter d [m] (mean of the polydisperse pack) — sets the correlation
 /// bin width and the inertial number.
@@ -49,7 +49,10 @@ fn main() {
         .add_plugins(FixesPlugin)
         .add_plugins(DeformPlugin);
 
-    app.add_update_system(record_cooperativity, ParticleSimScheduleSet::PostFinalIntegration);
+    app.add_update_system(
+        record_cooperativity,
+        ParticleSimScheduleSet::PostFinalIntegration,
+    );
     app.start();
 }
 
@@ -74,7 +77,11 @@ fn record_cooperativity(
     }
 
     let ly = domain.size[1];
-    let gdot = if ly > 0.0 { domain.boundary_vel[0] / ly } else { 0.0 };
+    let gdot = if ly > 0.0 {
+        domain.boundary_vel[0] / ly
+    } else {
+        0.0
+    };
     let yc = 0.5 * (domain.boundaries_low[1] + domain.boundaries_high[1]);
 
     // ── Per-particle fluctuation velocity δv' = v − γ̇(y−y_c) x̂ ──
@@ -110,9 +117,8 @@ fn record_cooperativity(
         None => [0.0; 6],
     };
     let mut acc = [
-        kin[0], kin[1], kin[2], kin[3], kin[4], kin[5],
-        vir[0], vir[1], vir[2], vir[3], vir[4], vir[5],
-        ke_fluct, m_total, vol_solid,
+        kin[0], kin[1], kin[2], kin[3], kin[4], kin[5], vir[0], vir[1], vir[2], vir[3], vir[4],
+        vir[5], ke_fluct, m_total, vol_solid,
     ];
     for a in acc.iter_mut() {
         *a = comm.all_reduce_sum_f64(*a);
@@ -132,12 +138,22 @@ fn record_cooperativity(
     let dyy = sig[1] - p;
     let dzz = sig[2] - p;
     let tau = (0.5 * (dxx * dxx + dyy * dyy + dzz * dzz)
-        + sig[3] * sig[3] + sig[4] * sig[4] + sig[5] * sig[5])
+        + sig[3] * sig[3]
+        + sig[4] * sig[4]
+        + sig[5] * sig[5])
         .sqrt();
-    let t_gran = if m_total > 0.0 { ke_fluct / (3.0 * m_total) } else { 0.0 };
+    let t_gran = if m_total > 0.0 {
+        ke_fluct / (3.0 * m_total)
+    } else {
+        0.0
+    };
     let phi = vol_solid / vol;
     let mu = if p > 0.0 { tau / p } else { 0.0 };
-    let inertial = if p > 0.0 { gdot * D_GRAIN / (p / RHO_S).sqrt() } else { 0.0 };
+    let inertial = if p > 0.0 {
+        gdot * D_GRAIN / (p / RHO_S).sqrt()
+    } else {
+        0.0
+    };
     let g_fluidity = if mu > 0.0 { gdot / mu } else { 0.0 }; // NGF fluidity g = γ̇/μ
 
     // ── Spatial velocity-fluctuation correlation along z (vorticity) ──
@@ -151,9 +167,17 @@ fn record_cooperativity(
     for i in 0..nlocal {
         sum_dv2 += dv[i][0] * dv[i][0] + dv[i][1] * dv[i][1] + dv[i][2] * dv[i][2];
     }
-    let mean_dv2 = if nlocal > 0 { sum_dv2 / nlocal as f64 } else { 0.0 };
+    let mean_dv2 = if nlocal > 0 {
+        sum_dv2 / nlocal as f64
+    } else {
+        0.0
+    };
     let minimg = |d: f64, l: f64| -> f64 {
-        if l > 0.0 { d - l * (d / l).round() } else { d }
+        if l > 0.0 {
+            d - l * (d / l).round()
+        } else {
+            d
+        }
     };
     for i in 0..nlocal {
         for j in (i + 1)..nlocal {
@@ -195,16 +219,19 @@ fn record_cooperativity(
             }
         }
     }
-    let xi = if cvals[0] > 0.0 { integral / cvals[0] } else { 0.0 };
+    let xi = if cvals[0] > 0.0 {
+        integral / cvals[0]
+    } else {
+        0.0
+    };
 
     if comm.rank() != 0 {
         return;
     }
     let time = step as f64 * atoms.dt;
-    let out_dir = input
-        .output_dir
-        .clone()
-        .unwrap_or_else(|| "examples/SPH_glass_sphere_calibration/08_cooperativity_length/data".to_string());
+    let out_dir = input.output_dir.clone().unwrap_or_else(|| {
+        "examples/SPH_glass_sphere_calibration/08_cooperativity_length/data".to_string()
+    });
     let path = format!("{}/cooperativity_results.csv", out_dir);
     static INIT: Once = Once::new();
     INIT.call_once(|| {
@@ -218,12 +245,27 @@ fn record_cooperativity(
         )
         .unwrap();
     });
-    let mut f = fs::OpenOptions::new().append(true).open(&path).expect("open csv");
+    let mut f = fs::OpenOptions::new()
+        .append(true)
+        .open(&path)
+        .expect("open csv");
     let cstr: Vec<String> = cvals.iter().map(|c| format!("{c:.6e}")).collect();
     writeln!(
         f,
         "{},{:.8e},{:.8e},{:.8e},{:.8e},{:.8e},{:.8e},{:.8e},{:.8e},{:.8e},{:.8e},{:.8e},{}",
-        step, time, gdot, inertial, mu, p, tau, t_gran, phi, g_fluidity, xi, DR, cstr.join(",")
+        step,
+        time,
+        gdot,
+        inertial,
+        mu,
+        p,
+        tau,
+        t_gran,
+        phi,
+        g_fluidity,
+        xi,
+        DR,
+        cstr.join(",")
     )
     .unwrap();
 }

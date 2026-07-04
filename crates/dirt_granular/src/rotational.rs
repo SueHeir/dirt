@@ -33,10 +33,10 @@ fn quat_from_axis_angle(axis: [f64; 3], angle: f64) -> [f64; 4] {
 #[inline]
 fn quat_mul(a: [f64; 4], b: [f64; 4]) -> [f64; 4] {
     [
-        a[0]*b[0] - a[1]*b[1] - a[2]*b[2] - a[3]*b[3],
-        a[0]*b[1] + a[1]*b[0] + a[2]*b[3] - a[3]*b[2],
-        a[0]*b[2] - a[1]*b[3] + a[2]*b[0] + a[3]*b[1],
-        a[0]*b[3] + a[1]*b[2] - a[2]*b[1] + a[3]*b[0],
+        a[0] * b[0] - a[1] * b[1] - a[2] * b[2] - a[3] * b[3],
+        a[0] * b[1] + a[1] * b[0] + a[2] * b[3] - a[3] * b[2],
+        a[0] * b[2] - a[1] * b[3] + a[2] * b[0] + a[3] * b[1],
+        a[0] * b[3] + a[1] * b[2] - a[2] * b[1] + a[3] * b[0],
     ]
 }
 
@@ -75,7 +75,9 @@ pub fn initial_rotation(
 
     for i in 0..nlocal {
         let inv_inertia = dem.inv_inertia[i];
-        if inv_inertia == 0.0 { continue; } // Skip clump sub-spheres
+        if inv_inertia == 0.0 {
+            continue;
+        } // Skip clump sub-spheres
 
         dem.omega[i][0] += 0.5 * dt * dem.torque[i][0] * inv_inertia;
         dem.omega[i][1] += 0.5 * dt * dem.torque[i][1] * inv_inertia;
@@ -85,7 +87,7 @@ pub fn initial_rotation(
             let ox = dem.omega[i][0];
             let oy = dem.omega[i][1];
             let oz = dem.omega[i][2];
-            let omega_mag = (ox*ox + oy*oy + oz*oz).sqrt();
+            let omega_mag = (ox * ox + oy * oy + oz * oz).sqrt();
             let angle = omega_mag * dt;
             if angle > 1e-14 {
                 let inv = 1.0 / omega_mag;
@@ -105,7 +107,9 @@ pub fn final_rotation(atoms: Res<Atom>, registry: Res<AtomDataRegistry>) {
 
     for i in 0..nlocal {
         let inv_inertia = dem.inv_inertia[i];
-        if inv_inertia == 0.0 { continue; } // Skip clump sub-spheres
+        if inv_inertia == 0.0 {
+            continue;
+        } // Skip clump sub-spheres
 
         dem.omega[i][0] += 0.5 * dt * dem.torque[i][0] * inv_inertia;
         dem.omega[i][1] += 0.5 * dt * dem.torque[i][1] * inv_inertia;
@@ -117,8 +121,8 @@ pub fn final_rotation(atoms: Res<Atom>, registry: Res<AtomDataRegistry>) {
 mod tests {
     use super::*;
     use dirt_atom::{DemAtom, MaterialTable};
-    use soil_core::{Atom, AtomDataRegistry};
     use dirt_test_utils::push_dem_test_atom;
+    use soil_core::{Atom, AtomDataRegistry};
 
     #[test]
     fn angular_acceleration_from_torque() {

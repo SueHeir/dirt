@@ -25,8 +25,13 @@ fn main() {
         .add_plugins(GranularTempPlugin) // hopper/validate.py reads data/GranularTemp.txt
         .add_plugins(GravityPlugin)
         .add_plugins(WallPlugin)
-        .add_plugins(StatesPlugin::new(Phase::Filling, ParticleSimScheduleSet::PostFinalIntegration))
-        .add_plugins(StageAdvancePlugin::<Phase>::new(ParticleSimScheduleSet::PostFinalIntegration));
+        .add_plugins(StatesPlugin::new(
+            Phase::Filling,
+            ParticleSimScheduleSet::PostFinalIntegration,
+        ))
+        .add_plugins(StageAdvancePlugin::<Phase>::new(
+            ParticleSimScheduleSet::PostFinalIntegration,
+        ));
 
     app.add_update_system(
         check_settled.run_if(in_state(Phase::Filling)),

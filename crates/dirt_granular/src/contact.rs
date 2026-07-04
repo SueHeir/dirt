@@ -37,9 +37,12 @@ use grass_app::prelude::*;
 use grass_scheduler::prelude::*;
 
 use dirt_atom::{self, DemAtom, MaterialTable};
-use soil_core::{register_atom_data, Atom, AtomDataRegistry, BondStore, ParticleSimScheduleSet, VirialStress, VirialStressPlugin};
-use soil_core::{forward_comm_overlap, CommBuffers, CommResource, CommTopology};
 use soil_core::Neighbor;
+use soil_core::{forward_comm_overlap, CommBuffers, CommResource, CommTopology};
+use soil_core::{
+    register_atom_data, Atom, AtomDataRegistry, BondStore, ParticleSimScheduleSet, VirialStress,
+    VirialStressPlugin,
+};
 
 use crate::tangential::ContactHistoryStore;
 use crate::{LARGE_OVERLAP_WARN_THRESHOLD, MAX_OVERLAP_WARNINGS, SQRT_5_6, TANGENTIAL_EPSILON};
@@ -69,7 +72,8 @@ impl Plugin for HertzMindlinContactPlugin {
         register_atom_data!(app, ContactHistoryStore::new());
 
         let contact_model = {
-            let mt = app.get_resource_ref::<MaterialTable>()
+            let mt = app
+                .get_resource_ref::<MaterialTable>()
                 .expect("MaterialTable must exist before HertzMindlinContactPlugin");
             mt.contact_model.clone()
         };
@@ -168,9 +172,23 @@ pub fn overlapped_contact_force(
     {
         // Interior pairs need no fresh ghosts — run them during the in-flight halo.
         let mut interior = |a: &mut Atom| {
-            contact_force_core(a, &neighbor, &registry, &material_table, None, ForcePass::Interior);
+            contact_force_core(
+                a,
+                &neighbor,
+                &registry,
+                &material_table,
+                None,
+                ForcePass::Interior,
+            );
         };
-        forward_comm_overlap(&mut atoms, &registry, &topo, &**comm, &mut pool, &mut interior);
+        forward_comm_overlap(
+            &mut atoms,
+            &registry,
+            &topo,
+            &**comm,
+            &mut pool,
+            &mut interior,
+        );
     }
     buffers.forward_scratch = pool;
     // Boundary pairs, now that the halo has landed.
@@ -328,8 +346,16 @@ pub fn contact_force_core(
 
         // Reduced mass: m_r = 1 / (1/m1 + 1/m2)
         // For clump sub-spheres inv_mass is 0 (body-integrated); use real mass.
-        let inv_m_i = if atoms.inv_mass[i] as f64 > 0.0 { atoms.inv_mass[i] as f64 } else { 1.0 / atoms.mass[i] as f64 };
-        let inv_m_j = if atoms.inv_mass[j] as f64 > 0.0 { atoms.inv_mass[j] as f64 } else { 1.0 / atoms.mass[j] as f64 };
+        let inv_m_i = if atoms.inv_mass[i] as f64 > 0.0 {
+            atoms.inv_mass[i] as f64
+        } else {
+            1.0 / atoms.mass[i] as f64
+        };
+        let inv_m_j = if atoms.inv_mass[j] as f64 > 0.0 {
+            atoms.inv_mass[j] as f64
+        } else {
+            1.0 / atoms.mass[j] as f64
+        };
         let m_r = 1.0 / (inv_m_i + inv_m_j);
 
         let beta = material_table.beta_ij[mat_i][mat_j];
@@ -419,7 +445,11 @@ pub fn contact_force_core(
             // COR at low restitution (see bench_hertz_rebound).
             let f_diss_n = 2.0 * beta * SQRT_5_6 * (s_n * m_r).sqrt() * v_n;
             let f_total = k_n * delta - f_diss_n;
-            if material_table.limit_damping { f_total.max(0.0) } else { f_total }
+            if material_table.limit_damping {
+                f_total.max(0.0)
+            } else {
+                f_total
+            }
         };
 
         let fn_x = f_n_mag * nx;
@@ -458,9 +488,7 @@ pub fn contact_force_core(
         let sign: f64 = if tag_i < tag_j { 1.0 } else { -1.0 };
 
         // Look up existing spring (single search, reused for write-back)
-        let entry_idx = history.contacts[i]
-            .iter()
-            .position(|(t, _, _)| *t == tag_j);
+        let entry_idx = history.contacts[i].iter().position(|(t, _, _)| *t == tag_j);
         let stored = match entry_idx {
             Some(idx) => history.contacts[i][idx].1,
             None => [0.0; 7],
@@ -483,19 +511,23 @@ pub fn contact_force_core(
             let mut sy = sign * stored[1];
             let mut sz = sign * stored[2];
             // Rotate spring into current tangent plane (remove normal component)
-            let s_dot_n = sx*nx + sy*ny + sz*nz;
-            sx -= s_dot_n * nx; sy -= s_dot_n * ny; sz -= s_dot_n * nz;
+            let s_dot_n = sx * nx + sy * ny + sz * nz;
+            sx -= s_dot_n * nx;
+            sy -= s_dot_n * ny;
+            sz -= s_dot_n * nz;
             // Integrate tangential velocity into spring displacement
             sx += vt_x * dt;
             sy += vt_y * dt;
             sz += vt_z * dt;
 
             // Coulomb cap on spring: |k_t s| ≤ μ |F_n|
-            let s_mag = (sx*sx + sy*sy + sz*sz).sqrt();
+            let s_mag = (sx * sx + sy * sy + sz * sz).sqrt();
             let f_t_spring_mag = k_t * s_mag;
             if f_t_spring_mag > f_t_max && f_t_spring_mag > TANGENTIAL_EPSILON {
                 let scale = f_t_max / f_t_spring_mag;
-                sx *= scale; sy *= scale; sz *= scale;
+                sx *= scale;
+                sy *= scale;
+                sz *= scale;
             }
             (sx, sy, sz)
         };
@@ -733,8 +765,12 @@ pub fn contact_force_core(
 
         // Store updated spring back (canonical form) and mark active
         let new_spring = [
-            sign * sx, sign * sy, sign * sz,
-            sign * roll_disp_x, sign * roll_disp_y, sign * roll_disp_z,
+            sign * sx,
+            sign * sy,
+            sign * sz,
+            sign * roll_disp_x,
+            sign * roll_disp_y,
+            sign * roll_disp_z,
             sign * twist_disp,
         ];
         match entry_idx {
@@ -850,7 +886,10 @@ pub fn hooke_contact_force(
         if distance / sum_r < LARGE_OVERLAP_WARN_THRESHOLD {
             overlap_warnings += 1;
             if overlap_warnings > MAX_OVERLAP_WARNINGS {
-                panic!("Over {} excessive overlaps this step — aborting.", MAX_OVERLAP_WARNINGS);
+                panic!(
+                    "Over {} excessive overlaps this step — aborting.",
+                    MAX_OVERLAP_WARNINGS
+                );
             }
             // Still compute force (don't skip) — removing repulsion causes runaway.
         }
@@ -864,8 +903,16 @@ pub fn hooke_contact_force(
         let mat_j = atoms.atom_type[j] as usize;
         let r_eff = (r1 * r2) / sum_r;
         // For clump sub-spheres inv_mass is 0 (body-integrated); use real mass.
-        let inv_m_i = if atoms.inv_mass[i] as f64 > 0.0 { atoms.inv_mass[i] as f64 } else { 1.0 / atoms.mass[i] as f64 };
-        let inv_m_j = if atoms.inv_mass[j] as f64 > 0.0 { atoms.inv_mass[j] as f64 } else { 1.0 / atoms.mass[j] as f64 };
+        let inv_m_i = if atoms.inv_mass[i] as f64 > 0.0 {
+            atoms.inv_mass[i] as f64
+        } else {
+            1.0 / atoms.mass[i] as f64
+        };
+        let inv_m_j = if atoms.inv_mass[j] as f64 > 0.0 {
+            atoms.inv_mass[j] as f64
+        } else {
+            1.0 / atoms.mass[j] as f64
+        };
         let m_r = 1.0 / (inv_m_i + inv_m_j);
         let beta = material_table.beta_ij[mat_i][mat_j];
         let mu = material_table.friction_ij[mat_i][mat_j];
@@ -915,7 +962,11 @@ pub fn hooke_contact_force(
             // See the Hertz path: `limit_damping` (default) clamps to repulsive-
             // only; disabling it matches LAMMPS's default (no tensile cutoff).
             let f_total = kn * delta - gamma_n * v_n;
-            if material_table.limit_damping { f_total.max(0.0) } else { f_total }
+            if material_table.limit_damping {
+                f_total.max(0.0)
+            } else {
+                f_total
+            }
         };
 
         let fn_x = f_n_mag * nx;
@@ -940,9 +991,7 @@ pub fn hooke_contact_force(
         let tag_j = atoms.tag[j];
         let sign: f64 = if tag_i < tag_j { 1.0 } else { -1.0 };
 
-        let entry_idx = history.contacts[i]
-            .iter()
-            .position(|(t, _, _)| *t == tag_j);
+        let entry_idx = history.contacts[i].iter().position(|(t, _, _)| *t == tag_j);
         let stored = match entry_idx {
             Some(idx) => history.contacts[i][idx].1,
             None => [0.0; 7],
@@ -1183,8 +1232,12 @@ pub fn hooke_contact_force(
         }
 
         let new_spring = [
-            sign * sx, sign * sy, sign * sz,
-            sign * roll_disp_x, sign * roll_disp_y, sign * roll_disp_z,
+            sign * sx,
+            sign * sy,
+            sign * sz,
+            sign * roll_disp_x,
+            sign * roll_disp_y,
+            sign * roll_disp_z,
             sign * twist_disp,
         ];
         match entry_idx {
@@ -1205,9 +1258,9 @@ pub fn hooke_contact_force(
 mod tests {
     use super::*;
     use dirt_atom::DemAtom;
-    use soil_core::{Atom, AtomDataRegistry};
-    use soil_core::Neighbor;
     use dirt_test_utils::{make_material_table, push_dem_test_atom};
+    use soil_core::Neighbor;
+    use soil_core::{Atom, AtomDataRegistry};
 
     fn push_test_atom_with_history(
         atom: &mut Atom,
@@ -1264,7 +1317,10 @@ mod tests {
                     max_diff.max((a_all.force[i][d] as f64 - a_split.force[i][d] as f64).abs());
             }
         }
-        assert!(max_diff < 1e-15, "interior+boundary != all: max force diff = {max_diff:.3e}");
+        assert!(
+            max_diff < 1e-15,
+            "interior+boundary != all: max force diff = {max_diff:.3e}"
+        );
         // Sanity: the contact actually produced a non-trivial force.
         assert!(a_all.force[0][0].abs() as f64 + a_all.force[0][1].abs() as f64 > 0.0);
     }
@@ -1278,13 +1334,14 @@ mod tests {
         let mut hist = ContactHistoryStore::new();
         atom.dt = 1e-7;
 
+        push_test_atom_with_history(&mut atom, &mut dem, &mut hist, 0, [0.0, 0.0, 0.0], radius);
         push_test_atom_with_history(
-            &mut atom, &mut dem, &mut hist, 0,
-            [0.0, 0.0, 0.0], radius,
-        );
-        push_test_atom_with_history(
-            &mut atom, &mut dem, &mut hist, 1,
-            [0.0019, 0.0, 0.0], radius,
+            &mut atom,
+            &mut dem,
+            &mut hist,
+            1,
+            [0.0019, 0.0, 0.0],
+            radius,
         );
         atom.nlocal = 2;
         atom.natoms = 2;
@@ -1306,8 +1363,14 @@ mod tests {
         app.run();
 
         let atom = app.get_resource_ref::<Atom>().unwrap();
-        assert!(atom.force[0][0] < 0.0, "particle 0 should have negative x force");
-        assert!(atom.force[1][0] > 0.0, "particle 1 should have positive x force");
+        assert!(
+            atom.force[0][0] < 0.0,
+            "particle 0 should have negative x force"
+        );
+        assert!(
+            atom.force[1][0] > 0.0,
+            "particle 1 should have positive x force"
+        );
         assert!((atom.force[0][0] + atom.force[1][0]).abs() < 1e-10);
     }
 
@@ -1320,13 +1383,14 @@ mod tests {
         let mut hist = ContactHistoryStore::new();
         atom.dt = 1e-7;
 
+        push_test_atom_with_history(&mut atom, &mut dem, &mut hist, 0, [0.0, 0.0, 0.0], radius);
         push_test_atom_with_history(
-            &mut atom, &mut dem, &mut hist, 0,
-            [0.0, 0.0, 0.0], radius,
-        );
-        push_test_atom_with_history(
-            &mut atom, &mut dem, &mut hist, 1,
-            [0.0019, 0.0, 0.0], radius,
+            &mut atom,
+            &mut dem,
+            &mut hist,
+            1,
+            [0.0019, 0.0, 0.0],
+            radius,
         );
         atom.vel[1][1] = 0.1;
         atom.nlocal = 2;
@@ -1361,7 +1425,8 @@ mod tests {
         // Torque present (stored in DemAtom via registry)
         let registry = app.get_resource_ref::<AtomDataRegistry>().unwrap();
         let dem = registry.expect::<DemAtom>("test");
-        let t_mag = (dem.torque[0][0].powi(2) + dem.torque[0][1].powi(2) + dem.torque[0][2].powi(2)).sqrt();
+        let t_mag =
+            (dem.torque[0][0].powi(2) + dem.torque[0][1].powi(2) + dem.torque[0][2].powi(2)).sqrt();
         assert!(t_mag > 0.0, "torque on atom 0");
     }
 
@@ -1378,7 +1443,14 @@ mod tests {
             let mut hist = ContactHistoryStore::new();
             atom.dt = 1e-7;
             push_test_atom_with_history(&mut atom, &mut dem, &mut hist, 0, [0.0, 0.0, 0.0], radius);
-            push_test_atom_with_history(&mut atom, &mut dem, &mut hist, 1, [0.00185, 0.0, 0.0], radius);
+            push_test_atom_with_history(
+                &mut atom,
+                &mut dem,
+                &mut hist,
+                1,
+                [0.00185, 0.0, 0.0],
+                radius,
+            );
             atom.vel[1][1] = 0.001; // small tangential slip, below the Coulomb cap
             atom.nlocal = 2;
             atom.natoms = 2;
@@ -1410,7 +1482,10 @@ mod tests {
             contact_force_core(&mut a, &nb, &reg, &mt_h, None, ForcePass::All);
         }
         let xi_history = spring_mag(&reg);
-        assert!(xi_history > 0.0, "history model must accumulate spring, got {xi_history:e}");
+        assert!(
+            xi_history > 0.0,
+            "history model must accumulate spring, got {xi_history:e}"
+        );
 
         // linear_nohistory: spring stays exactly zero; force is still present.
         let mut mt_nh = make_material_table();
@@ -1422,7 +1497,10 @@ mod tests {
             contact_force_core(&mut a2, &nb2, &reg2, &mt_nh, None, ForcePass::All);
         }
         let xi_nohistory = spring_mag(&reg2);
-        assert_eq!(xi_nohistory, 0.0, "linear_nohistory must not accumulate spring");
+        assert_eq!(
+            xi_nohistory, 0.0,
+            "linear_nohistory must not accumulate spring"
+        );
         assert!(
             (a2.force[0][1] as f64).abs() > 0.0,
             "linear_nohistory must still produce a tangential (velocity-Coulomb) force"
@@ -1438,14 +1516,8 @@ mod tests {
         let mut hist = ContactHistoryStore::new();
         atom.dt = 1e-7;
 
-        push_test_atom_with_history(
-            &mut atom, &mut dem, &mut hist, 0,
-            [0.0, 0.0, 0.0], radius,
-        );
-        push_test_atom_with_history(
-            &mut atom, &mut dem, &mut hist, 1,
-            [0.003, 0.0, 0.0], radius,
-        );
+        push_test_atom_with_history(&mut atom, &mut dem, &mut hist, 0, [0.0, 0.0, 0.0], radius);
+        push_test_atom_with_history(&mut atom, &mut dem, &mut hist, 1, [0.003, 0.0, 0.0], radius);
         atom.nlocal = 2;
         atom.natoms = 2;
 
@@ -1496,8 +1568,12 @@ mod tests {
         // Very small overlap with high cohesion energy → cohesion dominates
         push_test_atom_with_history(&mut atom, &mut dem, &mut hist, 0, [0.0, 0.0, 0.0], radius);
         push_test_atom_with_history(
-            &mut atom, &mut dem, &mut hist, 1,
-            [0.00199999, 0.0, 0.0], radius, // delta = 1e-8 (tiny overlap)
+            &mut atom,
+            &mut dem,
+            &mut hist,
+            1,
+            [0.00199999, 0.0, 0.0],
+            radius, // delta = 1e-8 (tiny overlap)
         );
         atom.nlocal = 2;
         atom.natoms = 2;
@@ -1562,7 +1638,11 @@ mod tests {
             app.organize_systems();
             app.run();
             let atom = app.get_resource_ref::<Atom>().unwrap();
-            [atom.force[0][0] as f64, atom.force[0][1] as f64, atom.force[0][2] as f64]
+            [
+                atom.force[0][0] as f64,
+                atom.force[0][1] as f64,
+                atom.force[0][2] as f64,
+            ]
         };
 
         let f_default = run(make_material_table());
@@ -1575,7 +1655,9 @@ mod tests {
             assert!(
                 (f_default[d] - f_zero[d]).abs() < 1e-15,
                 "zero params should reproduce original, dim {} default={} zero={}",
-                d, f_default[d], f_zero[d]
+                d,
+                f_default[d],
+                f_zero[d]
             );
         }
     }
@@ -1605,8 +1687,12 @@ mod tests {
         let gap = 1e-9;
         push_test_atom_with_history(&mut atom, &mut dem, &mut hist, 0, [0.0, 0.0, 0.0], radius);
         push_test_atom_with_history(
-            &mut atom, &mut dem, &mut hist, 1,
-            [2.0 * radius + gap, 0.0, 0.0], radius,
+            &mut atom,
+            &mut dem,
+            &mut hist,
+            1,
+            [2.0 * radius + gap, 0.0, 0.0],
+            radius,
         );
         atom.nlocal = 2;
         atom.natoms = 2;
@@ -1642,7 +1728,8 @@ mod tests {
         assert!(
             (f_mag - expected_pulloff).abs() / expected_pulloff < 1e-6,
             "pull-off force should match theory {}, got {}",
-            expected_pulloff, f_mag
+            expected_pulloff,
+            f_mag
         );
     }
 
@@ -1660,8 +1747,12 @@ mod tests {
         let gap = 1e-9;
         push_test_atom_with_history(&mut atom, &mut dem, &mut hist, 0, [0.0, 0.0, 0.0], radius);
         push_test_atom_with_history(
-            &mut atom, &mut dem, &mut hist, 1,
-            [2.0 * radius + gap, 0.0, 0.0], radius,
+            &mut atom,
+            &mut dem,
+            &mut hist,
+            1,
+            [2.0 * radius + gap, 0.0, 0.0],
+            radius,
         );
         atom.nlocal = 2;
         atom.natoms = 2;
@@ -1708,8 +1799,12 @@ mod tests {
         // Large gap — well beyond JKR pull-off distance
         push_test_atom_with_history(&mut atom, &mut dem, &mut hist, 0, [0.0, 0.0, 0.0], radius);
         push_test_atom_with_history(
-            &mut atom, &mut dem, &mut hist, 1,
-            [0.003, 0.0, 0.0], radius, // gap = 0.001 >> delta_pulloff
+            &mut atom,
+            &mut dem,
+            &mut hist,
+            1,
+            [0.003, 0.0, 0.0],
+            radius, // gap = 0.001 >> delta_pulloff
         );
         atom.nlocal = 2;
         atom.natoms = 2;
@@ -1731,7 +1826,10 @@ mod tests {
         app.run();
 
         let atom = app.get_resource_ref::<Atom>().unwrap();
-        assert!(atom.force[0][0].abs() < 1e-20, "no force beyond pull-off distance");
+        assert!(
+            atom.force[0][0].abs() < 1e-20,
+            "no force beyond pull-off distance"
+        );
     }
 
     fn make_material_table_hooke() -> MaterialTable {
@@ -1744,7 +1842,9 @@ mod tests {
 
     fn make_material_table_twisting() -> MaterialTable {
         let mut mt = MaterialTable::new();
-        mt.add_material_extended("glass", 8.7e9, 0.3, 0.95, 0.4, 0.0, 0.0, 0.0, 0.05, 0.0, 0.0);
+        mt.add_material_extended(
+            "glass", 8.7e9, 0.3, 0.95, 0.4, 0.0, 0.0, 0.0, 0.05, 0.0, 0.0,
+        );
         mt.build_pair_tables();
         mt
     }
@@ -1781,7 +1881,7 @@ mod tests {
 
         // delta1 = 2*r - sep1, delta2 = 2*r - sep2
         let sep1 = 0.00195; // delta = 0.00005
-        let sep2 = 0.0019;  // delta = 0.0001
+        let sep2 = 0.0019; // delta = 0.0001
         let f1 = run(sep1);
         let f2 = run(sep2);
 
@@ -1825,7 +1925,10 @@ mod tests {
         app.run();
 
         let atom = app.get_resource_ref::<Atom>().unwrap();
-        assert!(atom.force[0][0].abs() < 1e-20, "no force beyond contact distance");
+        assert!(
+            atom.force[0][0].abs() < 1e-20,
+            "no force beyond contact distance"
+        );
     }
 
     #[test]
@@ -1838,7 +1941,14 @@ mod tests {
         atom.dt = 1e-7;
 
         push_test_atom_with_history(&mut atom, &mut dem, &mut hist, 0, [0.0, 0.0, 0.0], radius);
-        push_test_atom_with_history(&mut atom, &mut dem, &mut hist, 1, [0.0019, 0.0, 0.0], radius);
+        push_test_atom_with_history(
+            &mut atom,
+            &mut dem,
+            &mut hist,
+            1,
+            [0.0019, 0.0, 0.0],
+            radius,
+        );
         // Spin about contact normal (x-axis)
         dem.omega[0] = [100.0, 0.0, 0.0];
         atom.nlocal = 2;
@@ -1880,7 +1990,14 @@ mod tests {
         atom.dt = 1e-7;
 
         push_test_atom_with_history(&mut atom, &mut dem, &mut hist, 0, [0.0, 0.0, 0.0], radius);
-        push_test_atom_with_history(&mut atom, &mut dem, &mut hist, 1, [0.0019, 0.0, 0.0], radius);
+        push_test_atom_with_history(
+            &mut atom,
+            &mut dem,
+            &mut hist,
+            1,
+            [0.0019, 0.0, 0.0],
+            radius,
+        );
         // No angular velocity at all
         atom.nlocal = 2;
         atom.natoms = 2;
@@ -1904,7 +2021,8 @@ mod tests {
         let registry = app.get_resource_ref::<AtomDataRegistry>().unwrap();
         let dem = registry.expect::<DemAtom>("test");
         // No twisting torque when there's no angular velocity
-        let torque_mag = (dem.torque[0][0].powi(2) + dem.torque[0][1].powi(2) + dem.torque[0][2].powi(2)).sqrt();
+        let torque_mag =
+            (dem.torque[0][0].powi(2) + dem.torque[0][1].powi(2) + dem.torque[0][2].powi(2)).sqrt();
         assert!(
             torque_mag < 1e-20,
             "no twisting torque when no spin, got {}",
@@ -1922,7 +2040,14 @@ mod tests {
         atom.dt = 1e-7;
 
         push_test_atom_with_history(&mut atom, &mut dem, &mut hist, 0, [0.0, 0.0, 0.0], radius);
-        push_test_atom_with_history(&mut atom, &mut dem, &mut hist, 1, [0.0019, 0.0, 0.0], radius);
+        push_test_atom_with_history(
+            &mut atom,
+            &mut dem,
+            &mut hist,
+            1,
+            [0.0019, 0.0, 0.0],
+            radius,
+        );
         // Give atom 0 a rolling angular velocity (around y-axis — perpendicular to contact normal x)
         dem.omega[0] = [0.0, 100.0, 0.0];
         atom.nlocal = 2;
@@ -1960,13 +2085,10 @@ mod tests {
         let mut mt = MaterialTable::new();
         mt.rolling_model = "sds".to_string();
         mt.add_material_with_sds(
-            "glass", 8.7e9, 0.3, 0.95, 0.4,
-            0.3,   // rolling_friction (mu_r)
-            0.0, 0.0,
-            0.0,   // twisting_friction
-            0.0, 0.0,
-            1e3,   // rolling_stiffness
-            0.5,   // rolling_damping
+            "glass", 8.7e9, 0.3, 0.95, 0.4, 0.3, // rolling_friction (mu_r)
+            0.0, 0.0, 0.0, // twisting_friction
+            0.0, 0.0, 1e3, // rolling_stiffness
+            0.5, // rolling_damping
             0.0, 0.0,
         );
         mt.build_pair_tables();
@@ -1977,14 +2099,10 @@ mod tests {
         let mut mt = MaterialTable::new();
         mt.twisting_model = "sds".to_string();
         mt.add_material_with_sds(
-            "glass", 8.7e9, 0.3, 0.95, 0.4,
-            0.0,   // rolling_friction
-            0.0, 0.0,
-            0.3,   // twisting_friction (mu_tw)
-            0.0, 0.0,
-            0.0, 0.0,
-            1e3,   // twisting_stiffness
-            0.5,   // twisting_damping
+            "glass", 8.7e9, 0.3, 0.95, 0.4, 0.0, // rolling_friction
+            0.0, 0.0, 0.3, // twisting_friction (mu_tw)
+            0.0, 0.0, 0.0, 0.0, 1e3, // twisting_stiffness
+            0.5, // twisting_damping
         );
         mt.build_pair_tables();
         mt
@@ -2001,7 +2119,14 @@ mod tests {
         atom.dt = 1e-7;
 
         push_test_atom_with_history(&mut atom, &mut dem, &mut hist, 0, [0.0, 0.0, 0.0], radius);
-        push_test_atom_with_history(&mut atom, &mut dem, &mut hist, 1, [0.0019, 0.0, 0.0], radius);
+        push_test_atom_with_history(
+            &mut atom,
+            &mut dem,
+            &mut hist,
+            1,
+            [0.0019, 0.0, 0.0],
+            radius,
+        );
         // Give atom 0 angular velocity in y (rolling about contact normal x)
         dem.omega[0] = [0.0, 10.0, 0.0];
         atom.nlocal = 2;
@@ -2047,7 +2172,14 @@ mod tests {
             atom.dt = 1e-7;
 
             push_test_atom_with_history(&mut atom, &mut dem, &mut hist, 0, [0.0, 0.0, 0.0], radius);
-            push_test_atom_with_history(&mut atom, &mut dem, &mut hist, 1, [0.0019, 0.0, 0.0], radius);
+            push_test_atom_with_history(
+                &mut atom,
+                &mut dem,
+                &mut hist,
+                1,
+                [0.0019, 0.0, 0.0],
+                radius,
+            );
             dem.omega[0] = [0.0, 0.001, 0.0]; // very small angular velocity
             atom.nlocal = 2;
             atom.natoms = 2;
@@ -2087,7 +2219,8 @@ mod tests {
         assert!(
             torque_with_preload.abs() > torque_no_preload.abs(),
             "preloaded spring should increase torque: no_preload={}, preloaded={}",
-            torque_no_preload, torque_with_preload
+            torque_no_preload,
+            torque_with_preload
         );
     }
 
@@ -2102,7 +2235,14 @@ mod tests {
         atom.dt = 1e-5; // larger dt to accumulate big spring
 
         push_test_atom_with_history(&mut atom, &mut dem, &mut hist, 0, [0.0, 0.0, 0.0], radius);
-        push_test_atom_with_history(&mut atom, &mut dem, &mut hist, 1, [0.0019, 0.0, 0.0], radius);
+        push_test_atom_with_history(
+            &mut atom,
+            &mut dem,
+            &mut hist,
+            1,
+            [0.0019, 0.0, 0.0],
+            radius,
+        );
         dem.omega[0] = [0.0, 1e6, 0.0]; // very high
         atom.nlocal = 2;
         atom.natoms = 2;
@@ -2128,7 +2268,8 @@ mod tests {
 
         let registry = app.get_resource_ref::<AtomDataRegistry>().unwrap();
         let dem = registry.expect::<DemAtom>("test");
-        let torque_mag = (dem.torque[0][0].powi(2) + dem.torque[0][1].powi(2) + dem.torque[0][2].powi(2)).sqrt();
+        let torque_mag =
+            (dem.torque[0][0].powi(2) + dem.torque[0][1].powi(2) + dem.torque[0][2].powi(2)).sqrt();
 
         // Compute expected cap: mu_r * F_n * R_eff
         // F_n from Hertz: 4/3 * E_eff * sqrt(delta * r_eff) * delta
@@ -2146,7 +2287,8 @@ mod tests {
         assert!(
             torque_mag < tau_cap * 100.0, // generous bound since total torque includes tangential
             "torque {} should be bounded near cap {}",
-            torque_mag, tau_cap
+            torque_mag,
+            tau_cap
         );
     }
 
@@ -2160,7 +2302,14 @@ mod tests {
         atom.dt = 1e-7;
 
         push_test_atom_with_history(&mut atom, &mut dem, &mut hist, 0, [0.0, 0.0, 0.0], radius);
-        push_test_atom_with_history(&mut atom, &mut dem, &mut hist, 1, [0.0019, 0.0, 0.0], radius);
+        push_test_atom_with_history(
+            &mut atom,
+            &mut dem,
+            &mut hist,
+            1,
+            [0.0019, 0.0, 0.0],
+            radius,
+        );
         // Spin about contact normal (x-axis)
         dem.omega[0] = [10.0, 0.0, 0.0];
         atom.nlocal = 2;
@@ -2204,7 +2353,14 @@ mod tests {
             atom.dt = 1e-7;
 
             push_test_atom_with_history(&mut atom, &mut dem, &mut hist, 0, [0.0, 0.0, 0.0], radius);
-            push_test_atom_with_history(&mut atom, &mut dem, &mut hist, 1, [0.0019, 0.0, 0.0], radius);
+            push_test_atom_with_history(
+                &mut atom,
+                &mut dem,
+                &mut hist,
+                1,
+                [0.0019, 0.0, 0.0],
+                radius,
+            );
             dem.omega[0] = [0.001, 0.0, 0.0]; // very small spin
             atom.nlocal = 2;
             atom.natoms = 2;
@@ -2241,7 +2397,8 @@ mod tests {
         assert!(
             torque_with_preload.abs() > torque_no_preload.abs(),
             "preloaded twisting spring should increase torque: no_preload={}, preloaded={}",
-            torque_no_preload, torque_with_preload
+            torque_no_preload,
+            torque_with_preload
         );
     }
 
@@ -2256,14 +2413,21 @@ mod tests {
         let mut mt = MaterialTable::new();
         mt.twisting_model = "marshall".to_string();
         mt.add_material_with_sds(
-            "glass", 8.7e9, 0.3, 0.95,
+            "glass",
+            8.7e9,
+            0.3,
+            0.95,
             friction, // tangential μ_t — Marshall derives μ_twist = (2/3) a μ_t from this
             0.0,      // rolling_friction
-            0.0, 0.0,
-            0.0,      // twisting_friction (unused by Marshall)
-            0.0, 0.0, // kn, kt (Hertz path ignores these)
-            0.0, 0.0, // rolling sds
-            twist_stiff, twist_damp, // twisting sds — must NOT affect Marshall
+            0.0,
+            0.0,
+            0.0, // twisting_friction (unused by Marshall)
+            0.0,
+            0.0, // kn, kt (Hertz path ignores these)
+            0.0,
+            0.0, // rolling sds
+            twist_stiff,
+            twist_damp, // twisting sds — must NOT affect Marshall
         );
         mt.build_pair_tables();
         mt
@@ -2281,7 +2445,14 @@ mod tests {
         atom.dt = 1e-7;
 
         push_test_atom_with_history(&mut atom, &mut dem, &mut hist, 0, [0.0, 0.0, 0.0], radius);
-        push_test_atom_with_history(&mut atom, &mut dem, &mut hist, 1, [0.0019, 0.0, 0.0], radius);
+        push_test_atom_with_history(
+            &mut atom,
+            &mut dem,
+            &mut hist,
+            1,
+            [0.0019, 0.0, 0.0],
+            radius,
+        );
         dem.omega[0] = [omega_x, 0.0, 0.0]; // spin about contact normal x̂
         atom.nlocal = 2;
         atom.natoms = 2;
@@ -2314,7 +2485,11 @@ mod tests {
     #[test]
     fn marshall_twisting_opposes_spin() {
         // Spin about the contact normal (x̂) → Marshall twisting couple opposes it.
-        let tq = run_marshall_twist(make_material_table_marshall_twisting(0.4, 0.0, 0.0), 10.0, 0.0);
+        let tq = run_marshall_twist(
+            make_material_table_marshall_twisting(0.4, 0.0, 0.0),
+            10.0,
+            0.0,
+        );
         assert!(
             tq < 0.0,
             "Marshall twisting torque should oppose spin about x, got {}",
@@ -2330,16 +2505,21 @@ mod tests {
         // the torque equals the derived cap τ_max = μ_twist·F_n, then confirm two
         // wildly different SDS-input tables give the identical torque.
         let tq_zero = run_marshall_twist(
-            make_material_table_marshall_twisting(0.4, 0.0, 0.0), 10.0, 1.0,
+            make_material_table_marshall_twisting(0.4, 0.0, 0.0),
+            10.0,
+            1.0,
         );
         let tq_huge = run_marshall_twist(
-            make_material_table_marshall_twisting(0.4, 1.0e9, 1.0e6), 10.0, 1.0,
+            make_material_table_marshall_twisting(0.4, 1.0e9, 1.0e6),
+            10.0,
+            1.0,
         );
         assert!(tq_zero < 0.0, "should oppose spin, got {}", tq_zero);
         assert!(
             (tq_zero - tq_huge).abs() <= 1e-12 * tq_zero.abs().max(1e-30),
             "Marshall torque must ignore SDS twist inputs: zero-input={}, huge-input={}",
-            tq_zero, tq_huge
+            tq_zero,
+            tq_huge
         );
     }
 
@@ -2349,13 +2529,19 @@ mod tests {
         // with the tangential friction coefficient: doubling μ_t doubles |τ|, and
         // μ_t = 0 gives zero twisting couple (Marshall ties the cap to sliding).
         let tq_mu04 = run_marshall_twist(
-            make_material_table_marshall_twisting(0.4, 0.0, 0.0), 10.0, 1.0,
+            make_material_table_marshall_twisting(0.4, 0.0, 0.0),
+            10.0,
+            1.0,
         );
         let tq_mu08 = run_marshall_twist(
-            make_material_table_marshall_twisting(0.8, 0.0, 0.0), 10.0, 1.0,
+            make_material_table_marshall_twisting(0.8, 0.0, 0.0),
+            10.0,
+            1.0,
         );
         let tq_mu00 = run_marshall_twist(
-            make_material_table_marshall_twisting(0.0, 0.0, 0.0), 10.0, 1.0,
+            make_material_table_marshall_twisting(0.0, 0.0, 0.0),
+            10.0,
+            1.0,
         );
         let ratio = tq_mu08 / tq_mu04;
         assert!(
@@ -2381,7 +2567,14 @@ mod tests {
         atom.dt = 1e-7;
 
         push_test_atom_with_history(&mut atom, &mut dem, &mut hist, 0, [0.0, 0.0, 0.0], radius);
-        push_test_atom_with_history(&mut atom, &mut dem, &mut hist, 1, [0.0019, 0.0, 0.0], radius);
+        push_test_atom_with_history(
+            &mut atom,
+            &mut dem,
+            &mut hist,
+            1,
+            [0.0019, 0.0, 0.0],
+            radius,
+        );
         dem.omega[0] = [0.0, 10.0, 0.0];
         atom.nlocal = 2;
         atom.natoms = 2;
@@ -2394,9 +2587,7 @@ mod tests {
         let mut mt = MaterialTable::new();
         // rolling_model defaults to "constant"
         mt.add_material_with_sds(
-            "glass", 8.7e9, 0.3, 0.95, 0.4,
-            0.3, 0.0, 0.0, 0.0, 0.0, 0.0,
-            1e3, 0.5, 0.0, 0.0,
+            "glass", 8.7e9, 0.3, 0.95, 0.4, 0.3, 0.0, 0.0, 0.0, 0.0, 0.0, 1e3, 0.5, 0.0, 0.0,
         );
         mt.build_pair_tables();
 
@@ -2425,10 +2616,22 @@ mod tests {
         // Check that spring history has zero rolling/twisting displacement
         let hist = registry.expect::<ContactHistoryStore>("test");
         let contact = &hist.contacts[0][0];
-        assert_eq!(contact.1[3], 0.0, "rolling disp x should be zero in constant model");
-        assert_eq!(contact.1[4], 0.0, "rolling disp y should be zero in constant model");
-        assert_eq!(contact.1[5], 0.0, "rolling disp z should be zero in constant model");
-        assert_eq!(contact.1[6], 0.0, "twisting disp should be zero in constant model");
+        assert_eq!(
+            contact.1[3], 0.0,
+            "rolling disp x should be zero in constant model"
+        );
+        assert_eq!(
+            contact.1[4], 0.0,
+            "rolling disp y should be zero in constant model"
+        );
+        assert_eq!(
+            contact.1[5], 0.0,
+            "rolling disp z should be zero in constant model"
+        );
+        assert_eq!(
+            contact.1[6], 0.0,
+            "twisting disp should be zero in constant model"
+        );
     }
 
     // ── DMT adhesion tests ──────────────────────────────────────────────
@@ -2493,7 +2696,8 @@ mod tests {
         assert!(
             (atom.force[0][0] as f64 - expected_dmt).abs() / expected_dmt < 1e-3,
             "DMT pull-off force should match 2*pi*gamma*r_eff = {}, got {}",
-            expected_dmt, atom.force[0][0]
+            expected_dmt,
+            atom.force[0][0]
         );
     }
 
@@ -2511,8 +2715,12 @@ mod tests {
         let gap = 1e-9;
         push_test_atom_with_history(&mut atom, &mut dem, &mut hist, 0, [0.0, 0.0, 0.0], radius);
         push_test_atom_with_history(
-            &mut atom, &mut dem, &mut hist, 1,
-            [2.0 * radius + gap, 0.0, 0.0], radius,
+            &mut atom,
+            &mut dem,
+            &mut hist,
+            1,
+            [2.0 * radius + gap, 0.0, 0.0],
+            radius,
         );
         atom.nlocal = 2;
         atom.natoms = 2;
@@ -2556,7 +2764,8 @@ mod tests {
         assert!(
             f_dmt > f_jkr,
             "DMT pull-off ({}) should be larger than JKR pull-off ({})",
-            f_dmt, f_jkr
+            f_dmt,
+            f_jkr
         );
     }
 
@@ -2572,8 +2781,12 @@ mod tests {
 
         push_test_atom_with_history(&mut atom, &mut dem, &mut hist, 0, [0.0, 0.0, 0.0], radius);
         push_test_atom_with_history(
-            &mut atom, &mut dem, &mut hist, 1,
-            [0.0019, 0.0, 0.0], radius,
+            &mut atom,
+            &mut dem,
+            &mut hist,
+            1,
+            [0.0019, 0.0, 0.0],
+            radius,
         );
         atom.nlocal = 2;
         atom.natoms = 2;
@@ -2599,7 +2812,9 @@ mod tests {
             assert!(
                 (atom.force[0][d] + atom.force[1][d]).abs() < 1e-10,
                 "Newton's 3rd law violated in dim {}: {} + {} != 0",
-                d, atom.force[0][d], atom.force[1][d]
+                d,
+                atom.force[0][d],
+                atom.force[1][d]
             );
         }
     }
@@ -2620,8 +2835,12 @@ mod tests {
         let gap = 1e-9;
         push_test_atom_with_history(&mut atom, &mut dem, &mut hist, 0, [0.0, 0.0, 0.0], radius);
         push_test_atom_with_history(
-            &mut atom, &mut dem, &mut hist, 1,
-            [2.0 * radius + gap, 0.0, 0.0], radius,
+            &mut atom,
+            &mut dem,
+            &mut hist,
+            1,
+            [2.0 * radius + gap, 0.0, 0.0],
+            radius,
         );
         atom.nlocal = 2;
         atom.natoms = 2;
@@ -2654,7 +2873,8 @@ mod tests {
         assert!(
             (atom.force[0][0] as f64 - expected_jkr).abs() / expected_jkr < 1e-6,
             "JKR pull-off force should still match 1.5*pi*gamma*r_eff = {}, got {}",
-            expected_jkr, atom.force[0][0]
+            expected_jkr,
+            atom.force[0][0]
         );
     }
 
@@ -2695,10 +2915,13 @@ mod tests {
 
         // Test at 5 different overlaps
         let deltas = [1e-5, 2e-5, 4e-5, 6e-5, 8e-5];
-        let forces: Vec<f64> = deltas.iter().map(|d| {
-            let sep = 2.0 * radius - d;
-            hertz_force_at(sep)
-        }).collect();
+        let forces: Vec<f64> = deltas
+            .iter()
+            .map(|d| {
+                let sep = 2.0 * radius - d;
+                hertz_force_at(sep)
+            })
+            .collect();
 
         // For each pair (i, 0), check F_i/F_0 ~ (delta_i/delta_0)^(3/2)
         for i in 1..deltas.len() {
@@ -2744,10 +2967,13 @@ mod tests {
         };
 
         let deltas = [2e-5, 4e-5, 6e-5, 8e-5, 1e-4];
-        let forces: Vec<f64> = deltas.iter().map(|d| {
-            let sep = 2.0 * radius - d;
-            hooke_force_at(sep)
-        }).collect();
+        let forces: Vec<f64> = deltas
+            .iter()
+            .map(|d| {
+                let sep = 2.0 * radius - d;
+                hooke_force_at(sep)
+            })
+            .collect();
 
         for i in 1..deltas.len() {
             let expected_ratio = deltas[i] / deltas[0]; // linear
@@ -2804,7 +3030,9 @@ mod tests {
         assert!(
             rel_err < 1e-10,
             "Hertz force analytical check: computed={:.6e}, expected={:.6e}, rel_err={:.2e}",
-            f_computed, f_analytical, rel_err
+            f_computed,
+            f_analytical,
+            rel_err
         );
     }
 
@@ -2833,7 +3061,14 @@ mod tests {
 
         // Two particles approaching each other, slight overlap
         push_test_atom_with_history(&mut atom, &mut dem, &mut hist, 0, [0.0, 0.0, 0.0], radius);
-        push_test_atom_with_history(&mut atom, &mut dem, &mut hist, 1, [0.00195, 0.0, 0.0], radius);
+        push_test_atom_with_history(
+            &mut atom,
+            &mut dem,
+            &mut hist,
+            1,
+            [0.00195, 0.0, 0.0],
+            radius,
+        );
         atom.vel[0] = [0.1, 0.05, -0.02];
         atom.vel[1] = [-0.05, 0.03, 0.01];
         atom.nlocal = 2;
@@ -2897,7 +3132,10 @@ mod tests {
             assert!(
                 err < 1e-12,
                 "Momentum not conserved in dim {}: initial={:.6e}, final={:.6e}, err={:.2e}",
-                d, initial_momentum[d], final_momentum[d], err
+                d,
+                initial_momentum[d],
+                final_momentum[d],
+                err
             );
         }
     }
@@ -2944,7 +3182,9 @@ mod tests {
             assert!(
                 (atom.force[0][d] + atom.force[1][d]).abs() < 1e-10,
                 "Newton's 3rd law violated in dim {}: f0={:.6e}, f1={:.6e}",
-                d, atom.force[0][d], atom.force[1][d]
+                d,
+                atom.force[0][d],
+                atom.force[1][d]
             );
         }
     }

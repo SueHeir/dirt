@@ -131,8 +131,8 @@ pub mod contact;
 
 use grass_app::prelude::*;
 
-use dirt_atom::DemAtomPlugin;
 use dirt_atom::DemAtomInsertPlugin;
+use dirt_atom::DemAtomPlugin;
 use soil_verlet::VelocityVerletPlugin;
 
 pub use contact::HertzMindlinContactPlugin;

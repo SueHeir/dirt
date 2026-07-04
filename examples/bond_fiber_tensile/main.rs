@@ -10,11 +10,11 @@
 //!     examples/bond_fiber_tensile/config.toml
 //! ```
 
-use dirt_core::prelude::*;
 use dirt_core::dirt_atom::DemAtom;
 use dirt_core::dirt_bond::BondConfig;
-use dirt_core::soil_core::BondStore;
 use dirt_core::dirt_fixes::FixesPlugin;
+use dirt_core::prelude::*;
+use dirt_core::soil_core::BondStore;
 use std::f64::consts::PI;
 use std::fs::{self, File};
 use std::io::{BufWriter, Write as IoWrite};
@@ -54,7 +54,10 @@ fn main() {
         .add_plugins(DemBondPlugin);
 
     app.add_resource(Recorder::new());
-    app.add_update_system(record_stress_strain, ParticleSimScheduleSet::PostFinalIntegration);
+    app.add_update_system(
+        record_stress_strain,
+        ParticleSimScheduleSet::PostFinalIntegration,
+    );
 
     app.start();
 }
@@ -84,10 +87,22 @@ fn record_stress_strain(
     let tag_mid_a = 5u32; // middle bond is 5↔6
     let tag_mid_b = 6u32;
 
-    let i_left = match index_of_tag(&atoms, tag_left) { Some(i) => i, None => return };
-    let i_right = match index_of_tag(&atoms, tag_right) { Some(i) => i, None => return };
-    let i_mid_a = match index_of_tag(&atoms, tag_mid_a) { Some(i) => i, None => return };
-    let i_mid_b = match index_of_tag(&atoms, tag_mid_b) { Some(i) => i, None => return };
+    let i_left = match index_of_tag(&atoms, tag_left) {
+        Some(i) => i,
+        None => return,
+    };
+    let i_right = match index_of_tag(&atoms, tag_right) {
+        Some(i) => i,
+        None => return,
+    };
+    let i_mid_a = match index_of_tag(&atoms, tag_mid_a) {
+        Some(i) => i,
+        None => return,
+    };
+    let i_mid_b = match index_of_tag(&atoms, tag_mid_b) {
+        Some(i) => i,
+        None => return,
+    };
 
     if !recorder.initialized {
         // Cache geometry and open output file once (first time atom 0 is seen).
@@ -162,7 +177,7 @@ fn record_stress_strain(
     let dx = atoms.pos[i_mid_b][0] as f64 - atoms.pos[i_mid_a][0] as f64;
     let dy = atoms.pos[i_mid_b][1] as f64 - atoms.pos[i_mid_a][1] as f64;
     let dz = atoms.pos[i_mid_b][2] as f64 - atoms.pos[i_mid_a][2] as f64;
-    let dist = (dx*dx + dy*dy + dz*dz).sqrt();
+    let dist = (dx * dx + dy * dy + dz * dz).sqrt();
     let delta_mid = dist - mid_bond.r0;
     let strain_mid = delta_mid / mid_bond.r0;
     let force_mid = recorder.k_n * delta_mid;
@@ -176,8 +191,18 @@ fn record_stress_strain(
         writeln!(
             w,
             "{},{:.8e},{:.8e},{:.8e},{:.8e},{:.8e},{:.8e},{:.8e},{:.8e},{:.8e},{:.8e},{:.8e}",
-            step, t, length, delta_l, strain_global, strain_mid,
-            force_mid, stress_mid, r_b, area, k_n, length0,
+            step,
+            t,
+            length,
+            delta_l,
+            strain_global,
+            strain_mid,
+            force_mid,
+            stress_mid,
+            r_b,
+            area,
+            k_n,
+            length0,
         )
         .ok();
     }

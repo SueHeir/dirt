@@ -52,9 +52,9 @@ use std::collections::HashMap;
 
 use serde::Deserialize;
 
+use dirt_atom::DemAtom;
 use dirt_core::prelude::*;
 use dirt_core::{dirt_atom, soil_core, soil_verlet};
-use dirt_atom::DemAtom;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Config
@@ -130,7 +130,11 @@ struct PeriPoint {
 
 impl Default for PeriPoint {
     fn default() -> Self {
-        PeriPoint { volume: Vec::new(), n0: Vec::new(), damage: Vec::new() }
+        PeriPoint {
+            volume: Vec::new(),
+            n0: Vec::new(),
+            damage: Vec::new(),
+        }
     }
 }
 
@@ -179,7 +183,11 @@ fn main() {
         (None, Some(g0)) => (5.0 * g0 / (9.0 * k * cfg.horizon)).sqrt(),
         (None, None) => f64::INFINITY,
     };
-    app.add_resource(PeriParams { micromodulus: c, critical_stretch: s0, horizon: cfg.horizon });
+    app.add_resource(PeriParams {
+        micromodulus: c,
+        critical_stretch: s0,
+        horizon: cfg.horizon,
+    });
 
     // Register the per-point peri column.
     register_atom_data!(app, PeriPoint::default());
@@ -187,12 +195,17 @@ fn main() {
 
     // Setup: lattice → family → dt.
     app.add_setup_system(
-        lattice_insert.after("domain_read_input").label("interop_lattice"),
+        lattice_insert
+            .after("domain_read_input")
+            .label("interop_lattice"),
         ScheduleSetupSet::Setup,
     );
     // build_families runs in PostSetup, which the scheduler runs strictly after
     // the Setup phase where the lattice is laid down (no explicit .after needed).
-    app.add_setup_system(build_families.label("interop_families"), ScheduleSetupSet::PostSetup);
+    app.add_setup_system(
+        build_families.label("interop_families"),
+        ScheduleSetupSet::PostSetup,
+    );
     app.add_setup_system(set_timestep, ScheduleSetupSet::PostSetup);
 
     // Peridynamic force + breakage, in the same Force phase as dirt's contact.
@@ -266,7 +279,9 @@ fn lattice_insert(
                     atoms.cutoff_radius.push(cfg.horizon as Real);
                     atoms.image.push([0, 0, 0]);
                     atoms.is_ghost.push(false);
-                    atoms.pos.push([pos[0] as Real, pos[1] as Real, pos[2] as Real]);
+                    atoms
+                        .pos
+                        .push([pos[0] as Real, pos[1] as Real, pos[2] as Real]);
                     atoms.vel.push([
                         bar.velocity[0] as Real,
                         bar.velocity[1] as Real,
@@ -300,7 +315,10 @@ fn lattice_insert(
 
     let total = comm.all_reduce_sum_f64(placed as f64) as u64;
     if comm.rank() == 0 {
-        println!("interop: placed {total} dual peri/DEM points across {} bar(s)", cfg.bars.len());
+        println!(
+            "interop: placed {total} dual peri/DEM points across {} bar(s)",
+            cfg.bars.len()
+        );
     }
 }
 
@@ -332,8 +350,16 @@ fn build_families(
             let dz = atoms.pos[j][2] as f64 - atoms.pos[i][2] as f64;
             let dist = (dx * dx + dy * dy + dz * dz).sqrt();
             if dist > 0.0 && dist <= horizon {
-                bonds.bonds[i].push(BondEntry { partner_tag: atoms.tag[j], bond_type: 0, r0: dist });
-                bonds.bonds[j].push(BondEntry { partner_tag: atoms.tag[i], bond_type: 0, r0: dist });
+                bonds.bonds[i].push(BondEntry {
+                    partner_tag: atoms.tag[j],
+                    bond_type: 0,
+                    r0: dist,
+                });
+                bonds.bonds[j].push(BondEntry {
+                    partner_tag: atoms.tag[i],
+                    bond_type: 0,
+                    r0: dist,
+                });
                 nbonds += 1;
             }
         }
@@ -396,7 +422,11 @@ fn peri_force(mut atoms: ResMut<Atom>, registry: Res<AtomDataRegistry>, params: 
             continue;
         }
         let vi = peri.volume[i];
-        let xi = [atoms.pos[i][0] as f64, atoms.pos[i][1] as f64, atoms.pos[i][2] as f64];
+        let xi = [
+            atoms.pos[i][0] as f64,
+            atoms.pos[i][1] as f64,
+            atoms.pos[i][2] as f64,
+        ];
 
         let mut f = [0.0f64; 3];
         let src = std::mem::take(&mut bonds.bonds[i]);
@@ -437,7 +467,11 @@ fn peri_force(mut atoms: ResMut<Atom>, registry: Res<AtomDataRegistry>, params: 
         atoms.force[i][2] += f[2] as Accum;
 
         let n0 = peri.n0[i];
-        peri.damage[i] = if n0 > 0.0 { 1.0 - (kept.len() as f64) / n0 } else { 0.0 };
+        peri.damage[i] = if n0 > 0.0 {
+            1.0 - (kept.len() as f64) / n0
+        } else {
+            0.0
+        };
         bonds.bonds[i] = kept;
     }
 }
@@ -470,7 +504,11 @@ fn report(
     let mut ke = 0.0f64;
     for i in 0..nlocal {
         let m = atoms.mass[i] as f64;
-        let v = [atoms.vel[i][0] as f64, atoms.vel[i][1] as f64, atoms.vel[i][2] as f64];
+        let v = [
+            atoms.vel[i][0] as f64,
+            atoms.vel[i][1] as f64,
+            atoms.vel[i][2] as f64,
+        ];
         mass += m;
         p[0] += m * v[0];
         p[1] += m * v[1];
@@ -494,10 +532,9 @@ fn report(
         cons.total_steps = run_config.current_stage(0).steps as usize;
     }
     let mass_drift = (mass - cons.mass0).abs();
-    let p_drift = ((p[0] - cons.p0[0]).powi(2)
-        + (p[1] - cons.p0[1]).powi(2)
-        + (p[2] - cons.p0[2]).powi(2))
-    .sqrt();
+    let p_drift =
+        ((p[0] - cons.p0[0]).powi(2) + (p[1] - cons.p0[1]).powi(2) + (p[2] - cons.p0[2]).powi(2))
+            .sqrt();
     cons.max_mass_drift = cons.max_mass_drift.max(mass_drift);
     cons.max_p_drift = cons.max_p_drift.max(p_drift);
 
@@ -559,14 +596,24 @@ fn report(
         let p0_mag = (cons.p0[0].powi(2) + cons.p0[1].powi(2) + cons.p0[2].powi(2)).sqrt();
         let p_scale = p0_mag.max((2.0 * cons.mass0 * ke).sqrt()).max(1e-30);
         let rel_p = cons.max_p_drift / p_scale;
-        let rel_m = if cons.mass0 != 0.0 { cons.max_mass_drift / cons.mass0 } else { 0.0 };
+        let rel_m = if cons.mass0 != 0.0 {
+            cons.max_mass_drift / cons.mass0
+        } else {
+            0.0
+        };
         const TOL: f64 = 1e-9;
         let pass = rel_p < TOL && rel_m < TOL;
         println!("──────────────────────────────────────────────────────────────");
         println!("mass0                = {:.6e} kg", cons.mass0);
         println!("|p0|                 = {p0_mag:.6e} kg·m/s");
-        println!("max mass drift       = {:.3e}  (rel {rel_m:.3e})", cons.max_mass_drift);
-        println!("max momentum drift   = {:.3e}  (rel {rel_p:.3e})", cons.max_p_drift);
+        println!(
+            "max mass drift       = {:.3e}  (rel {rel_m:.3e})",
+            cons.max_mass_drift
+        );
+        println!(
+            "max momentum drift   = {:.3e}  (rel {rel_p:.3e})",
+            cons.max_p_drift
+        );
         println!("tolerance (relative) = {TOL:.1e}");
         println!("surviving bonds      = {nbonds}   peak damage = {dmax:.3}");
         println!("CONSERVATION: {}", if pass { "PASS" } else { "FAIL" });

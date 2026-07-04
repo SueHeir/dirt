@@ -20,8 +20,8 @@
 //! cargo run --release --example bench_column_collapse --no-default-features -- examples/bench_column_collapse/config.toml
 //! ```
 
-use dirt_core::prelude::*;
 use dirt_core::dirt_atom::DemAtom;
+use dirt_core::prelude::*;
 use std::fs;
 use std::io::Write as IoWrite;
 
@@ -109,7 +109,10 @@ fn dump_deposit(app: &App) {
         )
         .unwrap();
         let v = atoms.vel[i];
-        let s = ((v[0] as f64) * (v[0] as f64) + (v[1] as f64) * (v[1] as f64) + (v[2] as f64) * (v[2] as f64)).sqrt();
+        let s = ((v[0] as f64) * (v[0] as f64)
+            + (v[1] as f64) * (v[1] as f64)
+            + (v[2] as f64) * (v[2] as f64))
+            .sqrt();
         if s > vmax {
             vmax = s;
         }

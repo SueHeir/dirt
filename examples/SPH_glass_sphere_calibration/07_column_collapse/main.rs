@@ -26,8 +26,8 @@
 //! cargo run --release --example sphcal_column_collapse --no-default-features -- examples/SPH_glass_sphere_calibration/07_column_collapse/config.toml
 //! ```
 
-use dirt_core::prelude::*;
 use dirt_core::dirt_atom::DemAtom;
+use dirt_core::prelude::*;
 use std::fs;
 use std::io::Write as IoWrite;
 
@@ -98,9 +98,7 @@ fn dump_deposit(app: &App) {
     let out_dir = app
         .get_resource_ref::<Input>()
         .and_then(|i| i.output_dir.clone())
-        .unwrap_or_else(|| {
-            "examples/SPH_glass_sphere_calibration/07_column_collapse".to_string()
-        });
+        .unwrap_or_else(|| "examples/SPH_glass_sphere_calibration/07_column_collapse".to_string());
     let data_dir = format!("{}/data", out_dir);
     fs::create_dir_all(&data_dir).ok();
     let results_file = format!("{}/column_collapse_results.csv", data_dir);

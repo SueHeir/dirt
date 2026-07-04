@@ -21,8 +21,8 @@
 //! partial force and trips the wake; the adjacency buffer then propagates the
 //! front through the contact network.
 
-use dirt_core::prelude::*;
 use dirt_core::dirt_atom::DemAtom;
+use dirt_core::prelude::*;
 use serde::Deserialize;
 
 use crate::contact::{QcStore, MODE_ACTIVE, MODE_ADJACENT, MODE_ASLEEP};
@@ -120,7 +120,13 @@ impl Plugin for QuiescencePlugin {
                 let nlocal = atoms.nlocal as usize;
                 match registry.get::<QcStore>() {
                     Some(store) => (0..nlocal)
-                        .map(|i| if i < store.mode.len() { store.mode[i] as f64 } else { 0.0 })
+                        .map(|i| {
+                            if i < store.mode.len() {
+                                store.mode[i] as f64
+                            } else {
+                                0.0
+                            }
+                        })
                         .collect(),
                     None => vec![0.0; nlocal],
                 }
@@ -209,15 +215,18 @@ fn q_post_force(
     let mut sleep_set_changed = false;
     let wake_sq = q.wake_force_rel * q.wake_force_rel;
     for i in 0..nlocal {
-        let f = [atoms.force[i][0] as f64, atoms.force[i][1] as f64, atoms.force[i][2] as f64];
+        let f = [
+            atoms.force[i][0] as f64,
+            atoms.force[i][1] as f64,
+            atoms.force[i][2] as f64,
+        ];
         if store.mode[i] == MODE_ASLEEP {
             if !store.has_base[i] {
                 store.f_base[i] = f;
                 store.has_base[i] = true;
             } else {
                 let b = store.f_base[i];
-                let dev_sq =
-                    (f[0] - b[0]).powi(2) + (f[1] - b[1]).powi(2) + (f[2] - b[2]).powi(2);
+                let dev_sq = (f[0] - b[0]).powi(2) + (f[1] - b[1]).powi(2) + (f[2] - b[2]).powi(2);
                 let bmag_sq = b[0] * b[0] + b[1] * b[1] + b[2] * b[2];
                 if dev_sq > wake_sq * bmag_sq {
                     store.mode[i] = MODE_ACTIVE;

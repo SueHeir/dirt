@@ -1,0 +1,92 @@
+# SDS rolling-resistance benchmark — validates the spring-dashpot-slider rolling
+# model (rolling_model = "sds", contact.rs) against its OWN analytical behaviour.
+#
+# Two identical spheres are stacked along +z. The LOWER sphere is a frozen anchor
+# ([[freeze]] — cannot translate or spin), the UPPER sphere rests on it under
+# gravity and is given a pure ROLLING spin ω = (ω0,0,0) about a horizontal axis
+# (⊥ to the contact normal n̂ = +ẑ). Sliding friction is OFF so the only torque
+# ⊥ n̂ is the SDS rolling resistance. With F_n = m g, equal-sphere r_eff = R/2 and
+# I = (2/5) m R², two regimes are validated:
+#   * elastic (cap off):  spin relaxes as the exact damped oscillator
+#                         I δ̈ + γ_r δ̇ + k_r δ = 0  (over-damped ⇒ exponential ω);
+#   * Coulomb cap (on):   slider holds τ = μ_r F_n r_eff ⇒ α = (5/4) μ_r g / R.
+#
+# This standalone config runs the ELASTIC (over-damped, cap-disengaged) case:
+# a large rolling_friction keeps the cap off, and a stiff-ish spring with heavy
+# damping (γ_r² ≫ 4 k_r I) makes the decay over-damped. sweep.py generates the
+# full sweep (elastic + saturated-cap cases). The mover's seating (static Hertz
+# overlap ⇒ F_n = m g) and initial spin are set in main.rs.
+#
+# Run:
+#   cargo run --release --example bench_sds_rolling --no-default-features --features precision-double -- examples/bench_sds_rolling/config.toml
+
+[comm]
+processors_x = 1
+processors_y = 1
+processors_z = 1
+
+[domain]
+x_low = -0.05
+x_high = 0.05
+y_low = -0.05
+y_high = 0.05
+z_low = 0.0
+z_high = 0.05
+boundary_x = "fixed"
+boundary_y = "fixed"
+boundary_z = "fixed"
+
+[neighbor]
+skin_fraction = 1.1
+bin_size = 0.02
+every = 1
+
+[gravity]
+gz = -9.81
+
+[dem]
+contact_model = "hertz"
+rolling_model = "sds"          # the model under test
+
+[[dem.materials]]
+name = "grain"
+youngs_mod = 1.0e8             # Pa — soft (keeps dt large; the decay rate is E-independent)
+poisson_ratio = 0.3
+restitution = 0.3             # damps the tiny normal settling transient quickly
+friction = 0.0               # OFF — kill the tangential slip couple a horizontal spin would drive
+rolling_friction = 5.0       # μ_r — large here so the Coulomb cap never engages (elastic regime)
+rolling_stiffness = 1.45e-5  # k_r (N·m/rad) — rolling spring
+rolling_damping = 2.618e-6   # γ_r (N·m·s/rad) — rolling dashpot (over-damped: γ_r² ≫ 4 k_r I)
+
+# Lower sphere: frozen anchor at (0,0,0.010). R = 5 mm.
+[[particles.insert]]
+material = "grain"
+count = 1
+radius = 0.005
+density = 2500.0
+region = { type = "block", min = [-1.0e-6, -1.0e-6, 0.0099990], max = [1.0e-6, 1.0e-6, 0.0100010] }
+
+# Upper sphere: the rolling mover, inserted just above the anchor. main.rs seats
+# it at the exact static overlap and sets the spin at step 0.
+[[particles.insert]]
+material = "grain"
+count = 1
+radius = 0.005
+density = 2500.0
+region = { type = "block", min = [-1.0e-6, -1.0e-6, 0.0199970], max = [1.0e-6, 1.0e-6, 0.0199990] }
+
+# Group + freeze on the lower sphere only (region hugs z = 0.010).
+[[group]]
+name = "anchor"
+region = { type = "block", min = [-0.002, -0.002, 0.008], max = [0.002, 0.002, 0.012] }
+
+[[freeze]]
+group = "anchor"
+
+[output]
+dir = "examples/bench_sds_rolling"
+
+[run]
+steps = 40000
+thermo = 20000
+dt = 1.0e-5

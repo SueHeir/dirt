@@ -103,13 +103,16 @@ use std::{
 };
 
 use grass_app::prelude::*;
-use soil_derive::AtomData;
 use grass_scheduler::prelude::*;
 use serde::Deserialize;
+use soil_derive::AtomData;
 
 use dirt_atom::DemAtom;
-use soil_core::{register_atom_data, Atom, AtomData, AtomDataRegistry, CommResource, Config, Input, RunState, ParticleSimScheduleSet};
 use soil_core::Neighbor;
+use soil_core::{
+    register_atom_data, Atom, AtomData, AtomDataRegistry, CommResource, Config, Input,
+    ParticleSimScheduleSet, RunState,
+};
 use soil_print::{DumpRegistry, Thermo};
 
 // ── Config ──────────────────────────────────────────────────────────────────
@@ -333,7 +336,10 @@ file_prefix = "contact""#,
 
         // Contact CSV dump (PostFinalIntegration, with other output)
         if config.interval > 0 {
-            app.add_update_system(dump_contact_records, ParticleSimScheduleSet::PostFinalIntegration);
+            app.add_update_system(
+                dump_contact_records,
+                ParticleSimScheduleSet::PostFinalIntegration,
+            );
         }
 
         if config.fabric_tensor {
@@ -366,8 +372,7 @@ fn compute_contact_analysis(
     let dem = registry.expect::<DemAtom>("compute_contact_analysis");
     let has_coordination = config.coordination;
     let has_fabric = config.fabric_tensor;
-    let collect_records =
-        config.interval > 0 && run_state.total_cycle % config.interval == 0;
+    let collect_records = config.interval > 0 && run_state.total_cycle % config.interval == 0;
 
     // Clear previous step's records
     contact_output.records.clear();
@@ -618,7 +623,13 @@ fn dump_contact_records(
         None => "contact".to_string(),
     };
 
-    if let Err(e) = dump_contact_csv(&contact_output.records, &base_dir, &config.file_prefix, step, rank) {
+    if let Err(e) = dump_contact_csv(
+        &contact_output.records,
+        &base_dir,
+        &config.file_prefix,
+        step,
+        rank,
+    ) {
         eprintln!("WARNING: Contact dump failed at step {}: {}", step, e);
     }
 }
@@ -639,10 +650,7 @@ fn dump_contact_csv(
     let file = File::create(&filename)?;
     let mut w = BufWriter::new(file);
 
-    writeln!(
-        w,
-        "i_tag,j_tag,overlap,cx,cy,cz,nx,ny,nz"
-    )?;
+    writeln!(w, "i_tag,j_tag,overlap,cx,cy,cz,nx,ny,nz")?;
 
     for r in records {
         writeln!(
@@ -810,11 +818,11 @@ mod tests {
         // 5 particles: center particle touching all 4 others → coord=4
         // Outer particles only touch center → coord=1 (rattlers)
         let mut atoms = Atom::new();
-        atoms.push_test_atom(1, [0.0, 0.0, 0.0], 0.5, 1.0);   // center
-        atoms.push_test_atom(2, [0.9, 0.0, 0.0], 0.5, 1.0);   // rattler
-        atoms.push_test_atom(3, [-0.9, 0.0, 0.0], 0.5, 1.0);  // rattler
-        atoms.push_test_atom(4, [0.0, 0.9, 0.0], 0.5, 1.0);   // rattler
-        atoms.push_test_atom(5, [0.0, -0.9, 0.0], 0.5, 1.0);  // rattler
+        atoms.push_test_atom(1, [0.0, 0.0, 0.0], 0.5, 1.0); // center
+        atoms.push_test_atom(2, [0.9, 0.0, 0.0], 0.5, 1.0); // rattler
+        atoms.push_test_atom(3, [-0.9, 0.0, 0.0], 0.5, 1.0); // rattler
+        atoms.push_test_atom(4, [0.0, 0.9, 0.0], 0.5, 1.0); // rattler
+        atoms.push_test_atom(5, [0.0, -0.9, 0.0], 0.5, 1.0); // rattler
         atoms.nlocal = 5;
         atoms.natoms = 5;
 
@@ -835,29 +843,21 @@ mod tests {
 
     #[test]
     fn test_contact_record_csv_output() {
-        let records = vec![
-            ContactRecord {
-                i_tag: 1,
-                j_tag: 2,
-                overlap: 0.1,
-                cx: 0.45,
-                cy: 0.0,
-                cz: 0.0,
-                nx: 1.0,
-                ny: 0.0,
-                nz: 0.0,
-            },
-        ];
+        let records = vec![ContactRecord {
+            i_tag: 1,
+            j_tag: 2,
+            overlap: 0.1,
+            cx: 0.45,
+            cy: 0.0,
+            cz: 0.0,
+            nx: 1.0,
+            ny: 0.0,
+            nz: 0.0,
+        }];
 
         let dir = std::env::temp_dir().join("dem_contact_test");
         let _ = fs::remove_dir_all(&dir);
-        let result = dump_contact_csv(
-            &records,
-            dir.to_str().unwrap(),
-            "contact",
-            1000,
-            0,
-        );
+        let result = dump_contact_csv(&records, dir.to_str().unwrap(), "contact", 1000, 0);
         assert!(result.is_ok(), "CSV dump should succeed");
 
         let content = fs::read_to_string(dir.join("contact_001000_rank0.csv")).unwrap();
@@ -898,9 +898,18 @@ mod tests {
         }
 
         let inv_nc = 1.0 / nc;
-        assert!((fxx * inv_nc - 1.0 / 3.0).abs() < 1e-10, "F_xx should be 1/3");
-        assert!((fyy * inv_nc - 1.0 / 3.0).abs() < 1e-10, "F_yy should be 1/3");
-        assert!((fzz * inv_nc - 1.0 / 3.0).abs() < 1e-10, "F_zz should be 1/3");
+        assert!(
+            (fxx * inv_nc - 1.0 / 3.0).abs() < 1e-10,
+            "F_xx should be 1/3"
+        );
+        assert!(
+            (fyy * inv_nc - 1.0 / 3.0).abs() < 1e-10,
+            "F_yy should be 1/3"
+        );
+        assert!(
+            (fzz * inv_nc - 1.0 / 3.0).abs() < 1e-10,
+            "F_zz should be 1/3"
+        );
         assert!((fxy * inv_nc).abs() < 1e-10, "F_xy should be 0");
         assert!((fxz * inv_nc).abs() < 1e-10, "F_xz should be 0");
         assert!((fyz * inv_nc).abs() < 1e-10, "F_yz should be 0");
