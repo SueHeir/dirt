@@ -66,11 +66,38 @@ CAP_SPHERE = 0.25          # loose-insertion solid fraction cap for spheres
 # only has to hold at SETUP (auto_bond runs once); compress then closes the gaps.
 CAP_MONKEY = 0.10          # loose-insertion solid fraction cap for monkeys
 
-DT_SPHERE = 2.0e-5         # r=0.05 m  → ~0.025·T_Rayleigh (matches the reference margin)
-DT_MONKEY = 1.5e-6         # r_min≈8.5 mm; small enough to resolve tangling-hook contacts
-# Compression is quasi-static, so the contacts are gentle and a LARGER dt is safe
-# there — this keeps the (long) compression ramp to a feasible step count.
-DT_COMPRESS_MONKEY = 5.0e-6
+# ── Stable-timestep (CFL / Rayleigh) model ───────────────────────────────────
+# The SHEAR stage runs fully UNDAMPED (see main.rs: damping acts only during the
+# prep stages), so any spurious energy an over-large dt injects at a stiff
+# collision has nowhere to go — it accumulates, heats the pack, and finally
+# trips the excessive-overlap guard (crates/dirt_granular/src/contact.rs). The
+# cure is to make dt small enough to integrate the STIFFEST interaction present
+# in each run, NOT to relax the guard. We size dt as a safe fraction of the
+# critical timestep of that stiffest element, per particle type, per Φ:
+#
+#   * sphere : the stiffest element is the Hertz contact between the (large,
+#              r = 0.05 m) grains. Its Rayleigh time is long, so the reference
+#              dt below is already deep in the stable regime — LEFT UNCHANGED
+#              (the whole sphere series validated at this dt).
+#   * rigid / bpm : the 44-sub-sphere monkey. Two stiff scales compete — the
+#              Hertz contact of the smallest sub-sphere (r_min ≈ 8.5 mm) and,
+#              for bpm, the E_bond WELD network, which is ~8× stiffer and hence
+#              sets the smaller (governing) critical step. We compute the
+#              bond-network critical step explicitly from the engine's own bond
+#              stiffnesses so E_bond enters the timestep, and use that same
+#              conservative scale for the rigid monkey (identical geometry).
+#
+# Denser packings add a high-Φ margin: a grain sharing n_c ≈ 1 + Z·Φ/Φ_rcp
+# simultaneous contacts feels ~n_c× the stiffness, so its stable dt falls
+# ~1/√n_c. This is why the flat legacy dt survived the dilute cases but blew up
+# the dense high-Φ compressions.
+DT_SPHERE = 2.0e-5         # r=0.05 m contact-Rayleigh margin — validated, UNCHANGED.
+
+G_GLASS = GLASS["youngs_mod"] / (2.0 * (1.0 + GLASS["poisson_ratio"]))  # shear modulus [Pa]
+PHI_RCP = 0.64             # random-close-pack fraction (coordination ~saturates here)
+COORD_Z = 6.0              # contacts added per grain by an isostatic pack at Φ_rcp
+DT_SHEAR_SAFETY = 0.02     # fraction of the stiffest-element critical step (settle & shear)
+DT_COMPRESS_QS = 2.5       # quasi-static compression tolerates a modestly larger dt
 EDOT_COMPRESS = 3.0        # quasi-static isotropic compression strain rate [1/s]
 
 BOND_TOL = 1.1             # auto_bond eligibility multiplier on (R_i+R_j) (welds intra-monkey)
@@ -192,6 +219,73 @@ def random_rotation(rng):
     return q
 
 
+# ── Stable-timestep helpers ──────────────────────────────────────────────────
+def t_rayleigh(radius):
+    """Rayleigh surface-wave transit time of a grain — the standard DEM contact
+    critical timestep: T_R = π R √(ρ/G) / (0.1631 ν + 0.8766)."""
+    return (math.pi * radius * math.sqrt(GLASS["density"] / G_GLASS)
+            / (0.1631 * GLASS["poisson_ratio"] + 0.8766))
+
+
+def bond_network_critical_dt(centers, radii):
+    """Highest-frequency stable timestep of the welded intra-monkey bond network.
+
+    Mirrors the engine's per-bond stiffnesses (crates/dirt_bond/src/lib.rs):
+        r_b = bond_radius_ratio·min(R_i,R_j)   (bond_radius_ratio = 1.0 here)
+        A = π r_b²,  J = ½π r_b⁴,  I = ½J,  L = r₀ (rest length)
+        k_n = E_b·A/L,  k_t = G_b·A/L,  k_tor = G_b·J/L,  k_bend = E_b·I/L
+    A node bonded to several neighbours sees the SUM of their stiffnesses, so the
+    governing frequency is a network property, not a single-bond one. We take a
+    Gershgorin bound on the mass- and inertia-normalised stiffness assembly,
+        ω_max² ≤ 2·max_i( Σ_j k_ij / m_i ),
+    with bending/shear coupled into translation through the L/2 lever arm, and
+    return the explicit-integration stability limit dt_crit = 2/ω_max. This is
+    where E_bond enters the timestep."""
+    n = len(centers)
+    rho = GLASS["density"]
+    mass = 4.0 / 3.0 * math.pi * rho * radii**3
+    inertia = 0.4 * mass * radii**2                 # solid sphere I = 2/5 m R²
+    kt_sum = np.zeros(n)                            # translational stiffness per node
+    kr_sum = np.zeros(n)                            # rotational stiffness per node
+    for i in range(n):
+        for j in range(n):
+            if i == j:
+                continue
+            d = float(np.linalg.norm(centers[i] - centers[j]))
+            if d <= BOND_TOL * (radii[i] + radii[j]):
+                r_b = min(radii[i], radii[j])       # bond_radius_ratio = 1.0
+                area = math.pi * r_b * r_b
+                jpol = 0.5 * math.pi * r_b**4
+                iben = 0.5 * jpol
+                length = d
+                k_n = E_BOND * area / length
+                k_t = G_BOND * area / length
+                k_tor = G_BOND * jpol / length
+                k_bend = E_BOND * iben / length
+                lever = 0.5 * length
+                kt_sum[i] += k_n + k_t + k_bend / (lever * lever)
+                kr_sum[i] += k_tor + k_bend + k_t * lever * lever
+    wmax2 = max(float((2.0 * kt_sum / mass).max()),
+                float((2.0 * kr_sum / inertia).max()))
+    return 2.0 / math.sqrt(wmax2)
+
+
+def phi_margin(phi):
+    """High-Φ multi-contact stiffening margin (≤1): a grain sharing
+    n_c ≈ 1 + Z·Φ/Φ_rcp simultaneous contacts oscillates ~√n_c faster, so the
+    stable dt shrinks ~1/√n_c."""
+    return 1.0 / math.sqrt(1.0 + COORD_Z * phi / PHI_RCP)
+
+
+def monkey_shear_dt(phi, t_bond, r_min):
+    """Stable settle/shear dt for a monkey (rigid or bpm) run at solid fraction Φ.
+    The stiffest element is the smaller of the smallest sub-sphere's contact
+    Rayleigh time and the bond-network critical step (the latter governs for the
+    glass E_bond used here); the rigid monkey reuses this conservative scale."""
+    t_crit = min(t_bond, t_rayleigh(r_min))
+    return DT_SHEAR_SAFETY * t_crit * phi_margin(phi)
+
+
 # ── TOML emission ────────────────────────────────────────────────────────────
 def clump_def_block(centers, radii, name="monkey"):
     lines = ["[[clump.definitions]]", f'name = "{name}"', "spheres = ["]
@@ -231,20 +325,27 @@ def material_block():
             f"friction = {GLASS['friction']}\n")
 
 
-def stage_dts(kind):
-    """(settle_dt, compress_dt, shear_dt) for a particle type."""
+def stage_dts(kind, phi, t_bond, r_min):
+    """(settle_dt, compress_dt, shear_dt) for a particle type at solid fraction Φ.
+
+    Sphere keeps its validated flat dt. Monkeys (rigid/bpm) get a Φ-dependent,
+    bond-network-limited dt (see monkey_shear_dt); settle and shear share it, and
+    the quasi-static compression may run at DT_COMPRESS_QS× that value."""
     if kind == "sphere":
         return DT_SPHERE, DT_SPHERE, DT_SPHERE
-    return DT_MONKEY, DT_COMPRESS_MONKEY, DT_MONKEY
+    dt = monkey_shear_dt(phi, t_bond, r_min)
+    return dt, DT_COMPRESS_QS * dt, dt
 
 
-def runs_block(s, kind, gdot, smoke):
+def runs_block(s, kind, gdot, smoke, phi, t_bond, r_min):
     """settle → (quasi-static compress if s>1) → constant-volume shear.
 
     Compression runs at a fixed strain rate EDOT_COMPRESS (quasi-static, so dense
-    tangling monkeys can rearrange instead of overlapping), using a larger dt.
+    tangling monkeys can rearrange instead of overlapping); it may use a modestly
+    larger dt than shear (DT_COMPRESS_QS×), but still scaled by the same Φ margin
+    — the dense end of compression is exactly where the flat legacy dt blew up.
     Shear targets total strain ≈ 2 (full) or a fixed short window (smoke)."""
-    dt_settle, dt_compress, dt_shear = stage_dts(kind)
+    dt_settle, dt_compress, dt_shear = stage_dts(kind, phi, t_bond, r_min)
     thermo = 2000
     settle_n = 5000 if smoke else 20000
     shear_n = 20000 if smoke else int(round(2.0 / (gdot * dt_shear)))
@@ -286,7 +387,7 @@ def neighbor_block(kind, radii):
 def write_sphere(phi, n, gdot, smoke, root):
     s = (phi / min(phi, CAP_SPHERE))**(1.0 / 3.0)
     hx, hy, hz, dom = domain_block(s)
-    out_dir = f"{root}/data/sphere/phi_{phi}"
+    out_dir = f"examples/monkey_shear/data/sphere/phi_{phi}"
     body = "\n".join([
         header_common("sphere (radius 0.05)", phi, n, s, DT_SPHERE, gdot),
         dom, neighbor_block("sphere", np.array([0.05])), material_block(),
@@ -297,14 +398,14 @@ def write_sphere(phi, n, gdot, smoke, root):
         f"region = {{ type = \"block\", min = [{CENTER[0]-hx:.6f}, {CENTER[1]-hy:.6f}, {CENTER[2]-hz:.6f}], "
         f"max = [{CENTER[0]+hx:.6f}, {CENTER[1]+hy:.6f}, {CENTER[2]+hz:.6f}] }}\n"
         f"seed = {12345 + n}\n",
-        runs_block(s, "sphere", gdot, smoke),
+        runs_block(s, "sphere", gdot, smoke, phi, None, 0.05),
         common_tail(out_dir),
     ])
     _write(root, "sphere", phi, body)
 
 
-def write_rigid(phi, n, gdot, smoke, root, centers, radii, rbound):
-    dt = DT_MONKEY
+def write_rigid(phi, n, gdot, smoke, root, centers, radii, rbound, t_bond):
+    dt = monkey_shear_dt(phi, t_bond, float(radii.min()))
     # The engine's `[[clump.insert]]` rejects overlaps by each monkey's BOUNDING
     # sphere (radius rbound = 0.126, i.e. the elongated arm reach), NOT the union
     # D_eq. So the insertion box must be sized for loose bounding-sphere packing
@@ -317,7 +418,7 @@ def write_rigid(phi, n, gdot, smoke, root, centers, radii, rbound):
     hx, hy, hz, dom = domain_block(s)
     # inset the COM insertion region by the monkey bounding radius
     ix = max(hx - rbound, 1e-3); iy = max(hy - rbound, 1e-3); iz = max(hz - rbound, 1e-4)
-    out_dir = f"{root}/data/rigid/phi_{phi}"
+    out_dir = f"examples/monkey_shear/data/rigid/phi_{phi}"
     body = "\n".join([
         header_common("rigid clump (44-sphere monkey)", phi, n, s, dt, gdot),
         dom, neighbor_block("rigid", radii), material_block(),
@@ -330,7 +431,7 @@ def write_rigid(phi, n, gdot, smoke, root, centers, radii, rbound):
         "# (no velocity key: clump insert samples U(-v,v); v=0 is an empty range)\n"
         f"region = {{ type = \"block\", min = [{CENTER[0]-ix:.6f}, {CENTER[1]-iy:.6f}, {CENTER[2]-iz:.6f}], "
         f"max = [{CENTER[0]+ix:.6f}, {CENTER[1]+iy:.6f}, {CENTER[2]+iz:.6f}] }}\n",
-        runs_block(s, "rigid", gdot, smoke),
+        runs_block(s, "rigid", gdot, smoke, phi, t_bond, float(radii.min())),
         common_tail(out_dir),
     ])
     _write(root, "rigid", phi, body)
@@ -382,7 +483,7 @@ def _place_gapped_monkeys(n, frac, centers, radii, rbound, seed):
     return (rows if placed == n else None), box_s
 
 
-def write_bpm(phi, n, gdot, smoke, root, centers, radii, rbound):
+def write_bpm(phi, n, gdot, smoke, root, centers, radii, rbound, t_bond):
     # Try the insertion cap; if the gap rule can't fit N monkeys, enlarge the box
     # (lower the fraction) and retry. box_s (>1 ⇒ compress) is set by whatever
     # fraction actually succeeded.
@@ -407,9 +508,10 @@ def write_bpm(phi, n, gdot, smoke, root, centers, radii, rbound):
         for (x, y, z, r) in placed_rows:
             f.write(f"{x:.8e},{y:.8e},{z:.8e},{r:.8e}\n")
 
-    out_dir = f"{root}/data/bpm/phi_{phi}"
+    out_dir = f"examples/monkey_shear/data/bpm/phi_{phi}"
     body = "\n".join([
-        header_common("bpm (bonded 44-sphere monkey)", phi, n, s, DT_MONKEY, gdot,
+        header_common("bpm (bonded 44-sphere monkey)", phi, n, s,
+                      monkey_shear_dt(phi, t_bond, float(radii.min())), gdot,
                       extra=f"{len(placed_rows)} sub-spheres, gap {GAP}x(Ri+Rj)."),
         dom, neighbor_block("bpm", radii), material_block(),
         "[[particles.insert]]\n"
@@ -429,7 +531,7 @@ def write_bpm(phi, n, gdot, smoke, root, centers, radii, rbound):
         "# it bleeds the sheared cantilever/arm-tip bond modes that otherwise resonate.\n"
         "beta_normal  = 1.0\nbeta_shear   = 1.0\nbeta_twist   = 1.0\nbeta_bending = 1.0\n"
         "# No [bonds.breakage] table => bonds are UNBREAKABLE (elastic) for this campaign.\n",
-        runs_block(s, "bpm", gdot, smoke),
+        runs_block(s, "bpm", gdot, smoke, phi, t_bond, float(radii.min())),
         common_tail(out_dir),
     ])
     _write(root, "bpm", phi, body)
@@ -462,8 +564,11 @@ def cmd_build_monkey():
         f"#   sub-sphere volume sum = {rep['v_sum']:.6e} m^3  -> overlap {100*rep['overlap']:.1f} %\n"
         f"#   sub-sphere radius     = min {rep['r_min']:.6e}  max {rep['r_max']:.6e} m\n"
         f"#   intra-monkey bonds @ tol {BOND_TOL} (bonds_per_monkey) = {rep['n_bonds']}\n"
-        f"#   -> dt from r_min: reference d=0.5mm/E=7e7/dt=2e-7 scales linearly to ~{2e-7*rep['r_min']/0.00025:.2e}s;\n"
-        f"#      campaign uses dt={DT_MONKEY:.1e}s (monkeys) for a safety margin incl. bonds.\n"
+        f"#   contact-Rayleigh(r_min)      = {t_rayleigh(rep['r_min']):.3e} s\n"
+        f"#   bond-network critical dt     = {bond_network_critical_dt(centers, radii):.3e} s  (E_bond={E_BOND:.1e} weld)\n"
+        f"#   -> monkey dt = {DT_SHEAR_SAFETY}·min(above)·Φ-margin  (see tools/gen_series.py);\n"
+        f"#      e.g. Φ=0.05 → {monkey_shear_dt(0.05, bond_network_critical_dt(centers, radii), rep['r_min']):.2e}s,"
+        f" Φ=0.4 → {monkey_shear_dt(0.4, bond_network_critical_dt(centers, radii), rep['r_min']):.2e}s (settle/shear).\n"
         f"#\n"
         f"# Reusable clump definition: [[clump.insert]] references it (rigid type); the bpm\n"
         f"# type expands the same sub-spheres to a per-monkey CSV via gen_series.py.\n"
@@ -480,14 +585,19 @@ def cmd_build_monkey():
 def cmd_series(gdot, smoke, only_phi=None):
     centers, radii, rep = scaled_monkey()
     root = EX_DIR
+    t_bond = bond_network_critical_dt(centers, radii)
+    r_min = float(radii.min())
     phis = [only_phi] if only_phi else PHIS
     print(f"== series (gdot={gdot}, {'SMOKE' if smoke else 'FULL'}) ==")
+    print(f"   stiffest-element critical dt: contact-Rayleigh(r_min)={t_rayleigh(r_min):.3e}s, "
+          f"bond-network={t_bond:.3e}s  → monkey dt = {DT_SHEAR_SAFETY}·min·Φ-margin")
     for phi in phis:
         n = N_TABLE[phi]
-        print(f"[Φ={phi} N={n}]")
+        dtm = monkey_shear_dt(phi, t_bond, r_min)
+        print(f"[Φ={phi} N={n}]  monkey dt(settle/shear)={dtm:.3e}s compress={DT_COMPRESS_QS*dtm:.3e}s")
         write_sphere(phi, n, gdot, smoke, root)
-        write_rigid(phi, n, gdot, smoke, root, centers, radii, rep["r_bound"])
-        nb = write_bpm(phi, n, gdot, smoke, root, centers, radii, rep["r_bound"])
+        write_rigid(phi, n, gdot, smoke, root, centers, radii, rep["r_bound"], t_bond)
+        nb = write_bpm(phi, n, gdot, smoke, root, centers, radii, rep["r_bound"], t_bond)
         print(f"    bpm sub-spheres = {nb}  (~{nb//n}/monkey), "
               f"expected bonds ≈ N*{rep['n_bonds']} = {n*rep['n_bonds']}")
 
