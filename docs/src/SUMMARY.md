@@ -36,4 +36,5 @@
 - [Materials & the MaterialTable](./reference/materials.md)
 - [Particle Insertion](./reference/insertion.md)
 - [Validation & Benchmarks](./reference/validation.md)
+- [Validation Summary Dashboard](./reference/validation-summary.md)
 - [Writing a DIRT Test](./reference/writing-tests.md)

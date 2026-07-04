@@ -7,6 +7,12 @@ quantities against it with explicit tolerances. Every example's `sweep.py graph`
 step prints a PASS/FAIL verdict, so the suite is a regression net, not a gallery
 of passing runs.
 
+> **See the [Validation Summary Dashboard](./validation-summary.md)** for a
+> single machine-generated table of every `bench_*` — reference, evidence type,
+> checked quantity, tolerance, latest *measured* value, and PASS/FAIL — built
+> from the actual benchmark runs so it cannot silently drift. The static table
+> below is a hand-curated overview; the dashboard is the live one.
+
 ## The validation discipline
 
 The benchmarks are written to be useful *and* honest. Each one states its
