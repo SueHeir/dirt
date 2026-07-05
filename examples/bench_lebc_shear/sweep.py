@@ -7,7 +7,7 @@ the native Lees–Edwards triclinic deform style. Each run is held at fixed volu
 (fixed Φ) while γ̇ is swept; in steady state the recorder reports the stress
 tensor, granular temperature T, and Φ. From these we form the inertial number
 I = γ̇·d·√(ρ_s/P), the friction μ = |σ_xy|/P, and Φ(I), and fit the μ(I) law that
-the MUD SPH solver consumes.
+the dev_soil_sph solver consumes.
 
 Two sweeps:
   • production  — frictional grains (μ_p = 0.5, e = 0.7): fits μ(I), Φ(I).
@@ -27,7 +27,7 @@ Commands (from anywhere):
 Outputs:
     sweep/<case>/config.toml                 per-case configs        (gitignored)
     data/<case>/lebc_shear_results.csv       per-case time series    (gitignored)
-    data/calibration.yaml                    μ(I)/Φ(I) fit → MUD     (gitignored)
+    data/calibration.yaml                    μ(I)/Φ(I) fit → dev_soil_sph     (gitignored)
     plots/mu_of_I.png, phi_of_I.png, kt_validation.png               (tracked)
 
 References: GDR MiDi 2004; da Cruz et al. 2005 (I-scaling);
@@ -517,7 +517,7 @@ def graph():
 
         os.makedirs(DATA_DIR, exist_ok=True)
         with open(os.path.join(DATA_DIR, "calibration.yaml"), "w") as f:
-            f.write("# DEM-calibrated μ(I) closure for mud_constitutive::MaterialParams\n")
+            f.write("# DEM-calibrated μ(I) closure for sph_constitutive::MaterialParams\n")
             f.write("material: glass_beads_dem\n")
             f.write(f"rho_s: {DENSITY}\n")
             f.write(f"d: {D_MEAN}\n")

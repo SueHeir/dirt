@@ -7,7 +7,7 @@ the native Lees–Edwards triclinic deform style. Each run is held at fixed volu
 (fixed Φ) while γ̇ is swept; in steady state the recorder reports the stress
 tensor, granular temperature T, and Φ. From these we form the inertial number
 I = γ̇·d·√(ρ_s/P), the friction μ = |σ_xy|/P, and Φ(I), and fit the μ(I) law that
-the MUD SPH solver consumes — together with ρ_c = Φ_max·ρ_s.
+the dev_soil_sph solver consumes — together with ρ_c = Φ_max·ρ_s.
 
 This is the FRICTIONAL/production rheometer (canonical glass μ_p = 0.16). The
 frictionless kinetic-theory cross-check lives in examples/bench_lebc_shear.
@@ -23,7 +23,7 @@ Commands (from anywhere):
 Outputs:
     sweep/<case>/config.toml                         per-case configs   (gitignored)
     data/<case>/sphcal_shear_rheology_results.csv    per-case series    (gitignored)
-    data/calibration.yaml                            μ(I)/Φ(I) fit → MUD(gitignored)
+    data/calibration.yaml                            μ(I)/Φ(I) fit → dev_soil_sph(gitignored)
     plots/mu_of_I.png, phi_of_I.png, convergence.png                    (tracked)
 
 References: GDR MiDi 2004; da Cruz et al. 2005 (I-scaling).
@@ -307,7 +307,7 @@ def validate(points):
     PASS requires: (1) every case sane — p>0, finite σ_xy, 0<Φ<1; (2) the fitted
     closure ordered physically μ_s < μ_2 with 0 < I_0; (3) most cases steady
     (drift < 15%). The fitted (μ_s, μ_2, I_0, Φ_max, ρ_c) are written to
-    data/calibration.yaml for mud_constitutive::MaterialParams."""
+    data/calibration.yaml for sph_constitutive::MaterialParams."""
     ok = True
 
     # ── sanity of every measured point ──
@@ -346,7 +346,7 @@ def write_calibration(mu_s, mu2, I0, phi_max, rho_c):
     os.makedirs(DATA_DIR, exist_ok=True)
     path = os.path.join(DATA_DIR, "calibration.yaml")
     with open(path, "w") as f:
-        f.write("# DEM-calibrated μ(I) closure for mud_constitutive::MaterialParams\n")
+        f.write("# DEM-calibrated μ(I) closure for sph_constitutive::MaterialParams\n")
         f.write("material: glass_beads_dem\n")
         f.write(f"rho_s: {DENSITY}\n")
         f.write(f"d: {D_MEAN}\n")

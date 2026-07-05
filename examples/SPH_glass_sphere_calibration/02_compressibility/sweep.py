@@ -9,7 +9,7 @@ solid fraction Φ = Σ(π/6)d³/V each thermo interval. The pack passes through 
 close packing (Φ_c ≈ 0.58–0.64), where enduring contacts percolate and the
 pressure climbs steeply: the equation of state P(Φ).
 
-The bulk compressibility closure the MUD SPH solver consumes is the modulus
+The bulk compressibility closure the dev_soil_sph solver consumes is the modulus
 
     K(Φ) ≈ ΔP / (ΔΦ/Φ) = dP/d(lnΦ),
 
