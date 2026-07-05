@@ -330,6 +330,15 @@ impl Default for RateInsertState {
     }
 }
 
+fn validate_insert_velocity(rand_vel: f64, context: &str) -> Result<(), String> {
+    if !rand_vel.is_finite() || rand_vel < 0.0 {
+        return Err(format!(
+            "velocity in {context} must be finite and non-negative, got {rand_vel}"
+        ));
+    }
+    Ok(())
+}
+
 // ── SpatialHash for O(1) overlap checking ───────────────────────────────────
 
 /// Grid-based spatial hash for fast overlap detection during particle insertion.
@@ -692,6 +701,13 @@ pub fn dem_insert_atoms(
                         eprintln!("ERROR: Rate-based [[particles.insert]] requires 'density'");
                         std::process::exit(1);
                     }
+                    if let Err(e) = validate_insert_velocity(
+                        insert.velocity.unwrap_or(0.0),
+                        "rate-based [[particles.insert]]",
+                    ) {
+                        eprintln!("ERROR: {}", e);
+                        std::process::exit(1);
+                    }
                     println!(
                         "DemAtomInsert: registering rate-based insertion for material '{}' (rate={}/every {})",
                         mat_name,
@@ -761,16 +777,13 @@ pub fn dem_insert_atoms(
 
                     // Velocity setup (drawn deterministically per accepted atom).
                     let rand_vel = insert.velocity.unwrap_or(0.0);
-                    if rand_vel < 0.0 {
-                        eprintln!(
-                            "ERROR: velocity in [[particles.insert]] must be non-negative, got {}",
-                            rand_vel
-                        );
+                    if let Err(e) = validate_insert_velocity(rand_vel, "[[particles.insert]]") {
+                        eprintln!("ERROR: {}", e);
                         std::process::exit(1);
                     }
                     let normal = (rand_vel > 0.0).then(|| {
                         Normal::new(0.0, rand_vel)
-                            .expect("velocity must be non-negative for Normal distribution")
+                            .expect("insert velocity was validated before Normal construction")
                     });
                     let vx = insert.velocity_x.unwrap_or(0.0);
                     let vy = insert.velocity_y.unwrap_or(0.0);
@@ -1657,16 +1670,13 @@ pub fn dem_rate_insert(
         // Velocity parameters (drawn deterministically per accepted candidate).
         let config_seed = rate_state.entries[entry_idx].config.seed.unwrap_or(0);
         let rand_vel = rate_state.entries[entry_idx].config.velocity.unwrap_or(0.0);
-        if rand_vel < 0.0 {
-            eprintln!(
-                "ERROR: velocity in rate-based [[particles.insert]] must be non-negative, got {}",
-                rand_vel
-            );
+        if let Err(e) = validate_insert_velocity(rand_vel, "rate-based [[particles.insert]]") {
+            eprintln!("ERROR: {}", e);
             std::process::exit(1);
         }
         let vel_normal = (rand_vel > 0.0).then(|| {
             Normal::new(0.0, rand_vel)
-                .expect("rate insertion velocity is checked non-negative above")
+                .expect("rate insertion velocity was validated before Normal construction")
         });
         let vx = rate_state.entries[entry_idx]
             .config

@@ -2,22 +2,19 @@ use std::fs;
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-#[test]
-fn empty_discrete_radius_without_region_errors_before_region_sampling() {
+fn run_config_error_case(name: &str, particles_insert: &str) -> String {
     let stamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .expect("system clock must be after Unix epoch")
         .as_nanos();
-    let dir = std::env::temp_dir().join(format!(
-        "dirt-empty-discrete-radius-{}-{stamp}",
-        std::process::id()
-    ));
+    let dir = std::env::temp_dir().join(format!("dirt-{name}-{}-{stamp}", std::process::id()));
     fs::create_dir_all(&dir).expect("create temporary config directory");
     let config = dir.join("config.toml");
 
     fs::write(
         &config,
-        r#"
+        format!(
+            r#"
 [comm]
 processors_x = 1
 processors_y = 1
@@ -47,8 +44,7 @@ friction = 0.5
 
 [[particles.insert]]
 material = "glass"
-count = 2
-radius = { distribution = "discrete", values = [], weights = [] }
+{particles_insert}
 density = 2500.0
 seed = 1
 
@@ -57,7 +53,8 @@ name = "settle"
 dt = 1.0e-5
 steps = 0
 thermo = 1
-"#,
+"#
+        ),
     )
     .expect("write temporary config");
 
@@ -78,16 +75,10 @@ thermo = 1
         .output()
         .expect("run generic config example");
 
-    let stderr = String::from_utf8_lossy(&output.stderr);
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
     assert!(
         !output.status.success(),
         "malformed config should exit non-zero"
-    );
-    assert!(
-        stderr.contains(
-            "ERROR: invalid radius in [[particles.insert]]: discrete radius requires at least one value"
-        ),
-        "stderr should contain typed config error, got:\n{stderr}"
     );
     assert!(
         !stderr.contains("panicked at"),
@@ -95,4 +86,59 @@ thermo = 1
     );
 
     fs::remove_dir_all(&dir).expect("remove temporary config directory");
+    stderr
+}
+
+#[test]
+fn empty_discrete_radius_without_region_errors_before_region_sampling() {
+    let stderr = run_config_error_case(
+        "empty-discrete-radius",
+        r#"
+count = 2
+radius = { distribution = "discrete", values = [], weights = [] }
+"#,
+    );
+    assert!(
+        stderr.contains(
+            "ERROR: invalid radius in [[particles.insert]]: discrete radius requires at least one value"
+        ),
+        "stderr should contain typed config error, got:\n{stderr}"
+    );
+}
+
+#[test]
+fn infinite_immediate_insert_velocity_errors_before_normal_distribution() {
+    let stderr = run_config_error_case(
+        "infinite-immediate-velocity",
+        r#"
+count = 1
+radius = 0.001
+velocity = inf
+"#,
+    );
+    assert!(
+        stderr.contains(
+            "ERROR: velocity in [[particles.insert]] must be finite and non-negative, got inf"
+        ),
+        "stderr should contain typed config error, got:\n{stderr}"
+    );
+}
+
+#[test]
+fn infinite_rate_insert_velocity_errors_before_normal_distribution() {
+    let stderr = run_config_error_case(
+        "infinite-rate-velocity",
+        r#"
+rate = 1
+rate_interval = 1
+radius = 0.001
+velocity = inf
+"#,
+    );
+    assert!(
+        stderr.contains(
+            "ERROR: velocity in rate-based [[particles.insert]] must be finite and non-negative, got inf"
+        ),
+        "stderr should contain typed config error, got:\n{stderr}"
+    );
 }
