@@ -1,17 +1,17 @@
 # =============================================================================
-# DEM → SPH calibration for the MUD de-fluidization model
+# DEM → SPH calibration for the dev_soil_sph de-fluidization model
 # Material: canonical glass beads (ballotini), measured contact params.
 #   e=0.926, ν=0.245, μ_p=0.16, μ_r=0.10 (constant rolling model), ρ_s=2500,
 #   ±10% uniform polydispersity. Assembled 2026-06-18 from the DEM closures in
 #   examples/SPH_glass_sphere_calibration (one folder per closure).
 #
-# Consumed by mud_constitutive::MaterialParams (SPH_temp/crates/mud_constitutive).
+# Consumed by sph_constitutive::MaterialParams (SPH_temp/crates/sph_constitutive).
 # Provenance + confidence are noted per value. Weakly-constrained values flagged.
 # =============================================================================
 
 material: glass_beads_dem
 
-# ---- mud_constitutive::MaterialParams fields ---------------------------------
+# ---- sph_constitutive::MaterialParams fields ---------------------------------
 params:
   # μ(I) rheology. μ_2 from the #1 inertial plateau (well-determined); μ_s from
   # the macro (gentle-repose θ_r≈21°→tanθ≈0.38, and #8's μ(I) fit μ_s=0.38) —

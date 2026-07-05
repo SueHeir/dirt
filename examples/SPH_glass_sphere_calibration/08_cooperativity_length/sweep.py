@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
-"""Cooperativity-length closure sweep for the MUD nonlocal (NGF) branch.
+"""Cooperativity-length closure sweep for the dev_soil_sph nonlocal (NGF) branch.
 
 Runs a shear-rate (γ̇) grid of the Lees-Edwards rig, time-averages the steady
-window, and fits the two closures MUD's nonlocal branch needs:
+window, and fits the two closures dev_soil_sph's nonlocal branch needs:
 
   1. ξ(μ) = A·d / √(μ − μ_s)   →  the cooperativity amplitude A (and divergence).
-  2. g = γ̇/μ ∝ √T             →  the Zhang-Kamrin bridge that lets MUD drive the
+  2. g = γ̇/μ ∝ √T             →  the Zhang-Kamrin bridge that lets dev_soil_sph drive the
                                   fluidity from granular temperature.
 
 Usage:
   python3 sweep.py --run      # generate per-γ̇ configs, run the DEM, then analyze
   python3 sweep.py            # analyze existing data/ CSVs only
 
-Writes data/calibration.yaml (A, μ_s, the g–√T slope) for MUD's MaterialParams,
+Writes data/calibration.yaml (A, μ_s, the g–√T slope) for dev_soil_sph's MaterialParams,
 and plots/cooperativity.png. PASS if the ξ(μ) fit and the g∝√T law hold.
 """
 import argparse
@@ -138,10 +138,10 @@ def analyze(pts):
     if a_amp is not None:
         os.makedirs(DATA, exist_ok=True)
         with open(os.path.join(DATA, "calibration.yaml"), "w") as f:
-            f.write("# MUD nonlocal-cooperativity closure (DEM-calibrated)\n")
+            f.write("# dev_soil_sph nonlocal-cooperativity closure (DEM-calibrated)\n")
             f.write(f"coop_amplitude: {a_amp:.4f}   # A in ξ = A d/√(μ−μ_s)\n")
             f.write(f"mu_s: {MU_S}\n")
-        print(f"\nwrote {os.path.join(DATA, 'calibration.yaml')}  → set coop_amplitude = {a_amp:.3f} in MUD")
+        print(f"\nwrote {os.path.join(DATA, 'calibration.yaml')}  → set coop_amplitude = {a_amp:.3f} in dev_soil_sph")
 
     ok = (a_amp is not None and a_amp > 0) and (r2_g is None or r2_g > 0.5)
     print("PASS" if ok else "FAIL")
