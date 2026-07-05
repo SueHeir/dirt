@@ -51,6 +51,9 @@ use soil_core::{
 };
 use soil_print::Thermo;
 
+const ADDFORCE_SYSTEM_LABEL: &str = "dirt_fixes::addforce";
+const SETFORCE_SYSTEM_LABEL: &str = "dirt_fixes::setforce";
+
 // ── Config structs ─────────────────────────────────────────────────────────
 
 fn default_zero() -> f64 {
@@ -398,10 +401,18 @@ impl Plugin for FixesPlugin {
             app.add_update_system(apply_move_linear_post, ParticleSimScheduleSet::PostForce);
         }
         if has_add {
-            app.add_update_system(apply_add_force, ParticleSimScheduleSet::PostForce);
+            app.add_update_system(
+                apply_add_force.label(ADDFORCE_SYSTEM_LABEL),
+                ParticleSimScheduleSet::PostForce,
+            );
         }
         if has_set {
-            app.add_update_system(apply_set_force, ParticleSimScheduleSet::PostForce);
+            app.add_update_system(
+                apply_set_force
+                    .label(SETFORCE_SYSTEM_LABEL)
+                    .after(ADDFORCE_SYSTEM_LABEL),
+                ParticleSimScheduleSet::PostForce,
+            );
         }
         if has_freeze {
             app.add_update_system(apply_freeze, ParticleSimScheduleSet::PostForce);
@@ -457,6 +468,10 @@ fn setup_fixes(registry: Res<FixesRegistry>, comm: Res<CommResource>, groups: Re
         return;
     }
 
+    if let Some(warning) = addforce_setforce_overlap_warning(&registry, &groups) {
+        eprintln!("{warning}");
+    }
+
     // Print a summary of all active fixes on rank 0.
     for f in &registry.add_forces {
         println!(
@@ -494,6 +509,42 @@ fn setup_fixes(registry: Res<FixesRegistry>, comm: Res<CommResource>, groups: Re
             f.group, f.max_displacement
         );
     }
+}
+
+fn addforce_setforce_overlap_warning(
+    registry: &FixesRegistry,
+    groups: &GroupRegistry,
+) -> Option<String> {
+    let mut overlaps = Vec::new();
+    for add in &registry.add_forces {
+        let add_group = groups.expect(&add.group);
+        for set in &registry.set_forces {
+            let set_group = groups.expect(&set.group);
+            let overlapping_atoms = add_group
+                .mask
+                .iter()
+                .zip(&set_group.mask)
+                .filter(|(in_add, in_set)| **in_add && **in_set)
+                .count();
+            if overlapping_atoms > 0 {
+                overlaps.push(format!(
+                    "addforce group '{}' overlaps setforce group '{}' on {} local atom(s)",
+                    add.group, set.group, overlapping_atoms
+                ));
+            }
+        }
+    }
+
+    if overlaps.is_empty() {
+        return None;
+    }
+
+    Some(format!(
+        "WARNING: overlapping [[addforce]] and [[setforce]] groups detected: {}. \
+Both fixes run in PostForce; DIRT orders addforce before setforce, so setforce overwrites \
+the accumulated force on overlapping atoms. Use disjoint groups if you expected additive behavior.",
+        overlaps.join("; ")
+    ))
 }
 
 /// Sets velocity to the prescribed constant **before** the Verlet position update,
@@ -882,6 +933,101 @@ mod tests {
         assert!((a.force[0][0] - 1.0).abs() < 1e-12);
         assert!((a.force[0][1] - 2.0).abs() < 1e-12);
         assert!((a.force[0][2] - 3.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn test_addforce_setforce_overlap_warns_with_final_semantics() {
+        let groups = make_group_registry("driven", vec![true, true, false]);
+        let mut groups = groups;
+        groups.groups.push(soil_core::Group {
+            name: "clamped".to_string(),
+            def: soil_core::GroupDef {
+                name: "clamped".to_string(),
+                atom_types: None,
+                region: None,
+                dynamic: Some(false),
+            },
+            mask: vec![false, true, true],
+            count: 2,
+        });
+        let registry = FixesRegistry {
+            add_forces: vec![AddForceDef {
+                group: "driven".to_string(),
+                fx: 1.0,
+                fy: 0.0,
+                fz: 0.0,
+            }],
+            set_forces: vec![SetForceDef {
+                group: "clamped".to_string(),
+                fx: 0.0,
+                fy: 0.0,
+                fz: 0.0,
+            }],
+            move_linears: vec![],
+            freezes: vec![],
+            viscous: vec![],
+            cundall: vec![],
+            nve_limit: vec![],
+        };
+
+        let warning = addforce_setforce_overlap_warning(&registry, &groups)
+            .expect("overlapping addforce/setforce groups must warn");
+        assert!(warning.contains("driven"));
+        assert!(warning.contains("clamped"));
+        assert!(warning.contains("1 local atom"));
+        assert!(warning.contains("addforce before setforce"));
+        assert!(warning.contains("setforce overwrites"));
+        assert!(warning.contains("expected additive behavior"));
+    }
+
+    #[test]
+    fn test_addforce_setforce_postforce_order_setforce_wins() {
+        let mut atoms = make_atoms(3);
+        atoms.force[0][0] = 10.0;
+        atoms.force[1][0] = 20.0;
+        atoms.force[2][0] = 30.0;
+        let groups = make_group_registry("all", vec![true, true, true]);
+        let registry = FixesRegistry {
+            add_forces: vec![AddForceDef {
+                group: "all".to_string(),
+                fx: 5.0,
+                fy: 0.0,
+                fz: 0.0,
+            }],
+            set_forces: vec![SetForceDef {
+                group: "all".to_string(),
+                fx: 1.0,
+                fy: 2.0,
+                fz: 3.0,
+            }],
+            move_linears: vec![],
+            freezes: vec![],
+            viscous: vec![],
+            cundall: vec![],
+            nve_limit: vec![],
+        };
+
+        let mut app = App::new();
+        app.add_resource(atoms);
+        app.add_resource(groups);
+        app.add_resource(registry);
+        app.add_update_system(
+            apply_add_force.label(ADDFORCE_SYSTEM_LABEL),
+            ParticleSimScheduleSet::PostForce,
+        );
+        app.add_update_system(
+            apply_set_force
+                .label(SETFORCE_SYSTEM_LABEL)
+                .after(ADDFORCE_SYSTEM_LABEL),
+            ParticleSimScheduleSet::PostForce,
+        );
+        app.organize_systems();
+        app.run();
+
+        let a = app.get_resource_ref::<Atom>().unwrap();
+        for force in &a.force[..3] {
+            assert_eq!(*force, [1.0, 2.0, 3.0]);
+        }
     }
 
     #[test]

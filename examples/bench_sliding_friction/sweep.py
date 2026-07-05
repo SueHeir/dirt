@@ -11,11 +11,14 @@ floor under gravity and validates the classic rigid-body result:
   - thereafter the sphere rolls without slipping at v_final = (5/7) v0,
     independent of mu.
 
-The floor is a real `dirt_wall` z-plane at z = 0 (normal +z). `dirt_wall` applies
-Mindlin tangential (sliding) friction with a Coulomb cap on plane walls, using
-the material's `friction` coefficient — so the flat wall decelerates the sliding
-sphere at a = mu*g and spins it up. The floor is perfectly flat (no curvature
-systematic). See README "Assumptions".
+The floor is a real `dirt_wall` z-plane at z = 0 (normal +z). The executable
+wires the atom, insertion, integration, rotation, gravity, and `WallPlugin`
+pieces individually and deliberately does not register `HertzMindlinContactPlugin`
+or `GranularDefaultPlugins`. `dirt_wall` applies Mindlin tangential (sliding)
+friction with a Coulomb cap on plane walls, using the material's `friction`
+coefficient — so the flat wall decelerates the sliding sphere at a = mu*g and
+spins it up. The floor is perfectly flat (no curvature systematic). See README
+"Assumptions".
 
 Commands (from anywhere):
     python3 examples/bench_sliding_friction/sweep.py generate   # write per-case configs
@@ -113,6 +116,8 @@ gx = 0.0
 gy = 0.0
 gz = -{g}
 [dem]
+# Declarative material-table input for wall contact parameters; this example
+# does not register a particle-particle contact force plugin.
 contact_model = "hertz"
 [[dem.materials]]
 name = "glass"

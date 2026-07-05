@@ -5,9 +5,8 @@
 <!-- /disclaimer-banner -->
 
 
-**A LAMMPS-validated granular-DEM code you can actually read and extend —
-built as composable Rust plugins on the GRASS framework, not a script-driven
-black box.**
+**A LAMMPS-validated granular-DEM engine, easily extended by composing Rust
+plugins on the GRASS framework.**
 
 DIRT — the *Discrete-element Interaction-Resolved Toolkit* — is a research DEM
 code. The physics — Hertz–Mindlin contact, rotational dynamics, parallel bonds,
@@ -16,8 +15,7 @@ plugins you assemble in Rust and cross-check against LAMMPS and closed-form
 theory. It rides the [SOIL](https://github.com/SueHeir/soil) substrate (atom
 data, domain decomposition, halo exchange, neighbor lists) and the
 [GRASS](https://github.com/SueHeir/grass) scheduler, so adding or customizing
-physics means writing one more system function — not authoring a bespoke input
-script. It is a
+physics means writing one more system function. It is a
 ground-up Rust reimplementation building on roughly two years of prior DEM
 development (formerly MDDEM).
 
@@ -166,8 +164,7 @@ themselves:
   without hand-writing domain decomposition, halo exchange, migration, and
   neighbor lists — declare your state once, SOIL carries it through all of it.
 - **[DIRT](https://github.com/SueHeir/dirt)** — A LAMMPS-validated granular-DEM
-  code you can read and extend — composable Rust plugins on the GRASS framework,
-  not a script-driven black box.
+  engine, easily extended by composing Rust plugins on the GRASS framework.
 
 **Where to start:** to *run* granular simulations, start at
 [DIRT](https://github.com/SueHeir/dirt), the batteries-included physics tier; to

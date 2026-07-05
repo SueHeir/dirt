@@ -2214,6 +2214,74 @@ mod tests {
         );
     }
 
+    #[test]
+    fn wall_history_initializes_without_particle_contact_plugin() {
+        let mut atom = Atom::new();
+        let mut dem = DemAtom::new();
+        let radius = 0.001;
+
+        push_dem_test_atom(&mut atom, &mut dem, 0, [0.0, 0.0, 0.0005], radius);
+        atom.vel[0][0] = 0.25;
+        dem.omega[0][1] = 40.0;
+        atom.dt = 1.0e-5;
+        atom.nlocal = 1;
+        atom.natoms = 1;
+
+        let mut registry = AtomDataRegistry::new();
+        registry.register(dem);
+
+        let mut material_table = dirt_atom::MaterialTable::new();
+        material_table.rolling_model = "sds".to_string();
+        material_table.add_material_with_sds(
+            "glass", 8.7e9, 0.3, 0.95, 0.5, 0.2, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0e-7, 0.0, 0.0, 0.0,
+        );
+        material_table.build_pair_tables();
+
+        let walls = make_walls(vec![make_wall_plane(0.0, 0.0, 0.0, 0.0, 0.0, 1.0)]);
+
+        let mut app = App::new();
+        app.add_resource(atom);
+        app.add_resource(registry);
+        app.add_resource(material_table);
+        app.add_resource(walls);
+        app.add_update_system(wall_contact_force, ParticleSimScheduleSet::Force);
+        app.organize_systems();
+        app.run();
+
+        let atom = app.get_resource_ref::<Atom>().unwrap();
+        assert!(
+            atom.force[0][0] < 0.0,
+            "wall tangential friction should oppose positive x slip, got fx={}",
+            atom.force[0][0]
+        );
+
+        let walls = app.get_resource_ref::<Walls>().unwrap();
+        let key = (0u8, 0usize, 0u32);
+        let tangential = walls
+            .tangential_springs
+            .get(&key)
+            .expect("dirt_wall must initialize plane tangential history itself");
+        let rolling = walls
+            .rolling_springs
+            .get(&key)
+            .expect("dirt_wall must initialize plane SDS rolling history itself");
+
+        let tangential_mag = (tangential[0] * tangential[0]
+            + tangential[1] * tangential[1]
+            + tangential[2] * tangential[2])
+            .sqrt();
+        let rolling_mag =
+            (rolling[0] * rolling[0] + rolling[1] * rolling[1] + rolling[2] * rolling[2]).sqrt();
+        assert!(
+            tangential_mag > 0.0,
+            "stored wall tangential spring should advance from zero"
+        );
+        assert!(
+            rolling_mag > 0.0,
+            "stored wall rolling spring should advance from zero"
+        );
+    }
+
     // ── Cylinder wall tests ────────────────────────────────────────────────
 
     fn make_walls_with_cylinder(cyl: WallCylinder) -> Walls {

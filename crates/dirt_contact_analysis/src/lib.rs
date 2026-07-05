@@ -125,7 +125,7 @@ fn default_file_prefix() -> String {
 ///
 /// All fields are optional; the defaults produce no output (everything disabled).
 /// Enable individual analyses by setting the corresponding flag to `true`.
-#[derive(Deserialize, Clone, Default)]
+#[derive(Deserialize, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct ContactAnalysisConfig {
     /// Dump per-contact CSV data every N steps.
@@ -155,6 +155,36 @@ pub struct ContactAnalysisConfig {
     /// File prefix for contact CSV output files (default: `"contact"`).
     #[serde(default = "default_file_prefix")]
     pub file_prefix: String,
+}
+
+impl Default for ContactAnalysisConfig {
+    fn default() -> Self {
+        Self {
+            interval: 0,
+            coordination: false,
+            rattlers: false,
+            fabric_tensor: false,
+            file_prefix: default_file_prefix(),
+        }
+    }
+}
+
+/// Diagnostic for `[contact_analysis]` combinations that would otherwise do nothing.
+///
+/// Rattler counts are computed from the per-atom coordination data, so
+/// `rattlers = true` requires `coordination = true`.  Without this guard the
+/// plugin simply would not register the thermo system that reports
+/// `n_rattlers`/`rattler_fraction`, making the requested output disappear
+/// silently.
+pub fn contact_analysis_config_warning(config: &ContactAnalysisConfig) -> Option<String> {
+    if config.rattlers && !config.coordination {
+        return Some(
+            "WARNING: [contact_analysis] rattlers = true requires coordination = true; \
+             n_rattlers and rattler_fraction will not be emitted."
+                .to_string(),
+        );
+    }
+    None
 }
 
 // ── Per-atom coordination data ──────────────────────────────────────────────
@@ -296,6 +326,9 @@ file_prefix = "contact""#,
 
     fn build(&self, app: &mut App) {
         let config = Config::load::<ContactAnalysisConfig>(app, "contact_analysis");
+        if let Some(msg) = contact_analysis_config_warning(&config) {
+            eprintln!("{}", msg);
+        }
 
         // Always register ContactOutput for per-contact records
         app.add_resource(ContactOutput::new());
@@ -922,8 +955,44 @@ mod tests {
         assert!(!config.coordination);
         assert!(!config.rattlers);
         assert!(!config.fabric_tensor);
-        // Note: Default trait gives "" for String; the "contact" default
-        // is applied by serde during TOML deserialization.
-        assert_eq!(config.file_prefix, "");
+        assert_eq!(config.file_prefix, "contact");
+    }
+
+    #[test]
+    fn test_rattlers_without_coordination_warns() {
+        let config = ContactAnalysisConfig {
+            rattlers: true,
+            coordination: false,
+            ..ContactAnalysisConfig::default()
+        };
+
+        let msg = contact_analysis_config_warning(&config)
+            .expect("rattlers without coordination must produce a diagnostic");
+        assert!(
+            msg.contains("rattlers = true"),
+            "must name the enabled setting: {msg}"
+        );
+        assert!(
+            msg.contains("coordination = true"),
+            "must name the required setting: {msg}"
+        );
+        assert!(
+            msg.contains("n_rattlers") && msg.contains("rattler_fraction"),
+            "must name the missing outputs: {msg}"
+        );
+    }
+
+    #[test]
+    fn test_rattlers_with_coordination_is_clean() {
+        let config = ContactAnalysisConfig {
+            rattlers: true,
+            coordination: true,
+            ..ContactAnalysisConfig::default()
+        };
+
+        assert!(
+            contact_analysis_config_warning(&config).is_none(),
+            "rattlers with coordination enabled is valid and must not warn"
+        );
     }
 }

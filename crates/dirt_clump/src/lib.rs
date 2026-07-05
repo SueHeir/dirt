@@ -79,10 +79,13 @@
 //!   (exact, parallel-axis theorem).
 //! - **Overlapping spheres** → [`compute_inertia_tensor_montecarlo`] with a
 //!   **hardcoded 100 000 samples**. Monte Carlo integration over the bounding
-//!   box double-counts overlap volume correctly, but introduces ~5 % stochastic
-//!   noise in the resulting moments at this sample count; it is the price of
-//!   handling arbitrary overlapping geometry. Both paths are then diagonalized
-//!   into `principal_moments` + `principal_axes`.
+//!   box double-counts overlap volume correctly. The default sampler derives a
+//!   deterministic seed from the clump definition, density, and sample count, so
+//!   repeated runs of the same clump definition get the same estimate; callers
+//!   that need their own bounded stream can use
+//!   [`compute_inertia_tensor_montecarlo_seeded`]. Sampling error remains the
+//!   usual Monte Carlo error (roughly a few percent at this sample count). Both
+//!   paths are then diagonalized into `principal_moments` + `principal_axes`.
 //!
 //! The scalar helper [`compute_clump_inertia`] is **legacy** — it returns only a
 //! single averaged moment (the trace / 3) and is kept for backward
@@ -137,8 +140,9 @@ use dirt_atom::DemAtom;
 
 pub mod body;
 pub use body::{
-    compute_inertia_tensor_analytical, compute_inertia_tensor_montecarlo, diagonalize_inertia,
-    has_overlap, jacobi_eigendecomposition, rotation_matrix_to_quaternion, MultisphereBody,
+    compute_inertia_tensor_analytical, compute_inertia_tensor_montecarlo,
+    compute_inertia_tensor_montecarlo_seeded, diagonalize_inertia, has_overlap,
+    jacobi_eigendecomposition, rotation_matrix_to_quaternion, MultisphereBody,
     MultisphereBodyStore,
 };
 

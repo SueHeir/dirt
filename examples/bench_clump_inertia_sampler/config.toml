@@ -1,0 +1,18 @@
+# Deterministic Monte Carlo inertia sampler validation.
+#
+# The single-sphere reference is analytical: m = rho * 4/3*pi*r^3 and
+# I = 2/5*m*r^2. The example samples the same geometry with the clump Monte
+# Carlo helper so deterministic repeatability and seed-to-seed sampling spread
+# are visible in one figure.
+
+density = 1.0
+radius = 1.0
+tolerance_rel = 0.05
+repeat_count = 20
+sample_counts = [1000, 5000, 20000, 100000]
+seeds = [
+  0, 1, 2, 3, 4, 5, 6, 7,
+  8, 9, 10, 11, 12, 13, 14, 15,
+  16, 17, 18, 19, 20, 21, 22, 23,
+  24, 25, 26, 27, 28, 29, 30, 31,
+]
