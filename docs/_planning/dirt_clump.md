@@ -156,16 +156,18 @@ needed, they are composed as `q_ps = quat_mul(body.quaternion, body.principal_ax
 Confusing these two is a common error: passing `body.quaternion` alone to
 `angmom_to_omega` yields wrong omega if `principal_axes` is not identity.
 
-### 5. Inertia path auto-selection and Monte Carlo noise (`body.rs:400`, `lib.rs:1110`)
+### 5. Inertia path auto-selection and Monte Carlo sampling error (`body.rs:400`, `lib.rs:1110`)
 
 `has_overlap` checks all pairs; if any overlap exists, the Monte Carlo path
 fires with **exactly 100 000 samples** (`lib.rs:1111`). This is hardcoded.
 At 100k samples, the test `montecarlo_single_sphere` (`body.rs:777`) uses
-500k samples and still only asserts 5% tolerance. Production runs with the
-MC path (any overlapping geometry, including the `sphere7` benchmark) carry
-~5% stochastic noise in the principal moments. This is per-body and seeded
-fresh each insertion (uses `rand::rng()`), so there is no reproducibility
-unless a seed is fixed.
+500k samples and still only asserts 5% tolerance. Production runs with the MC
+path (any overlapping geometry, including the `sphere7` benchmark) carry Monte
+Carlo sampling error in the principal moments, but the default seed is derived
+from the ordered sphere offsets/radii, density, and sample count. Repeated runs
+of the same clump definition therefore produce the same inertia estimate;
+programmatic callers can use the explicit seeded helper for bounded sampling
+studies.
 
 ### 6. Richardson quaternion extrapolation (`body.rs:237`)
 
@@ -245,10 +247,9 @@ A tutorial for `physics/clumps.md` could proceed:
    clumps from code (not TOML) have no guidance. Should add at least a
    code example showing the call signature and resource access pattern.
 
-2. **Monte Carlo noise is not quantified for users.** The 5% figure is buried
-   in inline comments and test tolerances (`body.rs:783`). The config reference
-   should warn that overlapping-sphere clumps have stochastic inertia and
-   document the hardcoded sample count (100 000).
+2. **Monte Carlo sampling error is now documented for users.** The config
+   reference and clump physics page document the deterministic seed contract
+   and the hardcoded sample count (100 000).
 
 3. **`compute_clump_inertia` legacy warning is missing from the book.**
    The README and `lib.rs` doc warn about this, but `physics/clumps.md` only
@@ -284,7 +285,7 @@ The existing `docs/src/physics/clumps.md` already covers the architecture
 well. The main work is:
 
 - **`physics/clumps.md`** — expand with: programmatic insertion API, Monte
-  Carlo noise warning (quantified), LEBC/triclinic PBC note, bin-size
+  Carlo sampling-error contract, LEBC/triclinic PBC note, bin-size
   guidance, and a worked config annotated field-by-field.
 - **`reference/config.md`** — add `[clump]` / `[[clump.definitions]]` /
   `[[clump.insert]]` schema table (types, units, defaults, constraints).

@@ -7,8 +7,6 @@
 
 use std::f64::consts::PI;
 
-use rand::Rng;
-
 use super::{quat_rotate, ClumpSphereConfig};
 
 // ── MultisphereBody ─────────────────────────────────────────────────────────
@@ -339,7 +337,47 @@ pub fn compute_inertia_tensor_analytical(
     (total_mass, tensor)
 }
 
-/// Compute inertia tensor via Monte Carlo sampling (handles overlapping spheres).
+const MONTE_CARLO_SEED_OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
+const MONTE_CARLO_SEED_PRIME: u64 = 0x0000_0100_0000_01b3;
+
+fn hash_seed_word(seed: &mut u64, word: u64) {
+    *seed ^= word;
+    *seed = seed.wrapping_mul(MONTE_CARLO_SEED_PRIME);
+}
+
+fn default_montecarlo_seed(spheres: &[ClumpSphereConfig], density: f64, n_samples: usize) -> u64 {
+    let mut seed = MONTE_CARLO_SEED_OFFSET;
+    hash_seed_word(&mut seed, spheres.len() as u64);
+    hash_seed_word(&mut seed, density.to_bits());
+    hash_seed_word(&mut seed, n_samples as u64);
+    for sphere in spheres {
+        for offset in sphere.offset {
+            hash_seed_word(&mut seed, offset.to_bits());
+        }
+        hash_seed_word(&mut seed, sphere.radius.to_bits());
+    }
+    seed
+}
+
+fn splitmix64_next(state: &mut u64) -> u64 {
+    *state = state.wrapping_add(0x9e37_79b9_7f4a_7c15);
+    let mut z = *state;
+    z = (z ^ (z >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
+    z = (z ^ (z >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
+    z ^ (z >> 31)
+}
+
+fn seeded_unit_f64(state: &mut u64) -> f64 {
+    const SCALE: f64 = 1.0 / ((1_u64 << 53) as f64);
+    ((splitmix64_next(state) >> 11) as f64) * SCALE
+}
+
+/// Compute inertia tensor via deterministic Monte Carlo sampling.
+///
+/// The sampling stream is derived from the ordered sphere offsets/radii,
+/// `density`, and `n_samples`, so identical inputs produce bitwise-identical
+/// estimates across runs. Use [`compute_inertia_tensor_montecarlo_seeded`] when
+/// the caller wants to choose the seed explicitly.
 ///
 /// Samples random points within the bounding box; points inside any sphere
 /// contribute to the inertia tensor with uniform density.
@@ -349,6 +387,26 @@ pub fn compute_inertia_tensor_montecarlo(
     spheres: &[ClumpSphereConfig],
     density: f64,
     n_samples: usize,
+) -> (f64, [[f64; 3]; 3]) {
+    let seed = default_montecarlo_seed(spheres, density, n_samples);
+    compute_inertia_tensor_montecarlo_seeded(spheres, density, n_samples, seed)
+}
+
+/// Compute inertia tensor via Monte Carlo sampling with an explicit seed.
+///
+/// Samples random points within the bounding box; points inside any sphere
+/// contribute to the inertia tensor with uniform density.
+///
+/// For a fixed seed, clump definition, density, and sample count, this returns a
+/// repeatable estimate. Sampling error remains the usual Monte Carlo error for
+/// the requested sample count.
+///
+/// Returns `(total_mass, tensor_3x3)`.
+pub fn compute_inertia_tensor_montecarlo_seeded(
+    spheres: &[ClumpSphereConfig],
+    density: f64,
+    n_samples: usize,
+    seed: u64,
 ) -> (f64, [[f64; 3]; 3]) {
     // Compute bounding box
     let mut bb_min = [f64::MAX; 3];
@@ -367,15 +425,15 @@ pub fn compute_inertia_tensor_montecarlo(
     ];
     let bb_volume = bb_size[0] * bb_size[1] * bb_size[2];
 
-    let mut rng = rand::rng();
+    let mut rng_state = seed;
     let mut hits = 0u64;
     let mut tensor = [[0.0_f64; 3]; 3];
 
     for _ in 0..n_samples {
         let p = [
-            bb_min[0] + rng.random::<f64>() * bb_size[0],
-            bb_min[1] + rng.random::<f64>() * bb_size[1],
-            bb_min[2] + rng.random::<f64>() * bb_size[2],
+            bb_min[0] + seeded_unit_f64(&mut rng_state) * bb_size[0],
+            bb_min[1] + seeded_unit_f64(&mut rng_state) * bb_size[1],
+            bb_min[2] + seeded_unit_f64(&mut rng_state) * bb_size[2],
         ];
 
         // Check if point is inside any sphere
@@ -835,6 +893,56 @@ mod tests {
                         tensor[a][b]
                     );
                 }
+            }
+        }
+    }
+
+    #[test]
+    fn montecarlo_default_seed_is_repeatable() {
+        let spheres = vec![
+            ClumpSphereConfig {
+                offset: [-0.4, 0.0, 0.0],
+                radius: 1.0,
+            },
+            ClumpSphereConfig {
+                offset: [0.4, 0.0, 0.0],
+                radius: 1.0,
+            },
+        ];
+        let density = 2.5;
+
+        let first = compute_inertia_tensor_montecarlo(&spheres, density, 20_000);
+        let second = compute_inertia_tensor_montecarlo(&spheres, density, 20_000);
+
+        assert_eq!(first.0.to_bits(), second.0.to_bits());
+        for a in 0..3 {
+            for b in 0..3 {
+                assert_eq!(first.1[a][b].to_bits(), second.1[a][b].to_bits());
+            }
+        }
+    }
+
+    #[test]
+    fn montecarlo_explicit_seed_is_repeatable() {
+        let spheres = vec![
+            ClumpSphereConfig {
+                offset: [-0.25, 0.1, 0.0],
+                radius: 0.75,
+            },
+            ClumpSphereConfig {
+                offset: [0.25, -0.1, 0.0],
+                radius: 0.75,
+            },
+        ];
+        let density = 1.75;
+
+        let first = compute_inertia_tensor_montecarlo_seeded(&spheres, density, 20_000, 42);
+        let second = compute_inertia_tensor_montecarlo_seeded(&spheres, density, 20_000, 42);
+
+        assert_eq!(first.0.to_bits(), second.0.to_bits());
+        for a in 0..3 {
+            for b in 0..3 {
+                assert_eq!(first.1[a][b].to_bits(), second.1[a][b].to_bits());
             }
         }
     }

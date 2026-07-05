@@ -54,8 +54,10 @@ Body dynamics follow LIGGGHTS's `FixMultisphere` (the helper names
   is needed (e.g. inside `angmom_to_omega`).
 
 The overlapping-sphere inertia path uses a **hardcoded 100 000 Monte-Carlo
-samples** (≈ 5 % noise in the moments). The scalar helper `compute_clump_inertia`
-is **legacy** (trace/3 only) and is not used by the integrator — prefer the
+samples**. The default sampler derives a deterministic seed from the clump
+definition, density, and sample count; use the seeded helper when a caller needs
+to choose the sampling stream. The scalar helper `compute_clump_inertia` is
+**legacy** (trace/3 only) and is not used by the integrator — prefer the
 full-tensor functions.
 
 ## Example

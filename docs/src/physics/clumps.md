@@ -90,18 +90,18 @@ whether the spheres overlap:
 - **Non-overlapping spheres** → exact, parallel-axis theorem.
 - **Overlapping spheres** → Monte Carlo over the bounding box with a hardcoded
   **100 000 samples**. This double-counts overlap volume correctly but
-  introduces ~5 % stochastic noise in the resulting moments at this sample
+  introduces Monte Carlo sampling error in the resulting moments at this sample
   count — the price of handling arbitrary overlapping geometry.
 
 Both paths are then diagonalized into `principal_moments` + `principal_axes`.
 
-> **Overlapping-sphere inertia is non-reproducible.** The Monte Carlo path draws
-> its 100 000 samples from a *freshly-seeded, unseeded* RNG at each clump's
-> creation. The ~5 % noise it leaves in the principal moments is therefore
-> different on every run — two runs of the *same* config produce slightly
-> different rigid-body inertias. For any overlapping geometry (which includes
-> most realistic clumps, e.g. the `sphere7` benchmark) treat the per-body inertia
-> as a stochastic quantity, not a fixed number.
+> **Overlapping-sphere inertia is deterministic for a fixed definition.** The
+> default Monte Carlo path derives its seed from the ordered clump sphere
+> offsets/radii, density, and sample count, so two runs of the same config
+> produce identical rigid-body inertias. The estimate still has Monte Carlo
+> sampling error; the production insertion path uses 100 000 samples, while
+> programmatic callers can use `compute_inertia_tensor_montecarlo_seeded` to
+> choose an explicit seed for bounded sampling studies.
 
 > A scalar helper `compute_clump_inertia` is **legacy** — it returns only a
 > single averaged moment (the trace ÷ 3) and is kept for backward compatibility.
