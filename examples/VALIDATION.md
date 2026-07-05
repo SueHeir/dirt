@@ -418,6 +418,25 @@ dynamics.
 
 ---
 
+# Tier 2b — Config-level reproducibility
+
+`bench_clump_insertion_determinism` runs the actual config/setup path for
+`[[clump.insert]]` through `ClumpPlugin` and `clump_insert_atoms`, writes the
+inserted atom/body fingerprint, and byte-compares repeated runs.
+
+![Clump insertion determinism](bench_clump_insertion_determinism/plots/clump_insertion_determinism.png)
+
+*Same-seed runs are byte-identical (max bit-fingerprint delta = 0); changing the
+seed produces a non-zero state divergence. PASS means the production setup path,
+not just a lower-level helper, is seeded.*
+
+**Honest read:** this is a reproducibility/regression gate, not a physics
+validation. It proves deterministic clump positions, velocities, and random
+orientations for the same config and catches any return to entropy-seeded
+insertion in the setup system.
+
+---
+
 # Tier 3 — Bulk granular phenomena (empirical / qualitative)
 
 Bulk behaviour against empirical correlations or trends — the weakest tier.
@@ -671,6 +690,7 @@ will need a benchmark when re-added.)
 | fiber_crossover | Coulomb limit μN | analytical (self-consistent) | PASS; ratio circular vs measured N |
 | sphere/clump haff | Haff law + LAMMPS | law (cross-code) | PASS; R²≈0.9999, slope −1.88 / −1.79 at t/tc≈5 / 11; −2 not fully reached; tc unvalidated; clump cross-check calibrated |
 | rod haff | Haff law + LAMMPS | law (cross-code) | FAIL (known limitation); Haff R²=0.9999 but late-time slope ≈−1.59 at t/tc≈5 straddles/misses the −2.3<slope<−1.6 gate; exits 1 |
+| clump_insertion_determinism | own repeated config run | reproducibility | PASS; same-seed config path byte-identical, changed seed diverges |
 | angle_of_repose | empirical (none exact) | qualitative | PASS; trends only; frozen-bed |
 | column_collapse | Lube/Lajeunesse (empirical) + LAMMPS cross-check | empirical scaling + cross-code | FAIL (genuine finite-size limit, not fit noise); linear exponent 1.54 vs 1.0 outside ±0.25 after seed-averaging + 11-pt sweep + sub-diameter metric; LAMMPS misses identically (1.27); exits 1 |
 | hopper_beverloo | Beverloo (empirical) | empirical correlation | PASS; exponent 1.36 vs 1.5; prefactor untested |

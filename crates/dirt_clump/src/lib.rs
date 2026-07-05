@@ -1408,7 +1408,7 @@ pub fn is_body_atom(clump_data: &ClumpAtom, i: usize) -> bool {
 mod tests {
     use super::*;
     use dirt_atom::DemAtom;
-    use soil_core::{Atom, AtomDataRegistry};
+    use soil_core::{Atom, AtomDataRegistry, SingleProcessComm};
 
     /// Non-overlapping dimer (center distance > r1 + r2) for deterministic tests.
     fn make_dimer_def() -> ClumpDef {
@@ -1495,6 +1495,66 @@ mod tests {
         );
 
         assert_eq!(inserted, insert.count);
+        clump_state_bits(&atoms, &bodies)
+    }
+
+    fn config_insert_snapshot(seed: Option<u64>) -> Vec<u64> {
+        let mut app = App::new();
+        let mut registry = AtomDataRegistry::new();
+        registry.register(DemAtom::new());
+        registry.register(ClumpAtom::new());
+
+        let mut domain = Domain::new();
+        domain.boundaries_low = [-0.03; 3];
+        domain.boundaries_high = [0.03; 3];
+        domain.sub_domain_low = domain.boundaries_low;
+        domain.sub_domain_high = domain.boundaries_high;
+        domain.size = [0.06; 3];
+        domain.sub_length = domain.size;
+        domain.volume = 0.06_f64.powi(3);
+
+        let mut clump_registry = ClumpRegistry::new();
+        clump_registry.defs.push(make_dimer_def());
+
+        let insert = ClumpInsertConfig {
+            definition: "dimer".to_string(),
+            count: 6,
+            density: 2500.0,
+            material: "glass".to_string(),
+            velocity: Some(0.25),
+            region: Some(Region::Block {
+                min: [-0.02, -0.02, -0.02],
+                max: [0.02, 0.02, 0.02],
+            }),
+            random_orientation: true,
+            seed,
+        };
+
+        let mut materials = dirt_atom::MaterialTable::new();
+        materials.add_material("glass", 8.7e9, 0.3, 0.9, 0.5, 0.0, 0.0);
+        materials.build_pair_tables();
+
+        app.add_resource(Atom::new());
+        app.add_resource(registry);
+        app.add_resource(CommResource(Box::new(SingleProcessComm::new())));
+        app.add_resource(domain);
+        app.add_resource(clump_registry);
+        app.add_resource(MultisphereBodyStore::new());
+        app.add_resource(ClumpTopConfig {
+            definitions: None,
+            insert: Some(vec![insert]),
+        });
+        app.add_resource(materials);
+        app.add_resource(SchedulerManager::default());
+        app.add_setup_system(
+            clump_insert_atoms.label("clump_insert_atoms"),
+            ScheduleSetupSet::Setup,
+        );
+        app.organize_systems();
+        app.setup();
+
+        let atoms = app.get_resource_ref::<Atom>().unwrap();
+        let bodies = app.get_resource_ref::<MultisphereBodyStore>().unwrap();
         clump_state_bits(&atoms, &bodies)
     }
 
@@ -1610,6 +1670,29 @@ mod tests {
         assert_eq!(
             default_a, default_b,
             "omitting [[clump.insert]] seed should still use the deterministic default"
+        );
+    }
+
+    #[test]
+    fn test_config_clump_insert_system_is_byte_stable() {
+        let first = config_insert_snapshot(Some(20260705));
+        let second = config_insert_snapshot(Some(20260705));
+        assert_eq!(
+            first, second,
+            "the clump_insert_atoms setup system must honor [[clump.insert]] seed"
+        );
+
+        let different_seed = config_insert_snapshot(Some(20260706));
+        assert_ne!(
+            first, different_seed,
+            "changing [[clump.insert]] seed should change the config insertion stream"
+        );
+
+        let default_a = config_insert_snapshot(None);
+        let default_b = config_insert_snapshot(None);
+        assert_eq!(
+            default_a, default_b,
+            "the clump_insert_atoms setup system must use the deterministic default seed"
         );
     }
 
