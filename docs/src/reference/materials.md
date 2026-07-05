@@ -81,7 +81,7 @@ on what the quantity is:
 | `rolling_stiffness_ij`, `twisting_stiffness_ij` (SDS) | Harmonic mean (or one-sided if only one material sets it) |
 | `e_eff_ij` (Hertz E*) | `1 / ((1−νᵢ²)/Eᵢ + (1−νⱼ²)/Eⱼ)` |
 | `g_eff_ij` (Mindlin G*) | Effective shear modulus from per-material E, ν |
-| `beta_ij` (damping) | COR inversion — see below |
+| `beta_ij` (damping) | Derived from mixed restitution — see below |
 
 The intuition: **friction-like** and **energy-like** quantities mix
 geometrically (a smooth material against a rough one lands in between), while
@@ -91,26 +91,36 @@ closed-form Hertz/Mindlin contact-of-two-elastic-bodies result.
 
 ## Restitution → damping
 
-`restitution` is stored as the **target coefficient of restitution (COR)**, not
-a damping ratio. In phase 2, `beta_ij` is computed by **inverting the exact
-head-on Hertz collision** — a bisection on the monotone `COR(β)` curve of the
-head-on Hertz model. This makes the **input restitution the realized COR** of a
-binary collision, so DIRT's shear and cooling results land on the same
-kinetic-theory line as LAMMPS/LIGGGHTS (`damping coeff_restitution`) rather than
-on a shifted "realized-e" line.
-
-The two models invert differently:
+`restitution` is stored as the **nominal coefficient of restitution (COR)** in
+LAMMPS's convention, not a damping ratio. In phase 2, `beta_ij` is derived from
+the mixed restitution so that DIRT integrates the **same normal-damping force**
+as the reference DEM code (LAMMPS) for the same nominal restitution input. The
+derivation differs by contact model:
 
 - **Hooke (linear):** `β = −ln(e) / √(π² + ln²e)` — exact for a
-  constant-stiffness spring-dashpot, velocity-independent.
-- **Hertz (nonlinear):** a numerically exact inversion of the Hertz-collision
-  `COR(β)` curve. An older Tsuji *polynomial* fit realized a COR *above* nominal
-  (e.g. 0.95 → 0.965); the exact inversion removes that bias so input `e` equals
-  realized COR.
+  constant-stiffness spring-dashpot, velocity-independent. Matches LAMMPS
+  `damping coeff_restitution` for the linear contact.
+- **Hertz (nonlinear):** `β = α(e) / √5`, where `α(e)` is the **Tsuji (1992)
+  polynomial** (`hertz_beta_for_cor`). This makes DIRT's
+  `2β√(5/6)·√(Sₙmᵣ)·vₙ` normal damping **identical** to LAMMPS `damping tsuji`
+  `α(e)·√(mₑFₙ/δ)·vₙ`, so both codes integrate the same force and realize the
+  same velocity-independent COR (verified by the `bench_hertz_rebound`
+  cross-code check).
+
+Because the Tsuji polynomial is a *fit*, the Hertz path does **not** force the
+input `e` to equal the realized COR: below `e ≈ 0.9` the realized COR sits
+slightly above nominal `e` — but this is a property **shared** with LAMMPS's
+Tsuji model, not a DIRT-specific bias. A previous mapping did a numerically
+exact inversion of the head-on Hertz `COR(β)` curve so that realized COR equalled
+nominal `e`; that was **removed** because it disagreed with LAMMPS's `damping
+tsuji` by up to 0.067, putting the two codes on different lines.
 
 This matters because near the elastic limit the granular temperature scales as
-`T* ∝ 1/(1 − e²)`, so any input-vs-realized gap throws the stress off. See the
-[validation chapter](validation.md) for the measured COR caveat.
+`T* ∝ 1/(1 − e²)`, so agreeing with the reference code's damping model (rather
+than back-fitting a "realized-e = input-e" curve that LAMMPS does not use) is
+what keeps DIRT's shear and cooling results on the same kinetic-theory line as
+LAMMPS/LIGGGHTS. See the [validation chapter](validation.md) for the measured
+COR caveat.
 
 ## Which model reads which field
 
