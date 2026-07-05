@@ -225,8 +225,6 @@ def smoke():
     for ok, msg in checks:
         print(f"  [{'PASS' if ok else 'FAIL'}] {msg}")
     ok = all(ok for ok, _ in checks)
-    if ok:
-        write_plots(ys, phi, T, qy, title_note=" (smoke gate)")
     print(f"\n{npass}/{len(checks)} checks passed")
     print("ALL CHECKS PASSED" if ok else "CHECKS FAILED")
     sys.exit(0 if ok else 1)
