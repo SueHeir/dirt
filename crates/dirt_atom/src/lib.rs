@@ -320,6 +320,51 @@ impl Default for DemConfig {
     }
 }
 
+/// Diagnostic for the Hooke/Hertz adhesion asymmetry footgun.
+///
+/// JKR/DMT adhesion (driven by per-material `surface_energy`) is implemented
+/// **only** on the Hertz contact path; the `contact_model = "hooke"`
+/// linear-spring path ignores `surface_energy` entirely (see the module docs of
+/// `dirt_granular` and `dirt_granular::contact`). Under `contact_model = "hooke"`
+/// a nonzero `surface_energy` is therefore *silently dropped*, which reads as a
+/// physics change that never happens.
+///
+/// Returns `Some(message)` when the loaded config is in that silent-drop state —
+/// `contact_model == "hooke"` and at least one material sets `surface_energy > 0`
+/// — naming every offending material and pointing at the Hertz path. Returns
+/// `None` otherwise (Hertz with any `surface_energy`, or Hooke with all
+/// `surface_energy == 0`), so a clean config produces no diagnostic. This
+/// function is pure (no I/O); the plugin build wires it to `eprintln!`.
+///
+/// The `"hooke"` comparison is exact and mirrors the runtime dispatch in
+/// `HertzMindlinContactPlugin` (any non-`"hooke"` string selects the Hertz path).
+pub fn hooke_surface_energy_warning(config: &DemConfig) -> Option<String> {
+    if config.contact_model != "hooke" {
+        return None;
+    }
+    let offenders: Vec<&str> = match config.materials {
+        Some(ref mats) => mats
+            .iter()
+            .filter(|m| m.surface_energy > 0.0)
+            .map(|m| m.name.as_str())
+            .collect(),
+        None => Vec::new(),
+    };
+    if offenders.is_empty() {
+        return None;
+    }
+    Some(format!(
+        "WARNING: contact_model = \"hooke\" ignores `surface_energy` \
+         (JKR/DMT adhesion is only implemented on the Hertz contact path). \
+         surface_energy > 0 on material(s) [{}] will be SILENTLY DROPPED — no \
+         adhesion/pull-off force will be applied. To get JKR/DMT adhesion set \
+         contact_model = \"hertz\" (the default); otherwise set surface_energy = 0 \
+         on these material(s) to silence this warning. For linear-spring cohesion \
+         under Hooke, use `cohesion_energy` (SJKR) instead.",
+        offenders.join(", ")
+    ))
+}
+
 // ── MaterialTable — per-material and per-pair precomputed properties ────────
 
 /// Per-material properties and precomputed per-pair mixing tables for contact force evaluation.
@@ -954,6 +999,13 @@ friction = 0.4
 
         let dem_config = Config::load::<DemConfig>(app, "dem");
 
+        // Ergonomics guard: contact_model = "hooke" silently ignores surface_energy
+        // (JKR/DMT adhesion lives only on the Hertz path). Warn loudly instead of
+        // silently dropping adhesion. See `hooke_surface_energy_warning`.
+        if let Some(msg) = hooke_surface_energy_warning(&dem_config) {
+            eprintln!("{}", msg);
+        }
+
         // Build MaterialTable from config at plugin build time
         let mut material_table = MaterialTable::new();
 
@@ -1105,6 +1157,94 @@ mod tests {
             "e_eff_ij[0][0] should be {}, got {}",
             expected,
             mt.e_eff_ij[0][0]
+        );
+    }
+
+    // ── hooke_surface_energy_warning: silent-drop ergonomics guard ────────────
+
+    /// Build a minimal `MaterialConfig` with a given `surface_energy`; all other
+    /// force-law parameters are zeroed (they are irrelevant to the diagnostic).
+    fn mat(name: &str, surface_energy: f64) -> MaterialConfig {
+        MaterialConfig {
+            name: name.to_string(),
+            youngs_mod: 8.7e9,
+            poisson_ratio: 0.3,
+            restitution: 0.9,
+            friction: 0.4,
+            rolling_friction: 0.0,
+            cohesion_energy: 0.0,
+            surface_energy,
+            twisting_friction: 0.0,
+            kn: 0.0,
+            kt: 0.0,
+            rolling_stiffness: 0.0,
+            rolling_damping: 0.0,
+            twisting_stiffness: 0.0,
+            twisting_damping: 0.0,
+        }
+    }
+
+    fn cfg(contact_model: &str, materials: Vec<MaterialConfig>) -> DemConfig {
+        DemConfig {
+            contact_model: contact_model.to_string(),
+            materials: Some(materials),
+            ..DemConfig::default()
+        }
+    }
+
+    #[test]
+    fn warns_for_hooke_with_surface_energy() {
+        // hooke + surface_energy > 0 → diagnostic fires, names the field, the
+        // offending material, and points at the Hertz path.
+        let config = cfg("hooke", vec![mat("glass", 0.05)]);
+        let msg = hooke_surface_energy_warning(&config)
+            .expect("hooke + surface_energy>0 must produce a diagnostic");
+        assert!(msg.contains("surface_energy"), "must name the ignored field: {msg}");
+        assert!(msg.contains("glass"), "must name the offending material: {msg}");
+        assert!(msg.contains("hertz"), "must point at the hertz path: {msg}");
+        assert!(msg.contains("hooke"), "must name the offending contact_model: {msg}");
+    }
+
+    #[test]
+    fn warns_lists_all_offending_materials() {
+        let config = cfg("hooke", vec![mat("glass", 0.05), mat("dry", 0.0), mat("wet", 0.02)]);
+        let msg = hooke_surface_energy_warning(&config).expect("diagnostic must fire");
+        assert!(msg.contains("glass") && msg.contains("wet"), "names all offenders: {msg}");
+        assert!(!msg.contains("dry"), "must not name a zero-surface_energy material: {msg}");
+    }
+
+    #[test]
+    fn silent_for_hertz_with_surface_energy() {
+        // hertz + surface_energy > 0 is the *correct* JKR/DMT configuration — no
+        // diagnostic. (Default contact_model is "hertz".)
+        let config = cfg("hertz", vec![mat("glass", 0.05)]);
+        assert!(
+            hooke_surface_energy_warning(&config).is_none(),
+            "hertz + surface_energy>0 is valid and must NOT warn"
+        );
+        let default_model = cfg(&default_contact_model(), vec![mat("glass", 0.05)]);
+        assert!(
+            hooke_surface_energy_warning(&default_model).is_none(),
+            "default (hertz) + surface_energy>0 must NOT warn"
+        );
+    }
+
+    #[test]
+    fn silent_for_hooke_without_surface_energy() {
+        // hooke + surface_energy == 0 drops nothing → no diagnostic.
+        let config = cfg("hooke", vec![mat("glass", 0.0), mat("steel", 0.0)]);
+        assert!(
+            hooke_surface_energy_warning(&config).is_none(),
+            "hooke + surface_energy=0 drops nothing and must NOT warn"
+        );
+    }
+
+    #[test]
+    fn silent_for_hooke_with_no_materials() {
+        let config = cfg("hooke", vec![]);
+        assert!(
+            hooke_surface_energy_warning(&config).is_none(),
+            "hooke with no materials must NOT warn"
         );
     }
 }
