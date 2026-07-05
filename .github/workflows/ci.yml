@@ -12,6 +12,18 @@ on:
     branches: [main, master]
   pull_request:
   workflow_dispatch:
+    inputs:
+      validation_suite:
+        description: "Validation suite to run"
+        type: choice
+        default: smoke
+        options:
+          - smoke
+          - full
+  schedule:
+    # Nightly full validation keeps broad benchmark coverage without making
+    # every PR wait for the whole benchmark suite.
+    - cron: "17 8 * * *"
 
 # Cancel superseded runs on the same ref to save CI minutes.
 concurrency:
@@ -48,10 +60,20 @@ jobs:
       - name: Test
         run: cargo test --workspace --no-default-features --features "$DIRT_FEATURES" --verbose
 
-      - name: Run validation example
+      - name: Install Python validation dependencies
+        run: python3 -m pip install --user numpy matplotlib
+
+      - name: Run validation examples
         env:
           BENCH_PYTHON: python3
-        run: python3 examples/bench_hertz_rebound/sweep.py
+        run: |
+          suite=smoke
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            suite=full
+          elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            suite="${{ inputs.validation_suite }}"
+          fi
+          python3 examples/ci_validation.py --suite "$suite"
 
       - name: Clippy
         run: cargo clippy --workspace --all-targets --no-default-features --features "$DIRT_FEATURES"
