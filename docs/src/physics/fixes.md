@@ -64,11 +64,13 @@ fz = 0.0
 ```
 
 You may declare multiple `[[addforce]]` (and `[[setforce]]`) blocks; each is
-applied independently. But both kinds run in `PostForce`, and the scheduler does
-not order independently-registered systems within a set. If the **same atom** is
-in a group targeted by both an `addforce` and a `setforce`, the result is
-undefined (last writer wins, with no guaranteed order). Do not overlap groups
-between the two unless you control the ordering yourself.
+applied independently. Both kinds run in `PostForce`, and DIRT explicitly orders
+`addforce` before `setforce`. If the **same atom** is in a group targeted by both
+an `addforce` and a `setforce`, the added force is applied first and then
+discarded by `setforce`; the final force is the `setforce` vector, not the sum.
+DIRT prints a rank-0 startup warning when the configured group masks overlap so
+the non-additive behavior is visible. Use disjoint groups if you expected
+additive behavior.
 
 ### Prescribed motion
 
@@ -141,6 +143,6 @@ group = "anchor"
 | Fix | Schedule phase |
 |---|---|
 | `gravity` | `Force` |
-| `addforce`, `setforce`, `freeze`, `viscous` | `PostForce` |
+| `addforce` -> `setforce`, `freeze`, `viscous` | `PostForce` |
 | `move_linear` | `PreInitialIntegration` (set velocity) + `PostForce` (zero force) |
 | `nve_limit` | `PostFinalIntegration` (clamp after the final integration) |
