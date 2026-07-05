@@ -1,7 +1,7 @@
 //! sphcal_compressibility — isotropic-compression bulk modulus of glass beads.
 //!
 //! Deliverable #2 of the SPH glass-sphere calibration campaign: the **bulk
-//! compressibility closure** K(Φ) for the MUD SPH model. A triperiodic box of
+//! compressibility closure** K(Φ) for the dev_soil_sph model. A triperiodic box of
 //! glass beads (gravity off) is compressed quasi-statically and isotropically —
 //! the `[deform] vel` driver pushes all three box faces inward at equal speed —
 //! while pressure and solid fraction are streamed each thermo interval. The

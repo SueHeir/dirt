@@ -72,7 +72,7 @@ The grid spans quasi-static to inertial flow, populating the μ(I)/Φ(I) curve.
 4. **Bagnold** — `P/γ̇²` spread per Φ reports inertial-regime consistency.
 
 The fitted `(μ_s, μ₂, I₀, Φ_max, ρ_c)` are written to `data/calibration.yaml`
-for `mud_constitutive::MaterialParams`. Glass-bead anchors: `μ_s ≈ 0.38`,
+for `sph_constitutive::MaterialParams`. Glass-bead anchors: `μ_s ≈ 0.38`,
 `μ₂ ≈ 0.64`, `I₀ ≈ 0.28` (possibly lower for spheres).
 
 ## How to Run

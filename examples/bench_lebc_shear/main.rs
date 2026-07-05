@@ -5,7 +5,7 @@
 //! deform style (`[deform] xy = { style = "erate", rate = γ̇ }`). With gravity
 //! off and a fixed box, this produces homogeneous simple shear; in steady state
 //! the stress tensor and granular temperature give the μ(I), Φ(I) closure that
-//! the MUD SPH solver consumes, and — in the frictionless limit — a clean check
+//! the dev_soil_sph solver consumes, and — in the frictionless limit — a clean check
 //! against granular kinetic theory.
 //!
 //! The recorder streams, each thermo interval, the **full stress tensor** (the

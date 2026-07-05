@@ -8,7 +8,7 @@
 #
 # This is the FRICTIONAL/production path (glass μ_p = 0.16). sweep.py runs the
 # (Φ, γ̇) grid, time-averages the steady window, and fits the μ(I)/Φ(I) closure
-# (μ_s, μ_2, I_0, Φ_max, ρ_c = Φ_max·ρ_s) that the MUD SPH solver consumes.
+# (μ_s, μ_2, I_0, Φ_max, ρ_c = Φ_max·ρ_s) that the dev_soil_sph solver consumes.
 #
 # Run:
 #   cargo run --release --example sphcal_shear_rheology --no-default-features -- examples/SPH_glass_sphere_calibration/01_shear_rheology/config.toml

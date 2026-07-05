@@ -10,7 +10,7 @@
 #   e = 0.926, ν = 0.245, μ_p = 0.16, μ_r = 0.10 (default "constant" rolling model),
 #   ρ = 2500, and ±10% uniform polydispersity (radius ∈ [0.00099, 0.00121] about
 #   r = 0.0011), so the extracted dissipation closure reflects the real frictional,
-#   rolling-resistant, polydisperse material the MUD SPH solver actually consumes.
+#   rolling-resistant, polydisperse material the dev_soil_sph solver actually consumes.
 # With rolling friction and polydispersity the gas no longer obeys the smooth-sphere
 # Haff law exactly; the deliverable is the realized cooling/dissipation rate, not a
 # Haff PASS/FAIL — run the Haff validation (config.toml) for that.
