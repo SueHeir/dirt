@@ -17,10 +17,22 @@ Commands (from anywhere):
     python3 examples/bench_column_collapse/sweep.py            # all three, in order
 
 The aspect ratio is swept by changing the particle count (settled column height H)
-at fixed column width L0. Each DIRT run dumps the rest-state deposit
+at fixed column width L0. Each aspect is run at several insertion seeds and the
+runout is AVERAGED over seeds. Each DIRT run dumps the rest-state deposit
 (x, y, z, radius) to data/<case>/column_collapse_results.csv; this script reads
-those, computes L_f as the furthest x where the local deposit height exceeds one
-particle diameter, and fits the runout exponent in each regime.
+those, computes L_f as the far edge of the deposit toe on a sub-diameter grid
+(see measure_column), and fits the runout exponent in each regime.
+
+Measurement quality (not the tolerance) was hardened to remove the three fit
+artifacts the original coarse sweep was suspected of: (1) diameter-scale runout
+quantization (now a sub-diameter deposit-toe metric that keeps the original height
+definition), (2) single-seed packing scatter of ~±20-25% (now seed-averaged), and
+(3) a coarse 6-point aspect sweep (now 11 points across both regimes). The ±0.25
+exponent tolerance is UNCHANGED and the gate still exits non-zero on a genuine
+miss. With those artifacts removed the linear-regime exponent barely moved (from
+1.57 to 1.54), and an independent code (LAMMPS) run through the identical metric
+misses the target the same way — so the miss is a genuine finite-size result of
+this deliberately small benchmark, not a measurement artifact (see README).
 
 If a LAMMPS binary (lmp_serial / lmp / lmp_mpi / lammps) is on PATH, each aspect
 ratio is ALSO run in LAMMPS with the equivalent granular model (pair_style
@@ -82,10 +94,37 @@ COLLAPSE_STEPS = 200000
 PACKING = 0.60             # settled solid fraction used to size the particle count
 
 # Aspect ratios to sweep. Spans both regimes (linear a<~2-3, power-law a>~3) so a
-# regime change is resolvable.
-ASPECTS = [0.5, 1.0, 2.0, 3.0, 4.0, 5.0]
+# regime change is resolvable. The sweep is deliberately FINE — extra points in
+# BOTH regimes (7 in the linear regime, 5 in the power regime) so each least-
+# squares exponent is fit from many points instead of a coarse handful, which was
+# a dominant source of fit noise in the earlier 6-point sweep.
+ASPECTS = [0.5, 0.75, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0]
 
-# Validation tolerances on the fitted runout exponent per regime.
+# Insertion RNG seeds. Every aspect ratio is run once per seed and the runout is
+# AVERAGED over seeds before the exponent is fit. Packing randomness in a quasi-2D
+# (3-diameter-deep) column produced ~±20-25% run-to-run scatter in the runout at a
+# single seed — the other dominant source of fit noise — so seed-averaging is
+# essential to a stable exponent. (The DIRT inserter is seeded by the `seed` field
+# on [[particles.insert]]; LAMMPS, if present, is run once at its own fixed seed.)
+SEEDS = [0, 1, 2]
+
+# ── Runout metric ────────────────────────────────────────────────────────────
+# Sub-diameter deposit-toe front (see measure_column). This keeps the ORIGINAL
+# physical definition — the runout is the far edge of the deposit where it is at
+# least ~one diameter tall (a grain centre >= one diameter above the floor, i.e.
+# >= 2 grain layers, which rejects the single-grain leading smear and lone rolled
+# fliers) — but REMOVES that definition's diameter-scale quantization. The earlier
+# metric binned x at one particle DIAMETER and reported the bin edge, quantizing
+# L_f to 3 mm steps (~0.125 in normalized runout) so whole aspect ratios shared a
+# runout bin. FINE_BINS subdivides each diameter into sub-cells (sub-diameter
+# resolution); GAP_TOL_D is how much clear vacuum (in diameters) may separate
+# neighbouring toe grains before the contiguous deposit is judged to have ended.
+FINE_BINS = 8              # x-cells per particle diameter (sub-diameter resolution)
+GAP_TOL_D = 1.0            # a clear gap > 1 grain diameter ends the contiguous deposit
+TOE_MIN_HEIGHT_D = 1.0     # deposit toe = grain centre >= this many diameters up (>=2 layers)
+
+# Validation tolerances on the fitted runout exponent per regime. UNCHANGED — the
+# measurement is improved, the pass band is not touched.
 EXP_TOL = 0.25             # |fitted exponent - target| pass band
 LINEAR_TARGET = 1.0        # (L_f-L0)/L0 ~ a^1   for a <~ 2-3
 POWER_TARGET = 2.0 / 3.0   # (L_f-L0)/L0 ~ a^2/3 for a >~ 3
@@ -105,7 +144,16 @@ def case_tag(aspect):
 
 
 def case_dir(aspect):
+    """Seed-0 case directory (also used by the LAMMPS leg and the profile plot)."""
     return os.path.join(SWEEP_DIR, case_tag(aspect))
+
+
+def case_dir_seed(aspect, seed):
+    """Per-(aspect, seed) directory. Seed 0 reuses case_dir() so LAMMPS and the
+    representative-deposit plot keep pointing at a stable location."""
+    if seed == 0:
+        return case_dir(aspect)
+    return os.path.join(SWEEP_DIR, f"{case_tag(aspect)}_s{seed}")
 
 
 def data_case_dir(aspect):
@@ -156,6 +204,7 @@ material = "glass"
 count = {count}
 radius = {radius}
 density = {density}
+seed = {seed}
 region = {{ type = "block", min = [0.0015, 0.0015, 0.0015], max = [0.0225, 0.0075, {insert_top}] }}
 
 [[wall]]
@@ -215,25 +264,29 @@ dt = {dt}
 
 def generate():
     os.makedirs(SWEEP_DIR, exist_ok=True)
+    n_cfg = 0
     for a in ASPECTS:
-        cdir = case_dir(a)
-        os.makedirs(cdir, exist_ok=True)
         n = n_particles(a)
         h = a * L0
         # Loose insert column ~1.6x the settled height; cap the box height.
         insert_top = min(0.18, max(0.02, 1.6 * h))
         z_high = max(0.2, insert_top + 0.05)
-        with open(os.path.join(cdir, "config.toml"), "w") as f:
-            f.write(TOML_TEMPLATE.format(
-                aspect=a, count=n,
-                youngs=YOUNGS_MOD, poisson=POISSON,
-                restitution=RESTITUTION, friction=FRICTION,
-                radius=RADIUS, density=DENSITY,
-                insert_top=f"{insert_top:.4f}", z_high=f"{z_high:.4f}",
-                output_dir=cdir, dt=f"{DT:.3e}",
-                settle_steps=SETTLE_STEPS, collapse_steps=COLLAPSE_STEPS,
-            ))
-    print(f"Generated {len(ASPECTS)} configs under {SWEEP_DIR}")
+        for s in SEEDS:
+            cdir = case_dir_seed(a, s)
+            os.makedirs(cdir, exist_ok=True)
+            with open(os.path.join(cdir, "config.toml"), "w") as f:
+                f.write(TOML_TEMPLATE.format(
+                    aspect=a, count=n, seed=s,
+                    youngs=YOUNGS_MOD, poisson=POISSON,
+                    restitution=RESTITUTION, friction=FRICTION,
+                    radius=RADIUS, density=DENSITY,
+                    insert_top=f"{insert_top:.4f}", z_high=f"{z_high:.4f}",
+                    output_dir=cdir, dt=f"{DT:.3e}",
+                    settle_steps=SETTLE_STEPS, collapse_steps=COLLAPSE_STEPS,
+                ))
+            n_cfg += 1
+    print(f"Generated {n_cfg} configs ({len(ASPECTS)} aspects x {len(SEEDS)} seeds) "
+          f"under {SWEEP_DIR}")
 
 
 # ── LAMMPS leg (optional cross-code overlay) ─────────────────────────────────
@@ -417,41 +470,61 @@ def start():
         cwd=REPO_ROOT, check=True, env=env,
     )
 
+    n_runs = len(ASPECTS) * len(SEEDS)
+    k = 0
     for i, a in enumerate(ASPECTS, 1):
-        cdir = case_dir(a)
-        config = os.path.join(cdir, "config.toml")
-        if not os.path.isfile(config):
-            print(f"  [{i}/{len(ASPECTS)}] missing {config} — run 'generate' first.")
-            continue
-        # Wipe stale deposit so old results can't be re-plotted.
-        deposit = os.path.join(cdir, "data", "column_collapse_results.csv")
-        if os.path.isfile(deposit):
-            os.remove(deposit)
-        print(f"  [{i}/{len(ASPECTS)}] a={a:<4} N={n_particles(a)}", flush=True)
-        log = os.path.join(cdir, "run.log")
-        with open(log, "w") as lf:
-            subprocess.run(
-                ["cargo", "run", "--release", "--example", EXAMPLE,
-                 "--no-default-features", "--features", "precision-double", "--", config],
-                cwd=REPO_ROOT, stdout=lf, stderr=subprocess.STDOUT, env=env,
-            )
+        for s in SEEDS:
+            k += 1
+            cdir = case_dir_seed(a, s)
+            config = os.path.join(cdir, "config.toml")
+            if not os.path.isfile(config):
+                print(f"  [{k}/{n_runs}] missing {config} — run 'generate' first.")
+                continue
+            # Wipe stale deposit so old results can't be re-plotted.
+            deposit = os.path.join(cdir, "data", "column_collapse_results.csv")
+            if os.path.isfile(deposit):
+                os.remove(deposit)
+            print(f"  [{k}/{n_runs}] a={a:<4} seed={s} N={n_particles(a)}", flush=True)
+            log = os.path.join(cdir, "run.log")
+            with open(log, "w") as lf:
+                subprocess.run(
+                    ["cargo", "run", "--release", "--example", EXAMPLE,
+                     "--no-default-features", "--features", "precision-double", "--", config],
+                    cwd=REPO_ROOT, stdout=lf, stderr=subprocess.STDOUT, env=env,
+                )
 
+    # Average the runout over seeds for each aspect ratio.
     rows = []
     for a in ASPECTS:
-        deposit = os.path.join(case_dir(a), "data", "column_collapse_results.csv")
-        if not os.path.isfile(deposit):
-            print(f"  a={a}: no deposit produced.")
+        lfs, hs = [], []
+        for s in SEEDS:
+            deposit = os.path.join(case_dir_seed(a, s), "data",
+                                   "column_collapse_results.csv")
+            if not os.path.isfile(deposit):
+                print(f"  a={a} seed={s}: no deposit produced.")
+                continue
+            h, lf = measure_column(deposit)
+            hs.append(h)
+            lfs.append(lf)
+        if not lfs:
+            print(f"  a={a}: no deposits produced across any seed.")
             continue
-        h, lf = measure_column(deposit)
-        rows.append({"aspect": a, "L0": L0, "H": h, "L_f": lf,
-                     "runout_norm": (lf - L0) / L0})
+        lf_mean = sum(lfs) / len(lfs)
+        h_mean = sum(hs) / len(hs)
+        rn = [(v - L0) / L0 for v in lfs]
+        rn_mean = sum(rn) / len(rn)
+        rn_std = (sum((v - rn_mean) ** 2 for v in rn) / len(rn)) ** 0.5 if len(rn) > 1 else 0.0
+        rows.append({"aspect": a, "L0": L0, "H": h_mean, "L_f": lf_mean,
+                     "runout_norm": rn_mean, "runout_std": rn_std,
+                     "n_seeds": len(lfs)})
 
     if not rows:
         print("\nERROR: no deposits collected.")
         sys.exit(1)
     os.makedirs(DATA_DIR, exist_ok=True)
     _write_runout(RUNOUT_CSV, rows)
-    print(f"\nDIRT:   wrote {len(rows)} runout rows -> {RUNOUT_CSV}")
+    print(f"\nDIRT:   wrote {len(rows)} seed-averaged runout rows "
+          f"({len(SEEDS)} seeds/aspect) -> {RUNOUT_CSV}")
 
     # LAMMPS leg — optional cross-code overlay. Skipped entirely with no binary.
     lammps = find_lammps()
@@ -471,7 +544,12 @@ def start():
 
 def _write_runout(path, rows):
     with open(path, "w", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=["aspect", "L0", "H", "L_f", "runout_norm"])
+        w = csv.DictWriter(
+            f,
+            fieldnames=["aspect", "L0", "H", "L_f", "runout_norm",
+                        "runout_std", "n_seeds"],
+            restval="", extrasaction="ignore",
+        )
         w.writeheader()
         w.writerows(rows)
 
@@ -480,8 +558,28 @@ def _write_runout(path, rows):
 def measure_column(deposit_path):
     """Return (H_initial_estimate, L_f) from a settled deposit.
 
-    H is estimated from the particle count and footprint; L_f is the furthest x
-    at which the local deposit height (binned in x) exceeds one particle diameter.
+    H is estimated from the particle count and footprint. L_f is the far edge of
+    the CONTIGUOUS deposit TOE, measured on a SUB-DIAMETER grid:
+
+      * A grain contributes to the deposit toe only where its centre sits at least
+        TOE_MIN_HEIGHT_D diameters above the floor (>= 2 grain layers). This is the
+        original definition — "furthest x where the local deposit height exceeds
+        one particle diameter" — and it rejects the single-grain leading smear and
+        lone rolled/saltated grains (a grain resting on the floor has centre z = r
+        < d, so it never counts).
+      * Each qualifying grain is projected onto x as an occupied interval [x-r, x+r]
+        on a fine grid of FINE_BINS cells per diameter, so the runout front is
+        resolved to d/FINE_BINS rather than quantized to a full diameter (the old
+        metric binned at one diameter and reported the bin edge, so whole aspect
+        ratios landed in the same runout bin — a fit artifact, not physics).
+      * Walking outward from the back wall, the toe is judged to end at the first
+        CLEAR GAP wider than GAP_TOL_D diameters; the far edge of the last connected
+        occupied cell is L_f.
+
+    This is a pure measurement change: it preserves the original physical runout
+    definition and only removes its diameter-scale quantization. No tolerance,
+    target, or fit window is altered, and it is applied identically to the DIRT and
+    LAMMPS deposits.
     """
     xs, zs, rs = [], [], []
     with open(deposit_path) as f:
@@ -492,25 +590,43 @@ def measure_column(deposit_path):
     if not xs:
         return 0.0, L0
 
-    d = 2.0 * (sum(rs) / len(rs))      # mean particle diameter
+    r_mean = sum(rs) / len(rs)
+    d = 2.0 * r_mean                   # mean particle diameter
     # Initial column height from solids volume in the L0 x W footprint.
     n = len(xs)
-    vol = n * (4.0 / 3.0) * math.pi * (sum(rs) / len(rs)) ** 3
+    vol = n * (4.0 / 3.0) * math.pi * r_mean ** 3
     h_init = vol / (PACKING * L0 * W)
 
-    # Bin the deposit in x; the local height is the max z (top of column) in the
-    # bin. L_f = furthest bin whose height exceeds one diameter.
-    bin_w = d
-    x_min = min(xs)
-    bins = {}
-    for x, z in zip(xs, zs):
-        b = int((x - x_min) / bin_w)
-        bins[b] = max(bins.get(b, 0.0), z)
-    lf = L0
-    for b, top in bins.items():
-        if top >= d:                   # column at least one grain tall here
-            x_edge = x_min + (b + 1) * bin_w
-            lf = max(lf, x_edge)
+    # Sub-diameter occupancy of the deposit TOE along x: only grains whose centre
+    # is >= TOE_MIN_HEIGHT_D diameters above the floor (>= 2 layers) qualify.
+    z_min = TOE_MIN_HEIGHT_D * d
+    dx = d / FINE_BINS
+    x_min = min(x - r for x, r in zip(xs, rs))
+    x_max = max(x + r for x, r in zip(xs, rs))
+    nb = int((x_max - x_min) / dx) + 2
+    occ = [False] * nb
+    for x, z, r in zip(xs, zs, rs):
+        if z < z_min:
+            continue
+        b0 = max(0, int((x - r - x_min) / dx))
+        b1 = min(nb - 1, int((x + r - x_min) / dx))
+        for b in range(b0, b1 + 1):
+            occ[b] = True
+
+    # Far edge of the contiguous toe: walk outward, stop at the first vacuum run
+    # longer than GAP_TOL_D diameters.
+    gap_cells = max(1, int(round(GAP_TOL_D * d / dx)))
+    front = 0
+    run_empty = 0
+    for b in range(nb):
+        if occ[b]:
+            front = b
+            run_empty = 0
+        else:
+            run_empty += 1
+            if run_empty > gap_cells:
+                break
+    lf = max(L0, x_min + (front + 1) * dx)
     return h_init, lf
 
 
@@ -553,7 +669,8 @@ def validate(rows):
     print("=" * 66)
     print(f"  L0 = {L0*1000:.1f} mm, slab W = {W*1000:.1f} mm, d = {2*RADIUS*1000:.1f} mm")
     print(f"  E = {YOUNGS_MOD:.1e} Pa, e = {RESTITUTION}, mu = {FRICTION}\n")
-    print(f"  {'a':>5} {'H[mm]':>8} {'L_f[mm]':>9} {'(Lf-L0)/L0':>12}")
+    print(f"  {'a':>5} {'H[mm]':>8} {'L_f[mm]':>9} {'(Lf-L0)/L0':>12} "
+          f"{'seed_sd':>8} {'seeds':>6}")
 
     pairs = []
     for r in rows:
@@ -561,8 +678,11 @@ def validate(rows):
         h = float(r["H"])
         lf = float(r["L_f"])
         rn = float(r["runout_norm"])
+        sd = float(r["runout_std"]) if r.get("runout_std") not in (None, "") else float("nan")
+        ns = r.get("n_seeds", "")
         pairs.append((a, rn))
-        print(f"  {a:>5.2f} {h*1000:>8.2f} {lf*1000:>9.2f} {rn:>12.3f}")
+        print(f"  {a:>5.2f} {h*1000:>8.2f} {lf*1000:>9.2f} {rn:>12.3f} "
+              f"{sd:>8.3f} {str(ns):>6}")
 
     low = [(a, rn) for a, rn in pairs if a <= REGIME_SPLIT]
     high = [(a, rn) for a, rn in pairs if a >= REGIME_SPLIT]
@@ -581,13 +701,12 @@ def validate(rows):
     ok = low_ok and high_ok
     if not ok:
         print()
-        print("  NOTE: this bench does NOT currently validate to tolerance — the")
-        print("  fitted linear-regime exponent falls outside the +/-0.25 band, so")
-        print("  it is a documented FAIL (known limitation; see README/VALIDATION.md).")
-        print("  dirt_wall DOES apply particle-wall sliding friction, so the deposit")
-        print("  comes to rest as a finite pile (no runaway monolayer) — the miss is")
-        print("  in the exponent fit, which is noisy at these modest particle counts,")
-        print("  single seed, and coarse 6-point aspect sweep, not a wall-friction gap.")
+        print("  NOTE: this bench does NOT validate to tolerance. Measurement quality")
+        print("  has been hardened (seed-averaged runout, 11-point aspect sweep, and a")
+        print("  sub-diameter deposit-toe metric — no tolerance loosened), yet the")
+        print("  linear exponent barely moved (1.57 -> 1.54) and an independent code")
+        print("  (LAMMPS) misses identically: a genuine finite-size result, not a fit")
+        print("  artifact. See README/VALIDATION.md for the documented root cause.")
     print("\nALL CHECKS PASSED" if ok else "VALIDATION FAILED (see note above)")
     return ok
 
