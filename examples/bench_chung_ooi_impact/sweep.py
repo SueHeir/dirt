@@ -393,36 +393,65 @@ def plot(rows):
 
     panels = [
         ("max_force", hertz_max_force, "Maximum contact force [N]",
-         "Chung & Ooi (2011): Max Contact Force vs Impact Velocity", "max_force.png", 1.0),
+         "Chung & Ooi (2011): Max Contact Force vs Impact Velocity", "max_force.png",
+         1.0, FORCE_TOL),
         ("contact_time", hertz_contact_time, "Contact duration [µs]",
-         "Chung & Ooi (2011): Contact Duration vs Impact Velocity", "contact_time.png", 1e6),
+         "Chung & Ooi (2011): Contact Duration vs Impact Velocity", "contact_time.png",
+         1e6, TIME_TOL),
         ("max_overlap", hertz_max_overlap, "Maximum overlap [µm]",
-         "Chung & Ooi (2011): Max Overlap vs Impact Velocity", "max_overlap.png", 1e6),
+         "Chung & Ooi (2011): Max Overlap vs Impact Velocity", "max_overlap.png",
+         1e6, OVERLAP_TOL),
     ]
 
     vgrid = np.logspace(math.log10(min(VELOCITIES) * 0.9),
                         math.log10(max(VELOCITIES) * 1.1), 200)
-    for key, theory_fn, ylabel, title, fname, scale in panels:
-        fig, ax = plt.subplots(figsize=(7, 5))
-        for tag, npart in CASES:
+    for key, theory_fn, ylabel, title, fname, scale, tol in panels:
+        fig, (ax, err_ax) = plt.subplots(
+            2, 1, figsize=(7, 6.3), sharex=True,
+            gridspec_kw={"height_ratios": [3.2, 1.2], "hspace": 0.08},
+        )
+        for i, (tag, npart) in enumerate(CASES):
             crows = sorted([r for r in rows if r["case"] == tag],
                            key=lambda x: float(x["v_impact"]))
             if not crows:
                 continue
+            theory = np.array([theory_fn(v, npart) * scale for v in vgrid])
+            ax.fill_between(
+                vgrid, theory * (1.0 - tol), theory * (1.0 + tol),
+                color=colors[tag], alpha=0.16, linewidth=0,
+                label=(f"±{tol*100:.0f}% PASS band" if i == 0 else None),
+            )
             ax.plot(vgrid, [theory_fn(v, npart) * scale for v in vgrid],
                     "-", color=colors[tag], linewidth=1.6, alpha=0.7,
                     label=f"{label[tag]} — Hertz theory")
             vs = [float(r["v_impact"]) for r in crows]
             ys = [float(r[key]) * scale for r in crows]
+            refs = [theory_fn(v, npart) * scale for v in vs]
+            errs = [(y / ref - 1.0) * 100.0 for y, ref in zip(ys, refs)]
             ax.plot(vs, ys, "o", color=colors[tag], markersize=7,
                     markerfacecolor="none", markeredgewidth=1.6,
                     label=f"{label[tag]} — DIRT")
-        ax.set_xlabel("Relative impact velocity [m/s]")
+            err_ax.plot(vs, errs, "o-", color=colors[tag], markersize=5,
+                        markerfacecolor="none", markeredgewidth=1.2,
+                        label=label[tag])
         ax.set_ylabel(ylabel)
         ax.set_title(title)
         ax.set_xscale("log")
         ax.set_yscale("log")
+        ax.text(0.02, 0.03, f"PASS criterion: |DIRT/Hertz - 1| ≤ {tol*100:.0f}%",
+                transform=ax.transAxes, fontsize=9,
+                bbox={"facecolor": "white", "edgecolor": "0.75", "alpha": 0.85})
         ax.legend(fontsize=9)
+        err_ax.axhspan(-tol * 100.0, tol * 100.0, color="0.85", alpha=0.55,
+                       label=f"±{tol*100:.0f}% PASS")
+        err_ax.axhline(0.0, color="0.35", linewidth=0.8)
+        err_ax.axhline(tol * 100.0, color="#d62728", linestyle="--", linewidth=1.0)
+        err_ax.axhline(-tol * 100.0, color="#d62728", linestyle="--", linewidth=1.0)
+        err_ax.set_xscale("log")
+        err_ax.set_xlabel("Relative impact velocity [m/s]")
+        err_ax.set_ylabel("error [%]")
+        err_ax.set_ylim(-tol * 120.0, tol * 120.0)
+        err_ax.legend(fontsize=8, loc="upper right")
         fig.savefig(os.path.join(PLOT_DIR, fname), bbox_inches="tight")
         plt.close(fig)
         print(f"Saved: {PLOT_DIR}/{fname}")

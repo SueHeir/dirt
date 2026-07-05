@@ -94,20 +94,20 @@ them.
 ![](plots/max_force.png)
 
 *Maximum contact force across impact velocity: measured DIRT points overlaid on
-the independent Hertz analytical reference for Chung & Ooi Tests 1 and 2; all
-force checks PASS within the 2% tolerance.*
+the independent Hertz analytical reference for Chung & Ooi Tests 1 and 2. The
+shaded band is the ±2% PASS criterion; all force checks PASS inside it.*
 
 ![](plots/contact_time.png)
 
 *Contact duration across impact velocity: DIRT's measured contact step counts
-compared with the Hertz collision duration; all contact-time checks PASS within
-the 2% tolerance.*
+compared with the Hertz collision duration. The shaded band is the ±2% PASS
+criterion; all contact-time checks PASS inside it.*
 
 ![](plots/max_overlap.png)
 
 *Maximum overlap across impact velocity: DIRT's geometric peak overlap compared
-with the Hertz analytical reference; all overlap checks PASS within the 2%
-tolerance.*
+with the Hertz analytical reference. The shaded band is the ±2% PASS criterion;
+all overlap checks PASS inside it.*
 
 ## License
 
