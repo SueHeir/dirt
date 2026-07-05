@@ -362,5 +362,5 @@ fabric_tensor = true
 Each plugin can emit its own default-config snippet via the framework's
 `default_config` hook; running a binary with the generate-config flag prints the
 assembled schema for exactly the plugins that binary added. The
-[example configs](https://github.com/SueHeir/dirt/tree/master/examples) are also
+[example configs](https://github.com/SueHeir/dirt/tree/main/examples) are also
 heavily commented and remain a useful authoritative reference.
