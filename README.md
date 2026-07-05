@@ -164,8 +164,7 @@ themselves:
   without hand-writing domain decomposition, halo exchange, migration, and
   neighbor lists — declare your state once, SOIL carries it through all of it.
 - **[DIRT](https://github.com/SueHeir/dirt)** — A LAMMPS-validated granular-DEM
-  code you can read and extend — composable Rust plugins on the GRASS framework,
-  not a script-driven black box.
+  engine, easily extended by composing Rust plugins on the GRASS framework.
 
 **Where to start:** to *run* granular simulations, start at
 [DIRT](https://github.com/SueHeir/dirt), the batteries-included physics tier; to
