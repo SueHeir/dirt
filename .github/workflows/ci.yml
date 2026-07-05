@@ -29,7 +29,7 @@ env:
 
 jobs:
   test:
-    name: build + test + clippy
+    name: build + test + validation + clippy
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -47,6 +47,11 @@ jobs:
 
       - name: Test
         run: cargo test --workspace --no-default-features --features "$DIRT_FEATURES" --verbose
+
+      - name: Run validation example
+        env:
+          BENCH_PYTHON: python3
+        run: python3 examples/bench_hertz_rebound/sweep.py
 
       - name: Clippy
         run: cargo clippy --workspace --all-targets --no-default-features --features "$DIRT_FEATURES"
