@@ -1,61 +1,42 @@
 # CPU precision-validation baseline
 
-Deterministic fingerprint of each example's output under each host-storage
-precision. `signature` = sum of |numeric cells| in the output CSV; `Δ vs double`
-is the relative difference of that signature from the double-precision run.
-Mixed/single store positions as f32, so they bound what the f32 GPU should
-reproduce. Raw outputs archived under `validation/results/`.
+Deterministic fingerprint of each example output under each host-storage precision.
+`signature` = sum of |numeric cells| in the output CSV; `Delta vs double` is
+the relative difference of that signature from the double-precision run.
+Mixed/single store positions as f32, so they bound what the f32 GPU should reproduce.
+Raw completed outputs are archived under `validation/results/`.
 
-| example | double signature | mixed Δ vs double | single Δ vs double | rows |
+Default contact run: `python3 validation/precision_baseline.py`.
+Bulk/steady-state long run: `python3 validation/precision_baseline.py --set bulk --timeout 1200`.
+Combined run: `python3 validation/precision_baseline.py --set all --timeout 1200`.
+
+## Contact physics
+
+| example | double signature | mixed Delta vs double | single Delta vs double | rows |
 |---|---|---|---|---|
-| bench_hertz_rebound | 2502.808371 | 1.35e-08 | 1.35e-08 | 1 |
-| bench_oblique_impact | 2791.96286 | 2.27e-04 | 2.27e-04 | 1 |
-| bench_rolling_decay | 26206.57965 | 2.25e-05 | 2.24e-05 | 8536 |
-| bench_sliding_friction | 4431298.354 | 5.93e-04 | 5.93e-04 | 45000 |
-| bench_sphere_haff_cooling | 122150655.5 | 5.24e-10 | 6.92e-10 | 350 |
-| bench_clump_haff_cooling | 122150305.9 | 3.27e-09 | 4.85e-09 | 350 |
-| bench_rod_haff_cooling | 122150305.9 | 1.39e-09 | 5.24e-10 | 350 |
+| bench_hertz_rebound | 2502.860677 | 1.94e-08 | 1.93e-08 | 1 |
+| bench_oblique_impact | 2794.960146 | 2.38e-04 | 2.38e-04 | 1 |
+| bench_rolling_decay | 26206.57965 | 1.60e-05 | 1.59e-05 | 8536 |
+| bench_sliding_friction | 4431192.354 | 6.23e-04 | 6.23e-04 | 45000 |
+| bench_sphere_haff_cooling | 122150655.7 | 4.05e-10 | 3.61e-10 | 350 |
+| bench_clump_haff_cooling | 809101972.7 | 3.66e-10 | 3.25e-10 | 900 |
+| bench_rod_haff_cooling | 122150306.4 | 3.01e-10 | 3.16e-09 | 350 |
 | bench_jkr_adhesion | 2500.013391 | 2.88e-13 | 3.16e-13 | 1 |
 
-## Key physics final-states (the clean single-collision tests)
+## Bulk and steady state
 
-`mixed` and `single` are nearly identical: the f32 *storage* (positions/vels)
-dominates the deviation from `double`, while the Accum type (f64 vs f32) barely
-matters. So these f32 results are what the always-f32 GPU should reproduce.
-
-| test | quantity | double | mixed | single |
+| example | double signature | mixed Delta vs double | single Delta vs double | rows |
 |---|---|---|---|---|
-| hertz_rebound | COR | 0.90166214 | 0.90164524 | 0.90164524 |
-| oblique_impact | vt_rebound | 2.44111917 | 2.44308873 | 2.44308873 |
-| jkr_adhesion | f_pulloff | 5.8904862e-3 | 5.8904862e-3 | 5.8904863e-3 |
+| bench_angle_of_repose | 64.72983668 | 4.26e-03 | 7.88e-05 | 1200 |
+| bench_column_collapse | 16.93652741 | 4.24e-02 | 4.07e-02 | 341 |
+| bench_hopper_beverloo | 49596.75134 | 3.23e-04 | 9.92e-03 | 45 |
+| bench_granular_conductivity | timeout | timeout | timeout | - |
+| bench_fiber_crossover | 8985030.094 | 1.32e-11 | 1.37e-11 | 600 |
+| bench_lebc_shear | 20642475.4 | 2.48e-04 | 7.37e-05 | 140 |
+| bench_plate_sinkage | 592210.5737 | 7.58e-02 | 1.89e-03 | 12057 |
 
-## Using this for GPU validation
+## Non-OK statuses
 
-The GPU kernels are intrinsically f32. To validate them, run the same example
-config on the GPU and compare its output against the **mixed/single** rows here
-(via `validation/results/` or `cpu_precision_final_states.json`), using each
-example's `Δ vs double` as the order-of-magnitude tolerance:
-
-- hertz/jkr/haff-cooling: agree to ~1e-8 or tighter — GPU must match closely.
-- friction/tangential (oblique, sliding, rolling): ~1e-4–1e-3 spread — looser band.
-
-The `double` run is the theory anchor (gold reference); `mixed`/`single` are the
-f32 reference the GPU is held to. Regenerate anytime: `python3
-validation/precision_baseline.py`.
-
-## Scope & deferred examples
-
-This baseline covers the **contact-physics** benchmarks — single/few-body
-collisions and granular-gas cooling — which directly exercise the normal and
-tangential contact force the GPU kernels compute, and which run in seconds.
-
-The **bulk/steady-state** benchmarks (`angle_of_repose`, `column_collapse`,
-`hopper_beverloo`, `granular_conductivity`, `fiber_crossover`, `lebc_shear`,
-`plate_sinkage`) are emergent-behaviour validations that take ~6–10 min per run,
-so ~1–2 h across 3 precisions. They are deferred from the inline baseline; run
-them on a longer budget with:
-
-    python3 validation/precision_baseline.py bench_angle_of_repose ...
-
-They append to `validation/results/` and merge into the summary via
-`python3 validation/_summarize.py`.
+`bench_granular_conductivity` built under all three precision features but did not
+finish within the 1200-second per-run cap, so no precision fingerprint is recorded
+for that benchmark in this baseline.
