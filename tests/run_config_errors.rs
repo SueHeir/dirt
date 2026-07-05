@@ -1,8 +1,8 @@
 use std::fs;
-use std::process::Command;
+use std::process::{Command, Output};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-fn run_config_error_case(name: &str, particles_insert: &str) -> String {
+fn run_config_case(name: &str, particles_insert: &str) -> Output {
     let stamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .expect("system clock must be after Unix epoch")
@@ -75,6 +75,12 @@ thermo = 1
         .output()
         .expect("run generic config example");
 
+    fs::remove_dir_all(&dir).expect("remove temporary config directory");
+    output
+}
+
+fn run_config_error_case(name: &str, particles_insert: &str) -> String {
+    let output = run_config_case(name, particles_insert);
     let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
     assert!(
         !output.status.success(),
@@ -85,7 +91,6 @@ thermo = 1
         "malformed config must not panic, got:\n{stderr}"
     );
 
-    fs::remove_dir_all(&dir).expect("remove temporary config directory");
     stderr
 }
 
@@ -140,5 +145,69 @@ velocity = inf
             "ERROR: velocity in rate-based [[particles.insert]] must be finite and non-negative, got inf"
         ),
         "stderr should contain typed config error, got:\n{stderr}"
+    );
+}
+
+#[test]
+fn too_large_immediate_radius_errors_before_region_sampling() {
+    let stderr = run_config_error_case(
+        "too-large-immediate-radius",
+        r#"
+count = 1
+radius = 1.0
+"#,
+    );
+    assert!(
+        stderr.contains(
+            "ERROR: [[particles.insert]] default insertion region is smaller than particle: radius 1 exceeds domain extent"
+        ),
+        "stderr should contain typed config error, got:\n{stderr}"
+    );
+    assert!(
+        !stderr.contains("cannot sample empty range"),
+        "bad region should be rejected before sampling, got:\n{stderr}"
+    );
+}
+
+#[test]
+fn too_large_rate_radius_errors_before_region_sampling() {
+    let stderr = run_config_error_case(
+        "too-large-rate-radius",
+        r#"
+rate = 1
+rate_interval = 1
+radius = 1.0
+"#,
+    );
+    assert!(
+        stderr.contains(
+            "ERROR: rate-based [[particles.insert]] default insertion region is smaller than particle: radius 1 exceeds domain extent"
+        ),
+        "stderr should contain typed config error, got:\n{stderr}"
+    );
+    assert!(
+        !stderr.contains("cannot sample empty range"),
+        "bad region should be rejected before sampling, got:\n{stderr}"
+    );
+}
+
+#[test]
+fn valid_default_region_still_runs_immediate_insert() {
+    let output = run_config_case(
+        "valid-default-region",
+        r#"
+count = 1
+radius = 0.001
+"#,
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        output.status.success(),
+        "valid insertion config should run, stderr:\n{stderr}"
+    );
+    assert!(
+        stdout.contains("DemAtomInsert: inserting 1 particles"),
+        "stdout should show the valid insert path ran, got:\n{stdout}"
     );
 }

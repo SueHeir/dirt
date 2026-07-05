@@ -339,6 +339,117 @@ fn validate_insert_velocity(rand_vel: f64, context: &str) -> Result<(), String> 
     Ok(())
 }
 
+fn default_insert_region(domain: &Domain, max_r: f64, context: &str) -> Result<Region, String> {
+    let min = [
+        domain.boundaries_low[0] + max_r,
+        domain.boundaries_low[1] + max_r,
+        domain.boundaries_low[2] + max_r,
+    ];
+    let max = [
+        domain.boundaries_high[0] - max_r,
+        domain.boundaries_high[1] - max_r,
+        domain.boundaries_high[2] - max_r,
+    ];
+
+    for axis in 0..3 {
+        if min[axis] > max[axis] {
+            let extent = domain.boundaries_high[axis] - domain.boundaries_low[axis];
+            return Err(format!(
+                "{context} default insertion region is smaller than particle: radius {max_r} exceeds domain extent {extent} on axis {axis}"
+            ));
+        }
+    }
+
+    Ok(Region::Block { min, max })
+}
+
+fn validate_insert_region(region: &Region, context: &str) -> Result<(), String> {
+    match region {
+        Region::Block { min, max } => {
+            for axis in 0..3 {
+                if min[axis] >= max[axis] {
+                    return Err(format!(
+                        "{context} insertion region is empty or degenerate on axis {axis}: min {} must be less than max {}",
+                        min[axis], max[axis]
+                    ));
+                }
+            }
+            Ok(())
+        }
+        Region::Sphere { radius, .. } => {
+            if !radius.is_finite() || *radius <= 0.0 {
+                return Err(format!(
+                    "{context} sphere insertion region radius must be finite and > 0, got {radius}"
+                ));
+            }
+            Ok(())
+        }
+        Region::Cylinder { radius, lo, hi, .. } => {
+            if !radius.is_finite() || *radius <= 0.0 {
+                return Err(format!(
+                    "{context} cylinder insertion region radius must be finite and > 0, got {radius}"
+                ));
+            }
+            if lo >= hi {
+                return Err(format!(
+                    "{context} cylinder insertion region is empty or degenerate: lo {lo} must be less than hi {hi}"
+                ));
+            }
+            Ok(())
+        }
+        Region::Cone {
+            rad_lo,
+            rad_hi,
+            lo,
+            hi,
+            ..
+        } => {
+            if !rad_lo.is_finite() || *rad_lo < 0.0 {
+                return Err(format!(
+                    "{context} cone insertion region rad_lo must be finite and >= 0, got {rad_lo}"
+                ));
+            }
+            if !rad_hi.is_finite() || *rad_hi < 0.0 {
+                return Err(format!(
+                    "{context} cone insertion region rad_hi must be finite and >= 0, got {rad_hi}"
+                ));
+            }
+            if *rad_lo == 0.0 && *rad_hi == 0.0 {
+                return Err(format!(
+                    "{context} cone insertion region is empty or degenerate: at least one end radius must be > 0"
+                ));
+            }
+            if lo >= hi {
+                return Err(format!(
+                    "{context} cone insertion region is empty or degenerate: lo {lo} must be less than hi {hi}"
+                ));
+            }
+            Ok(())
+        }
+        Region::Plane { .. } => Err(format!(
+            "{context} plane insertion region is unbounded and cannot be sampled"
+        )),
+        Region::Union { regions } => {
+            if regions.is_empty() {
+                return Err(format!("{context} union insertion region is empty"));
+            }
+            for child in regions {
+                validate_insert_region(child, context)?;
+            }
+            Ok(())
+        }
+        Region::Intersect { regions } => {
+            if regions.is_empty() {
+                return Err(format!("{context} intersect insertion region is empty"));
+            }
+            for child in regions {
+                validate_insert_region(child, context)?;
+            }
+            Ok(())
+        }
+    }
+}
+
 // ── SpatialHash for O(1) overlap checking ───────────────────────────────────
 
 /// Grid-based spatial hash for fast overlap detection during particle insertion.
@@ -701,6 +812,34 @@ pub fn dem_insert_atoms(
                         eprintln!("ERROR: Rate-based [[particles.insert]] requires 'density'");
                         std::process::exit(1);
                     }
+                    let radius_spec = insert
+                        .radius
+                        .as_ref()
+                        .expect("rate-based radius was validated above");
+                    let max_r = radius_spec.try_max_radius().unwrap_or_else(|e| {
+                        eprintln!(
+                            "ERROR: invalid radius in rate-based [[particles.insert]]: {}",
+                            e
+                        );
+                        std::process::exit(1);
+                    });
+                    let region = insert
+                        .region
+                        .clone()
+                        .map(Ok)
+                        .unwrap_or_else(|| {
+                            default_insert_region(&domain, max_r, "rate-based [[particles.insert]]")
+                        })
+                        .unwrap_or_else(|e| {
+                            eprintln!("ERROR: {}", e);
+                            std::process::exit(1);
+                        });
+                    if let Err(e) =
+                        validate_insert_region(&region, "rate-based [[particles.insert]]")
+                    {
+                        eprintln!("ERROR: {}", e);
+                        std::process::exit(1);
+                    }
                     if let Err(e) = validate_insert_velocity(
                         insert.velocity.unwrap_or(0.0),
                         "rate-based [[particles.insert]]",
@@ -762,18 +901,21 @@ pub fn dem_insert_atoms(
                     }
 
                     // Use explicit region or default to domain bounds inset by max radius.
-                    let region = insert.region.clone().unwrap_or_else(|| Region::Block {
-                        min: [
-                            domain.boundaries_low[0] + max_r,
-                            domain.boundaries_low[1] + max_r,
-                            domain.boundaries_low[2] + max_r,
-                        ],
-                        max: [
-                            domain.boundaries_high[0] - max_r,
-                            domain.boundaries_high[1] - max_r,
-                            domain.boundaries_high[2] - max_r,
-                        ],
-                    });
+                    let region = insert
+                        .region
+                        .clone()
+                        .map(Ok)
+                        .unwrap_or_else(|| {
+                            default_insert_region(&domain, max_r, "[[particles.insert]]")
+                        })
+                        .unwrap_or_else(|e| {
+                            eprintln!("ERROR: {}", e);
+                            std::process::exit(1);
+                        });
+                    if let Err(e) = validate_insert_region(&region, "[[particles.insert]]") {
+                        eprintln!("ERROR: {}", e);
+                        std::process::exit(1);
+                    }
 
                     // Velocity setup (drawn deterministically per accepted atom).
                     let rand_vel = insert.velocity.unwrap_or(0.0);
@@ -1654,18 +1796,18 @@ pub fn dem_rate_insert(
             .config
             .region
             .clone()
-            .unwrap_or_else(|| Region::Block {
-                min: [
-                    domain.boundaries_low[0] + max_r,
-                    domain.boundaries_low[1] + max_r,
-                    domain.boundaries_low[2] + max_r,
-                ],
-                max: [
-                    domain.boundaries_high[0] - max_r,
-                    domain.boundaries_high[1] - max_r,
-                    domain.boundaries_high[2] - max_r,
-                ],
+            .map(Ok)
+            .unwrap_or_else(|| {
+                default_insert_region(&domain, max_r, "rate-based [[particles.insert]]")
+            })
+            .unwrap_or_else(|e| {
+                eprintln!("ERROR: {}", e);
+                std::process::exit(1);
             });
+        if let Err(e) = validate_insert_region(&region, "rate-based [[particles.insert]]") {
+            eprintln!("ERROR: {}", e);
+            std::process::exit(1);
+        }
 
         // Velocity parameters (drawn deterministically per accepted candidate).
         let config_seed = rate_state.entries[entry_idx].config.seed.unwrap_or(0);
