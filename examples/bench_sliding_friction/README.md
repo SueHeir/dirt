@@ -1,12 +1,16 @@
 # Coulomb Sliding-Friction Benchmark
 
-Validates DIRT's tangential (Coulomb) friction in the **gross-sliding** regime
-using the classic "ball thrown onto a rough floor" problem. A single sphere is
-launched horizontally with translational speed `v0` and **zero initial spin**;
-kinetic friction decelerates its center and spins it up until the contact point
-stops sliding, after which it rolls without slipping. The primary reference is the
-exact rigid-body result; where a LAMMPS binary is available, the identical setup is
-run with LAMMPS's granular `wall/gran` floor and overlaid as a code-to-code
+Validates `dirt_wall` tangential (Coulomb) friction in the **gross-sliding**
+regime using the classic "ball thrown onto a rough floor" problem. A single
+sphere is launched horizontally with translational speed `v0` and **zero initial
+spin**; kinetic friction decelerates its center and spins it up until the contact
+point stops sliding, after which it rolls without slipping. The executable wires
+the DEM atom, insertion, integration, rotation, gravity, and `WallPlugin` pieces
+individually and deliberately does **not** register
+`HertzMindlinContactPlugin`/`GranularDefaultPlugins`, so the regression exercises
+`dirt_wall`'s standalone wall history. The primary reference is the exact
+rigid-body result; where a LAMMPS binary is available, the identical setup is run
+with LAMMPS's granular `wall/gran` floor and overlaid as a code-to-code
 cross-check. LAMMPS is optional — without it, the benchmark still fully validates
 against theory.
 
@@ -131,14 +135,16 @@ cargo run --release --example bench_sliding_friction --no-default-features -- ex
 
 ## Assumptions
 
-- **The floor is a real frictional `dirt_wall` z-plane.** `dirt_wall` now applies
-  **Mindlin tangential (sliding) friction** with a Coulomb cap on plane walls,
-  using the material's `friction` coefficient (`friction_ij`) — mirroring the
-  particle–particle Hertz–Mindlin model. The flat wall therefore decelerates the
-  sliding sphere at `a = μg` and applies the spin-up torque, with no giant-sphere
-  hack. Because the floor is **perfectly flat**, there is no curvature systematic:
-  the normal load is exactly `m g` and there is no gravity-along-surface leak, so
-  `a = μg` and `v_final = (5/7) v0` are exact.
+- **The floor is a real frictional `dirt_wall` z-plane.** `dirt_wall` owns the
+  wall tangential spring history and applies **Mindlin tangential (sliding)
+  friction** with a Coulomb cap on plane walls, using the material's `friction`
+  coefficient (`friction_ij`) — mirroring the particle–particle Hertz–Mindlin
+  model but without registering the particle-particle contact plugin in this
+  benchmark. The flat wall therefore decelerates the sliding sphere at `a = μg`
+  and applies the spin-up torque, with no giant-sphere hack. Because the floor is
+  **perfectly flat**, there is no curvature systematic: the normal load is
+  exactly `m g` and there is no gravity-along-surface leak, so `a = μg` and
+  `v_final = (5/7) v0` are exact.
 - **Single particle, 3D, monodisperse projectile.**
 - **Gross sliding throughout the slip phase** (no micro-stick): the Mindlin spring
   saturates at the Coulomb cap `μ|F_n|` immediately because `v0 ≫ 0` and `ω0 = 0`.
