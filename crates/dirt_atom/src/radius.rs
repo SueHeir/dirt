@@ -60,12 +60,21 @@ pub enum RadiusDistribution {
 }
 
 impl RadiusSpec {
+    /// Sample a radius from this specification, returning a config-scoped error
+    /// instead of panicking when user-provided distribution parameters are invalid.
+    pub fn try_sample(&self, rng: &mut impl Rng) -> Result<f64, String> {
+        match self {
+            RadiusSpec::Fixed(r) => Ok(*r),
+            RadiusSpec::Distribution(d) => d.try_sample(rng),
+        }
+    }
+
     /// Sample a radius from this specification.
     pub fn sample(&self, rng: &mut impl Rng) -> f64 {
-        match self {
-            RadiusSpec::Fixed(r) => *r,
-            RadiusSpec::Distribution(d) => d.sample(rng),
-        }
+        // Internal/test convenience wrapper. Runtime config paths use
+        // `try_sample` so malformed user distributions become typed errors.
+        self.try_sample(rng)
+            .expect("radius distribution parameters must be validated before sampling")
     }
 
     /// Conservative upper bound on radius (for spatial hash cell sizing).
@@ -78,36 +87,70 @@ impl RadiusSpec {
 }
 
 impl RadiusDistribution {
-    fn sample(&self, rng: &mut impl Rng) -> f64 {
+    fn try_sample(&self, rng: &mut impl Rng) -> Result<f64, String> {
         match self {
-            RadiusDistribution::Uniform { min, max } => rng.random_range(*min..*max),
+            RadiusDistribution::Uniform { min, max } => {
+                if min >= max {
+                    return Err(format!(
+                        "uniform radius requires min < max, got min={} max={}",
+                        min, max
+                    ));
+                }
+                Ok(rng.random_range(*min..*max))
+            }
             RadiusDistribution::Gaussian { mean, std } => {
-                let normal = Normal::new(*mean, *std)
-                    .expect("invalid Gaussian parameters: std must be >= 0");
-                normal.sample(rng).max(1e-15) // clamp to positive
+                let normal = Normal::new(*mean, *std).map_err(|e| {
+                    format!("invalid Gaussian radius parameters (mean={mean}, std={std}): {e}")
+                })?;
+                Ok(normal.sample(rng).max(1e-15)) // clamp to positive
             }
             RadiusDistribution::Lognormal { mean, std } => {
+                if *mean <= 0.0 || *std <= 0.0 {
+                    return Err(format!(
+                        "lognormal radius requires mean and std > 0, got mean={} std={}",
+                        mean, std
+                    ));
+                }
                 // Convert actual mean/std to underlying normal parameters
                 let sigma_sq = (1.0 + (std / mean).powi(2)).ln();
                 let mu = mean.ln() - sigma_sq / 2.0;
                 let sigma = sigma_sq.sqrt();
-                let ln = LogNormal::new(mu, sigma)
-                    .expect("invalid lognormal parameters: mean and std must be > 0");
-                ln.sample(rng)
+                let ln = LogNormal::new(mu, sigma).map_err(|e| {
+                    format!("invalid lognormal radius parameters (mean={mean}, std={std}): {e}")
+                })?;
+                Ok(ln.sample(rng))
             }
             RadiusDistribution::Discrete { values, weights } => {
+                if values.is_empty() {
+                    return Err("discrete radius requires at least one value".to_string());
+                }
+                if values.len() != weights.len() {
+                    return Err(format!(
+                        "discrete radius requires values/weights length match, got {} values and {} weights",
+                        values.len(),
+                        weights.len()
+                    ));
+                }
                 let total: f64 = weights.iter().sum();
+                if total <= 0.0 {
+                    return Err(format!(
+                        "discrete radius requires positive total weight, got {}",
+                        total
+                    ));
+                }
                 let r: f64 = rng.random_range(0.0..total);
                 let mut cumulative = 0.0;
                 for (i, w) in weights.iter().enumerate() {
                     cumulative += w;
                     if r < cumulative {
-                        return values[i];
+                        return Ok(values[i]);
                     }
                 }
-                *values
+                // Non-empty was checked above; this only handles roundoff at the
+                // upper edge of the cumulative distribution.
+                Ok(*values
                     .last()
-                    .expect("discrete distribution must have at least one value")
+                    .expect("discrete distribution was validated as non-empty"))
             }
         }
     }
@@ -298,6 +341,34 @@ mod tests {
             "discrete ratio should be ~0.7, got {}",
             ratio
         );
+    }
+
+    #[test]
+    fn malformed_radius_distribution_reports_error() {
+        let mut rng = rand::rng();
+        let spec = RadiusSpec::Distribution(RadiusDistribution::Lognormal {
+            mean: 0.0,
+            std: 0.1,
+        });
+
+        let err = spec
+            .try_sample(&mut rng)
+            .expect_err("invalid lognormal config should not panic");
+        assert!(err.contains("lognormal radius requires mean and std > 0"));
+    }
+
+    #[test]
+    fn empty_discrete_radius_distribution_reports_error() {
+        let mut rng = rand::rng();
+        let spec = RadiusSpec::Distribution(RadiusDistribution::Discrete {
+            values: vec![],
+            weights: vec![],
+        });
+
+        let err = spec
+            .try_sample(&mut rng)
+            .expect_err("empty discrete config should not panic");
+        assert!(err.contains("discrete radius requires at least one value"));
     }
 
     #[test]
