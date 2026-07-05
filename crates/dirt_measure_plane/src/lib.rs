@@ -71,9 +71,9 @@
 //!   `window_steps × dt` using the *current* timestep. If `dt` changes within a
 //!   reporting window (e.g. across run stages), the reported rates are only
 //!   approximate for that window.
-//! - **Degenerate normal silently falls back to `[1, 0, 0]`.** A normal with
-//!   magnitude `< 1e-30` is replaced by the +x direction without warning — a
-//!   mis-specified plane will silently measure the wrong cross-section.
+//! - **Degenerate normals are rejected.** A normal with magnitude `≤ 1e-30`
+//!   is a configuration error. The plugin exits during setup instead of
+//!   silently measuring a different cross-section.
 
 use std::collections::HashMap;
 
@@ -89,6 +89,9 @@ use soil_print::Thermo;
 fn default_report_interval() -> usize {
     1000
 }
+
+/// Minimum accepted magnitude for a configured measurement-plane normal.
+const MIN_NORMAL_MAGNITUDE: f64 = 1e-30;
 
 /// TOML configuration for a single measurement plane (`[[measure_plane]]`).
 ///
@@ -156,21 +159,27 @@ struct MeasurePlaneState {
 impl MeasurePlaneState {
     /// Create a new `MeasurePlaneState` from a config definition.
     ///
-    /// Normalizes the normal vector. If the provided normal has near-zero
-    /// magnitude (< 1e-30), falls back to the +x direction `[1, 0, 0]`.
-    fn new(def: &MeasurePlaneDef) -> Self {
+    /// Normalizes the normal vector.
+    fn try_new(def: &MeasurePlaneDef) -> Result<Self, String> {
         // Normalize the normal vector to unit length for signed-distance calculations.
         let mag = (def.normal[0].powi(2) + def.normal[1].powi(2) + def.normal[2].powi(2)).sqrt();
-        let normal = if mag > 1e-30 {
-            [
-                def.normal[0] / mag,
-                def.normal[1] / mag,
-                def.normal[2] / mag,
-            ]
-        } else {
-            [1.0, 0.0, 0.0] // fallback to +x if degenerate
-        };
-        MeasurePlaneState {
+        if mag <= MIN_NORMAL_MAGNITUDE {
+            return Err(format!(
+                "measure_plane '{}' normal vector must have magnitude > {}; got [{:.6e}, {:.6e}, {:.6e}] (|normal| = {:.6e})",
+                def.name,
+                MIN_NORMAL_MAGNITUDE,
+                def.normal[0],
+                def.normal[1],
+                def.normal[2],
+                mag
+            ));
+        }
+        let normal = [
+            def.normal[0] / mag,
+            def.normal[1] / mag,
+            def.normal[2] / mag,
+        ];
+        Ok(MeasurePlaneState {
             name: def.name.clone(),
             point: def.point,
             normal,
@@ -180,7 +189,7 @@ impl MeasurePlaneState {
             mass_window: 0.0,
             total_crossings: 0,
             window_start_step: 0,
-        }
+        })
     }
 
     /// Compute the signed distance from the plane for a given position.
@@ -243,7 +252,15 @@ impl Plugin for MeasurePlanePlugin {
             return;
         }
 
-        let planes: Vec<MeasurePlaneState> = defs.iter().map(MeasurePlaneState::new).collect();
+        let planes: Vec<MeasurePlaneState> = defs
+            .iter()
+            .map(|def| {
+                MeasurePlaneState::try_new(def).unwrap_or_else(|err| {
+                    eprintln!("ERROR: {err}");
+                    std::process::exit(1);
+                })
+            })
+            .collect();
 
         app.add_resource(MeasurePlanes { planes });
         app.add_update_system(
@@ -381,7 +398,7 @@ mod tests {
             normal: [1.0, 0.0, 0.0],
             report_interval: 100,
         };
-        let state = MeasurePlaneState::new(&def);
+        let state = MeasurePlaneState::try_new(&def).unwrap();
 
         // Point on positive side of plane
         assert!(state.signed_distance(&[0.6, 0.0, 0.0]) > 0.0);
@@ -399,12 +416,39 @@ mod tests {
             normal: [3.0, 4.0, 0.0],
             report_interval: 100,
         };
-        let state = MeasurePlaneState::new(&def);
+        let state = MeasurePlaneState::try_new(&def).unwrap();
         let mag =
             (state.normal[0].powi(2) + state.normal[1].powi(2) + state.normal[2].powi(2)).sqrt();
         assert!((mag - 1.0).abs() < 1e-12);
         assert!((state.normal[0] - 0.6).abs() < 1e-12);
         assert!((state.normal[1] - 0.8).abs() < 1e-12);
+    }
+
+    #[test]
+    fn test_degenerate_normal_rejected() {
+        let def = MeasurePlaneDef {
+            name: "bad_normal".to_string(),
+            point: [0.0, 0.0, 0.0],
+            normal: [0.0, 0.0, 0.0],
+            report_interval: 100,
+        };
+        let err = match MeasurePlaneState::try_new(&def) {
+            Ok(_) => panic!("degenerate normal should be rejected"),
+            Err(err) => err,
+        };
+        assert!(err.contains("bad_normal"));
+        assert!(err.contains("normal vector must have magnitude"));
+    }
+
+    #[test]
+    fn test_near_zero_normal_does_not_fallback_to_x() {
+        let def = MeasurePlaneDef {
+            name: "near_zero".to_string(),
+            point: [0.0, 0.0, 0.0],
+            normal: [0.5e-30, 0.0, 0.0],
+            report_interval: 100,
+        };
+        assert!(MeasurePlaneState::try_new(&def).is_err());
     }
 
     #[test]
