@@ -30,6 +30,20 @@ a requirement that a frozen contact partner also have its rotation frozen — an
 rebound benchmark surfaced a mislabeled damping constant (`SQRT_5_3` holds √(5/6)).
 So the suite is doing its job, not just decorating passing runs.
 
+**CPU precision baseline.** The archived precision sweep records deterministic
+output fingerprints for contact and bulk benchmarks under `precision-double`,
+`precision-mixed`, and `precision-single`. The machine-readable status table lives
+at `validation/cpu_precision_baseline.csv`; the human summary is
+`validation/cpu_precision_baseline.md`. Completed runs are plotted below as
+mixed/single relative signature deltas against double; non-OK runs remain explicit
+status rows instead of being dropped.
+
+![CPU precision deltas](../validation/plots/cpu_precision_deltas.png)
+
+*CPU precision fingerprint deltas for completed benchmarks. The dashed 10% line is
+a large-drift reference; `bench_granular_conductivity` is a documented timeout in
+all three precision modes, so it has no fingerprint in this baseline.*
+
 **Wall friction (recent core change).** `dirt_wall` now applies a **Mindlin
 tangential (sliding) spring with a Coulomb cap** on plane walls (using the
 material's `friction`), with per-contact tangential history — not just normal force.

@@ -240,6 +240,12 @@ def main():
     with open(md_path, "w") as f:
         f.write("\n".join(md) + "\n")
 
+    # Merge this run with any archived runs/statuses so contact and bulk
+    # invocations reproduce one combined baseline table, final-state JSON, and
+    # result plot.
+    subprocess.run([sys.executable, os.path.join(REPO, "validation", "_summarize.py")],
+                   cwd=REPO, check=True)
+
     print(f"\nWrote {csv_path}\n      {md_path}\n      {RESULTS}/")
 
 

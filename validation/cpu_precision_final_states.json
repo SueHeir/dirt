@@ -97,7 +97,20 @@
       "v_drag": "5.71428599e-4"
     }
   },
-  "bench_granular_conductivity": {},
+  "bench_granular_conductivity": {
+    "precision-double": {
+      "secs": 1200,
+      "status": "timeout"
+    },
+    "precision-mixed": {
+      "secs": 1200,
+      "status": "timeout"
+    },
+    "precision-single": {
+      "secs": 1200,
+      "status": "timeout"
+    }
+  },
   "bench_hertz_rebound": {
     "precision-double": {
       "contact_time": "3.5063735322e-5",

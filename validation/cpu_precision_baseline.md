@@ -4,11 +4,17 @@ Deterministic fingerprint of each example output under each host-storage precisi
 `signature` = sum of |numeric cells| in the output CSV; `Delta vs double` is
 the relative difference of that signature from the double-precision run.
 Mixed/single store positions as f32, so they bound what the f32 GPU should reproduce.
-Raw completed outputs are archived under `validation/results/`.
+Raw completed outputs and non-OK status JSON files are archived under `validation/results/`.
 
 Default contact run: `python3 validation/precision_baseline.py`.
 Bulk/steady-state long run: `python3 validation/precision_baseline.py --set bulk --timeout 1200`.
-Combined run: `python3 validation/precision_baseline.py --set all --timeout 1200`.
+Combined archive regeneration: `python3 validation/_summarize.py`.
+
+![CPU precision deltas](plots/cpu_precision_deltas.png)
+
+*Mixed/single precision signature deltas relative to double. Completed runs are plotted;
+the dashed 10% line is a visible large-drift reference, and non-OK runs are listed below
+instead of being silently dropped.*
 
 ## Contact physics
 
@@ -37,6 +43,6 @@ Combined run: `python3 validation/precision_baseline.py --set all --timeout 1200
 
 ## Non-OK statuses
 
-`bench_granular_conductivity` built under all three precision features but did not
-finish within the 1200-second per-run cap, so no precision fingerprint is recorded
-for that benchmark in this baseline.
+- `bench_granular_conductivity` `precision-double`: timeout after 1200 s.
+- `bench_granular_conductivity` `precision-mixed`: timeout after 1200 s.
+- `bench_granular_conductivity` `precision-single`: timeout after 1200 s.
