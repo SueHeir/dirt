@@ -124,7 +124,7 @@ use std::f64::consts::PI;
 
 use grass_app::prelude::*;
 use grass_scheduler::prelude::*;
-use rand::Rng;
+use rand::{rngs::StdRng, Rng, SeedableRng};
 use serde::Deserialize;
 use soil_derive::AtomData;
 
@@ -193,6 +193,13 @@ pub struct ClumpInsertConfig {
     /// and jam/overlap on compaction, whereas random orientations pack naturally.
     #[serde(default)]
     pub random_orientation: bool,
+    /// Seed for deterministic clump insertion. Defaults to 0.
+    ///
+    /// The seed drives candidate positions, optional random orientations, and
+    /// random velocities so repeated runs with the same config produce the same
+    /// inserted clump state.
+    #[serde(default)]
+    pub seed: Option<u64>,
 }
 
 /// TOML `[clump]` — top-level clump configuration.
@@ -1049,8 +1056,6 @@ fn clump_insert_atoms(
 
     let mut dem_data = registry.expect_mut::<DemAtom>("clump_insert_atoms");
     let mut clump_data = registry.expect_mut::<ClumpAtom>("clump_insert_atoms");
-    let mut rng = rand::rng();
-
     for insert in inserts {
         let def = clump_registry.find(&insert.definition).unwrap_or_else(|| {
             panic!(
@@ -1109,121 +1114,154 @@ fn clump_insert_atoms(
             insert.material,
         );
 
-        // Track inserted COM positions for overlap avoidance
-        let mut com_positions: Vec<[f64; 3]> = Vec::new();
-        let mut inserted = 0u32;
-        let mut attempts = 0u64;
-        let max_attempts = insert.count as u64 * 1_000_000;
-        let mut next_clump_id = body_store.bodies.len() as u32 + 1;
-
-        while inserted < insert.count && attempts < max_attempts {
-            attempts += 1;
-            let pos = region.random_point_inside(&mut rng);
-
-            // Check overlap with existing clump COMs
-            let min_sep = 2.0 * eff_radius * 1.05; // 5% margin
-            let mut overlaps = false;
-
-            // Check against existing atoms
-            for i in 0..atoms.len() {
-                let dx = pos[0] - atoms.pos[i][0] as f64;
-                let dy = pos[1] - atoms.pos[i][1] as f64;
-                let dz = pos[2] - atoms.pos[i][2] as f64;
-                let dist_sq = dx * dx + dy * dy + dz * dz;
-                let min_d = eff_radius + atoms.cutoff_radius[i] as f64;
-                if dist_sq < min_d * min_d {
-                    overlaps = true;
-                    break;
-                }
-            }
-
-            // Check against already-inserted clump COMs in this batch
-            if !overlaps {
-                for existing in &com_positions {
-                    let dx = pos[0] - existing[0];
-                    let dy = pos[1] - existing[1];
-                    let dz = pos[2] - existing[2];
-                    let dist_sq = dx * dx + dy * dy + dz * dz;
-                    if dist_sq < min_sep * min_sep {
-                        overlaps = true;
-                        break;
-                    }
-                }
-            }
-
-            if overlaps {
-                continue;
-            }
-
-            // Optional per-clump random orientation: rotate the definition's
-            // offsets by a uniformly random unit quaternion (Shoemake). The
-            // bounding radius is unchanged, so the overlap check above still
-            // holds; the rotated offsets become the body frame (identity body
-            // quaternion), which keeps the inertia tensor consistent.
-            let rotated_def;
-            let def: &ClumpDef = if insert.random_orientation {
-                let u1 = rng.random_range(0.0..1.0f64);
-                let u2 = rng.random_range(0.0..1.0f64);
-                let u3 = rng.random_range(0.0..1.0f64);
-                let two_pi = std::f64::consts::TAU;
-                let q = [
-                    (1.0 - u1).sqrt() * (two_pi * u2).sin(),
-                    (1.0 - u1).sqrt() * (two_pi * u2).cos(),
-                    u1.sqrt() * (two_pi * u3).sin(),
-                    u1.sqrt() * (two_pi * u3).cos(),
-                ];
-                rotated_def = ClumpDef {
-                    name: def.name.clone(),
-                    spheres: def
-                        .spheres
-                        .iter()
-                        .map(|s| ClumpSphereConfig {
-                            offset: quat_rotate(q, s.offset),
-                            radius: s.radius,
-                        })
-                        .collect(),
-                };
-                &rotated_def
-            } else {
-                def
-            };
-
-            // Generate velocity
-            let vel = if let Some(v_mag) = insert.velocity {
-                [
-                    rng.random_range(-v_mag..v_mag),
-                    rng.random_range(-v_mag..v_mag),
-                    rng.random_range(-v_mag..v_mag),
-                ]
-            } else {
-                [0.0; 3]
-            };
-
-            insert_clump(
-                &mut atoms,
-                &mut dem_data,
-                &mut clump_data,
-                &mut body_store,
-                def,
-                pos,
-                vel,
-                insert.density,
-                mat_idx,
-                next_clump_id,
-            );
-
-            com_positions.push(pos);
-            next_clump_id += 1;
-            inserted += 1;
-        }
+        let mut rng = clump_insert_rng(insert);
+        let inserted = insert_clumps_with_rng(
+            &mut atoms,
+            &mut dem_data,
+            &mut clump_data,
+            &mut body_store,
+            def,
+            insert,
+            mat_idx,
+            eff_radius,
+            &region,
+            &mut rng,
+        );
 
         if inserted < insert.count {
             eprintln!(
                 "WARNING: Could only insert {}/{} clumps after {} attempts.",
-                inserted, insert.count, max_attempts
+                inserted,
+                insert.count,
+                insert.count as u64 * 1_000_000
             );
         }
     }
+}
+
+fn clump_insert_rng(insert: &ClumpInsertConfig) -> StdRng {
+    StdRng::seed_from_u64(insert.seed.unwrap_or(0))
+}
+
+#[allow(clippy::too_many_arguments)]
+fn insert_clumps_with_rng<R: Rng>(
+    atoms: &mut Atom,
+    dem_data: &mut DemAtom,
+    clump_data: &mut ClumpAtom,
+    body_store: &mut MultisphereBodyStore,
+    def: &ClumpDef,
+    insert: &ClumpInsertConfig,
+    mat_idx: u32,
+    eff_radius: f64,
+    region: &Region,
+    rng: &mut R,
+) -> u32 {
+    // Track inserted COM positions for overlap avoidance
+    let mut com_positions: Vec<[f64; 3]> = Vec::new();
+    let mut inserted = 0u32;
+    let mut attempts = 0u64;
+    let max_attempts = insert.count as u64 * 1_000_000;
+    let mut next_clump_id = body_store.bodies.len() as u32 + 1;
+
+    while inserted < insert.count && attempts < max_attempts {
+        attempts += 1;
+        let pos = region.random_point_inside(rng);
+
+        // Check overlap with existing clump COMs
+        let min_sep = 2.0 * eff_radius * 1.05; // 5% margin
+        let mut overlaps = false;
+
+        // Check against existing atoms
+        for i in 0..atoms.len() {
+            let dx = pos[0] - atoms.pos[i][0] as f64;
+            let dy = pos[1] - atoms.pos[i][1] as f64;
+            let dz = pos[2] - atoms.pos[i][2] as f64;
+            let dist_sq = dx * dx + dy * dy + dz * dz;
+            let min_d = eff_radius + atoms.cutoff_radius[i] as f64;
+            if dist_sq < min_d * min_d {
+                overlaps = true;
+                break;
+            }
+        }
+
+        // Check against already-inserted clump COMs in this batch
+        if !overlaps {
+            for existing in &com_positions {
+                let dx = pos[0] - existing[0];
+                let dy = pos[1] - existing[1];
+                let dz = pos[2] - existing[2];
+                let dist_sq = dx * dx + dy * dy + dz * dz;
+                if dist_sq < min_sep * min_sep {
+                    overlaps = true;
+                    break;
+                }
+            }
+        }
+
+        if overlaps {
+            continue;
+        }
+
+        // Optional per-clump random orientation: rotate the definition's offsets
+        // by a uniformly random unit quaternion (Shoemake).
+        let rotated_def;
+        let def: &ClumpDef = if insert.random_orientation {
+            let u1 = rng.random_range(0.0..1.0f64);
+            let u2 = rng.random_range(0.0..1.0f64);
+            let u3 = rng.random_range(0.0..1.0f64);
+            let two_pi = std::f64::consts::TAU;
+            let q = [
+                (1.0 - u1).sqrt() * (two_pi * u2).sin(),
+                (1.0 - u1).sqrt() * (two_pi * u2).cos(),
+                u1.sqrt() * (two_pi * u3).sin(),
+                u1.sqrt() * (two_pi * u3).cos(),
+            ];
+            rotated_def = ClumpDef {
+                name: def.name.clone(),
+                spheres: def
+                    .spheres
+                    .iter()
+                    .map(|s| ClumpSphereConfig {
+                        offset: quat_rotate(q, s.offset),
+                        radius: s.radius,
+                    })
+                    .collect(),
+            };
+            &rotated_def
+        } else {
+            def
+        };
+
+        // Generate velocity
+        let vel = if let Some(v_mag) = insert.velocity {
+            [
+                rng.random_range(-v_mag..v_mag),
+                rng.random_range(-v_mag..v_mag),
+                rng.random_range(-v_mag..v_mag),
+            ]
+        } else {
+            [0.0; 3]
+        };
+
+        insert_clump(
+            atoms,
+            dem_data,
+            clump_data,
+            body_store,
+            def,
+            pos,
+            vel,
+            insert.density,
+            mat_idx,
+            next_clump_id,
+        );
+
+        com_positions.push(pos);
+        next_clump_id += 1;
+        inserted += 1;
+    }
+
+    inserted
 }
 
 // ── Clump insertion helper ──────────────────────────────────────────────────
@@ -1374,7 +1412,7 @@ pub fn is_body_atom(clump_data: &ClumpAtom, i: usize) -> bool {
 mod tests {
     use super::*;
     use dirt_atom::DemAtom;
-    use soil_core::{Atom, AtomDataRegistry};
+    use soil_core::{Atom, AtomDataRegistry, SingleProcessComm};
 
     /// Non-overlapping dimer (center distance > r1 + r2) for deterministic tests.
     fn make_dimer_def() -> ClumpDef {
@@ -1400,6 +1438,128 @@ mod tests {
             ClumpAtom::new(),
             MultisphereBodyStore::new(),
         )
+    }
+
+    fn clump_state_bits(atoms: &Atom, bodies: &MultisphereBodyStore) -> Vec<u64> {
+        let mut bits = Vec::new();
+        for pos in &atoms.pos {
+            bits.extend(pos.iter().map(|x| (*x as f64).to_bits()));
+        }
+        for vel in &atoms.vel {
+            bits.extend(vel.iter().map(|x| (*x as f64).to_bits()));
+        }
+        for body in &bodies.bodies {
+            bits.extend(body.com_pos.iter().map(|x| x.to_bits()));
+            bits.extend(body.com_vel.iter().map(|x| x.to_bits()));
+            for sphere_offset in &body.body_offsets {
+                bits.extend(sphere_offset.iter().map(|x| x.to_bits()));
+            }
+        }
+        bits
+    }
+
+    fn seeded_insert_snapshot(seed: Option<u64>) -> Vec<u64> {
+        let (mut atoms, mut dem, mut clump, mut bodies) = setup_clump_test();
+        let def = make_dimer_def();
+        let insert = ClumpInsertConfig {
+            definition: "dimer".to_string(),
+            count: 6,
+            density: 2500.0,
+            material: "glass".to_string(),
+            velocity: Some(0.25),
+            region: Some(Region::Block {
+                min: [-0.02, -0.02, -0.02],
+                max: [0.02, 0.02, 0.02],
+            }),
+            random_orientation: true,
+            seed,
+        };
+        let eff_radius = def
+            .spheres
+            .iter()
+            .map(|s| {
+                let d = (s.offset[0].powi(2) + s.offset[1].powi(2) + s.offset[2].powi(2)).sqrt();
+                d + s.radius
+            })
+            .fold(0.0_f64, f64::max);
+        let region = insert.region.clone().expect("test region");
+        let mut rng = clump_insert_rng(&insert);
+
+        let inserted = insert_clumps_with_rng(
+            &mut atoms,
+            &mut dem,
+            &mut clump,
+            &mut bodies,
+            &def,
+            &insert,
+            0,
+            eff_radius,
+            &region,
+            &mut rng,
+        );
+
+        assert_eq!(inserted, insert.count);
+        clump_state_bits(&atoms, &bodies)
+    }
+
+    fn config_insert_snapshot(seed: Option<u64>) -> Vec<u64> {
+        let mut app = App::new();
+        let mut registry = AtomDataRegistry::new();
+        registry.register(DemAtom::new());
+        registry.register(ClumpAtom::new());
+
+        let mut domain = Domain::new();
+        domain.boundaries_low = [-0.03; 3];
+        domain.boundaries_high = [0.03; 3];
+        domain.sub_domain_low = domain.boundaries_low;
+        domain.sub_domain_high = domain.boundaries_high;
+        domain.size = [0.06; 3];
+        domain.sub_length = domain.size;
+        domain.volume = 0.06_f64.powi(3);
+
+        let mut clump_registry = ClumpRegistry::new();
+        clump_registry.defs.push(make_dimer_def());
+
+        let insert = ClumpInsertConfig {
+            definition: "dimer".to_string(),
+            count: 6,
+            density: 2500.0,
+            material: "glass".to_string(),
+            velocity: Some(0.25),
+            region: Some(Region::Block {
+                min: [-0.02, -0.02, -0.02],
+                max: [0.02, 0.02, 0.02],
+            }),
+            random_orientation: true,
+            seed,
+        };
+
+        let mut materials = dirt_atom::MaterialTable::new();
+        materials.add_material("glass", 8.7e9, 0.3, 0.9, 0.5, 0.0, 0.0);
+        materials.build_pair_tables();
+
+        app.add_resource(Atom::new());
+        app.add_resource(registry);
+        app.add_resource(CommResource(Box::new(SingleProcessComm::new())));
+        app.add_resource(domain);
+        app.add_resource(clump_registry);
+        app.add_resource(MultisphereBodyStore::new());
+        app.add_resource(ClumpTopConfig {
+            definitions: None,
+            insert: Some(vec![insert]),
+        });
+        app.add_resource(materials);
+        app.add_resource(SchedulerManager::default());
+        app.add_setup_system(
+            clump_insert_atoms.label("clump_insert_atoms"),
+            ScheduleSetupSet::Setup,
+        );
+        app.organize_systems();
+        app.setup();
+
+        let atoms = app.get_resource_ref::<Atom>().unwrap();
+        let bodies = app.get_resource_ref::<MultisphereBodyStore>().unwrap();
+        clump_state_bits(&atoms, &bodies)
     }
 
     #[test]
@@ -1492,6 +1652,52 @@ mod tests {
 
         // Body has principal moments (diagonalized)
         assert!(bodies.bodies[0].principal_moments[0] > 0.0);
+    }
+
+    #[test]
+    fn test_seeded_clump_insertion_is_byte_stable() {
+        let first = seeded_insert_snapshot(Some(20260705));
+        let second = seeded_insert_snapshot(Some(20260705));
+        assert_eq!(
+            first, second,
+            "same [[clump.insert]] seed must reproduce positions, velocities, and orientations"
+        );
+
+        let different_seed = seeded_insert_snapshot(Some(20260706));
+        assert_ne!(
+            first, different_seed,
+            "changing [[clump.insert]] seed should change the insertion stream"
+        );
+
+        let default_a = seeded_insert_snapshot(None);
+        let default_b = seeded_insert_snapshot(None);
+        assert_eq!(
+            default_a, default_b,
+            "omitting [[clump.insert]] seed should still use the deterministic default"
+        );
+    }
+
+    #[test]
+    fn test_config_clump_insert_system_is_byte_stable() {
+        let first = config_insert_snapshot(Some(20260705));
+        let second = config_insert_snapshot(Some(20260705));
+        assert_eq!(
+            first, second,
+            "the clump_insert_atoms setup system must honor [[clump.insert]] seed"
+        );
+
+        let different_seed = config_insert_snapshot(Some(20260706));
+        assert_ne!(
+            first, different_seed,
+            "changing [[clump.insert]] seed should change the config insertion stream"
+        );
+
+        let default_a = config_insert_snapshot(None);
+        let default_b = config_insert_snapshot(None);
+        assert_eq!(
+            default_a, default_b,
+            "the clump_insert_atoms setup system must use the deterministic default seed"
+        );
     }
 
     #[test]
