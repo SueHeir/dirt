@@ -729,7 +729,10 @@ pub fn dem_insert_atoms(
                         std::process::exit(1);
                     });
 
-                    let max_r = radius_spec.max_radius();
+                    let max_r = radius_spec.try_max_radius().unwrap_or_else(|e| {
+                        eprintln!("ERROR: invalid radius in [[particles.insert]]: {}", e);
+                        std::process::exit(1);
+                    });
                     if comm.rank() == 0 {
                         println!(
                             "DemAtomInsert: inserting {} particles of material '{}' (r={}, rho={}, E={}, nu={})",
@@ -1627,7 +1630,13 @@ pub fn dem_rate_insert(
             .expect("rate-based insertion entry must have 'density' field");
         let mat_idx = rate_state.entries[entry_idx].mat_idx;
 
-        let max_r = radius_spec.max_radius();
+        let max_r = radius_spec.try_max_radius().unwrap_or_else(|e| {
+            eprintln!(
+                "ERROR: invalid radius in rate-based [[particles.insert]]: {}",
+                e
+            );
+            std::process::exit(1);
+        });
         let region = rate_state.entries[entry_idx]
             .config
             .region
