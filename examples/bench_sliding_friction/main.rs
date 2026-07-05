@@ -10,11 +10,13 @@
 //! after which the sphere rolls without slipping at
 //!   v_final = (5/7) v0      (independent of μ).
 //!
-//! Floor: a real `dirt_wall` z-plane at z = 0 (normal +z). `dirt_wall` now applies
-//! Mindlin tangential (sliding) friction with a Coulomb cap on plane walls, using
-//! the material's `friction` coefficient. The wall therefore decelerates the
-//! sliding sphere at a = μg and spins it up — no giant-sphere floor hack needed.
-//! The floor is perfectly flat, so there is no curvature systematic.
+//! Floor: a real `dirt_wall` z-plane at z = 0 (normal +z). This executable wires
+//! the DEM atom/insertion/integration/rotation plugins individually and
+//! deliberately does **not** add `HertzMindlinContactPlugin` or
+//! `GranularDefaultPlugins`, so the wall-only validation exercises
+//! `dirt_wall`'s own tangential history. The wall decelerates the sliding sphere
+//! at a = μg and spins it up — no giant-sphere floor hack needed. The floor is
+//! perfectly flat, so there is no curvature systematic.
 //!
 //! This recorder is thin: it writes the raw time series (t, vx, omega_y, contact)
 //! to `<output_dir>/data/sliding_friction_results.csv` at PostFinalIntegration.
@@ -43,9 +45,12 @@ impl SlideTracker {
 fn main() {
     let mut app = App::new();
     app.add_plugins(CorePlugins)
-        .add_plugins(GranularDefaultPlugins)
+        .add_plugins(DemAtomPlugin)
+        .add_plugins(DemAtomInsertPlugin)
+        .add_plugins(VelocityVerletPlugin::new())
+        .add_plugins(RotationalDynamicsPlugin)
         .add_plugins(GravityPlugin) // body force m*g
-        .add_plugins(WallPlugin); // frictional z-plane floor
+        .add_plugins(WallPlugin); // frictional z-plane floor; no particle-particle contact force
 
     app.add_resource(SlideTracker::new());
     app.add_update_system(record, ParticleSimScheduleSet::PostFinalIntegration);

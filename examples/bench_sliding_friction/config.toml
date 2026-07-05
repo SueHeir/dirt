@@ -6,10 +6,10 @@
 # and spins the sphere up; sliding ends at t* = 2 v0 / (7 mu g), after which the
 # sphere rolls without slipping at v = (5/7) v0.
 #
-# FLOOR: a real dirt_wall z-plane at z = 0 (normal +z). dirt_wall applies Mindlin
-# tangential (sliding) friction with a Coulomb cap on plane walls, using the
-# material's `friction` coefficient. The wall decelerates the sliding sphere at
-# a = mu*g and spins it up. The floor is perfectly flat (no curvature systematic).
+# FLOOR: a real dirt_wall z-plane at z = 0 (normal +z). The executable wires the
+# atom, insertion, integration, rotation, gravity, and WallPlugin pieces
+# individually; it does not add HertzMindlinContactPlugin/GranularDefaultPlugins.
+# dirt_wall applies Mindlin tangential friction and owns the wall spring history.
 #
 # Run:
 #   cargo run --release --example bench_sliding_friction --no-default-features -- examples/bench_sliding_friction/config.toml
@@ -41,6 +41,8 @@ gy = 0.0
 gz = -9.81
 
 [dem]
+# This material table is still declarative input for wall contact parameters.
+# No particle-particle contact force plugin is registered by this example.
 contact_model = "hertz"
 
 [[dem.materials]]
