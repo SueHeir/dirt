@@ -1,7 +1,7 @@
 # Isotropic compression — bulk modulus K(Φ)
 
 Deliverable **#2** of the SPH glass-sphere calibration campaign. It produces the
-**bulk compressibility closure** the MUD SPH continuum model consumes to close the
+**bulk compressibility closure** the dev_soil_sph continuum model consumes to close the
 pressure–density relation: the modulus `K(Φ)` and the equation of state `P(Φ)`,
 measured from a quasi-static isotropic compression of a triperiodic pack of glass
 beads.

@@ -1,6 +1,6 @@
 # peri_dem_interop
 
-`peri_dem_interop` is the same-substrate POND+DIRT example for the
+`peri_dem_interop` is the same-substrate dev_soil_peri+DIRT example for the
 `dev-peri-dem-interop` / `ce-peri-dem-same-substrate-example` reconciliation.
 It runs peridynamic fracture and DEM contact in one `App`, on one soil `Atom`
 set, one neighbor list, and one shared `BondStore`. There is no coupler,

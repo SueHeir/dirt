@@ -7,7 +7,7 @@ tilt and streaming-velocity remap handled in fractional (lamda) coordinates so t
 flow is homogeneous and parallelizes across MPI ranks. In steady state the
 recorder reports the full stress tensor, the granular temperature, and the solid
 fraction; from these the sweep forms the inertial number `I`, the effective
-friction `μ(I)`, and `Φ(I)` — the closure the MUD SPH solver consumes.
+friction `μ(I)`, and `Φ(I)` — the closure the dev_soil_sph solver consumes.
 
 ## What it does
 
@@ -97,7 +97,7 @@ near random-close-packing, is reachable. The sweep runs two families:
 |---|---|---|
 | `plots/mu_of_I.png`, `phi_of_I.png`, `kt_validation.png`, `convergence.png` | yes | final figures |
 | `data/<case>/lebc_shear_results.csv` | no (gitignored) | per-case time series |
-| `data/calibration.yaml` | no | fitted μ(I) closure → MUD |
+| `data/calibration.yaml` | no | fitted μ(I) closure → dev_soil_sph |
 | `sweep/<case>/config.toml` | no | generated per-case configs |
 
 ## Notes

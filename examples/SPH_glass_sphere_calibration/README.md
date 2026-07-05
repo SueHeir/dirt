@@ -1,7 +1,7 @@
 # SPH glass-sphere calibration
 
 The complete set of DEM simulations that calibrate the **canonical glass-sphere
-material** into the closures the **MUD SPH continuum model** consumes. Glass beads
+material** into the closures the **dev_soil_sph continuum model** consumes. Glass beads
 are the *validation* material — chosen because we have experimental data at every
 rung (cross-code shear stress vs Φ from Fortran/LIGGGHTS/LAMMPS, column-collapse
 runout scaling from Lube/Lajeunesse, angle of repose, hopper). Each deliverable
@@ -35,7 +35,7 @@ density        = 2500.0   # kg/m³ (glass)
 | 5 | **Granular-temperature dissipation** (Haff cooling) | dissipation coefficient / cooling rate | `bench_sphere_haff_cooling` |
 | 6 | **Granular-temperature conductivity** (vibro-fluidized bed) | `κ(Φ)` (fluctuation-energy conduction) | `bench_granular_conductivity` |
 | 7 | **Column collapse** (macro validation) | end-to-end runout scaling vs experiment | `bench_column_collapse` |
-| 8 | **Cooperativity length** (velocity-fluctuation correlation under shear) | nonlocal amplitude `A` in `ξ(μ)=A·d/√(μ−μ_s)` + the `g∝√T` bridge (MUD's nonlocal/NGF branch) | `bench_lebc_shear` |
+| 8 | **Cooperativity length** (velocity-fluctuation correlation under shear) | nonlocal amplitude `A` in `ξ(μ)=A·d/√(μ−μ_s)` + the `g∝√T` bridge (dev_soil_sph's nonlocal/NGF branch) | `bench_lebc_shear` |
 
 (1)–(3) feed the **μ(I)/critical-state** rheology; (4)–(6) feed the
 **granular-temperature de-fluidization** two-branch model; (7) is the macro
