@@ -79,11 +79,11 @@ fn record_shear(
     let mut vol_solid = 0.0f64;
     let dem = registry.get::<DemAtom>();
     for i in 0..nlocal {
-        let m = atoms.mass[i];
+        let m = atoms.mass[i] as f64;
         m_total += m;
-        let vx = atoms.vel[i][0] - gdot * (atoms.pos[i][1] - yc);
-        let vy = atoms.vel[i][1];
-        let vz = atoms.vel[i][2];
+        let vx = atoms.vel[i][0] as f64 - gdot * (atoms.pos[i][1] as f64 - yc);
+        let vy = atoms.vel[i][1] as f64;
+        let vz = atoms.vel[i][2] as f64;
         kin[0] += m * vx * vx;
         kin[1] += m * vy * vy;
         kin[2] += m * vz * vz;
@@ -92,7 +92,7 @@ fn record_shear(
         kin[5] += m * vy * vz;
         ke_fluct += m * (vx * vx + vy * vy + vz * vz);
         if let Some(ref dem) = dem {
-            let r = dem.radius[i];
+            let r = dem.radius[i] as f64;
             vol_solid += (4.0 / 3.0) * std::f64::consts::PI * r * r * r;
         }
     }

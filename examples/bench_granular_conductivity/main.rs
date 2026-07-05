@@ -73,14 +73,14 @@ fn record_profile(
     let mut mv = [[0.0f64; 3]; NBINS];
     let mut vol_solid = [0.0f64; NBINS];
     for i in 0..nlocal {
-        let b = bin_of(atoms.pos[i][1]);
-        let m = atoms.mass[i];
+        let b = bin_of(atoms.pos[i][1] as f64);
+        let m = atoms.mass[i] as f64;
         m_sum[b] += m;
         for d in 0..3 {
-            mv[b][d] += m * atoms.vel[i][d];
+            mv[b][d] += m * atoms.vel[i][d] as f64;
         }
         if let Some(ref dem) = dem {
-            let r = dem.radius[i];
+            let r = dem.radius[i] as f64;
             vol_solid[b] += (4.0 / 3.0) * std::f64::consts::PI * r * r * r;
         }
     }
@@ -89,7 +89,7 @@ fn record_profile(
     let mut ke = [0.0f64; NBINS];
     let mut qy = [0.0f64; NBINS];
     for i in 0..nlocal {
-        let b = bin_of(atoms.pos[i][1]);
+        let b = bin_of(atoms.pos[i][1] as f64);
         if m_sum[b] <= 0.0 {
             continue;
         }
@@ -98,11 +98,11 @@ fn record_profile(
             mv[b][1] / m_sum[b],
             mv[b][2] / m_sum[b],
         ];
-        let m = atoms.mass[i];
+        let m = atoms.mass[i] as f64;
         let vp = [
-            atoms.vel[i][0] - vbar[0],
-            atoms.vel[i][1] - vbar[1],
-            atoms.vel[i][2] - vbar[2],
+            atoms.vel[i][0] as f64 - vbar[0],
+            atoms.vel[i][1] as f64 - vbar[1],
+            atoms.vel[i][2] as f64 - vbar[2],
         ];
         let v2 = vp[0] * vp[0] + vp[1] * vp[1] + vp[2] * vp[2];
         ke[b] += m * v2;
