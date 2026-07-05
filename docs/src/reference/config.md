@@ -316,8 +316,9 @@ material = "glass"
 | `[[clump.insert]].region` | Region | domain inset by eff. radius | Optional insertion region. |
 
 The `[clump]` section does *not* use `deny_unknown_fields` (unlike `[dem]`).
-Overlapping-sphere clumps have stochastic, non-reproducible inertia (Monte Carlo,
-100 000 samples). See [Clumps (Multisphere)](../physics/clumps.md).
+Overlapping-sphere clumps use deterministic Monte Carlo inertia (100 000
+samples) seeded from the clump definition, density, and sample count. See
+[Clumps (Multisphere)](../physics/clumps.md).
 
 ## Diagnostics
 
