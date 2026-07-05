@@ -1,14 +1,14 @@
 //! sphcal_cooperativity_length — DEM measurement of the granular
-//! **cooperativity length** ξ for the MUD SPH model's nonlocal closure.
+//! **cooperativity length** ξ for the dev_soil_sph model's nonlocal closure.
 //!
-//! MUD's nonlocal-granular-fluidity (NGF) branch keeps one idea from Henann–Kamrin
+//! dev_soil_sph's nonlocal-granular-fluidity (NGF) branch keeps one idea from Henann–Kamrin
 //! inside the granular-temperature model: a cooperativity length
 //! `ξ(μ) = A·d / √|μ − μ_s|` that diverges at yield, *driving the contact branch to
 //! creep below yield*. This rig measures the two closures that branch needs:
 //!
 //!  1. **ξ vs μ** — the amplitude `A` and the divergence as μ → μ_s.
 //!  2. **the Zhang–Kamrin bridge `g ∝ √T`** — confirming the fluidity field is a
-//!     measure of velocity fluctuations, so MUD can drive it from temperature.
+//!     measure of velocity fluctuations, so dev_soil_sph can drive it from temperature.
 //!
 //! Same Lees–Edwards homogeneous-shear rig as `bench_lebc_shear` (so μ, p, T, Φ, I
 //! are measured identically), plus a **spatial velocity-fluctuation correlation**

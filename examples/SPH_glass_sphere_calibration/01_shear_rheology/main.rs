@@ -5,7 +5,7 @@
 //! (triclinic-box) deform style (`[deform] xy = { style = "erate", rate = γ̇ }`).
 //! With gravity off and a fixed box this produces homogeneous simple shear; in
 //! steady state the stress tensor and granular temperature yield the μ(I), Φ(I)
-//! closure — and ρ_c = Φ_max·ρ_s — that the MUD SPH solver consumes.
+//! closure — and ρ_c = Φ_max·ρ_s — that the dev_soil_sph solver consumes.
 //!
 //! This is the FRICTIONAL/production path of the rheometer (glass μ_p = 0.16).
 //! The frictionless kinetic-theory sub-sweep lives in `examples/bench_lebc_shear`.

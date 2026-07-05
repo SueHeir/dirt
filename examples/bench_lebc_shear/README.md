@@ -88,7 +88,7 @@ near random-close-packing, is reachable. The sweep runs two families:
    are the long ones. The γ̇-collapse in (1) is also the Bagnold (σ ∝ γ̇²) check.
 3. **μ(I) / Φ(I) fit** (frictional sweep). Fits `μ(I) = μ_s + (μ₂−μ_s)/(I₀/I + 1)`
    and extracts `μ_s, μ₂, I₀, Φ_max, ρ_c = Φ_max·ρ_s`, written to
-   `data/calibration.yaml` for `mud_constitutive::MaterialParams`. Glass-bead
+   `data/calibration.yaml` for `sph_constitutive::MaterialParams`. Glass-bead
    anchors: `μ_s ≈ 0.38`, `μ₂ ≈ 0.64`, `I₀ ≈ 0.28` (possibly lower for spheres).
 
 ## Outputs

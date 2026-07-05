@@ -79,7 +79,7 @@ SPH_glass_sphere_calibration/
   06_conductivity/
   07_column_collapse/
   08_cooperativity_length/
-  calibration.yaml        # the assembled closure consumed by mud_constitutive::MaterialParams
+  calibration.yaml        # the assembled closure consumed by sph_constitutive::MaterialParams
 ```
 
 Each subfolder uses the canonical material above, runs at the glass-sphere

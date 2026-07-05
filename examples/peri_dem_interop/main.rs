@@ -13,7 +13,7 @@
 //!   `f = c·s·ŷ` over each point's surviving bonds; a bond whose stretch exceeds
 //!   the critical stretch `s₀` **breaks** — and, crucially, is *removed* from the
 //!   `BondStore`. The force law and the `s₀ = √(5 G₀ / 9Kδ)` relation are taken
-//!   verbatim from POND's `pond_bond` / `pond_atom` (Silling & Askari, Comput.
+//!   verbatim from dev_soil_peri's `peri_bond` / `peri_atom` (Silling & Askari, Comput.
 //!   Struct. 83 (2005) 1526). See `NOTES` in the module tail for why breakage
 //!   *removes* the bond here rather than marking it in place.
 //!
@@ -115,8 +115,8 @@ struct PeriParams {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// Per-point peridynamic extension, registered as a soil `AtomData` column so it
-/// is permuted / migrated *with* the atoms by the substrate (mirrors POND's
-/// `PdAtom`). `volume` is `#[forward]` so a ghost point would carry its Vⱼ.
+/// is permuted / migrated *with* the atoms by the substrate (mirrors dev_soil_peri's
+/// `PeriAtom`). `volume` is `#[forward]` so a ghost point would carry its Vⱼ.
 #[derive(AtomData)]
 struct PeriPoint {
     /// Cell volume Δx³ represented by the point [m³].
@@ -326,7 +326,7 @@ fn lattice_insert(
 /// every point pair within the horizon. Bars are separated by more than δ, so
 /// this produces **no** cross-bar bonds — the bars are independent specimens and
 /// their eventual interaction is pure DEM. O(N²) over local points (single
-/// process), matching POND's reference-config build.
+/// process), matching dev_soil_peri's reference-config build.
 fn build_families(
     atoms: Res<Atom>,
     registry: Res<AtomDataRegistry>,
@@ -389,7 +389,7 @@ fn set_timestep(mut atoms: ResMut<Atom>, run_config: Res<RunConfig>) {
 /// Bond-based peridynamic force with critical-stretch breakage.
 ///
 /// For each local point `i`, sum `F_i = Σ_j c·s·(y_j−y_i)/|y_j−y_i|·V_i·V_j` over
-/// its surviving bonds (constant-micromodulus bond-based PD; POND `pond_bond`).
+/// its surviving bonds (constant-micromodulus bond-based PD; dev_soil_peri `peri_bond`).
 /// A bond with stretch `s = (|y|−r₀)/r₀ > s₀` **fails**: it is dropped from the
 /// point's list (so soil's `are_excluded` immediately stops excluding the pair
 /// and dirt's contact tier can engage it). The damage is `1 − n/n₀`.
@@ -621,8 +621,8 @@ fn report(
     }
 }
 
-// NOTES — why breakage *removes* the bond (vs POND marking it in place):
-// POND's `pond_bond` flags a failed bond with `bond_type = BOND_BROKEN` and
+// NOTES — why breakage *removes* the bond (vs dev_soil_peri marking it in place):
+// dev_soil_peri's `peri_bond` flags a failed bond with `bond_type = BOND_BROKEN` and
 // counts the flags for damage, because a pure-peridynamics run never needs the
 // broken pair to do anything else. Here the *same* pair must transition to the
 // DEM tier, and soil's `BondStore::are_excluded` excludes a pair whenever a

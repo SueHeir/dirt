@@ -9,8 +9,8 @@
 # mass and momentum of the whole system are conserved across the peri→DEM
 # transition — the hard acceptance gate, checked live by the example.
 #
-# Bond-based PD force law + s0 = sqrt(5 G0 / 9 K delta) are POND's (pond_bond /
-# pond_atom; Silling & Askari, Comput. Struct. 83 (2005) 1526). The DEM tier is
+# Bond-based PD force law + s0 = sqrt(5 G0 / 9 K delta) are dev_soil_peri's (peri_bond /
+# peri_atom; Silling & Askari, Comput. Struct. 83 (2005) 1526). The DEM tier is
 # dirt's real Hertz–Mindlin contact. Both ride soil's Atom / neighbour list /
 # BondStore.
 #

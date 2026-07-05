@@ -22,7 +22,7 @@ and it drives the fluidity from temperature via the **Zhang–Kamrin bridge**
 g = γ̇/μ  ∝  √T                  # this rig also validates this relation
 ```
 
-`dev_soil_sph/crates/mud_constitutive` consumes `A` as `MaterialParams::coop_amplitude`
+`dev_soil_sph/crates/sph_constitutive` consumes `A` as `MaterialParams::coop_amplitude`
 (0 = nonlocal off). This rig measures it.
 
 ## What it does
