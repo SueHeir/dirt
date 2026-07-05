@@ -96,15 +96,11 @@ def steady_profiles(frac=0.5, path=None):
     return ys, phi, T, qy
 
 
-def graph():
+def write_plots(ys, phi, T, qy, *, title_note=""):
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
     os.makedirs(PLOT_DIR, exist_ok=True)
-    if not os.path.isfile(DATA):
-        print("no data — run `start` first")
-        return
-    ys, phi, T, qy = steady_profiles()
     dy = ys[1] - ys[0]
 
     # --- Profiles ---
@@ -114,40 +110,35 @@ def graph():
     a3.plot(qy, ys, "o-", color="tab:green"); a3.set_xlabel(r"$q_y$ (kinetic) [W/m²]"); a3.set_title("Heat flux"); a3.axvline(0, c="k", lw=0.5)
     for a in (a1, a2, a3):
         a.grid(True, alpha=0.3)
-    fig.suptitle("Vibro-fluidized bed: steady profiles")
+    fig.suptitle(f"Vibro-fluidized bed: steady profiles{title_note}")
     fig.tight_layout(); fig.savefig(os.path.join(PLOT_DIR, "profiles.png"), dpi=130); plt.close(fig)
 
     # --- κ(Φ): energy-balance (integrated dissipation) + direct kinetic flux ---
-    n = len(ys)
-    Gamma = [dissipation(phi[i], T[i], E) for i in range(n)]
-    # Upward flux at each bin = total dissipation at/above it (per unit area).
-    q_up = [0.0] * n
-    run = 0.0
-    for i in range(n - 1, -1, -1):
-        run += Gamma[i] * dy
-        q_up[i] = run
-    phis, k_eb, k_kin = [], [], []
-    for i in range(1, n - 1):
-        dTdy = (T[i + 1] - T[i - 1]) / (2 * dy)
-        if dTdy >= 0 or T[i] <= 0 or phi[i] < 0.02 or phi[i] > 0.62:
-            continue
-        norm = RHO_S * D_MEAN * math.sqrt(T[i])      # κ → κ* = κ/(ρ_s d √T)
-        phis.append(phi[i])
-        k_eb.append(q_up[i] / (-dTdy) / norm)        # total κ* (energy balance)
-        k_kin.append(qy[i] / (-dTdy) / norm)         # kinetic-only κ* (direct, lower bound)
+    phis, k_eb, k_kin, _ = measure_kappa(ys, phi, T, qy)
 
     fig, ax = plt.subplots(figsize=(6.2, 4.6))
     phi_line = [0.02 + 0.005 * k for k in range(0, 120)]
-    ax.plot(phi_line, [kt_kappa_star(x, E) for x in phi_line], "k-", lw=2, label=f"KT (Lun/Gidaspow, e={E})")
+    kt_line = [kt_kappa_star(x, E) for x in phi_line]
+    ax.fill_between(phi_line, [0.4 * k for k in kt_line], [6.0 * k for k in kt_line],
+                    color="0.75", alpha=0.35, label="smoke tolerance band (0.4–6× KT)")
+    ax.plot(phi_line, kt_line, "k-", lw=2, label=f"KT (Lun/Gidaspow, e={E})")
     if phis:
         ax.scatter(phis, k_eb, c="tab:blue", zorder=3, label="DEM κ* (energy balance, total)")
         ax.scatter(phis, k_kin, facecolors="none", edgecolors="tab:green", zorder=3, label="DEM κ* (kinetic flux only)")
     ax.set_xlabel("Φ"); ax.set_ylabel(r"$\kappa^* = \kappa / (\rho_s d \sqrt{T})$")
-    ax.set_yscale("log"); ax.set_title("Granular-temperature conductivity vs Φ"); ax.legend(fontsize=8); ax.grid(True, alpha=0.3)
+    ax.set_yscale("log"); ax.set_title(f"Granular-temperature conductivity vs Φ{title_note}"); ax.legend(fontsize=8); ax.grid(True, alpha=0.3)
     fig.tight_layout(); fig.savefig(os.path.join(PLOT_DIR, "kappa_of_phi.png"), dpi=130); plt.close(fig)
     print(f"wrote {PLOT_DIR}/profiles.png and kappa_of_phi.png")
     if phis:
         print(f"κ* range (energy-balance): {min(k_eb):.2f}–{max(k_eb):.2f} over Φ {min(phis):.3f}–{max(phis):.3f}")
+
+
+def graph():
+    if not os.path.isfile(DATA):
+        print("no data — run `start` first")
+        return
+    ys, phi, T, qy = steady_profiles()
+    write_plots(ys, phi, T, qy)
 
 
 def measure_kappa(ys, phi, T, qy):
@@ -234,6 +225,8 @@ def smoke():
     for ok, msg in checks:
         print(f"  [{'PASS' if ok else 'FAIL'}] {msg}")
     ok = all(ok for ok, _ in checks)
+    if ok:
+        write_plots(ys, phi, T, qy, title_note=" (smoke gate)")
     print(f"\n{npass}/{len(checks)} checks passed")
     print("ALL CHECKS PASSED" if ok else "CHECKS FAILED")
     sys.exit(0 if ok else 1)

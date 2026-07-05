@@ -485,6 +485,32 @@ and the sweep stops at μ = 0.3 (the angle saturates above). The heap now stands
 **real frictional floor wall** (the earlier frozen-bed workaround was removed once
 `dirt_wall` gained tangential friction).
 
+## `bench_granular_conductivity` — granular-temperature conductivity
+
+A vibro-fluidized bed reaches steady solid-fraction and granular-temperature
+profiles. Integrating inelastic dissipation from the top down gives the upward
+energy flux, so the benchmark extracts a dimensionless Fourier-law conductivity
+`κ*(Φ)` and compares it to the Lun/Gidaspow kinetic-theory reference. The bounded
+smoke gate checks that the energy-balance estimate is positive, finite, and within
+an order-unity band around KT.
+
+![Dimensionless conductivity vs kinetic theory](bench_granular_conductivity/plots/kappa_of_phi.png)
+
+*Measured `κ*(Φ)` from DIRT against the kinetic-theory curve. The shaded 0.4-6x
+band is the smoke PASS window; open markers show the kinetic-flux-only lower-bound
+estimate.*
+
+![Steady vibro-fluidized profiles](bench_granular_conductivity/plots/profiles.png)
+
+*Steady Φ(y), T(y), and kinetic heat-flux profiles used for the conductivity
+extraction.*
+
+**Honest read:** the smoke gate is deliberately broad and catches sign, NaN, and
+order-of-magnitude regressions; the dense-bed heat flux also has a `∇Φ` contribution
+outside the simple Fourier form. The full scientific run is unchanged but remains
+too long for the default automation cap, so the committed figure is regenerated
+from the bounded smoke output.
+
 ## `bench_column_collapse` — granular column runout
 
 A quasi-2D column is released on a flat frictional floor; the runout `L_f` vs aspect

@@ -54,6 +54,17 @@ requires). The **directly measured** kinetic heat flux `q_y` gives an independen
 κ estimate (a lower bound, since it omits the collisional flux that dominates at
 dense Φ) — plotted as open markers.
 
+![Dimensionless conductivity vs kinetic theory](plots/kappa_of_phi.png)
+
+*Measured dimensionless conductivity `κ*(Φ)` from the DEM column against the
+Lun/Gidaspow kinetic-theory reference. The shaded band is the smoke gate's
+order-unity acceptance window (0.4-6x KT); `sweep.py smoke` prints PASS/FAIL.*
+
+![Steady vibro-fluidized profiles](plots/profiles.png)
+
+*Steady solid fraction, granular temperature, and kinetic heat-flux profiles used
+to extract `κ*(Φ)` from the conduction-dissipation balance.*
+
 ## De-fluidization (same rig)
 
 Set the base `oscillate.amplitude = 0` (restart from a fluidized state): the bed
