@@ -391,6 +391,13 @@ together once friction populates the rotational mode.*
 start-up transient is skipped); past it DIRT and LAMMPS overlay on the Haff fit. Right:
 the full partition, including the skipped transient.*
 
+![Clump inertia sampler determinism](bench_clump_inertia_sampler/plots/inertia_sampler_determinism.png)
+
+*Clump Monte Carlo inertia sampler. Left: repeated default-seed and explicit-seed
+calls have zero bitwise repeat failures. Right: seed-to-seed Monte Carlo spread for
+a single-sphere analytical reference shrinks with sample count, and every 100 000
+sample estimate stays within the 5% inertia tolerance.*
+
 ![Rod Haff cooling](bench_rod_haff_cooling/plots/haff_cooling.png)
 
 *4-sphere rods (asymmetric inertia). Same construction; DIRT and LAMMPS track the same
