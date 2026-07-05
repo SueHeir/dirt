@@ -74,8 +74,9 @@ This is a deliberately simple **directional gate**, not a flux meter:
 - **Variable `dt` makes the window time approximate.** `window_time` uses the
   *current* `dt × window_steps`; if `dt` changes within a reporting window
   (e.g. across run stages), that window's rates are only approximate.
-- **Degenerate normal silently falls back to `[1, 0, 0]`.** A normal with
-  magnitude `< 1e-30` is replaced by +x without warning.
+- **Degenerate normals are rejected.** A normal with magnitude `≤ 1e-30` is a
+  configuration error; setup exits instead of silently measuring a different
+  cross-section.
 
 ## Usage
 

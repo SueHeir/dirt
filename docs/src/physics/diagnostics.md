@@ -54,9 +54,9 @@ Read these before trusting the numbers:
 - **Variable `dt` makes the window time approximate.** `window_time` uses the
   *current* timestep; if `dt` changes within a window (e.g. across run stages)
   the reported rates are only approximate for that window.
-- **Degenerate normal silently falls back to `[1, 0, 0]`.** A normal with
-  magnitude `< 1e-30` is replaced by the +x direction without warning — a
-  mis-specified plane silently measures the wrong cross-section.
+- **Degenerate normals are rejected.** A normal with magnitude `≤ 1e-30` is a
+  configuration error. Setup exits instead of silently measuring a different
+  cross-section.
 
 ## Contact analysis
 
