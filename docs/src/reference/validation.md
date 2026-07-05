@@ -33,7 +33,7 @@ There is no direct comparison to experimental data in the suite; references are
 analytical, empirical, the experimentally-established Maw oblique-impact curve
 (used as a theory curve), or LAMMPS. The authoritative, continuously-updated
 write-up — what each figure shows and exactly where each test is weak — lives in
-[`examples/VALIDATION.md`](https://github.com/SueHeir/dirt/blob/master/examples/VALIDATION.md).
+[`examples/VALIDATION.md`](https://github.com/SueHeir/dirt/blob/main/examples/VALIDATION.md).
 
 ## The benchmarks
 

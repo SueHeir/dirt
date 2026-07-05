@@ -12,7 +12,7 @@ create-missing = false
 [output.html]
 default-theme = "rust"
 git-repository-url = "https://github.com/SueHeir/dirt"
-edit-url-template = "https://github.com/SueHeir/dirt/edit/master/docs/{path}"
+edit-url-template = "https://github.com/SueHeir/dirt/edit/main/docs/{path}"
 additional-css = []
 
 [output.html.fold]

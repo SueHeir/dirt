@@ -37,7 +37,7 @@ few grain diameters in `y`, so the orifice is effectively a long slot — so the
 ## 2. Describe the study — the config
 
 The whole scenario lives in one declarative config,
-[`examples/run/hopper_discharge.toml`](https://github.com/SueHeir/dirt/blob/master/examples/run/hopper_discharge.toml).
+[`examples/run/hopper_discharge.toml`](https://github.com/SueHeir/dirt/blob/main/examples/run/hopper_discharge.toml).
 The geometry is a rectangular bin whose floor is a **symmetric wedge funnel**
 (two finite inclined plane walls) that converges to a central **slot of opening
 `D` = 24 mm**. The slot is *open from the start* — there is no blocker and no
@@ -122,7 +122,7 @@ special discharge recorder**; measuring `W` is done entirely in post.
 ## 4. Analyze — extract the discharge rate
 
 The post-processor
-[`examples/run/analyze_discharge.py`](https://github.com/SueHeir/dirt/blob/master/examples/run/analyze_discharge.py)
+[`examples/run/analyze_discharge.py`](https://github.com/SueHeir/dirt/blob/main/examples/run/analyze_discharge.py)
 reads the dump frames, counts the **cumulative mass of grains that have dropped
 below the orifice plane** vs. time, and fits the straight, steady middle of that
 curve — its slope is `W`. (Counting mass *above* the orifice and subtracting from
@@ -167,7 +167,7 @@ no Rust:
   so the `x = 0.068 → 0.092` gap widens or narrows) and re-run. `W` should rise as
   `(D − k·d)^{3/2}`. Running several `D` values and regressing `ln W` vs
   `ln(D − k·d)` recovers the Beverloo exponent — the DIRT
-  [`bench_hopper_beverloo`](https://github.com/SueHeir/dirt/tree/master/examples/bench_hopper_beverloo)
+  [`bench_hopper_beverloo`](https://github.com/SueHeir/dirt/tree/main/examples/bench_hopper_beverloo)
   benchmark does exactly this sweep and validates the 3/2 slope.
 - **Change the material.** Edit `[[dem.materials]]` — stiffer grains, more
   friction, different restitution — and see how `W` responds.

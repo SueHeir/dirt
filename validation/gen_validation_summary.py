@@ -214,13 +214,13 @@ def render(rows, meta):
         "closely, and whether it passes right now.** The *reference*, *evidence "
         "type*, *checked quantity*, and *tolerance* columns are declared in "
         "[`validation/validation_summary.toml`]"
-        "(https://github.com/SueHeir/dirt/blob/master/validation/validation_summary.toml); "
+        "(https://github.com/SueHeir/dirt/blob/main/validation/validation_summary.toml); "
         "the **latest measured value** and **status** columns are read straight "
         "from the newest real benchmark run — never hand-typed — so this page "
         "cannot silently drift from what the code does. For the honest, per-bench "
         "narrative (where each test is weak) see "
         "[`examples/VALIDATION.md`]"
-        "(https://github.com/SueHeir/dirt/blob/master/examples/VALIDATION.md)."
+        "(https://github.com/SueHeir/dirt/blob/main/examples/VALIDATION.md)."
     )
     L.append("")
     L.append(
