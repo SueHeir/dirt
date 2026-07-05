@@ -1,13 +1,13 @@
 # sphcal_cooperativity_length
 
 DEM measurement of the **granular cooperativity length** ξ — the closure for the
-MUD SPH model's *nonlocal* (NGF-style) branch.
+dev_soil_sph model's *nonlocal* (NGF-style) branch.
 
 ## Why
 
-MUD's contact branch is local μ(I): rigid below yield. Real dense beds **creep
+dev_soil_sph's contact branch is local μ(I): rigid below yield. Real dense beds **creep
 below yield** when a neighbouring region flows (Henann–Kamrin's Nonlocal Granular
-Fluidity). MUD keeps the one irreplaceable NGF idea inside its granular-temperature
+Fluidity). dev_soil_sph keeps the one irreplaceable NGF idea inside its granular-temperature
 model — a cooperativity length that **diverges at yield** and is *athermal* (it
 survives as T → 0, where the kinetic-theory conduction length vanishes):
 
@@ -22,7 +22,7 @@ and it drives the fluidity from temperature via the **Zhang–Kamrin bridge**
 g = γ̇/μ  ∝  √T                  # this rig also validates this relation
 ```
 
-`MUD/crates/mud_constitutive` consumes `A` as `MaterialParams::coop_amplitude`
+`dev_soil_sph/crates/mud_constitutive` consumes `A` as `MaterialParams::coop_amplitude`
 (0 = nonlocal off). This rig measures it.
 
 ## What it does
@@ -52,7 +52,7 @@ Full closure sweep + fit (generates a γ̇ grid, runs each, fits A and g∝√T)
 python3 examples/SPH_glass_sphere_calibration/08_cooperativity_length/sweep.py --run
 ```
 Outputs `data/.../cooperativity_results.csv` (per-sample μ, p, T, Φ, I, g, ξ, and the
-correlation bins C0…C11), `data/calibration.yaml` (the `A` to drop into MUD), and
+correlation bins C0…C11), `data/calibration.yaml` (the `A` to drop into dev_soil_sph), and
 `plots/cooperativity.png`.
 
 ## Notes / limitations (v0)
@@ -61,7 +61,7 @@ correlation bins C0…C11), `data/calibration.yaml` (the `A` to drop into MUD), 
   image; run serial (the configs are single-process).
 - ξ is measured as an *integral* length of C(Δz); `sweep.py` can be extended to an
   exponential-fit length if the decay is cleaner.
-- The closure is exactly the one MUD needs, but the *interpolation hypothesis*
+- The closure is exactly the one dev_soil_sph needs, but the *interpolation hypothesis*
   ℓ_nl² = ℓ_KT²(T) + ξ(μ)² (kinetic-theory conduction length crossing over to the
   athermal cooperativity length) should be checked by comparing ξ(μ→μ_s) against
   the KT conduction length at the same T — a follow-on analysis on the same CSVs.

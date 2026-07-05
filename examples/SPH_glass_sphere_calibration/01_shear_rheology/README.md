@@ -7,7 +7,7 @@ style, with the box tilt and streaming-velocity remap handled in fractional
 (lamda) coordinates so the flow is homogeneous and parallelizes across MPI ranks.
 In steady state the recorder reports the full stress tensor, the granular
 temperature, and the solid fraction; from these the sweep forms the inertial
-number `I`, the effective friction `μ(I)`, and `Φ(I)` — the closure the MUD SPH
+number `I`, the effective friction `μ(I)`, and `Φ(I)` — the closure the dev_soil_sph
 solver consumes, together with the critical density `ρ_c = Φ_max·ρ_s`.
 
 This is the **frictional/production** path (canonical glass `μ_p = 0.16`). The
