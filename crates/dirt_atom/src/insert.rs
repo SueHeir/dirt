@@ -31,6 +31,7 @@
 
 use std::collections::HashMap;
 use std::f64::consts::PI;
+use std::fmt;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 
@@ -176,6 +177,133 @@ pub struct ParticlesConfig {
     pub insert: Option<Vec<InsertConfig>>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum InsertFileError {
+    MissingField {
+        source: &'static str,
+        field: &'static str,
+    },
+    UnknownFormat {
+        format: String,
+    },
+    InvalidTypeMapKey {
+        key: String,
+    },
+    FileOpen {
+        path: String,
+        source: String,
+    },
+    FileRead {
+        path: String,
+        line: usize,
+        source: String,
+    },
+    MissingSection {
+        path: String,
+        section: &'static str,
+    },
+    MissingColumn {
+        path: String,
+        line: usize,
+        field: &'static str,
+    },
+    MissingDefault {
+        path: String,
+        field: &'static str,
+        context: &'static str,
+    },
+    ParseField {
+        path: String,
+        line: usize,
+        field: String,
+        value: String,
+        source: String,
+    },
+    RowTooShort {
+        path: String,
+        line: usize,
+        style: String,
+        expected: usize,
+        found: usize,
+    },
+    UnsupportedAtomStyle {
+        path: String,
+        style: String,
+    },
+}
+
+impl fmt::Display for InsertFileError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            InsertFileError::MissingField { source, field } => write!(
+                f,
+                "{} source = \"file\" requires '{}' in [[particles.insert]]",
+                source, field
+            ),
+            InsertFileError::UnknownFormat { format } => write!(
+                f,
+                "Unknown file format '{}' in [[particles.insert]]. Supported: csv, lammps_dump, lammps_data",
+                format
+            ),
+            InsertFileError::InvalidTypeMapKey { key } => {
+                write!(f, "type_map key '{}' is not a valid integer atom type", key)
+            }
+            InsertFileError::FileOpen { path, source } => {
+                write!(f, "failed to open particle file '{}': {}", path, source)
+            }
+            InsertFileError::FileRead { path, line, source } => {
+                write!(f, "failed to read line {} of '{}': {}", line, path, source)
+            }
+            InsertFileError::MissingSection { path, section } => {
+                write!(f, "no '{}' section found in LAMMPS data file '{}'", section, path)
+            }
+            InsertFileError::MissingColumn { path, line, field } => write!(
+                f,
+                "missing or invalid '{}' column at line {} of '{}'",
+                field, line, path
+            ),
+            InsertFileError::MissingDefault {
+                path,
+                field,
+                context,
+            } => write!(
+                f,
+                "'{}' required in config for {} while reading '{}'",
+                field, context, path
+            ),
+            InsertFileError::ParseField {
+                path,
+                line,
+                field,
+                value,
+                source,
+            } => write!(
+                f,
+                "failed to parse {} {:?} at line {} of '{}': {}",
+                field, value, line, path, source
+            ),
+            InsertFileError::RowTooShort {
+                path,
+                line,
+                style,
+                expected,
+                found,
+            } => write!(
+                f,
+                "expected at least {} columns for {} style at line {} of '{}', found {}",
+                expected, style, line, path, found
+            ),
+            InsertFileError::UnsupportedAtomStyle { path, style } => write!(
+                f,
+                "unsupported atom_style '{}' in LAMMPS data file '{}'. Supported: atomic, sphere, bpm/sphere",
+                style, path
+            ),
+        }
+    }
+}
+
+impl std::error::Error for InsertFileError {}
+
 // ── Rate-based insertion state ──────────────────────────────────────────────
 
 /// Tracks a single rate-based insertion configuration and its progress.
@@ -198,6 +326,126 @@ impl Default for RateInsertState {
     fn default() -> Self {
         RateInsertState {
             entries: Vec::new(),
+        }
+    }
+}
+
+fn validate_insert_velocity(rand_vel: f64, context: &str) -> Result<(), String> {
+    if !rand_vel.is_finite() || rand_vel < 0.0 {
+        return Err(format!(
+            "velocity in {context} must be finite and non-negative, got {rand_vel}"
+        ));
+    }
+    Ok(())
+}
+
+fn default_insert_region(domain: &Domain, max_r: f64, context: &str) -> Result<Region, String> {
+    let min = [
+        domain.boundaries_low[0] + max_r,
+        domain.boundaries_low[1] + max_r,
+        domain.boundaries_low[2] + max_r,
+    ];
+    let max = [
+        domain.boundaries_high[0] - max_r,
+        domain.boundaries_high[1] - max_r,
+        domain.boundaries_high[2] - max_r,
+    ];
+
+    for axis in 0..3 {
+        if min[axis] > max[axis] {
+            let extent = domain.boundaries_high[axis] - domain.boundaries_low[axis];
+            return Err(format!(
+                "{context} default insertion region is smaller than particle: radius {max_r} exceeds domain extent {extent} on axis {axis}"
+            ));
+        }
+    }
+
+    Ok(Region::Block { min, max })
+}
+
+fn validate_insert_region(region: &Region, context: &str) -> Result<(), String> {
+    match region {
+        Region::Block { min, max } => {
+            for axis in 0..3 {
+                if min[axis] >= max[axis] {
+                    return Err(format!(
+                        "{context} insertion region is empty or degenerate on axis {axis}: min {} must be less than max {}",
+                        min[axis], max[axis]
+                    ));
+                }
+            }
+            Ok(())
+        }
+        Region::Sphere { radius, .. } => {
+            if !radius.is_finite() || *radius <= 0.0 {
+                return Err(format!(
+                    "{context} sphere insertion region radius must be finite and > 0, got {radius}"
+                ));
+            }
+            Ok(())
+        }
+        Region::Cylinder { radius, lo, hi, .. } => {
+            if !radius.is_finite() || *radius <= 0.0 {
+                return Err(format!(
+                    "{context} cylinder insertion region radius must be finite and > 0, got {radius}"
+                ));
+            }
+            if lo >= hi {
+                return Err(format!(
+                    "{context} cylinder insertion region is empty or degenerate: lo {lo} must be less than hi {hi}"
+                ));
+            }
+            Ok(())
+        }
+        Region::Cone {
+            rad_lo,
+            rad_hi,
+            lo,
+            hi,
+            ..
+        } => {
+            if !rad_lo.is_finite() || *rad_lo < 0.0 {
+                return Err(format!(
+                    "{context} cone insertion region rad_lo must be finite and >= 0, got {rad_lo}"
+                ));
+            }
+            if !rad_hi.is_finite() || *rad_hi < 0.0 {
+                return Err(format!(
+                    "{context} cone insertion region rad_hi must be finite and >= 0, got {rad_hi}"
+                ));
+            }
+            if *rad_lo == 0.0 && *rad_hi == 0.0 {
+                return Err(format!(
+                    "{context} cone insertion region is empty or degenerate: at least one end radius must be > 0"
+                ));
+            }
+            if lo >= hi {
+                return Err(format!(
+                    "{context} cone insertion region is empty or degenerate: lo {lo} must be less than hi {hi}"
+                ));
+            }
+            Ok(())
+        }
+        Region::Plane { .. } => Err(format!(
+            "{context} plane insertion region is unbounded and cannot be sampled"
+        )),
+        Region::Union { regions } => {
+            if regions.is_empty() {
+                return Err(format!("{context} union insertion region is empty"));
+            }
+            for child in regions {
+                validate_insert_region(child, context)?;
+            }
+            Ok(())
+        }
+        Region::Intersect { regions } => {
+            if regions.is_empty() {
+                return Err(format!("{context} intersect insertion region is empty"));
+            }
+            for child in regions {
+                validate_insert_region(child, context)?;
+            }
+            Ok(())
         }
     }
 }
@@ -454,20 +702,18 @@ fn resolve_material(material_table: &MaterialTable, name: &str) -> u32 {
 fn resolve_type_map(
     type_map: &HashMap<String, String>,
     material_table: &MaterialTable,
-) -> HashMap<u32, u32> {
+) -> Result<HashMap<u32, u32>, InsertFileError> {
     let mut index_map = HashMap::new();
     for (key_str, mat_name) in type_map {
-        let file_type: u32 = key_str.parse().unwrap_or_else(|_| {
-            eprintln!(
-                "ERROR: type_map key '{}' is not a valid integer atom type",
-                key_str
-            );
-            std::process::exit(1);
-        });
+        let file_type: u32 = key_str
+            .parse()
+            .map_err(|_| InsertFileError::InvalidTypeMapKey {
+                key: key_str.clone(),
+            })?;
         let mat_idx = resolve_material(material_table, mat_name);
         index_map.insert(file_type, mat_idx);
     }
-    index_map
+    Ok(index_map)
 }
 
 /// Look up material index for a given file atom type.
@@ -540,14 +786,17 @@ pub fn dem_insert_atoms(
             for insert in inserts {
                 if insert.source == "file" {
                     // ── File-based insertion ──
-                    insert_from_file(
+                    if let Err(e) = insert_from_file(
                         insert,
                         &mut atom,
                         &mut dem_data,
                         &material_table,
                         &domain,
                         &mut max_tag,
-                    );
+                    ) {
+                        eprintln!("ERROR: {}", e);
+                        std::process::exit(1);
+                    }
                 } else if insert.rate.is_some() {
                     // ── Rate-based: register for runtime insertion ──
                     let mat_name = insert.material.as_deref().unwrap_or_else(|| {
@@ -561,6 +810,41 @@ pub fn dem_insert_atoms(
                     }
                     if insert.density.is_none() {
                         eprintln!("ERROR: Rate-based [[particles.insert]] requires 'density'");
+                        std::process::exit(1);
+                    }
+                    let radius_spec = insert
+                        .radius
+                        .as_ref()
+                        .expect("rate-based radius was validated above");
+                    let max_r = radius_spec.try_max_radius().unwrap_or_else(|e| {
+                        eprintln!(
+                            "ERROR: invalid radius in rate-based [[particles.insert]]: {}",
+                            e
+                        );
+                        std::process::exit(1);
+                    });
+                    let region = insert
+                        .region
+                        .clone()
+                        .map(Ok)
+                        .unwrap_or_else(|| {
+                            default_insert_region(&domain, max_r, "rate-based [[particles.insert]]")
+                        })
+                        .unwrap_or_else(|e| {
+                            eprintln!("ERROR: {}", e);
+                            std::process::exit(1);
+                        });
+                    if let Err(e) =
+                        validate_insert_region(&region, "rate-based [[particles.insert]]")
+                    {
+                        eprintln!("ERROR: {}", e);
+                        std::process::exit(1);
+                    }
+                    if let Err(e) = validate_insert_velocity(
+                        insert.velocity.unwrap_or(0.0),
+                        "rate-based [[particles.insert]]",
+                    ) {
+                        eprintln!("ERROR: {}", e);
                         std::process::exit(1);
                     }
                     println!(
@@ -600,7 +884,10 @@ pub fn dem_insert_atoms(
                         std::process::exit(1);
                     });
 
-                    let max_r = radius_spec.max_radius();
+                    let max_r = radius_spec.try_max_radius().unwrap_or_else(|e| {
+                        eprintln!("ERROR: invalid radius in [[particles.insert]]: {}", e);
+                        std::process::exit(1);
+                    });
                     if comm.rank() == 0 {
                         println!(
                             "DemAtomInsert: inserting {} particles of material '{}' (r={}, rho={}, E={}, nu={})",
@@ -614,31 +901,31 @@ pub fn dem_insert_atoms(
                     }
 
                     // Use explicit region or default to domain bounds inset by max radius.
-                    let region = insert.region.clone().unwrap_or_else(|| Region::Block {
-                        min: [
-                            domain.boundaries_low[0] + max_r,
-                            domain.boundaries_low[1] + max_r,
-                            domain.boundaries_low[2] + max_r,
-                        ],
-                        max: [
-                            domain.boundaries_high[0] - max_r,
-                            domain.boundaries_high[1] - max_r,
-                            domain.boundaries_high[2] - max_r,
-                        ],
-                    });
+                    let region = insert
+                        .region
+                        .clone()
+                        .map(Ok)
+                        .unwrap_or_else(|| {
+                            default_insert_region(&domain, max_r, "[[particles.insert]]")
+                        })
+                        .unwrap_or_else(|e| {
+                            eprintln!("ERROR: {}", e);
+                            std::process::exit(1);
+                        });
+                    if let Err(e) = validate_insert_region(&region, "[[particles.insert]]") {
+                        eprintln!("ERROR: {}", e);
+                        std::process::exit(1);
+                    }
 
                     // Velocity setup (drawn deterministically per accepted atom).
                     let rand_vel = insert.velocity.unwrap_or(0.0);
-                    if rand_vel < 0.0 {
-                        eprintln!(
-                            "ERROR: velocity in [[particles.insert]] must be non-negative, got {}",
-                            rand_vel
-                        );
+                    if let Err(e) = validate_insert_velocity(rand_vel, "[[particles.insert]]") {
+                        eprintln!("ERROR: {}", e);
                         std::process::exit(1);
                     }
                     let normal = (rand_vel > 0.0).then(|| {
                         Normal::new(0.0, rand_vel)
-                            .expect("velocity must be non-negative for Normal distribution")
+                            .expect("insert velocity was validated before Normal construction")
                     });
                     let vx = insert.velocity_x.unwrap_or(0.0);
                     let vy = insert.velocity_y.unwrap_or(0.0);
@@ -666,7 +953,10 @@ pub fn dem_insert_atoms(
                         attempts += 1;
                         // Advance the shared RNG identically on every rank.
                         let [x, y, z] = region.random_point_inside(&mut rng);
-                        let radius = radius_spec.sample(&mut rng);
+                        let radius = radius_spec.try_sample(&mut rng).unwrap_or_else(|e| {
+                            eprintln!("ERROR: invalid radius in [[particles.insert]]: {}", e);
+                            std::process::exit(1);
+                        });
                         let candidate = [x, y, z];
 
                         if spatial_hash.has_overlap(&candidate, radius, &all_pos, &all_rad, &pbc) {
@@ -728,15 +1018,21 @@ fn insert_from_file(
     material_table: &MaterialTable,
     domain: &Domain,
     max_tag: &mut u32,
-) {
-    let file_path = insert.file.as_deref().unwrap_or_else(|| {
-        eprintln!("ERROR: source = \"file\" requires 'file' field in [[particles.insert]]");
-        std::process::exit(1);
-    });
-    let format = insert.format.as_deref().unwrap_or_else(|| {
-        eprintln!("ERROR: source = \"file\" requires 'format' field in [[particles.insert]]");
-        std::process::exit(1);
-    });
+) -> Result<(), InsertFileError> {
+    let file_path = insert
+        .file
+        .as_deref()
+        .ok_or(InsertFileError::MissingField {
+            source: "particle",
+            field: "file",
+        })?;
+    let format = insert
+        .format
+        .as_deref()
+        .ok_or(InsertFileError::MissingField {
+            source: "particle",
+            field: "format",
+        })?;
 
     match format {
         "csv" => read_csv_particles(
@@ -766,13 +1062,9 @@ fn insert_from_file(
             domain,
             max_tag,
         ),
-        other => {
-            eprintln!(
-                "ERROR: Unknown file format '{}' in [[particles.insert]]. Supported: csv, lammps_dump, lammps_data",
-                other
-            );
-            std::process::exit(1);
-        }
+        other => Err(InsertFileError::UnknownFormat {
+            format: other.to_string(),
+        }),
     }
 }
 
@@ -784,22 +1076,26 @@ fn read_csv_particles(
     material_table: &MaterialTable,
     domain: &Domain,
     max_tag: &mut u32,
-) {
-    let mat_name = insert.material.as_deref().unwrap_or_else(|| {
-        eprintln!("ERROR: CSV source = \"file\" requires 'material' in [[particles.insert]]");
-        std::process::exit(1);
-    });
+) -> Result<(), InsertFileError> {
+    let mat_name = insert
+        .material
+        .as_deref()
+        .ok_or(InsertFileError::MissingField {
+            source: "CSV",
+            field: "material",
+        })?;
     let mat_idx = resolve_material(material_table, mat_name);
 
     let type_index_map = insert
         .type_map
         .as_ref()
-        .map(|tm| resolve_type_map(tm, material_table));
+        .map(|tm| resolve_type_map(tm, material_table))
+        .transpose()?;
 
-    let density = insert.density.unwrap_or_else(|| {
-        eprintln!("ERROR: CSV source = \"file\" requires 'density' in [[particles.insert]]");
-        std::process::exit(1);
-    });
+    let density = insert.density.ok_or(InsertFileError::MissingField {
+        source: "CSV",
+        field: "density",
+    })?;
 
     let cols = insert.columns.clone().unwrap_or_default();
     let col_x = cols.x.unwrap_or(0);
@@ -816,23 +1112,19 @@ fn read_csv_particles(
         _ => None,
     };
 
-    let file = File::open(file_path).unwrap_or_else(|e| {
-        eprintln!("ERROR: Failed to open CSV file '{}': {}", file_path, e);
-        std::process::exit(1);
-    });
+    let file = File::open(file_path).map_err(|e| InsertFileError::FileOpen {
+        path: file_path.to_string(),
+        source: e.to_string(),
+    })?;
     let reader = BufReader::new(file);
     let mut count = 0u32;
 
     for (line_num, line) in reader.lines().enumerate() {
-        let line = line.unwrap_or_else(|e| {
-            eprintln!(
-                "ERROR: Failed to read line {} of '{}': {}",
-                line_num + 1,
-                file_path,
-                e
-            );
-            std::process::exit(1);
-        });
+        let line = line.map_err(|e| InsertFileError::FileRead {
+            path: file_path.to_string(),
+            line: line_num + 1,
+            source: e.to_string(),
+        })?;
         let trimmed = line.trim();
         if trimmed.is_empty() || trimmed.starts_with('#') {
             continue;
@@ -843,44 +1135,46 @@ fn read_csv_particles(
         }
 
         let fields: Vec<&str> = trimmed.split(',').map(|s| s.trim()).collect();
-        let parse = |idx: usize, name: &str| -> f64 {
+        let parse = |idx: usize, name: &'static str| -> Result<f64, InsertFileError> {
             fields
                 .get(idx)
-                .and_then(|s| s.parse().ok())
-                .unwrap_or_else(|| {
-                    eprintln!(
-                        "ERROR: Failed to parse {} (column {}) at line {} of '{}'",
-                        name,
-                        idx,
-                        line_num + 1,
-                        file_path
-                    );
-                    std::process::exit(1);
+                .ok_or_else(|| InsertFileError::MissingColumn {
+                    path: file_path.to_string(),
+                    line: line_num + 1,
+                    field: name,
+                })
+                .and_then(|s| {
+                    s.parse()
+                        .map_err(|e: std::num::ParseFloatError| InsertFileError::ParseField {
+                            path: file_path.to_string(),
+                            line: line_num + 1,
+                            field: format!("{} (column {})", name, idx),
+                            value: (*s).to_string(),
+                            source: e.to_string(),
+                        })
                 })
         };
 
-        let x = parse(col_x, "x");
-        let y = parse(col_y, "y");
-        let z = parse(col_z, "z");
+        let x = parse(col_x, "x")?;
+        let y = parse(col_y, "y")?;
+        let z = parse(col_z, "z")?;
         let radius = col_radius
             .map(|c| parse(c, "radius"))
+            .transpose()?
             .or(default_radius)
-            .unwrap_or_else(|| {
-                eprintln!(
-                    "ERROR: No radius column or default radius at line {} of '{}'",
-                    line_num + 1,
-                    file_path
-                );
-                std::process::exit(1);
-            });
-        let vx = col_vx.map(|c| parse(c, "vx")).unwrap_or(0.0);
-        let vy = col_vy.map(|c| parse(c, "vy")).unwrap_or(0.0);
-        let vz = col_vz.map(|c| parse(c, "vz")).unwrap_or(0.0);
+            .ok_or(InsertFileError::MissingDefault {
+                path: file_path.to_string(),
+                field: "radius",
+                context: "CSV file insertion with no radius column",
+            })?;
+        let vx = col_vx.map(|c| parse(c, "vx")).transpose()?.unwrap_or(0.0);
+        let vy = col_vy.map(|c| parse(c, "vy")).transpose()?.unwrap_or(0.0);
+        let vz = col_vz.map(|c| parse(c, "vz")).transpose()?.unwrap_or(0.0);
 
         // Determine material: type_map lookup (if atom_type column present) → default material
         let row_mat_idx = match col_atom_type {
             Some(col) => {
-                let file_type = parse(col, "atom_type") as u32;
+                let file_type = parse(col, "atom_type")? as u32;
                 lookup_material_for_type(file_type, type_index_map.as_ref(), mat_idx)
             }
             None => mat_idx,
@@ -908,6 +1202,7 @@ fn read_csv_particles(
         "DemAtomInsert: loaded {} local particles from CSV '{}'",
         count, file_path
     );
+    Ok(())
 }
 
 fn read_lammps_dump_particles(
@@ -918,39 +1213,36 @@ fn read_lammps_dump_particles(
     material_table: &MaterialTable,
     domain: &Domain,
     max_tag: &mut u32,
-) {
-    let mat_name = insert.material.as_deref().unwrap_or_else(|| {
-        eprintln!(
-            "ERROR: lammps_dump source = \"file\" requires 'material' in [[particles.insert]]"
-        );
-        std::process::exit(1);
-    });
+) -> Result<(), InsertFileError> {
+    let mat_name = insert
+        .material
+        .as_deref()
+        .ok_or(InsertFileError::MissingField {
+            source: "lammps_dump",
+            field: "material",
+        })?;
     let mat_idx = resolve_material(material_table, mat_name);
 
     let type_index_map = insert
         .type_map
         .as_ref()
-        .map(|tm| resolve_type_map(tm, material_table));
+        .map(|tm| resolve_type_map(tm, material_table))
+        .transpose()?;
 
-    let density = insert.density.unwrap_or_else(|| {
-        eprintln!(
-            "ERROR: lammps_dump source = \"file\" requires 'density' in [[particles.insert]]"
-        );
-        std::process::exit(1);
-    });
+    let density = insert.density.ok_or(InsertFileError::MissingField {
+        source: "lammps_dump",
+        field: "density",
+    })?;
 
     let default_radius = match &insert.radius {
         Some(RadiusSpec::Fixed(r)) => Some(*r),
         _ => None,
     };
 
-    let file = File::open(file_path).unwrap_or_else(|e| {
-        eprintln!(
-            "ERROR: Failed to open LAMMPS dump file '{}': {}",
-            file_path, e
-        );
-        std::process::exit(1);
-    });
+    let file = File::open(file_path).map_err(|e| InsertFileError::FileOpen {
+        path: file_path.to_string(),
+        source: e.to_string(),
+    })?;
     let reader = BufReader::new(file);
     let mut lines = reader.lines();
 
@@ -964,12 +1256,33 @@ fn read_lammps_dump_particles(
     let find_col =
         |names: &[String], name: &str| -> Option<usize> { names.iter().position(|n| n == name) };
 
-    while let Some(Ok(line)) = lines.next() {
+    let mut line_num = 0usize;
+    while let Some(line) = lines.next() {
+        line_num += 1;
+        let line = line.map_err(|e| InsertFileError::FileRead {
+            path: file_path.to_string(),
+            line: line_num,
+            source: e.to_string(),
+        })?;
         let trimmed = line.trim();
 
         if trimmed == "ITEM: NUMBER OF ATOMS" {
-            if let Some(Ok(next)) = lines.next() {
-                n_atoms = next.trim().parse().unwrap_or(0);
+            if let Some(next) = lines.next() {
+                line_num += 1;
+                let next = next.map_err(|e| InsertFileError::FileRead {
+                    path: file_path.to_string(),
+                    line: line_num,
+                    source: e.to_string(),
+                })?;
+                n_atoms = next.trim().parse().map_err(|e: std::num::ParseIntError| {
+                    InsertFileError::ParseField {
+                        path: file_path.to_string(),
+                        line: line_num,
+                        field: "number of atoms".to_string(),
+                        value: next.trim().to_string(),
+                        source: e.to_string(),
+                    }
+                })?;
             }
             continue;
         }
@@ -997,25 +1310,58 @@ fn read_lammps_dump_particles(
                 continue;
             }
 
-            let parse_col = |name: &str| -> Option<f64> {
-                find_col(&column_names, name).and_then(|i| fields.get(i)?.parse().ok())
+            let parse_col = |name: &'static str| -> Result<Option<f64>, InsertFileError> {
+                let Some(i) = find_col(&column_names, name) else {
+                    return Ok(None);
+                };
+                let Some(value) = fields.get(i) else {
+                    return Err(InsertFileError::MissingColumn {
+                        path: file_path.to_string(),
+                        line: line_num,
+                        field: name,
+                    });
+                };
+                value
+                    .parse()
+                    .map(Some)
+                    .map_err(|e: std::num::ParseFloatError| InsertFileError::ParseField {
+                        path: file_path.to_string(),
+                        line: line_num,
+                        field: name.to_string(),
+                        value: (*value).to_string(),
+                        source: e.to_string(),
+                    })
             };
 
-            let x = parse_col("x").unwrap_or(0.0);
-            let y = parse_col("y").unwrap_or(0.0);
-            let z = parse_col("z").unwrap_or(0.0);
-            let vx = parse_col("vx").unwrap_or(0.0);
-            let vy = parse_col("vy").unwrap_or(0.0);
-            let vz = parse_col("vz").unwrap_or(0.0);
-            let radius = parse_col("radius").or(default_radius).unwrap_or_else(|| {
-                eprintln!(
-                    "ERROR: No 'radius' column in LAMMPS dump and no default radius in config"
-                );
-                std::process::exit(1);
-            });
+            let x = parse_col("x")?.ok_or(InsertFileError::MissingColumn {
+                path: file_path.to_string(),
+                line: line_num,
+                field: "x",
+            })?;
+            let y = parse_col("y")?.ok_or(InsertFileError::MissingColumn {
+                path: file_path.to_string(),
+                line: line_num,
+                field: "y",
+            })?;
+            let z = parse_col("z")?.ok_or(InsertFileError::MissingColumn {
+                path: file_path.to_string(),
+                line: line_num,
+                field: "z",
+            })?;
+            let vx = parse_col("vx")?.unwrap_or(0.0);
+            let vy = parse_col("vy")?.unwrap_or(0.0);
+            let vz = parse_col("vz")?.unwrap_or(0.0);
+            let radius =
+                parse_col("radius")?
+                    .or(default_radius)
+                    .ok_or(InsertFileError::MissingDefault {
+                        path: file_path.to_string(),
+                        field: "radius",
+                        context: "LAMMPS dump file insertion with no radius column",
+                    })?;
 
             // Determine material: type_map override → default material
-            let row_mat_idx = match parse_col("type") {
+            let row_mat_idx = match parse_col("type")? {
                 Some(t) => lookup_material_for_type(t as u32, type_index_map.as_ref(), mat_idx),
                 None => mat_idx,
             };
@@ -1042,6 +1388,7 @@ fn read_lammps_dump_particles(
         "DemAtomInsert: loaded {} local particles from LAMMPS dump '{}'",
         count, file_path
     );
+    Ok(())
 }
 
 /// Parse a field from a LAMMPS data file, with a user-friendly error on failure.
@@ -1050,16 +1397,16 @@ fn parse_field<T: std::str::FromStr>(
     field_name: &str,
     line_num: usize,
     file_path: &str,
-) -> T
+) -> Result<T, InsertFileError>
 where
     T::Err: std::fmt::Display,
 {
-    value.parse::<T>().unwrap_or_else(|e| {
-        eprintln!(
-            "ERROR: Failed to parse {} '{}' at line {} of '{}': {}",
-            field_name, value, line_num, file_path, e
-        );
-        std::process::exit(1);
+    value.parse::<T>().map_err(|e| InsertFileError::ParseField {
+        path: file_path.to_string(),
+        line: line_num,
+        field: field_name.to_string(),
+        value: value.to_string(),
+        source: e.to_string(),
     })
 }
 
@@ -1071,19 +1418,21 @@ fn read_lammps_data_particles(
     material_table: &MaterialTable,
     domain: &Domain,
     max_tag: &mut u32,
-) {
-    let mat_name = insert.material.as_deref().unwrap_or_else(|| {
-        eprintln!(
-            "ERROR: lammps_data source = \"file\" requires 'material' in [[particles.insert]]"
-        );
-        std::process::exit(1);
-    });
+) -> Result<(), InsertFileError> {
+    let mat_name = insert
+        .material
+        .as_deref()
+        .ok_or(InsertFileError::MissingField {
+            source: "lammps_data",
+            field: "material",
+        })?;
     let mat_idx = resolve_material(material_table, mat_name);
 
     let type_index_map = insert
         .type_map
         .as_ref()
-        .map(|tm| resolve_type_map(tm, material_table));
+        .map(|tm| resolve_type_map(tm, material_table))
+        .transpose()?;
 
     let default_density = insert.density;
     let default_radius = match &insert.radius {
@@ -1091,29 +1440,22 @@ fn read_lammps_data_particles(
         _ => None,
     };
 
-    let file = File::open(file_path).unwrap_or_else(|e| {
-        eprintln!(
-            "ERROR: Failed to open LAMMPS data file '{}': {}",
-            file_path, e
-        );
-        std::process::exit(1);
-    });
+    let file = File::open(file_path).map_err(|e| InsertFileError::FileOpen {
+        path: file_path.to_string(),
+        source: e.to_string(),
+    })?;
     let reader = BufReader::new(file);
     let lines: Vec<String> = reader
         .lines()
         .enumerate()
         .map(|(i, l)| {
-            l.unwrap_or_else(|e| {
-                eprintln!(
-                    "ERROR: Failed to read line {} of '{}': {}",
-                    i + 1,
-                    file_path,
-                    e
-                );
-                std::process::exit(1);
+            l.map_err(|e| InsertFileError::FileRead {
+                path: file_path.to_string(),
+                line: i + 1,
+                source: e.to_string(),
             })
         })
-        .collect();
+        .collect::<Result<_, _>>()?;
 
     // Detect atom style from config or from "Atoms # style" header
     let config_style = insert.atom_style.as_deref();
@@ -1147,13 +1489,10 @@ fn read_lammps_data_particles(
         .or(atoms_style)
         .unwrap_or_else(|| "atomic".to_string());
 
-    let atoms_start = atoms_start.unwrap_or_else(|| {
-        eprintln!(
-            "ERROR: No 'Atoms' section found in LAMMPS data file '{}'",
-            file_path
-        );
-        std::process::exit(1);
-    });
+    let atoms_start = atoms_start.ok_or(InsertFileError::MissingSection {
+        path: file_path.to_string(),
+        section: "Atoms",
+    })?;
 
     // Parse Atoms section
     struct ParsedAtom {
@@ -1200,26 +1539,29 @@ fn read_lammps_data_particles(
             "atomic" => {
                 // id type x y z
                 if fields.len() < 5 {
-                    eprintln!(
-                        "ERROR: Expected at least 5 columns for atomic style at line {} of '{}'",
-                        i + 1,
-                        file_path
-                    );
-                    std::process::exit(1);
+                    return Err(InsertFileError::RowTooShort {
+                        path: file_path.to_string(),
+                        line: i + 1,
+                        style: "atomic".to_string(),
+                        expected: 5,
+                        found: fields.len(),
+                    });
                 }
-                let id: u32 = parse_field(fields[0], "atom id", i + 1, file_path);
-                let atype: u32 = parse_field(fields[1], "atom type", i + 1, file_path);
-                let x: f64 = parse_field(fields[2], "x coordinate", i + 1, file_path);
-                let y: f64 = parse_field(fields[3], "y coordinate", i + 1, file_path);
-                let z: f64 = parse_field(fields[4], "z coordinate", i + 1, file_path);
-                let radius = default_radius.unwrap_or_else(|| {
-                    eprintln!("ERROR: 'radius' required in config for atomic style LAMMPS data");
-                    std::process::exit(1);
-                });
-                let density = default_density.unwrap_or_else(|| {
-                    eprintln!("ERROR: 'density' required in config for atomic style LAMMPS data");
-                    std::process::exit(1);
-                });
+                let id: u32 = parse_field(fields[0], "atom id", i + 1, file_path)?;
+                let atype: u32 = parse_field(fields[1], "atom type", i + 1, file_path)?;
+                let x: f64 = parse_field(fields[2], "x coordinate", i + 1, file_path)?;
+                let y: f64 = parse_field(fields[3], "y coordinate", i + 1, file_path)?;
+                let z: f64 = parse_field(fields[4], "z coordinate", i + 1, file_path)?;
+                let radius = default_radius.ok_or(InsertFileError::MissingDefault {
+                    path: file_path.to_string(),
+                    field: "radius",
+                    context: "atomic style LAMMPS data",
+                })?;
+                let density = default_density.ok_or(InsertFileError::MissingDefault {
+                    path: file_path.to_string(),
+                    field: "density",
+                    context: "atomic style LAMMPS data",
+                })?;
                 parsed_atoms.push(ParsedAtom {
                     id,
                     atom_type: atype,
@@ -1231,21 +1573,21 @@ fn read_lammps_data_particles(
             "sphere" | "bpm/sphere" => {
                 // id type diameter density x y z
                 if fields.len() < 7 {
-                    eprintln!(
-                        "ERROR: Expected at least 7 columns for {} style at line {} of '{}'",
-                        atom_style,
-                        i + 1,
-                        file_path
-                    );
-                    std::process::exit(1);
+                    return Err(InsertFileError::RowTooShort {
+                        path: file_path.to_string(),
+                        line: i + 1,
+                        style: atom_style.clone(),
+                        expected: 7,
+                        found: fields.len(),
+                    });
                 }
-                let id: u32 = parse_field(fields[0], "atom id", i + 1, file_path);
-                let atype: u32 = parse_field(fields[1], "atom type", i + 1, file_path);
-                let diameter: f64 = parse_field(fields[2], "diameter", i + 1, file_path);
-                let density: f64 = parse_field(fields[3], "density", i + 1, file_path);
-                let x: f64 = parse_field(fields[4], "x coordinate", i + 1, file_path);
-                let y: f64 = parse_field(fields[5], "y coordinate", i + 1, file_path);
-                let z: f64 = parse_field(fields[6], "z coordinate", i + 1, file_path);
+                let id: u32 = parse_field(fields[0], "atom id", i + 1, file_path)?;
+                let atype: u32 = parse_field(fields[1], "atom type", i + 1, file_path)?;
+                let diameter: f64 = parse_field(fields[2], "diameter", i + 1, file_path)?;
+                let density: f64 = parse_field(fields[3], "density", i + 1, file_path)?;
+                let x: f64 = parse_field(fields[4], "x coordinate", i + 1, file_path)?;
+                let y: f64 = parse_field(fields[5], "y coordinate", i + 1, file_path)?;
+                let z: f64 = parse_field(fields[6], "z coordinate", i + 1, file_path)?;
                 parsed_atoms.push(ParsedAtom {
                     id,
                     atom_type: atype,
@@ -1255,11 +1597,10 @@ fn read_lammps_data_particles(
                 });
             }
             other => {
-                eprintln!(
-                    "ERROR: Unsupported atom_style '{}' in LAMMPS data file. Supported: atomic, sphere, bpm/sphere",
-                    other
-                );
-                std::process::exit(1);
+                return Err(InsertFileError::UnsupportedAtomStyle {
+                    path: file_path.to_string(),
+                    style: other.to_string(),
+                });
             }
         }
     }
@@ -1280,10 +1621,10 @@ fn read_lammps_data_particles(
             }
             let fields: Vec<&str> = trimmed.split_whitespace().collect();
             if fields.len() >= 4 {
-                let id: u32 = parse_field(fields[0], "atom id (Velocities)", i + 1, file_path);
-                let vx: f64 = parse_field(fields[1], "vx", i + 1, file_path);
-                let vy: f64 = parse_field(fields[2], "vy", i + 1, file_path);
-                let vz: f64 = parse_field(fields[3], "vz", i + 1, file_path);
+                let id: u32 = parse_field(fields[0], "atom id (Velocities)", i + 1, file_path)?;
+                let vx: f64 = parse_field(fields[1], "vx", i + 1, file_path)?;
+                let vy: f64 = parse_field(fields[2], "vy", i + 1, file_path)?;
+                let vz: f64 = parse_field(fields[3], "vz", i + 1, file_path)?;
                 velocity_map.insert(id, [vx, vy, vz]);
             }
         }
@@ -1314,6 +1655,7 @@ fn read_lammps_data_particles(
         "DemAtomInsert: loaded {} local particles from LAMMPS data file '{}' (style: {})",
         count, file_path, atom_style
     );
+    Ok(())
 }
 
 // ── Update system: rate-based insertion ─────────────────────────────────────
@@ -1443,29 +1785,41 @@ pub fn dem_rate_insert(
             .expect("rate-based insertion entry must have 'density' field");
         let mat_idx = rate_state.entries[entry_idx].mat_idx;
 
-        let max_r = radius_spec.max_radius();
+        let max_r = radius_spec.try_max_radius().unwrap_or_else(|e| {
+            eprintln!(
+                "ERROR: invalid radius in rate-based [[particles.insert]]: {}",
+                e
+            );
+            std::process::exit(1);
+        });
         let region = rate_state.entries[entry_idx]
             .config
             .region
             .clone()
-            .unwrap_or_else(|| Region::Block {
-                min: [
-                    domain.boundaries_low[0] + max_r,
-                    domain.boundaries_low[1] + max_r,
-                    domain.boundaries_low[2] + max_r,
-                ],
-                max: [
-                    domain.boundaries_high[0] - max_r,
-                    domain.boundaries_high[1] - max_r,
-                    domain.boundaries_high[2] - max_r,
-                ],
+            .map(Ok)
+            .unwrap_or_else(|| {
+                default_insert_region(&domain, max_r, "rate-based [[particles.insert]]")
+            })
+            .unwrap_or_else(|e| {
+                eprintln!("ERROR: {}", e);
+                std::process::exit(1);
             });
+        if let Err(e) = validate_insert_region(&region, "rate-based [[particles.insert]]") {
+            eprintln!("ERROR: {}", e);
+            std::process::exit(1);
+        }
 
         // Velocity parameters (drawn deterministically per accepted candidate).
         let config_seed = rate_state.entries[entry_idx].config.seed.unwrap_or(0);
         let rand_vel = rate_state.entries[entry_idx].config.velocity.unwrap_or(0.0);
-        let vel_normal = (rand_vel > 0.0)
-            .then(|| Normal::new(0.0, rand_vel).expect("velocity must be non-negative"));
+        if let Err(e) = validate_insert_velocity(rand_vel, "rate-based [[particles.insert]]") {
+            eprintln!("ERROR: {}", e);
+            std::process::exit(1);
+        }
+        let vel_normal = (rand_vel > 0.0).then(|| {
+            Normal::new(0.0, rand_vel)
+                .expect("rate insertion velocity was validated before Normal construction")
+        });
         let vx = rate_state.entries[entry_idx]
             .config
             .velocity_x
@@ -1520,7 +1874,13 @@ pub fn dem_rate_insert(
             attempts += 1;
 
             let [x, y, z] = region.random_point_inside(&mut rng);
-            let radius = radius_spec.sample(&mut rng);
+            let radius = radius_spec.try_sample(&mut rng).unwrap_or_else(|e| {
+                eprintln!(
+                    "ERROR: invalid radius in rate-based [[particles.insert]]: {}",
+                    e
+                );
+                std::process::exit(1);
+            });
             let candidate = [x, y, z];
 
             if spatial_hash.has_overlap(&candidate, radius, &all_pos, &all_rad, &pbc) {

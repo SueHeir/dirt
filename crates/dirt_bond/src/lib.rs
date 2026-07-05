@@ -1773,7 +1773,7 @@ mod tests {
         atom.dt = 1e-6;
         push_dem_test_atom(&mut atom, &mut dem, 1, [0.0, 0.0, 0.0], radius);
         push_dem_test_atom(&mut atom, &mut dem, 2, [sep, 0.0, 0.0], radius);
-        atom.vel[1] = vel1;
+        atom.vel[1] = vel1.map(|v| v as soil_core::Real);
         dem.omega[1] = omega1;
         atom.nlocal = 2;
         atom.natoms = 2;

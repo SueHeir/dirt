@@ -60,40 +60,143 @@ pub enum RadiusDistribution {
 }
 
 impl RadiusSpec {
+    /// Sample a radius from this specification, returning a config-scoped error
+    /// instead of panicking when user-provided distribution parameters are invalid.
+    pub fn try_sample(&self, rng: &mut impl Rng) -> Result<f64, String> {
+        match self {
+            RadiusSpec::Fixed(r) => Ok(*r),
+            RadiusSpec::Distribution(d) => d.try_sample(rng),
+        }
+    }
+
     /// Sample a radius from this specification.
     pub fn sample(&self, rng: &mut impl Rng) -> f64 {
+        // Internal/test convenience wrapper. Runtime config paths use
+        // `try_sample` so malformed user distributions become typed errors.
+        self.try_sample(rng)
+            .expect("radius distribution parameters must be validated before sampling")
+    }
+
+    /// Conservative upper bound on radius (for spatial hash cell sizing).
+    pub fn try_max_radius(&self) -> Result<f64, String> {
         match self {
-            RadiusSpec::Fixed(r) => *r,
-            RadiusSpec::Distribution(d) => d.sample(rng),
+            RadiusSpec::Fixed(r) => {
+                validate_positive_finite_radius(*r, "fixed radius")?;
+                Ok(*r)
+            }
+            RadiusSpec::Distribution(d) => d.try_max_radius(),
         }
     }
 
     /// Conservative upper bound on radius (for spatial hash cell sizing).
     pub fn max_radius(&self) -> f64 {
+        // Internal/test convenience wrapper. Runtime config paths use
+        // `try_max_radius` before deriving regions or spatial-hash sizes.
+        self.try_max_radius()
+            .expect("radius distribution parameters must be validated before max_radius")
+    }
+}
+
+fn validate_positive_finite_radius(value: f64, context: &str) -> Result<(), String> {
+    if !value.is_finite() || value <= 0.0 {
+        return Err(format!("{context} must be finite and > 0, got {value}"));
+    }
+    Ok(())
+}
+
+impl RadiusDistribution {
+    fn try_max_radius(&self) -> Result<f64, String> {
         match self {
-            RadiusSpec::Fixed(r) => *r,
-            RadiusSpec::Distribution(d) => d.max_radius(),
+            RadiusDistribution::Uniform { min, max } => {
+                validate_positive_finite_radius(*min, "uniform radius min")?;
+                validate_positive_finite_radius(*max, "uniform radius max")?;
+                if min >= max {
+                    return Err(format!(
+                        "uniform radius requires min < max, got min={} max={}",
+                        min, max
+                    ));
+                }
+                Ok(*max)
+            }
+            RadiusDistribution::Gaussian { mean, std } => {
+                validate_positive_finite_radius(*mean, "Gaussian radius mean")?;
+                if !std.is_finite() || *std <= 0.0 {
+                    return Err(format!(
+                        "Gaussian radius std must be finite and > 0, got {std}"
+                    ));
+                }
+                let max = mean + 4.0 * std;
+                validate_positive_finite_radius(max, "Gaussian radius max bound")?;
+                Ok(max)
+            }
+            RadiusDistribution::Lognormal { mean, std } => {
+                validate_positive_finite_radius(*mean, "lognormal radius mean")?;
+                if !std.is_finite() || *std <= 0.0 {
+                    return Err(format!(
+                        "lognormal radius std must be finite and > 0, got {std}"
+                    ));
+                }
+                let max = mean + 4.0 * std;
+                validate_positive_finite_radius(max, "lognormal radius max bound")?;
+                Ok(max)
+            }
+            RadiusDistribution::Discrete { values, weights } => {
+                if values.is_empty() {
+                    return Err("discrete radius requires at least one value".to_string());
+                }
+                if values.len() != weights.len() {
+                    return Err(format!(
+                        "discrete radius requires values/weights length match, got {} values and {} weights",
+                        values.len(),
+                        weights.len()
+                    ));
+                }
+                for (i, value) in values.iter().enumerate() {
+                    validate_positive_finite_radius(
+                        *value,
+                        &format!("discrete radius value[{i}]"),
+                    )?;
+                }
+                for (i, weight) in weights.iter().enumerate() {
+                    if !weight.is_finite() || *weight < 0.0 {
+                        return Err(format!(
+                            "discrete radius weight[{i}] must be finite and >= 0, got {weight}"
+                        ));
+                    }
+                }
+                let total: f64 = weights.iter().sum();
+                if total <= 0.0 {
+                    return Err(format!(
+                        "discrete radius requires positive total weight, got {}",
+                        total
+                    ));
+                }
+                Ok(values.iter().cloned().fold(f64::NEG_INFINITY, f64::max))
+            }
         }
     }
 }
 
 impl RadiusDistribution {
-    fn sample(&self, rng: &mut impl Rng) -> f64 {
+    fn try_sample(&self, rng: &mut impl Rng) -> Result<f64, String> {
+        self.try_max_radius()?;
         match self {
-            RadiusDistribution::Uniform { min, max } => rng.random_range(*min..*max),
+            RadiusDistribution::Uniform { min, max } => Ok(rng.random_range(*min..*max)),
             RadiusDistribution::Gaussian { mean, std } => {
-                let normal = Normal::new(*mean, *std)
-                    .expect("invalid Gaussian parameters: std must be >= 0");
-                normal.sample(rng).max(1e-15) // clamp to positive
+                let normal = Normal::new(*mean, *std).map_err(|e| {
+                    format!("invalid Gaussian radius parameters (mean={mean}, std={std}): {e}")
+                })?;
+                Ok(normal.sample(rng).max(1e-15)) // clamp to positive
             }
             RadiusDistribution::Lognormal { mean, std } => {
                 // Convert actual mean/std to underlying normal parameters
                 let sigma_sq = (1.0 + (std / mean).powi(2)).ln();
                 let mu = mean.ln() - sigma_sq / 2.0;
                 let sigma = sigma_sq.sqrt();
-                let ln = LogNormal::new(mu, sigma)
-                    .expect("invalid lognormal parameters: mean and std must be > 0");
-                ln.sample(rng)
+                let ln = LogNormal::new(mu, sigma).map_err(|e| {
+                    format!("invalid lognormal radius parameters (mean={mean}, std={std}): {e}")
+                })?;
+                Ok(ln.sample(rng))
             }
             RadiusDistribution::Discrete { values, weights } => {
                 let total: f64 = weights.iter().sum();
@@ -102,23 +205,14 @@ impl RadiusDistribution {
                 for (i, w) in weights.iter().enumerate() {
                     cumulative += w;
                     if r < cumulative {
-                        return values[i];
+                        return Ok(values[i]);
                     }
                 }
-                *values
+                // Non-empty was checked above; this only handles roundoff at the
+                // upper edge of the cumulative distribution.
+                Ok(*values
                     .last()
-                    .expect("discrete distribution must have at least one value")
-            }
-        }
-    }
-
-    fn max_radius(&self) -> f64 {
-        match self {
-            RadiusDistribution::Uniform { max, .. } => *max,
-            RadiusDistribution::Gaussian { mean, std } => mean + 4.0 * std,
-            RadiusDistribution::Lognormal { mean, std } => mean + 4.0 * std,
-            RadiusDistribution::Discrete { values, .. } => {
-                values.iter().cloned().fold(f64::NEG_INFINITY, f64::max)
+                    .expect("discrete distribution was validated as non-empty"))
             }
         }
     }
@@ -298,6 +392,47 @@ mod tests {
             "discrete ratio should be ~0.7, got {}",
             ratio
         );
+    }
+
+    #[test]
+    fn malformed_radius_distribution_reports_error() {
+        let mut rng = rand::rng();
+        let spec = RadiusSpec::Distribution(RadiusDistribution::Lognormal {
+            mean: 0.0,
+            std: 0.1,
+        });
+
+        let err = spec
+            .try_sample(&mut rng)
+            .expect_err("invalid lognormal config should not panic");
+        assert!(err.contains("lognormal radius mean must be finite and > 0"));
+    }
+
+    #[test]
+    fn empty_discrete_radius_distribution_reports_error() {
+        let mut rng = rand::rng();
+        let spec = RadiusSpec::Distribution(RadiusDistribution::Discrete {
+            values: vec![],
+            weights: vec![],
+        });
+
+        let err = spec
+            .try_sample(&mut rng)
+            .expect_err("empty discrete config should not panic");
+        assert!(err.contains("discrete radius requires at least one value"));
+    }
+
+    #[test]
+    fn empty_discrete_radius_distribution_reports_max_radius_error() {
+        let spec = RadiusSpec::Distribution(RadiusDistribution::Discrete {
+            values: vec![],
+            weights: vec![],
+        });
+
+        let err = spec
+            .try_max_radius()
+            .expect_err("empty discrete config should fail before region construction");
+        assert!(err.contains("discrete radius requires at least one value"));
     }
 
     #[test]
