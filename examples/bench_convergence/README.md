@@ -1,19 +1,19 @@
 # bench_convergence — timestep & particle-count convergence study
 
 Every other `bench_*` example runs at a **single** timestep (`0.15 × dt_Rayleigh`,
-the solver default) and a **single** particle count, then asserts the answer is
-close to a reference. None of them answers the two questions a solver user
-actually has:
+the solver default), a **single** periodic box, and a **single** particle count,
+then asserts the answer is close to a reference. None of them answers the three
+questions a solver user actually has:
 
-> How small must `dt` be, and how many particles `N` do I need, before the key
-> observables stop moving?
+> How small must `dt` be, how large must the periodic box `L` be, and how many
+> particles `N` do I need, before the key observables stop moving?
 
-This example answers both. It writes **no new Rust code** — it drives the existing
+This example answers all three. It writes **no new Rust code** — it drives the existing
 compiled benchmark binaries (`bench_hertz_rebound` and `bench_sphere_haff_cooling`)
-through generated configs over a ladder of resolutions, and watches the
-observables converge.
+through generated configs over ladders of resolutions, and watches the observables
+converge.
 
-## Two sub-studies
+## Three sub-studies
 
 ### A. Timestep convergence (deterministic)
 
@@ -54,6 +54,16 @@ with the RMS residual of the Haff fit — shrink like `~1/√N`.
 ![Particle-count convergence](plots/n_convergence.png)
 ![Cooling curves](plots/cooling_curves.png)
 
+### C. Box-size convergence (periodic finite-size check)
+
+The fixed-density Haff ladder is also an explicit periodic box-size sweep:
+`L/d` grows while `φ = 0.07` stays fixed.  The measured observable is the
+seed-mean Haff cooling time `t_c`; the finite-size error
+`|t_c(L) - t_c(L_max)| / t_c(L_max)` must decrease monotonically as `L` grows, and
+the next-largest box must be within 2 % of the largest-box limit.
+
+![Box-size convergence](plots/box_size_convergence.png)
+
 ## Running
 
 ```bash
@@ -78,9 +88,12 @@ are identical run to run.
 - **Recommended timestep:** `dt ≲ 0.25 · dt_Rayleigh` keeps COR, `t_c` and `δ_max`
   within 2 % of the fully-resolved value. The solver default `0.15 · dt_R` sits
   comfortably inside this — a data-backed justification for the default.
-- **Recommended particle count:** `N ≥ 800` for a `< 1 %` Haff-fit residual and
+- **Recommended particle count:** `N ≥ 400` for a `< 1 %` Haff-fit residual and
   `< 3 %` run-to-run scatter on `t_c` at this `φ`. Smaller boxes still recover the
   correct cooling law but with more finite-size noise.
+- **Recommended periodic box:** `L/d ≥ 18.16` keeps the seed-mean `t_c` within 2 %
+  of the largest-box result in this ladder, with monotone finite-size error as
+  the box grows.
 
 The generated report with the exact numbers is written to `report.md`.
 
@@ -91,8 +104,8 @@ The generated report with the exact numbers is written to `report.md`.
   contact physics is validated by the individual `bench_*` examples this driver
   reuses. See `examples/VALIDATION.md`.
 - Study A's elastic anchor is a genuine analytic check; the damped case and
-  Study B are self-convergence / finite-size checks against the fully-resolved
-  run, not against an independent reference.
-- The recommended `dt`/`N` are for **these materials and setups**; stiffer
+  Studies B/C are self-convergence / finite-size checks against the
+  fully-resolved or largest-box run, not against an independent reference.
+- The recommended `dt`/`N`/`L` are for **these materials and setups**; stiffer
   materials, larger overlaps, or denser packings shift the numbers, but the
   procedure (and this driver) transfers directly.

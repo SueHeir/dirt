@@ -541,14 +541,15 @@ periodic slice; absolute pressures are not physical.
 
 ---
 
-# Numerical convergence — timestep & particle count
+# Numerical convergence — timestep, particle count, and box size
 
-## `bench_convergence` — do the observables stop moving as `dt → 0`, `N → ∞`?
+## `bench_convergence` — do the observables stop moving as `dt → 0`, `N → ∞`, `L → ∞`?
 
-Every benchmark above runs at a single timestep (`0.15 · dt_Rayleigh`) and a single
-particle count. `bench_convergence` closes that gap by re-driving two existing
-binaries over a resolution ladder (it adds no new physics — it reuses
-`bench_hertz_rebound` and `bench_sphere_haff_cooling` through generated configs).
+Every benchmark above runs at a single timestep (`0.15 · dt_Rayleigh`), a single
+periodic box, and a single particle count. `bench_convergence` closes that gap by
+re-driving two existing binaries over resolution ladders (it adds no new
+physics — it reuses `bench_hertz_rebound` and `bench_sphere_haff_cooling`
+through generated configs).
 
 **A. Timestep.** A single sphere strikes a wall at `dt = f · dt_Rayleigh`,
 `f ∈ {0.5 … 0.015}`. For the elastic anchor (COR = 1) the measured contact
@@ -564,17 +565,25 @@ fully-resolved value; the study recommends **`dt ≲ 0.25 · dt_R`** for < 2 %.
 at fixed volume fraction `φ = 0.07` (box grows with `N`), 4 seeds each. The Haff
 cooling time `t_c` plateaus (Δ = 0.3 % from `N = 800→1600`) while the Haff-fit
 RMS residual and the run-to-run scatter shrink like `~1/√N`; recommended
-**`N ≥ 800`** for < 1 % fit residual and < 3 % scatter at this `φ`.
+**`N ≥ 400`** for < 1 % fit residual and < 3 % scatter at this `φ`.
 
 ![Particle-count convergence](bench_convergence/plots/n_convergence.png)
 
+**C. Box size.** The same fixed-density, fully periodic Haff ladder is also a
+domain-size sweep: `L/d` grows while the number density stays fixed. The
+seed-mean Haff cooling time `t_c` converges toward the largest-box value with
+monotonically decreasing finite-size error (`3.80 % → 2.27 % → 1.64 % → 0 %`);
+the next-largest box is within the stated 2 % large-box tolerance. Recommended
+**`L/d ≥ 18.16`** for this material/setup.
+
+![Box-size convergence](bench_convergence/plots/box_size_convergence.png)
+
 **Honest read:** this is a **numerical** convergence study (does the discrete
 solution approach a limit?), not a new physical validation. Study A's elastic
-anchor is a real analytic check; the damped case and all of Study B are
-self-convergence / finite-size checks against the fully-resolved run, not against
-an independent reference. Box-size convergence is still not tested, and the
-recommended `dt`/`N` are specific to these materials/setups (the procedure
-transfers, the numbers don't).
+anchor is a real analytic check; the damped case and Studies B/C are
+self-convergence / finite-size checks against the fully-resolved or largest-box
+run, not against an independent reference. The recommended `dt`/`N`/`L` are
+specific to these materials/setups (the procedure transfers, the numbers don't).
 
 ---
 
@@ -616,9 +625,8 @@ PASS.** This closes the "MPI domain decomposition" gap formerly listed below.
   correctness.
 - **Several "analytical" checks are self-consistent** (jkr, fiber_crossover, much of
   rolling_decay; partly sliding_friction).
-- **Convergence studies** — timestep and particle count are now covered by
-  `bench_convergence` (see "Numerical convergence" above); **box size** is still
-  untested.
+- **Convergence studies** — timestep, particle count, and periodic box size are
+  now covered by `bench_convergence` (see "Numerical convergence" above).
 - **Empirical references** (Beverloo, Bekker) are correlations with fitted constants;
   only forms/exponents are tested.
 - **Other `examples/`** (bonds, fiber_bond, hopper, granular_gas_benchmark,
@@ -667,5 +675,5 @@ will need a benchmark when re-added.)
 | column_collapse | Lube/Lajeunesse (empirical) + LAMMPS cross-check | empirical scaling + cross-code | FAIL (genuine finite-size limit, not fit noise); linear exponent 1.54 vs 1.0 outside ±0.25 after seed-averaging + 11-pt sweep + sub-diameter metric; LAMMPS misses identically (1.27); exits 1 |
 | hopper_beverloo | Beverloo (empirical) | empirical correlation | PASS; exponent 1.36 vs 1.5; prefactor untested |
 | plate_sinkage | Bekker (empirical) | empirical / qualitative | PASS; form only; loose bands; softened grains |
-| convergence | finest-dt / large-N limit (+ Hertz anchor) | numerical (self-convergence) | PASS; dt & N convergence; observed order p≈2; box size untested |
+| convergence | finest-dt / large-N / large-box limit (+ Hertz anchor) | numerical (self-convergence) | PASS; dt, N, and box-size convergence; observed order p≈2; box-size error 3.80→2.27→1.64→0% |
 | mpi_decomposition | own 1×1×1 trajectory | parallel-correctness (decomposition-invariance) | PASS; 2×1×1 & 2×2×1 reproduce serial to FP floor (pos ~6e-17, vel ~8e-14); momentum/energy/atom-count conserved |

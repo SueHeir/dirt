@@ -4,12 +4,13 @@ Numerical convergence study across Tier-1 DIRT benchmarks.
 
 Every other bench_* example runs at a SINGLE timestep (0.15 × the Rayleigh
 critical dt) and a SINGLE particle count, and simply asserts the result is close
-to a reference. None of them answers the two questions a solver user actually
-has: *how small must dt be, and how many particles do I need, before the answer
-stops moving?* This driver answers both by re-running existing benchmark binaries
-over a ladder of resolutions and watching the key observables converge.
+to a reference. None of them answers the three questions a solver user actually
+has: *how small must dt be, how large must the periodic box be, and how many
+particles do I need, before the answer stops moving?* This driver answers all
+three by re-running existing benchmark binaries over ladders of resolutions and
+watching the key observables converge.
 
-It runs TWO independent sub-studies (no new Rust code — it drives the compiled
+It runs THREE independent sub-studies (no new Rust code — it drives the compiled
 `bench_hertz_rebound` and `bench_sphere_haff_cooling` example binaries through
 generated configs):
 
@@ -29,6 +30,12 @@ generated configs):
      1/√(T/T0) = 1 + t/t_c).  As N grows the mean t_c plateaus and the run-to-run
      scatter — and the RMS residual of the Haff fit — shrink like ~1/√N.
 
+  C. BOX-SIZE convergence (periodic finite-size check).  The same fixed-density
+     cooling ladder is reinterpreted as a domain-size sweep L/d.  The measured
+     observable is again the seed-mean cooling time t_c; its finite-size error
+     relative to the largest box must decrease monotonically as L grows and land
+     below a stated tolerance.
+
 Commands (from anywhere):
     python3 examples/bench_convergence/sweep.py generate  # write per-case configs
     python3 examples/bench_convergence/sweep.py start     # build + run all sims -> CSV
@@ -39,9 +46,10 @@ Outputs:
     sweep/<case>/config.toml     generated DIRT configs                (gitignored)
     data/dt_results.csv          timestep-study observables            (gitignored)
     data/n_results.csv           particle-count-study observables      (gitignored)
+    data/box_results.csv         box-size convergence summary          (gitignored)
     data/n_curve_<N>.csv         representative cooling curve per N     (gitignored)
     plots/*.png                  final figures                         (tracked)
-    report.md                    written summary + recommended dt / N   (tracked)
+    report.md                    written summary + recommended dt / N / L (tracked)
 
 References:
     K.L. Johnson, Contact Mechanics, Cambridge University Press, 1985 (Hertz).
@@ -65,6 +73,7 @@ DATA_DIR = os.path.join(SCRIPT_DIR, "data")
 PLOT_DIR = os.path.join(SCRIPT_DIR, "plots")
 DT_CSV = os.path.join(DATA_DIR, "dt_results.csv")
 N_CSV = os.path.join(DATA_DIR, "n_results.csv")
+BOX_CSV = os.path.join(DATA_DIR, "box_results.csv")
 REPORT = os.path.join(SCRIPT_DIR, "report.md")
 
 CARGO_FEATURES = ["--no-default-features", "--features", "precision-double"]
@@ -109,6 +118,11 @@ B_FIT_HI = 0.7         # upper bound on T/T0 (skip start-up)
 B_PLATEAU_TOL = 0.10   # |t_c(N_max) - t_c(N_max/2)| / t_c  must be below this
 B_RESID_MAX = 0.01     # recommended-N gate: mean Haff-fit RMS residual below this
 B_CV_MAX = 0.03        # recommended-N gate: run-to-run CV of t_c below this
+
+# Study C uses the same fixed-density, periodic Haff runs as Study B.  Because
+# density is fixed, increasing N also increases the physical domain length L.
+C_LARGE_BOX_TOL = 0.02       # next-largest box within 2% of largest-box t_c
+C_MONOTONE_SLACK = 1e-12     # strict monotone, allowing only roundoff
 
 
 # ── shared helpers ────────────────────────────────────────────────────────────
@@ -425,6 +439,38 @@ def _write_csv(path, fields, rows):
         w.writerows(rows)
 
 
+def c_box_stats(stats):
+    """Summarize the fixed-density Haff ladder as a periodic box-size sweep.
+
+    The simulation configs hold phi fixed, so L grows as N^(1/3).  The largest
+    box in the ladder is the self-converged reference for the finite-size error.
+    """
+    if len(stats) < 2:
+        return []
+    ref_n = max(stats)
+    ref_tc = stats[ref_n]["mean"]
+    rows = []
+    for n in sorted(stats):
+        L = b_box_side(n)
+        l_over_d = L / (2.0 * B_RADIUS)
+        tc = stats[n]["mean"]
+        rows.append({
+            "n": n,
+            "L": L,
+            "L_over_d": l_over_d,
+            "tc_mean": tc,
+            "tc_error_vs_largest": abs(tc - ref_tc) / abs(ref_tc),
+            "cv": stats[n]["cv"],
+            "rms_resid": stats[n]["resid"],
+        })
+    _write_csv(
+        BOX_CSV,
+        ["n", "L", "L_over_d", "tc_mean", "tc_error_vs_largest", "cv", "rms_resid"],
+        rows,
+    )
+    return rows
+
+
 # ── analytic Hertz references (elastic anchor) ────────────────────────────────
 def hertz_contact_duration(v0):
     e_star = A_YOUNGS / (2.0 * (1.0 - A_POISSON ** 2))
@@ -473,9 +519,9 @@ def observed_order(fracs, vals):
 
 def validate(a_rows, b_rows):
     checks = []   # (name, passed, detail)
-    rec_dt = rec_n = None
+    rec_dt = rec_n = rec_l = None
     print("=" * 70)
-    print("DIRT Convergence Study — timestep (dt) and particle count (N)")
+    print("DIRT Convergence Study — timestep (dt), box size (L), and particle count (N)")
     print("=" * 70)
 
     # ── Study A ──
@@ -603,6 +649,38 @@ def validate(a_rows, b_rows):
                 rec_n = n
                 break
 
+    # ── Study C ──
+    c_rows = c_box_stats(stats)
+    if c_rows:
+        print("\n[C] BOX-SIZE CONVERGENCE — periodic free-cooling gas "
+              f"(fixed φ = {B_PHI})")
+        print(f"    {'L/d':>8} {'N':>6} {'t_c[ms]':>10} {'|Δt_c| vs largest':>19}"
+              f" {'CV(t_c)':>9}")
+        for r in c_rows:
+            print(f"    {r['L_over_d']:>8.2f} {int(r['n']):>6}"
+                  f" {r['tc_mean']*1e3:>10.4f}"
+                  f" {r['tc_error_vs_largest']*100:>18.2f}%"
+                  f" {r['cv']*100:>8.2f}%")
+        errs = [r["tc_error_vs_largest"] for r in c_rows]
+        monotone = all(errs[i] + C_MONOTONE_SLACK >= errs[i + 1]
+                       for i in range(len(errs) - 1))
+        checks.append(("C: finite-size error decreases monotonically as L grows",
+                       monotone,
+                       "errors vs largest box: " +
+                       " → ".join(f"{e*100:.2f}%" for e in errs)))
+        if len(c_rows) >= 2:
+            next_largest = c_rows[-2]
+            ok = next_largest["tc_error_vs_largest"] <= C_LARGE_BOX_TOL
+            checks.append(("C: next-largest box is within tolerance of large-box limit",
+                           ok,
+                           f"L/d={next_largest['L_over_d']:.2f} error "
+                           f"{next_largest['tc_error_vs_largest']*100:.2f}% "
+                           f"(tol {C_LARGE_BOX_TOL*100:.0f}%)"))
+        for r in c_rows:
+            if r["tc_error_vs_largest"] <= C_LARGE_BOX_TOL:
+                rec_l = r["L_over_d"]
+                break
+
     # ── verdict ──
     print("\n" + "=" * 70)
     print("Checks:")
@@ -615,17 +693,19 @@ def validate(a_rows, b_rows):
           if rec_dt else "\nRecommended timestep: (not resolved)")
     print(f"Recommended particle count: N ≥ {rec_n}"
           if rec_n else "Recommended particle count: (not resolved)")
+    print(f"Recommended periodic box: L/d ≥ {rec_l:.2f}"
+          if rec_l else "Recommended periodic box: (not resolved)")
     print(f"\n{npass}/{total} checks passed")
     all_ok = npass == total and total > 0
     print("ALL CHECKS PASSED" if all_ok else "CHECKS FAILED")
-    return all_ok, checks, rec_dt, rec_n, stats
+    return all_ok, checks, rec_dt, rec_n, rec_l, stats, c_rows
 
 
 # ── report ────────────────────────────────────────────────────────────────────
-def write_report(a_rows, b_rows, checks, rec_dt, rec_n, stats):
+def write_report(a_rows, b_rows, checks, rec_dt, rec_n, rec_l, stats, c_rows):
     dtR = dt_rayleigh(A_YOUNGS, A_POISSON, A_RADIUS, A_DENSITY)
     L = []
-    L.append("# Convergence Study — timestep (dt) and particle count (N)\n")
+    L.append("# Convergence Study — timestep (dt), box size (L), and particle count (N)\n")
     L.append("Auto-generated by `sweep.py graph`. Re-run to refresh.\n")
     L.append("## A. Timestep convergence (single-sphere Hertz rebound)\n")
     L.append(f"- `dt_Rayleigh = {dtR:.4e}` s; solver default `0.15·dt_R = "
@@ -664,6 +744,27 @@ def write_report(a_rows, b_rows, checks, rec_dt, rec_n, stats):
              f"{B_RESID_MAX*100:.0f}% and run-to-run CV(t_c) below "
              f"{B_CV_MAX*100:.0f}%).\n")
     L.append("![t_c and residual vs N](plots/n_convergence.png)\n")
+    L.append("## C. Box-size convergence (periodic free-cooling granular gas)\n")
+    L.append(f"- The same fixed-density Haff ladder is a periodic domain sweep: "
+             f"`L/d` grows while volume fraction remains `φ = {B_PHI}`.")
+    L.append("- Observable: seed-mean Haff cooling time `t_c`; finite-size error "
+             "is measured relative to the largest box in the ladder.")
+    if c_rows:
+        L.append("")
+        L.append("| L/d | N | mean t_c [ms] | error vs largest | CV(t_c) |")
+        L.append("|---|---|---|---|---|")
+        for r in c_rows:
+            L.append(f"| {r['L_over_d']:.2f} | {int(r['n'])} | "
+                     f"{r['tc_mean']*1e3:.4f} | "
+                     f"{r['tc_error_vs_largest']*100:.2f}% | "
+                     f"{r['cv']*100:.2f}% |")
+        L.append("")
+    L.append(f"- **Recommended periodic box: L/d ≥ {rec_l:.2f}**" if rec_l else
+             "- Recommended periodic box: not resolved from this ladder.")
+    L.append(f"  (smallest box whose seed-mean `t_c` is within "
+             f"{C_LARGE_BOX_TOL*100:.0f}% of the largest-box value, with "
+             "monotone finite-size error across the ladder.)\n")
+    L.append("![Box-size convergence](plots/box_size_convergence.png)\n")
     L.append("## Checks\n")
     for name, ok, detail in checks:
         L.append(f"- {'✅' if ok else '❌'} {name} — {detail}")
@@ -674,7 +775,7 @@ def write_report(a_rows, b_rows, checks, rec_dt, rec_n, stats):
 
 
 # ── plots ─────────────────────────────────────────────────────────────────────
-def plot(a_rows, b_rows, stats):
+def plot(a_rows, b_rows, stats, c_rows):
     try:
         import numpy as np
         import matplotlib
@@ -767,7 +868,32 @@ def plot(a_rows, b_rows, stats):
         plt.close(fig)
         print(f"Saved: {PLOT_DIR}/n_convergence.png")
 
-    # ── Figure C: representative cooling curves ──
+    # ── Figure C: box-size convergence ──
+    if c_rows:
+        fig, ax = plt.subplots(figsize=(7, 4.8))
+        xs = [r["L_over_d"] for r in c_rows]
+        errs = [r["tc_error_vs_largest"] * 100 for r in c_rows]
+        tcs = [r["tc_mean"] * 1e3 for r in c_rows]
+        ax.plot(xs, errs, "o-", color=colors[3], markersize=6,
+                label="finite-size error in mean t_c")
+        ax.axhline(C_LARGE_BOX_TOL * 100, color="0.35", linestyle="--",
+                   linewidth=1, label=f"{C_LARGE_BOX_TOL*100:.0f}% tolerance")
+        ax.set_xlabel("periodic box size L/d")
+        ax.set_ylabel("|t_c(L) - t_c(L_max)| / t_c(L_max) [%]")
+        ax.set_title("Box-size convergence at fixed density")
+        ax.grid(True, which="major", alpha=0.25)
+        ax.legend(loc="upper right")
+        ax2 = ax.twinx()
+        ax2.plot(xs, tcs, "s:", color=colors[0], markersize=5,
+                 label="mean t_c")
+        ax2.set_ylabel("mean Haff cooling time t_c [ms]")
+        fig.tight_layout()
+        fig.savefig(os.path.join(PLOT_DIR, "box_size_convergence.png"),
+                    bbox_inches="tight")
+        plt.close(fig)
+        print(f"Saved: {PLOT_DIR}/box_size_convergence.png")
+
+    # ── Figure D: representative cooling curves ──
     curves = []
     for n in B_N_LIST:
         cpath = os.path.join(DATA_DIR, f"n_curve_{n}.csv")
@@ -817,9 +943,9 @@ def graph():
     if not a_rows and not b_rows:
         print("ERROR: no results found. Run 'start' first.")
         sys.exit(1)
-    ok, checks, rec_dt, rec_n, stats = validate(a_rows, b_rows)
-    plot(a_rows, b_rows, stats)
-    write_report(a_rows, b_rows, checks, rec_dt, rec_n, stats)
+    ok, checks, rec_dt, rec_n, rec_l, stats, c_rows = validate(a_rows, b_rows)
+    plot(a_rows, b_rows, stats, c_rows)
+    write_report(a_rows, b_rows, checks, rec_dt, rec_n, rec_l, stats, c_rows)
     return ok
 
 
