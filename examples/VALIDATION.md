@@ -76,8 +76,9 @@ also cross-checked against LAMMPS `fix damping/cundall`.
 
 ![Cundall fitted rates](bench_cundall_damping/plots/cundall_rates.png)
 
-*Fitted DIRT linear/angular rates vs exact Cundall analytical rates, with LAMMPS
-overlaid for the linear branch. Latest run: PASS, all rates within the 1 % gate.*
+*Fitted DIRT linear/angular rates vs exact Cundall analytical rates; the shaded
+band is the ±1 % PASS criterion used by the sweep, with LAMMPS overlaid for the
+linear branch. Latest run: PASS, all rates within the 1 % gate.*
 
 ![Cundall damping traces](bench_cundall_damping/plots/cundall_traces.png)
 

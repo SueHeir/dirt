@@ -66,8 +66,9 @@ transition step). **PASS** ⇔ all four rates match for all γ.
 ![Cundall fitted rates](plots/cundall_rates.png)
 
 *Fitted linear and angular rates vs the exact Cundall analytical rates across γ.
-DIRT matches all four rates within the 1 % gate; the linear branch also overlays
-the LAMMPS `fix damping/cundall` cross-check. Latest run: PASS.*
+The shaded band is the ±1 % PASS criterion used by the sweep; DIRT matches all
+four rates inside that gate, and the linear branch also overlays the LAMMPS
+`fix damping/cundall` cross-check. Latest run: PASS.*
 
 ![Cundall damping traces](plots/cundall_traces.png)
 
