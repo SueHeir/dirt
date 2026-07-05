@@ -149,3 +149,126 @@ python3 examples/monkey_shear/tools/analyze_vf.py \
   --csv /tmp/monkey_reduced.csv \
   --plot examples/monkey_shear/rheology_vf.png
 ```
+
+---
+
+# BPM blow-up: instrumented root-cause characterization
+
+*(goal `dirt-bpm-monkey-blowup-investigation`, follow-up to dirt#44)*
+
+**Verdict — the `bpm Φ=0.05` monkey_shear blow-up is a genuine PHYSICAL instability
+(a shear-driven granular-temperature runaway of the flexible, near-elastic bonded
+aggregate), NOT any of the enumerated setup/parameter bugs.** No pass was forced;
+the overlap guard was not touched. dirt#44 already showed the failure is *physical,
+not CFL* (dt-converged); this investigation instruments **what** the physical
+mechanism is and **rules out** each candidate setup bug with evidence.
+
+## What was instrumented
+
+- **Static bond/exclusion audit** — `tools/bond_exclusion_audit.py`, replaying the
+  engine's own `auto_bond_touching` (bond if `dist ≤ 1.1·(Rᵢ+Rⱼ)`) and
+  `BondStore::are_excluded` (contact-exclude a pair iff **1-2** bonded or **1-3**
+  sharing a bonded neighbour — nothing beyond 1-3).
+- **Runtime trace** — the `instrument_blowup` system in `main.rs` (opt-in via
+  `MONKEY_INSTRUMENT=1`), writing `<out>/instrument.csv` each thermo interval:
+  bond count, **largest bonded component** (a mis-weld tripwire), total kinetic
+  energy `KE = Σ½m|v|²`, and the largest **contact-active** (non 1-2/1-3-excluded)
+  **intra-monkey** sub-sphere overlap. Monkey membership is the bond-graph
+  connected component (robust to tag order; a component > 44 would mean auto_bond
+  fused two monkeys). Runtime intra/inter classification was cross-checked with a
+  temporary in-`contact.rs` guard probe (reverted — core is unchanged in this PR).
+
+## The four candidate setup bugs — each ruled out
+
+| Candidate (from the goal) | Instrument evidence | Verdict |
+|---|---|---|
+| **auto_bond welds wrong pairs** (neighbouring monkeys fused) | `nbonds = 37054 = 382 × 97` **constant**; **largest bonded component = 44** for every monkey, whole run | **Ruled out** — monkeys are cleanly separated; the 1.25·(Rᵢ+Rⱼ) placement gap holds against the 1.1 bond cutoff. |
+| **bond-break exposes as-built overlap** (Liz's stated chain) | bonds are configured **unbreakable** (no `[bonds.breakage]`); `nbonds` never drops from 37054; **zero break events** | **Ruled out for this campaign** — the premise (a bond breaks) never occurs, so contact-exclusion never lifts. |
+| **insertion / compression overlap at gap placement** | **prep is quiescent**: through settle+compress, `KE ≈ 10⁻²⁵→10⁻⁸ J` and `max_active_intra_overlap = 0`; the guard **never trips in prep** — only in shear | **Ruled out** — the blow-up is a shear-stage phenomenon, not a packing/insertion defect. |
+| **bond-vs-contact stiffness mismatch (CFL)** | dirt#44: run reproduces the **same abort strain (~0.196)** at dt 1.5e-6 and 5.79e-7 (dt-converged); Hertz overshoot `≈ v·dt ≈ 0.3 %` of overlap | **Ruled out** — not a timestep artifact. |
+
+Additionally, the static audit finds **0 contact-active build-overlaps at t=0** (all
+86 overlapping intra pairs are 1-2/1-3 excluded) and the **nearest** contact-active
+intra pair sits at a **34.6 % gap** — so there is no t=0 Hertz injection, and
+intra-body self-contact requires large deformation.
+
+## The actual mechanism (evidence)
+
+`bpm Φ=0.05`, `MONKEY_INSTRUMENT=1`, single rank (KE is exact for the bpm/sphere
+free-atom types; note it is unreliable for the *rigid* clump type, whose velocity
+is body-integrated — for rigid, cite dirt#44):
+
+| shear step | strain γ | KE [J] | active intra-overlaps |
+|---|---|---|---|
+| 22 000 (onset) | 0.001 | **94.1** | **0** |
+| 30 000 | 0.006 | 100.8 | 0 |
+| 34 000 | 0.008 | 115.8 | 0 |
+| 40 000 | 0.012 | 199.5 | few |
+| 46 000 | 0.015 | 372.0 | growing |
+| 50 000 | 0.017 | 531.9 | growing |
+| ~abort (dirt#44) | ~0.196 | **~2000** | guard trips |
+
+Two facts pin the mechanism:
+
+1. **At shear onset KE jumps 0 → 94 J within one thermo interval with *zero* active
+   intra-monkey overlaps.** The initial heating is therefore **inter-monkey
+   collisional**, not self-contact. Intra-body self-contact appears only *later*
+   (arms fold once the aggregate is already hot) — it is a **consequence** of the
+   runaway, not its trigger, consistent with the 34.6 % nearest-gap from the static
+   audit.
+2. **The flexible aggregate never reaches a steady granular temperature.** KE grows
+   monotonically/near-exponentially under continued shear (94 → 532 J over a tiny
+   strain 0.017, → ~2000 J at abort). By contrast, at the **same** shear and box the
+   **sphere** series equilibrates at a **bounded** `KE ≈ 77 J` (steady to 4 figures,
+   run completes), and dirt#44's **rigid** monkey — identical shape — stays at
+   `KE ≈ 4 J` and shears past γ = 0.6. Only the **flexible bonded** body diverges.
+
+So the blow-up is the flexible, near-elastic (restitution 0.926, friction 0.16)
+bonded monkey failing to thermostat the shear work: collisional + bond-mode energy
+accumulates faster than it dissipates until sub-sphere overlaps exceed the guard.
+
+## Construction context (reconciling Liz's diagnosis)
+
+Liz correctly identified the **~23.6 % sub-sphere build-overlap** as the root
+construction issue, and that this is a *construction* problem, not a fundamental
+result. The instrumentation **refines** the chain: because the campaign's bonds are
+*unbreakable*, the failure is **not** "a bond breaks → Hertz sees the build overlap"
+(that never happens here). Instead the root construction fault is that the BPM
+monkey **reuses the rigid-clump sphere decomposition**, where:
+
+- a rigid clump excludes **all** same-body sub-sphere contact (`same_body` skip in
+  `contact.rs`), so its 23.6 % overlap and any self-contact are harmless; but
+- a BPM body excludes only **1-2/1-3** pairs, so its non-bonded sub-spheres can
+  self-contact, and the dense overlapping decomposition makes the aggregate lumpy
+  and compliant — the extra energy-storage/injection channels the rigid case lacks.
+
+## Recommended remedies (campaign-owner decision — NOT forced here)
+
+1. **Rebuild the BPM monkey from near-tangent (non-overlapping) sub-spheres** — the
+   standard bonded-particle convention (LAMMPS `bpm/sphere` bonds tangent spheres).
+   Removes both the 23.6 % build overlap and the spurious self-contact channel.
+   (Liz's option (a); the LAMMPS-consistent construction.) Requires re-deriving the
+   sphere set at `D_eq = 0.1` and re-validating the bpm series to completion.
+2. **Add shear-stage dissipation appropriate to the aggregate** (lower pair
+   restitution and/or a background drag) so the flexible body thermostats like the
+   sphere/rigid cases — an operating-point/model choice for the rheology surface.
+
+**Anti-gaming:** the overlap guard (`crates/dirt_granular/src/contact.rs`) is
+**unchanged**; no tolerance was loosened; no bpm cell was marked passing. The
+unstable cells remain honestly reported: **bpm at every Φ, and rigid at Φ ≥ 0.3**
+(the latter a distinct *compaction*-stage jamming ceiling, §3 above).
+
+## Reproduce the investigation
+
+```bash
+source ~/projects/.build-env
+# 1. static bond/exclusion audit (no engine):
+python3 examples/monkey_shear/tools/bond_exclusion_audit.py \
+  examples/monkey_shear/monkey_Deq0.1.toml
+# 2. regenerate the bpm Φ=0.05 config + CSV, then trace a run:
+$BENCH_PYTHON examples/monkey_shear/tools/gen_series.py all --phi 0.05
+MONKEY_INSTRUMENT=1 cargo run --release --example monkey_shear \
+  --no-default-features --features precision-double -- \
+  examples/monkey_shear/configs/bpm/phi_0.05.toml
+# trace: <output_dir>/instrument.csv  (step,stage,nbonds,max_bond_component,KE,...)
+```

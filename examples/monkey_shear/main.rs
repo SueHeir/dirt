@@ -69,7 +69,179 @@ fn main() {
     app.add_update_system(damp_during_prep, ParticleSimScheduleSet::Force);
 
     app.add_update_system(record_shear, ParticleSimScheduleSet::PostFinalIntegration);
+    // INVESTIGATION instrumentation (goal dirt-bpm-monkey-blowup-investigation):
+    // per-thermo trace of bond count, largest bonded component (mis-weld check),
+    // total KE, and — for the bpm type — the maximum CONTACT-ACTIVE (not 1-2/1-3
+    // bond-excluded) INTRA-monkey sub-sphere overlap. Distinguishes intra-body
+    // self-contact from inter-monkey collision as the origin of the overlap-guard
+    // blow-up. Opt-in via the MONKEY_INSTRUMENT env var (off by default so the
+    // campaign binary is unchanged); writes `<out>/instrument.csv`.
+    app.add_update_system(
+        instrument_blowup,
+        ParticleSimScheduleSet::PostFinalIntegration,
+    );
     app.start();
+}
+
+/// Per-thermo diagnostic for the bpm monkey blow-up investigation. Logs bond
+/// count (breakage check — bonds are configured unbreakable), total kinetic
+/// energy, granular-gas proxy, and the largest overlap among **contact-active**
+/// (non 1-2/1-3-excluded) intra-monkey sub-sphere pairs. Sub-sphere → monkey
+/// membership is the connected component of the bond graph (robust to tag order;
+/// a component larger than one monkey would flag an auto_bond mis-weld).
+/// Example-scoped; not a library concern.
+fn instrument_blowup(
+    atoms: Res<Atom>,
+    registry: Res<AtomDataRegistry>,
+    domain: Res<Domain>,
+    run_state: Res<RunState>,
+    comm: Res<CommResource>,
+    input: Res<Input>,
+) {
+    // Opt-in: the campaign binary is unchanged unless MONKEY_INSTRUMENT is set,
+    // so routine runs carry no per-thermo diagnostic cost or stderr noise.
+    if std::env::var_os("MONKEY_INSTRUMENT").is_none() {
+        return;
+    }
+    let step = run_state.total_cycle;
+    if step % 2000 != 0 {
+        return;
+    }
+    let nlocal = atoms.nlocal as usize;
+
+    // Total kinetic energy Σ ½ m|v|².
+    let mut ke = 0.0f64;
+    for i in 0..nlocal {
+        let m = atoms.mass[i] as f64;
+        let v = atoms.vel[i];
+        ke += 0.5 * m * (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]) as f64;
+    }
+
+    let bond_store = registry.get::<BondStore>();
+    let dem = registry.get::<DemAtom>();
+
+    // Bond count (each undirected bond stored on both endpoints ⇒ halve).
+    let nbonds: usize = match bond_store.as_ref() {
+        Some(b) => {
+            (0..nlocal.min(b.bonds.len()))
+                .map(|i| b.bonds[i].len())
+                .sum::<usize>()
+                / 2
+        }
+        None => 0,
+    };
+
+    // Largest contact-active intra-monkey overlap ratio (sr - d)/sr, and count of
+    // active intra-monkey pairs currently overlapping. Only meaningful for bpm.
+    // Monkey membership is the connected component of the BOND GRAPH (robust to
+    // tag ordering, and detects mis-welds: a component > 44 ⇒ auto_bond joined
+    // two monkeys). Single-rank run ⇒ every sub-sphere and its partners are local.
+    let (mut max_active_intra, mut n_active_overlap, mut max_component) = (0.0f64, 0usize, 0usize);
+    if let (Some(ref bonds), Some(ref dem)) = (bond_store.as_ref(), dem.as_ref()) {
+        use std::collections::HashMap;
+        // tag → local index (this rank).
+        let mut tag_idx: HashMap<u32, usize> = HashMap::with_capacity(nlocal);
+        for i in 0..nlocal {
+            tag_idx.insert(atoms.tag[i], i);
+        }
+        // Union–find over the bond graph.
+        let mut parent: Vec<usize> = (0..nlocal).collect();
+        fn find(parent: &mut Vec<usize>, mut x: usize) -> usize {
+            while parent[x] != x {
+                parent[x] = parent[parent[x]];
+                x = parent[x];
+            }
+            x
+        }
+        for i in 0..nlocal.min(bonds.bonds.len()) {
+            for b in &bonds.bonds[i] {
+                if let Some(&j) = tag_idx.get(&b.partner_tag) {
+                    let (ri, rj) = (find(&mut parent, i), find(&mut parent, j));
+                    if ri != rj {
+                        parent[ri] = rj;
+                    }
+                }
+            }
+        }
+        let mut groups: HashMap<usize, Vec<usize>> = HashMap::new();
+        for i in 0..nlocal {
+            let r = find(&mut parent, i);
+            groups.entry(r).or_default().push(i);
+        }
+        max_component = groups.values().map(|v| v.len()).max().unwrap_or(0);
+        let size = domain.size;
+        let pflags = domain.periodic_flags();
+        for idxs in groups.values() {
+            for a in 0..idxs.len() {
+                for b in (a + 1)..idxs.len() {
+                    let (i, j) = (idxs[a], idxs[b]);
+                    if bonds.are_excluded(i, j, &atoms.tag) {
+                        continue; // 1-2 / 1-3 excluded ⇒ no contact force
+                    }
+                    let mut d = [
+                        atoms.pos[j][0] as f64 - atoms.pos[i][0] as f64,
+                        atoms.pos[j][1] as f64 - atoms.pos[i][1] as f64,
+                        atoms.pos[j][2] as f64 - atoms.pos[i][2] as f64,
+                    ];
+                    for k in 0..3 {
+                        if pflags[k] {
+                            d[k] -= size[k] * (d[k] / size[k]).round();
+                        }
+                    }
+                    let dist = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt();
+                    let sr = (dem.radius[i] + dem.radius[j]) as f64;
+                    if dist < sr {
+                        let ratio = (sr - dist) / sr;
+                        n_active_overlap += 1;
+                        if ratio > max_active_intra {
+                            max_active_intra = ratio;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Reduce scalars across ranks.
+    let ke = comm.all_reduce_sum_f64(ke);
+    let nbonds = comm.all_reduce_sum_f64(nbonds as f64) as usize;
+    let n_active_overlap = comm.all_reduce_sum_f64(n_active_overlap as f64) as usize;
+    let max_component = comm.all_reduce_sum_f64(max_component as f64) as usize; // single-rank
+    let max_active_intra = comm.all_reduce_sum_f64(max_active_intra); // rank-0 only writes; single-rank runs
+
+    if comm.rank() != 0 {
+        return;
+    }
+    let sheared = domain.boundary_vel[0].abs() > 1e-12;
+    let stage = if sheared { "shear" } else { "prep" };
+    let out_dir = input
+        .output_dir
+        .clone()
+        .unwrap_or_else(|| "examples/monkey_shear/data".to_string());
+    let path = format!("{}/instrument.csv", out_dir);
+    static INIT: Once = Once::new();
+    INIT.call_once(|| {
+        fs::create_dir_all(&out_dir).ok();
+        if let Ok(mut f) = fs::File::create(&path) {
+            writeln!(
+                f,
+                "step,stage,nbonds,max_bond_component,KE,max_active_intra_overlap,n_active_intra_overlaps"
+            )
+            .ok();
+        }
+    });
+    if let Ok(mut f) = fs::OpenOptions::new().append(true).open(&path) {
+        writeln!(
+            f,
+            "{},{},{},{},{:.6e},{:.6e},{}",
+            step, stage, nbonds, max_component, ke, max_active_intra, n_active_overlap
+        )
+        .ok();
+    }
+    eprintln!(
+        "[instr] step={} stage={} nbonds={} max_component={} KE={:.4e} max_active_intra_overlap={:.4} n_active_intra={}",
+        step, stage, nbonds, max_component, ke, max_active_intra, n_active_overlap
+    );
 }
 
 /// Grow the `ClumpAtom` per-atom columns to `nlocal`, tagging any atom not
