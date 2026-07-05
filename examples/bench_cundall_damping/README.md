@@ -63,6 +63,18 @@ python3 examples/bench_cundall_damping/sweep.py
 of theory (the rates are exact, so the residual is just the single sign-flip
 transition step). **PASS** ⇔ all four rates match for all γ.
 
+![Cundall fitted rates](plots/cundall_rates.png)
+
+*Fitted linear and angular rates vs the exact Cundall analytical rates across γ.
+DIRT matches all four rates within the 1 % gate; the linear branch also overlays
+the LAMMPS `fix damping/cundall` cross-check. Latest run: PASS.*
+
+![Cundall damping traces](plots/cundall_traces.png)
+
+*Velocity and angular-velocity traces for the swept γ values, showing the
+piecewise-linear branches and the sign flip at the apex / zero spin. Latest run:
+PASS.*
+
 ## Independent cross-check (LAMMPS)
 
 If a LAMMPS binary is on `PATH`, the **linear** part of each case is also run in
