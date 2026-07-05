@@ -260,11 +260,17 @@ fn req_f64(t: &toml::Table, key: &str) -> f64 {
 }
 
 fn opt_i64(t: &toml::Table, key: &str) -> Option<i64> {
+    opt_i64_result(t, key).unwrap_or_else(|msg| die(&msg))
+}
+
+fn opt_i64_result(t: &toml::Table, key: &str) -> Result<Option<i64>, String> {
     match t.get(key) {
-        Some(toml::Value::Integer(i)) => Some(*i),
-        Some(toml::Value::Float(f)) => Some(*f as i64),
-        Some(_) => die(&format!("[loading] `{key}` must be an integer")),
-        None => None,
+        Some(toml::Value::Integer(i)) => Ok(Some(*i)),
+        Some(toml::Value::Float(f)) => Err(format!(
+            "[loading] `{key}` must be an integer (got fractional value {f})"
+        )),
+        Some(_) => Err(format!("[loading] `{key}` must be an integer")),
+        None => Ok(None),
     }
 }
 
@@ -273,4 +279,125 @@ fn opt_i64(t: &toml::Table, key: &str) -> Option<i64> {
 fn die(msg: &str) -> ! {
     eprintln!("error: {msg}");
     process::exit(1);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn parse_table(src: &str) -> toml::Table {
+        src.parse::<toml::Table>().expect("test TOML parses")
+    }
+
+    fn loading_table(src: &str) -> toml::Table {
+        parse_table(src)
+            .remove("loading")
+            .and_then(|v| v.as_table().cloned())
+            .expect("test TOML has [loading]")
+    }
+
+    fn run_stage(table: &toml::Table) -> &toml::Table {
+        table
+            .get("run")
+            .and_then(|v| v.as_array())
+            .and_then(|runs| runs.first())
+            .and_then(|v| v.as_table())
+            .expect("expanded loading writes one run stage")
+    }
+
+    #[test]
+    fn thermo_rejects_fractional_value() {
+        let loading = loading_table(
+            r#"
+            [loading]
+            thermo = 10.5
+            "#,
+        );
+
+        let err = opt_i64_result(&loading, "thermo").expect_err("fractional thermo rejected");
+        assert_eq!(
+            err,
+            "[loading] `thermo` must be an integer (got fractional value 10.5)"
+        );
+    }
+
+    #[test]
+    fn thermo_accepts_integer_value() {
+        let loading = loading_table(
+            r#"
+            [loading]
+            thermo = 10
+            "#,
+        );
+
+        assert_eq!(opt_i64_result(&loading, "thermo").unwrap(), Some(10));
+    }
+
+    #[test]
+    fn loading_without_thermo_uses_default_cadence() {
+        let mut table = parse_table(
+            r#"
+            [loading]
+            type = "shear"
+            rate = 100.0
+            target_strain = 1.0
+            dt = 2.0e-7
+            "#,
+        );
+
+        expand_loading(&mut table);
+
+        let stage = run_stage(&table);
+        assert_eq!(
+            stage.get("steps").and_then(|v| v.as_integer()),
+            Some(50_000)
+        );
+        assert_eq!(
+            stage.get("thermo").and_then(|v| v.as_integer()),
+            Some(2_500)
+        );
+    }
+
+    #[test]
+    fn loading_with_integer_thermo_expands() {
+        let mut table = parse_table(
+            r#"
+            [loading]
+            type = "compression"
+            axis = "z"
+            rate = 15.0
+            target_strain = 0.15
+            dt = 2.0e-7
+            thermo = 123
+            "#,
+        );
+
+        expand_loading(&mut table);
+
+        let stage = run_stage(&table);
+        assert_eq!(
+            stage.get("steps").and_then(|v| v.as_integer()),
+            Some(50_000)
+        );
+        assert_eq!(stage.get("thermo").and_then(|v| v.as_integer()), Some(123));
+    }
+
+    #[test]
+    fn shipped_loading_configs_still_expand() {
+        for src in [
+            include_str!("shear_box.toml"),
+            include_str!("compression_box.toml"),
+        ] {
+            let mut table = parse_table(src);
+            expand_loading(&mut table);
+
+            let stage = run_stage(&table);
+            assert_eq!(
+                stage.get("steps").and_then(|v| v.as_integer()),
+                Some(50_000)
+            );
+            assert!(stage.get("thermo").and_then(|v| v.as_integer()).is_some());
+            assert!(table.get("deform").and_then(|v| v.as_table()).is_some());
+        }
+    }
 }
