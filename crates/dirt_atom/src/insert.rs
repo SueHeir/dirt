@@ -339,6 +339,31 @@ fn validate_insert_velocity(rand_vel: f64, context: &str) -> Result<(), String> 
     Ok(())
 }
 
+fn is_rate_insert_config(insert: &InsertConfig) -> bool {
+    insert.rate.is_some()
+        || insert.rate_interval.is_some()
+        || insert.rate_start.is_some()
+        || insert.rate_end.is_some()
+        || insert.rate_limit.is_some()
+}
+
+fn validate_rate_insert_config<'a>(
+    insert: &'a InsertConfig,
+    context: &str,
+) -> Result<(u32, &'a RadiusSpec, f64), String> {
+    let rate = insert
+        .rate
+        .ok_or_else(|| format!("{context} requires 'rate' for rate-based insertion"))?;
+    let radius = insert
+        .radius
+        .as_ref()
+        .ok_or_else(|| format!("{context} requires 'radius' for rate-based insertion"))?;
+    let density = insert
+        .density
+        .ok_or_else(|| format!("{context} requires 'density' for rate-based insertion"))?;
+    Ok((rate, radius, density))
+}
+
 fn default_insert_region(domain: &Domain, max_r: f64, context: &str) -> Result<Region, String> {
     let min = [
         domain.boundaries_low[0] + max_r,
@@ -797,25 +822,19 @@ pub fn dem_insert_atoms(
                         eprintln!("ERROR: {}", e);
                         std::process::exit(1);
                     }
-                } else if insert.rate.is_some() {
+                } else if is_rate_insert_config(insert) {
                     // ── Rate-based: register for runtime insertion ──
                     let mat_name = insert.material.as_deref().unwrap_or_else(|| {
                         eprintln!("ERROR: Rate-based [[particles.insert]] requires 'material'");
                         std::process::exit(1);
                     });
                     let mat_idx = resolve_material(&material_table, mat_name);
-                    if insert.radius.is_none() {
-                        eprintln!("ERROR: Rate-based [[particles.insert]] requires 'radius'");
-                        std::process::exit(1);
-                    }
-                    if insert.density.is_none() {
-                        eprintln!("ERROR: Rate-based [[particles.insert]] requires 'density'");
-                        std::process::exit(1);
-                    }
-                    let radius_spec = insert
-                        .radius
-                        .as_ref()
-                        .expect("rate-based radius was validated above");
+                    let (rate, radius_spec, _) =
+                        validate_rate_insert_config(insert, "Rate-based [[particles.insert]]")
+                            .unwrap_or_else(|e| {
+                                eprintln!("ERROR: {}", e);
+                                std::process::exit(1);
+                            });
                     let max_r = radius_spec.try_max_radius().unwrap_or_else(|e| {
                         eprintln!(
                             "ERROR: invalid radius in rate-based [[particles.insert]]: {}",
@@ -850,7 +869,7 @@ pub fn dem_insert_atoms(
                     println!(
                         "DemAtomInsert: registering rate-based insertion for material '{}' (rate={}/every {})",
                         mat_name,
-                        insert.rate.expect("rate already validated above"),
+                        rate,
                         insert.rate_interval.unwrap_or(1),
                     );
                     rate_state.entries.push(RateInsertEntry {
@@ -1747,10 +1766,14 @@ pub fn dem_rate_insert(
             .rate_interval
             .unwrap_or(1);
         let start = rate_state.entries[entry_idx].config.rate_start.unwrap_or(0);
-        let rate = rate_state.entries[entry_idx]
-            .config
-            .rate
-            .expect("rate-based insertion entry must have 'rate' field");
+        let (rate, radius_spec, density) = validate_rate_insert_config(
+            &rate_state.entries[entry_idx].config,
+            "rate-based [[particles.insert]]",
+        )
+        .unwrap_or_else(|e| {
+            eprintln!("ERROR: {}", e);
+            std::process::exit(1);
+        });
 
         if step < start {
             continue;
@@ -1777,15 +1800,6 @@ pub fn dem_rate_insert(
             to_insert = to_insert.min(remaining);
         }
 
-        let radius_spec = rate_state.entries[entry_idx]
-            .config
-            .radius
-            .as_ref()
-            .expect("rate-based insertion entry must have 'radius' field");
-        let density = rate_state.entries[entry_idx]
-            .config
-            .density
-            .expect("rate-based insertion entry must have 'density' field");
         let mat_idx = rate_state.entries[entry_idx].mat_idx;
 
         let max_r = radius_spec.try_max_radius().unwrap_or_else(|e| {
@@ -2112,6 +2126,54 @@ rate_limit = 5000
         assert_eq!(config.rate_start, Some(0));
         assert_eq!(config.rate_end, Some(500000));
         assert_eq!(config.rate_limit, Some(5000));
+    }
+
+    #[test]
+    fn rate_insert_missing_rate_reports_validation_error() {
+        let toml_str = r#"
+material = "glass"
+density = 2500.0
+radius = 0.001
+rate_interval = 100
+"#;
+        let config: InsertConfig = toml::from_str(toml_str).unwrap();
+        assert!(is_rate_insert_config(&config));
+        let err = validate_rate_insert_config(&config, "Rate-based [[particles.insert]]")
+            .expect_err("missing rate should be reported before runtime insertion");
+        assert!(err.contains("requires 'rate'"));
+    }
+
+    #[test]
+    fn rate_insert_missing_radius_reports_validation_error() {
+        let toml_str = r#"
+material = "glass"
+density = 2500.0
+rate = 10
+"#;
+        let config: InsertConfig = toml::from_str(toml_str).unwrap();
+        let err = validate_rate_insert_config(&config, "Rate-based [[particles.insert]]")
+            .expect_err("missing radius should be reported before runtime insertion");
+        assert!(err.contains("requires 'radius'"));
+    }
+
+    #[test]
+    fn rate_insert_missing_density_reports_validation_error() {
+        let toml_str = r#"
+material = "glass"
+radius = 0.001
+rate = 10
+"#;
+        let config: InsertConfig = toml::from_str(toml_str).unwrap();
+        let err = validate_rate_insert_config(&config, "Rate-based [[particles.insert]]")
+            .expect_err("missing density should be reported before runtime insertion");
+        assert!(err.contains("requires 'density'"));
+    }
+
+    #[test]
+    fn negative_random_velocity_reports_validation_error() {
+        let err = validate_insert_velocity(-0.1, "[[particles.insert]]")
+            .expect_err("negative random velocity should be rejected");
+        assert!(err.contains("must be finite and non-negative"));
     }
 
     #[test]
