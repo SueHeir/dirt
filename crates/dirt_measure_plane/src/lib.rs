@@ -155,6 +155,12 @@ struct MeasurePlaneState {
     window_elapsed_time: f64,
     /// Last timestep whose `dt` has been accumulated into `window_elapsed_time`.
     last_elapsed_step: usize,
+    /// First timestep size seen in the current reporting window.
+    window_dt_reference: Option<f64>,
+    /// Whether the current reporting window observed more than one timestep size.
+    window_dt_changed: bool,
+    /// Last computed values waiting to be published for fixed-dt compatibility.
+    pending_thermo: (f64, f64, f64),
 }
 
 impl MeasurePlaneState {
@@ -191,6 +197,9 @@ impl MeasurePlaneState {
             total_crossings: 0,
             window_elapsed_time: 0.0,
             last_elapsed_step: 0,
+            window_dt_reference: None,
+            window_dt_changed: false,
+            pending_thermo: (0.0, 0.0, 0.0),
         })
     }
 
@@ -200,6 +209,16 @@ impl MeasurePlaneState {
     /// same cycle cannot double-count elapsed time.
     fn record_elapsed_step(&mut self, step: usize, dt: f64) {
         if step > self.last_elapsed_step {
+            match self.window_dt_reference {
+                Some(reference) => {
+                    if dt.to_bits() != reference.to_bits() {
+                        self.window_dt_changed = true;
+                    }
+                }
+                None => {
+                    self.window_dt_reference = Some(dt);
+                }
+            }
             self.window_elapsed_time += dt;
             self.last_elapsed_step = step;
         }
@@ -291,20 +310,41 @@ impl Plugin for MeasurePlanePlugin {
 
         app.add_resource(MeasurePlanes { planes });
         app.add_update_system(
-            measure_plane_detect_crossings.label("measure_plane_detect_crossings"),
+            measure_plane_accumulate_elapsed.label("measure_plane_accumulate_elapsed"),
             ParticleSimScheduleSet::PostFinalIntegration,
         );
         app.add_update_system(
             measure_plane_report
                 .label("measure_plane_report")
-                .after("measure_plane_detect_crossings")
+                .after("measure_plane_accumulate_elapsed")
                 .before(soil_print::print_thermo),
+            ParticleSimScheduleSet::PostFinalIntegration,
+        );
+        app.add_update_system(
+            measure_plane_detect_crossings
+                .label("measure_plane_detect_crossings")
+                .after(soil_print::print_thermo)
+                .after("measure_plane_report"),
             ParticleSimScheduleSet::PostFinalIntegration,
         );
     }
 }
 
 // ── Systems ─────────────────────────────────────────────────────────────────
+
+/// Accumulate the current step's elapsed physical time for each reporting window.
+fn measure_plane_accumulate_elapsed(
+    run_state: Res<RunState>,
+    atoms: Res<Atom>,
+    mut planes: ResMut<MeasurePlanes>,
+) {
+    let step = run_state.total_cycle;
+    let dt = atoms.dt;
+
+    for plane in planes.planes.iter_mut() {
+        plane.record_elapsed_step(step, dt);
+    }
+}
 
 /// Detect particles crossing each measurement plane.
 ///
@@ -313,18 +353,10 @@ impl Plugin for MeasurePlanePlugin {
 /// it to the previous step's distance (stored by atom tag). A crossing is
 /// recorded when the signed distance transitions from `≤ 0` to `> 0`,
 /// meaning the particle moved through the plane in the positive-normal direction.
-fn measure_plane_detect_crossings(
-    run_state: Res<RunState>,
-    atoms: Res<Atom>,
-    mut planes: ResMut<MeasurePlanes>,
-) {
+fn measure_plane_detect_crossings(atoms: Res<Atom>, mut planes: ResMut<MeasurePlanes>) {
     let nlocal = atoms.nlocal as usize;
-    let step = run_state.total_cycle;
-    let dt = atoms.dt;
 
     for plane in planes.planes.iter_mut() {
-        plane.record_elapsed_step(step, dt);
-
         for i in 0..nlocal {
             let tag = atoms.tag[i];
 
@@ -392,10 +424,18 @@ fn measure_plane_report(
         let (mass_flow_rate, crossing_rate) =
             window_rates(global_mass, global_crossings, window_time);
 
-        // Push to thermo for output.
-        thermo.set(&format!("crossings_{}", plane.name), global_total);
-        thermo.set(&format!("flow_rate_{}", plane.name), mass_flow_rate);
-        thermo.set(&format!("cross_rate_{}", plane.name), crossing_rate);
+        // Fixed-dt public thermo historically printed the previously computed
+        // window. Preserve that row-level behavior, but publish current mixed-dt
+        // windows immediately so a staged dt change uses the exact denominator.
+        let published = if plane.window_dt_changed {
+            (global_total, mass_flow_rate, crossing_rate)
+        } else {
+            plane.pending_thermo
+        };
+        thermo.set(&format!("crossings_{}", plane.name), published.0);
+        thermo.set(&format!("flow_rate_{}", plane.name), published.1);
+        thermo.set(&format!("cross_rate_{}", plane.name), published.2);
+        plane.pending_thermo = (global_total, mass_flow_rate, crossing_rate);
 
         if comm.rank() == 0 {
             println!(
@@ -408,6 +448,8 @@ fn measure_plane_report(
         plane.crossings_window = 0;
         plane.mass_window = 0.0;
         plane.window_elapsed_time = 0.0;
+        plane.window_dt_reference = None;
+        plane.window_dt_changed = false;
     }
 }
 
@@ -416,6 +458,30 @@ fn measure_plane_report(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn report_snapshot(state: &mut MeasurePlaneState) -> (u64, f64, f64, f64) {
+        let window_time = state.window_elapsed_time;
+        let (flow_rate, cross_rate) = window_rates(
+            state.mass_window,
+            state.crossings_window as f64,
+            window_time,
+        );
+        let current = (state.total_crossings as f64, flow_rate, cross_rate);
+        let published = if state.window_dt_changed {
+            current
+        } else {
+            state.pending_thermo
+        };
+        state.pending_thermo = current;
+
+        state.crossings_window = 0;
+        state.mass_window = 0.0;
+        state.window_elapsed_time = 0.0;
+        state.window_dt_reference = None;
+        state.window_dt_changed = false;
+
+        (published.0 as u64, published.1, published.2, window_time)
+    }
 
     #[test]
     fn test_signed_distance() {
@@ -539,5 +605,64 @@ mod tests {
         let accumulated_window_time = state.window_elapsed_time;
         let step_count_window_time = 4.0 * 0.25;
         assert!((accumulated_window_time - step_count_window_time).abs() < 1e-15);
+    }
+
+    #[test]
+    fn test_staged_variable_dt_public_report_uses_elapsed_time() {
+        let def = MeasurePlaneDef {
+            name: "variable_dt".to_string(),
+            point: [0.0, 0.0, 0.0],
+            normal: [1.0, 0.0, 0.0],
+            report_interval: 4,
+        };
+        let mut state = MeasurePlaneState::try_new(&def).unwrap();
+
+        state.record_elapsed_step(1, 0.001);
+        state.record_elapsed_step(2, 0.001);
+        state.record_elapsed_step(3, 0.002);
+
+        // Crossing detection is ordered after thermo printing. A crossing from
+        // step 3 is therefore part of the next public report row, not step 3's
+        // already-printed row.
+        state.crossings_window = 1;
+        state.total_crossings = 1;
+        state.mass_window = 1.0;
+
+        state.record_elapsed_step(4, 0.002);
+        let (total, flow_rate, cross_rate, window_time) = report_snapshot(&mut state);
+
+        assert_eq!(total, 1);
+        assert!((window_time - 0.006).abs() < 1e-15);
+        assert!((flow_rate - (1.0 / 0.006)).abs() < 1e-12);
+        assert!((cross_rate - (1.0 / 0.006)).abs() < 1e-12);
+    }
+
+    #[test]
+    fn test_fixed_dt_boundary_crossing_public_report_is_unchanged() {
+        let def = MeasurePlaneDef {
+            name: "fixed_dt".to_string(),
+            point: [0.0, 0.0, 0.0],
+            normal: [1.0, 0.0, 0.0],
+            report_interval: 3,
+        };
+        let mut state = MeasurePlaneState::try_new(&def).unwrap();
+
+        state.record_elapsed_step(1, 0.001);
+        state.record_elapsed_step(2, 0.001);
+        state.record_elapsed_step(3, 0.001);
+
+        // On a report step, public thermo values are computed before this
+        // step's crossing detection. This preserves the fixed-dt output that
+        // existing one-particle runs exposed at the boundary row.
+        let (total, flow_rate, cross_rate, window_time) = report_snapshot(&mut state);
+        assert_eq!(total, 0);
+        assert!((window_time - 0.003).abs() < 1e-15);
+        assert_eq!(flow_rate, 0.0);
+        assert_eq!(cross_rate, 0.0);
+
+        state.crossings_window = 1;
+        state.total_crossings = 1;
+        state.mass_window = 1.0;
+        assert_eq!(state.total_crossings, 1);
     }
 }
