@@ -882,7 +882,7 @@ momentum drift must stay below 1e-9. The sweep also requires actual fracture
 (surviving bonds below 10% of the reference family and peak damage >=0.99) and
 post-breakage DEM contacts (at least 8 active contacts).
 
-![Peri-to-DEM transition validation](peri_dem_interop/plots/peri_dem_transition_validation.png)
+![Peri-to-DEM transition validation](peri_dem_interop/plots/peri_dem_transition_validation.svg)
 
 *Measured mass and momentum conservation errors vs the 1e-9 PASS limit, plus the
 fracture/contact diagnostics through the transition. Latest regenerated run:

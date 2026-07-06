@@ -37,7 +37,7 @@ Expected result:
 ALL CHECKS PASSED
 ```
 
-![Peri-to-DEM transition validation](plots/peri_dem_transition_validation.png)
+![Peri-to-DEM transition validation](plots/peri_dem_transition_validation.svg)
 
 *Measured mass and momentum conservation errors are plotted against the 1e-9
 relative PASS limit, with the same run's fracture/contact diagnostics through

@@ -29,6 +29,7 @@ import os
 import re
 import sys
 import subprocess
+import math
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.abspath(os.path.join(SCRIPT_DIR, "..", ".."))
@@ -37,7 +38,7 @@ CONFIG = os.path.join("examples", EXAMPLE, "config.toml")
 DATA_DIR = os.path.join(SCRIPT_DIR, "data")
 LOG = os.path.join(DATA_DIR, "run.log")
 PLOT_DIR = os.path.join(SCRIPT_DIR, "plots")
-PLOT = os.path.join(PLOT_DIR, "peri_dem_transition_validation.png")
+PLOT = os.path.join(PLOT_DIR, "peri_dem_transition_validation.svg")
 
 CARGO_FLAGS = ["--no-default-features", "--features", "precision-double"]
 
@@ -67,13 +68,7 @@ def start():
 
 
 def write_plot(steps, rel_mass, rel_p, tol):
-    import matplotlib
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
-    from matplotlib.lines import Line2D
-
     os.makedirs(PLOT_DIR, exist_ok=True)
-    plt.rcParams.update({"figure.dpi": 150, "savefig.dpi": 150, "font.size": 10})
 
     xs = [s[0] for s in steps]
     bonds = [s[2] for s in steps]
@@ -83,66 +78,108 @@ def write_plot(steps, rel_mass, rel_p, tol):
     bond_gate = 0.10 * bonds0
     contact_gate = 8
 
-    fig, (ax_err, ax_counts) = plt.subplots(1, 2, figsize=(11.5, 4.6))
+    width, height = 1200, 520
+    left = (70, 80, 490, 380)
+    right = (590, 80, 520, 380)
 
-    labels = ["mass", "momentum"]
-    vals = [rel_mass, rel_p]
+    def sx(step):
+        xmin, xmax = min(xs), max(xs)
+        return right[0] + (step - xmin) / (xmax - xmin) * right[2]
+
+    def sy_count(value):
+        ymax = max(max(bonds), bond_gate) * 1.08
+        return right[1] + right[3] - value / ymax * right[3]
+
+    def sy_contact(value):
+        ymax = max(max(contacts), contact_gate) * 1.18
+        return right[1] + right[3] - value / ymax * right[3]
+
+    def sy_damage(value):
+        return right[1] + right[3] - value / 1.05 * right[3]
+
+    def poly(points):
+        return " ".join(f"{x:.1f},{y:.1f}" for x, y in points)
+
+    def line(x1, y1, x2, y2, color, width=1.4, dash=None):
+        dash_attr = f' stroke-dasharray="{dash}"' if dash else ""
+        return (
+            f'<line x1="{x1:.1f}" y1="{y1:.1f}" x2="{x2:.1f}" y2="{y2:.1f}" '
+            f'stroke="{color}" stroke-width="{width}"{dash_attr}/>'
+        )
+
+    def text(x, y, body, size=16, anchor="start", color="#1f2933", weight="400"):
+        return (
+            f'<text x="{x:.1f}" y="{y:.1f}" font-family="Arial, sans-serif" '
+            f'font-size="{size}" text-anchor="{anchor}" fill="{color}" '
+            f'font-weight="{weight}">{body}</text>'
+        )
+
     floor = max(tol * 1e-9, 1e-18)
-    plot_vals = [max(v, floor) for v in vals]
-    bars = ax_err.bar(labels, plot_vals, color=["#2b6cb0", "#c2410c"], width=0.55)
-    for bar, val in zip(bars, vals):
-        label = "0.0" if val == 0.0 else f"{val:.1e}"
-        ax_err.text(bar.get_x() + bar.get_width() / 2, bar.get_height() * 1.25,
-                    label, ha="center", va="bottom", fontsize=9)
-    ax_err.axhline(tol, color="black", linestyle="--", linewidth=1.5,
-                   label=f"PASS limit = {tol:.0e}")
-    ax_err.set_yscale("log")
-    ax_err.set_ylim(floor / 2, tol * 1.8)
-    ax_err.set_ylabel("max relative conservation error")
-    ax_err.set_title("Measured conservation error vs reference")
-    ax_err.grid(True, which="both", axis="y", alpha=0.25)
-    ax_err.legend(loc="upper left", frameon=False)
+    log_min = math.log10(floor / 2)
+    log_max = math.log10(tol * 1.8)
 
-    ax_counts.plot(xs, bonds, color="#2f855a", linewidth=2.0, label="surviving peri bonds")
-    ax_counts.axhline(bond_gate, color="#2f855a", linestyle="--", linewidth=1.2,
-                      label="fracture PASS: <10% initial bonds")
-    ax_counts.set_xlabel("simulation step")
-    ax_counts.set_ylabel("surviving peri bonds")
-    ax_counts.grid(True, axis="both", alpha=0.25)
-    ax_counts.set_title("Peri fracture and DEM contact handoff")
+    def sy_err(value):
+        value = max(value, floor)
+        frac = (math.log10(value) - log_min) / (log_max - log_min)
+        return left[1] + left[3] - frac * left[3]
 
-    ax_contact = ax_counts.twinx()
-    ax_contact.plot(xs, contacts, color="#805ad5", linewidth=2.0, label="active DEM contacts")
-    ax_contact.axhline(contact_gate, color="#805ad5", linestyle=":", linewidth=1.4,
-                       label="contact PASS: >=8")
-    ax_contact.set_ylabel("active DEM contacts")
-
-    ax_damage = ax_counts.twinx()
-    ax_damage.spines["right"].set_position(("axes", 1.15))
-    ax_damage.plot(xs, damage, color="#718096", linewidth=1.6, alpha=0.9,
-                   label="peak damage")
-    ax_damage.axhline(0.99, color="#718096", linestyle="-.", linewidth=1.1,
-                      label="damage PASS: >=0.99")
-    ax_damage.set_ylim(0, 1.05)
-    ax_damage.set_ylabel("peak damage")
-
-    handles = [
-        Line2D([0], [0], color="#2f855a", lw=2, label="surviving peri bonds"),
-        Line2D([0], [0], color="#2f855a", lw=1.2, ls="--",
-               label="fracture PASS: <10% initial bonds"),
-        Line2D([0], [0], color="#805ad5", lw=2, label="active DEM contacts"),
-        Line2D([0], [0], color="#805ad5", lw=1.4, ls=":",
-               label="contact PASS: >=8"),
-        Line2D([0], [0], color="#718096", lw=1.6, label="peak damage"),
-        Line2D([0], [0], color="#718096", lw=1.1, ls="-.",
-               label="damage PASS: >=0.99"),
+    svg = [
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}">',
+        '<rect width="100%" height="100%" fill="white"/>',
+        text(315, 38, "Measured conservation error vs reference", 18, "middle", weight="700"),
+        text(850, 38, "Peri fracture and DEM contact handoff", 18, "middle", weight="700"),
     ]
-    ax_counts.legend(handles=handles, loc="center left", bbox_to_anchor=(0.02, 0.55),
-                     frameon=False, fontsize=8)
 
-    fig.tight_layout()
-    fig.savefig(PLOT, bbox_inches="tight")
-    plt.close(fig)
+    for plot in (left, right):
+        x, y, w, h = plot
+        svg.append(f'<rect x="{x}" y="{y}" width="{w}" height="{h}" fill="none" stroke="#cbd5e0"/>')
+        for i in range(1, 5):
+            gy = y + h * i / 5
+            svg.append(line(x, gy, x + w, gy, "#e2e8f0", 1))
+
+    limit_y = sy_err(tol)
+    svg.append(line(left[0], limit_y, left[0] + left[2], limit_y, "#111827", 2, "8 6"))
+    svg.append(text(left[0] + 10, limit_y - 8, f"PASS limit = {tol:.0e}", 14))
+
+    bar_w = 90
+    for label, value, color, cx in [
+        ("mass", rel_mass, "#2b6cb0", left[0] + 165),
+        ("momentum", rel_p, "#c2410c", left[0] + 325),
+    ]:
+        y = sy_err(value)
+        svg.append(f'<rect x="{cx - bar_w/2:.1f}" y="{y:.1f}" width="{bar_w}" height="{left[1] + left[3] - y:.1f}" fill="{color}"/>')
+        svg.append(text(cx, left[1] + left[3] + 28, label, 15, "middle"))
+        shown = "0.0" if value == 0.0 else f"{value:.1e}"
+        svg.append(text(cx, y - 12, shown, 14, "middle"))
+
+    svg.append(text(22, 285, "max relative conservation error", 14, "middle"))
+    svg.append(text(left[0] - 10, sy_err(tol), f"{tol:.0e}", 12, "end"))
+    svg.append(text(left[0] - 10, sy_err(floor), f"{floor:.0e}", 12, "end"))
+
+    svg.append(f'<polyline fill="none" stroke="#2f855a" stroke-width="3" points="{poly((sx(x), sy_count(y)) for x, y in zip(xs, bonds))}"/>')
+    svg.append(line(right[0], sy_count(bond_gate), right[0] + right[2], sy_count(bond_gate), "#2f855a", 2, "8 6"))
+    svg.append(f'<polyline fill="none" stroke="#805ad5" stroke-width="3" points="{poly((sx(x), sy_contact(y)) for x, y in zip(xs, contacts))}"/>')
+    svg.append(line(right[0], sy_contact(contact_gate), right[0] + right[2], sy_contact(contact_gate), "#805ad5", 2, "2 6"))
+    svg.append(f'<polyline fill="none" stroke="#718096" stroke-width="2.4" points="{poly((sx(x), sy_damage(y)) for x, y in zip(xs, damage))}"/>')
+    svg.append(line(right[0], sy_damage(0.99), right[0] + right[2], sy_damage(0.99), "#718096", 1.8, "10 5 2 5"))
+
+    svg.append(text(right[0] + right[2] / 2, right[1] + right[3] + 34, "simulation step", 15, "middle"))
+    svg.append(text(right[0] - 46, right[1] + 180, "surviving peri bonds", 14, "middle", "#2f855a"))
+    svg.append(text(right[0] + right[2] + 56, right[1] + 170, "DEM contacts / damage", 14, "middle", "#805ad5"))
+    svg.append(text(right[0] + 18, right[1] + 28, "fracture PASS: <10% initial bonds", 13, color="#2f855a"))
+    svg.append(text(right[0] + 18, right[1] + 48, "contact PASS: >=8", 13, color="#805ad5"))
+    svg.append(text(right[0] + 18, right[1] + 68, "damage PASS: >=0.99", 13, color="#718096"))
+
+    svg.append(text(right[0], right[1] + right[3] + 18, f"{min(xs)}", 12, "middle"))
+    svg.append(text(right[0] + right[2], right[1] + right[3] + 18, f"{max(xs)}", 12, "middle"))
+    svg.append(text(right[0] - 10, sy_count(bond_gate), f"{bond_gate:.0f}", 12, "end", "#2f855a"))
+    svg.append(text(right[0] + right[2] + 10, sy_contact(contact_gate), f"{contact_gate}", 12, "start", "#805ad5"))
+    svg.append(text(right[0] + right[2] + 10, sy_damage(0.99), "0.99", 12, "start", "#718096"))
+
+    svg.append("</svg>\n")
+
+    with open(PLOT, "w") as fh:
+        fh.write("\n".join(svg))
     print(f"wrote {PLOT}")
 
 
