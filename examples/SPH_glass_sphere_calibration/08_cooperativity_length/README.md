@@ -3,6 +3,24 @@
 DEM measurement of the **granular cooperativity length** ξ — the closure for the
 dev_soil_sph model's *nonlocal* (NGF-style) branch.
 
+## Automation status
+
+This step is **excluded from the regression suite** for now. It is a useful
+measurement rig, but it is not yet a bounded validation target: the current DEM
+setup can estimate the cooperativity amplitude `A` and check whether `g` trends
+with `sqrt(T)`, but there is no independent reference value for `A` or defensible
+fixed tolerance for the `g ∝ sqrt(T)` bridge in this configuration. Treating
+`A > 0` or a loose correlation threshold as PASS would manufacture confidence
+rather than validate the closure.
+
+For that reason, running `sweep.py` without generated data reports `SKIPPED`
+instead of failing with a zero-duration "no data" analysis error, and running the
+full sweep remains an exploratory calibration workflow rather than a PASS/FAIL
+gate. A future PR can restore this as automation only after adding a bounded
+criterion, for example from an independent published dataset, a cross-code NGF
+comparison with matching geometry, or an explicit fast gate whose acceptance
+limits are justified outside this implementation.
+
 ## Why
 
 dev_soil_sph's contact branch is local μ(I): rigid below yield. Real dense beds **creep
@@ -53,7 +71,8 @@ python3 examples/SPH_glass_sphere_calibration/08_cooperativity_length/sweep.py -
 ```
 Outputs `data/.../cooperativity_results.csv` (per-sample μ, p, T, Φ, I, g, ξ, and the
 correlation bins C0…C11), `data/calibration.yaml` (the `A` to drop into dev_soil_sph), and
-`plots/cooperativity.png`.
+`plots/cooperativity.png`. These outputs are calibration evidence only; the script
+does not emit a regression PASS/FAIL verdict.
 
 ## Notes / limitations (v0)
 

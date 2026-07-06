@@ -83,10 +83,6 @@ FULL_SWEEPS: list[Sweep] = [
     ),
     ("examples/SPH_glass_sphere_calibration/05_cooling_dissipation/sweep.py", ()),
     ("examples/SPH_glass_sphere_calibration/06_conductivity/sweep.py", ("full",)),
-    (
-        "examples/SPH_glass_sphere_calibration/08_cooperativity_length/sweep.py",
-        ("--run",),
-    ),
     ("examples/bond_cantilever/sweep.py", ()),
 ]
 
@@ -110,6 +106,10 @@ DOCUMENTED_EXCLUSIONS = {
     "examples/SPH_glass_sphere_calibration/07_column_collapse/sweep.py": (
         "documented provisional macro validation: depends on the calibrated "
         "rolling friction from 03_angle_of_repose, which is currently unavailable"
+    ),
+    "examples/SPH_glass_sphere_calibration/08_cooperativity_length/sweep.py": (
+        "documented exploratory calibration rig: no independent reference value "
+        "or justified tolerance exists yet for A or the g∝sqrt(T) bridge"
     ),
 }
 

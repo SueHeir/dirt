@@ -40,7 +40,8 @@ density        = 2500.0   # kg/m³ (glass)
 (1)–(3) feed the **μ(I)/critical-state** rheology; (4)–(6) feed the
 **granular-temperature de-fluidization** two-branch model; (7) is the macro
 validation gate the calibrated SPH must also reproduce; (8) feeds the **nonlocal
-cooperativity** branch (creep below yield) — `coop_amplitude` in MaterialParams.
+cooperativity** branch (creep below yield) — `coop_amplitude` in MaterialParams,
+but remains exploratory until it has an independent bounded gate.
 
 ## Automation harness: bounded smoke gates vs. full calibration runs
 
@@ -58,13 +59,16 @@ PASS/FAIL, and the full calibration is preserved behind an explicit `full` comma
 | 1 | shear rheology | bounded gate | `sweep.py full` | steady, physical μ = \|σ_xy\|/P ∈ [0.15, 0.90] per case |
 | 4 | enduring contact | bounded gate | `sweep.py full` | σ_contact = p_DEM − p_KT(Φ,T) self-consistent + branch opens with Φ |
 | 6 | conductivity | bounded gate | `sweep.py full` | Fourier-law κ*(Φ) > 0, finite, order-unity vs KT |
+| 8 | cooperativity length | **excluded** | `sweep.py --run` | no fixed target for `A` or `g∝√T` is justified yet |
 
 The full runs (config.toml sweeps, fits, and plots) are **unchanged** and remain
 the scientific calibration; the gates are additive fast breakage checks, never a
 substitute for them. Deliverables 2 and 5 already complete inside the cap and gate
 directly; 3 and 7 are tracked separately (angle-of-repose and column-collapse
-honesty goals). Each subfolder README documents its own gate under
-**“Bounded smoke gate (CI)”**.
+honesty goals). Deliverable 8 is kept as a documented measurement rig, but its
+default `sweep.py` path reports `SKIPPED` when no data exists rather than turning
+missing exploratory data into a zero-duration FAIL. Each gated subfolder README
+documents its own gate under **“Bounded smoke gate (CI)”**.
 
 ## Layout (per subfolder, following the dirt-example conventions)
 
