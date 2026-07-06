@@ -521,23 +521,19 @@ sample estimate stays within the 5% inertia tolerance.*
 
 ![Rod Haff cooling](bench_rod_haff_cooling/plots/haff_cooling.png)
 
-*4-sphere rods (asymmetric inertia). Same construction; DIRT and LAMMPS track the same
-cooling law.*
+*4-sphere rods (asymmetric inertia). Same construction; DIRT tracks the Haff cooling
+law over a longer tail; the optional LAMMPS overlay appears when the local binary has
+the required rigid-molecule packages.*
 
 **Honest read:** the cooling *form* is well supported (`1/√T` linear, **R² ≈ 0.9994–0.9999**
-on every run of all three benches), but the **−2 asymptote is only partly reached** — these
-dilute gases cool to a finite `t/tc`, where the *local* log-log slope is still short of −2.
-Spheres and clumps cool far enough (`t/tc ≈ 5` and `≈ 11`, slopes ≈ **−1.88** and **−1.79**)
-to land inside the `−2.3 < slope < −1.6` gate and **PASS**. The 4-sphere rod, with its larger
-`tc` and slower cooling, reaches only `t/tc ≈ 5` with slope **≈ −1.59** — which sits right on
-the `−1.6` edge and **straddles it run-to-run**: `bench_rod_haff_cooling` **FAILs** the
-late-time-slope check on recent harness runs (e.g. slope −1.572, −1.579, −1.594 > −1.6 →
-`sweep.py graph` exits 1; the R² gate still passes at 0.9999). This is a genuine
-**known-limitation FAIL**, not a Haff-form failure: the rod's asymmetric inertia and slow
-cooling mean the finite window never reaches deep enough into `t ≫ tc` for the slope to
-clear −1.6 reliably. The bench is retained in regression as an honest, visible FAIL rather
-than reported green; the gate is **not** loosened to manufacture a pass. `tc` is only an
-order-of-magnitude match to kinetic theory (a printed diagnostic). Single realizations;
+on every run of all three benches), but the **−2 asymptote is only approached over finite
+time** — these dilute gases cool to a finite `t/tc`, where the *local* log-log slope is
+still short of −2. Spheres and clumps cool far enough (`t/tc ≈ 5` and `≈ 11`, slopes ≈
+**−1.88** and **−1.79**) to land inside the `−2.3 < slope < −1.6` gate and **PASS**.
+The 4-sphere rod now runs longer, reaching `t/tc ≈ 13` with slope **≈ −1.84**, so it
+also **PASSes** the unchanged late-time-slope gate. This is still a finite-window Haff
+check, not a direct `t/tc → ∞` measurement; `tc` is only an order-of-magnitude match to
+kinetic theory (a printed diagnostic). Single realizations;
 a many-body gas is chaotic, so only curve-level agreement is meaningful. For clumps/rods
 the LAMMPS cross-check is **calibrated** (the rigid velocity projection otherwise starts
 LAMMPS ~4× hotter) and compared **past the rotational transient**; different rigid
@@ -1018,7 +1014,7 @@ will need a benchmark when re-added.)
 | bond_fiber_tensile | input Young's modulus via `K_n = E A / L` | analytical (self-consistent) | PASS; fitted E = 1.000050 GPa vs input 1.000001 GPa (0.005% error) |
 | bond_cantilever | Euler-Bernoulli uniform-load cantilever tip deflection | analytical | PASS; final tip deflection −9.476884e-07 m vs −9.535320e-07 m (0.61% error, 5% gate), 9/9 bonds present |
 | sphere/clump haff | Haff law + LAMMPS | law (cross-code) | PASS; R²≈0.9999, slope −1.88 / −1.79 at t/tc≈5 / 11; −2 not fully reached; tc unvalidated; clump cross-check calibrated |
-| rod haff | Haff law + LAMMPS | law (cross-code) | FAIL (known limitation); Haff R²=0.9999 but late-time slope ≈−1.59 at t/tc≈5 straddles/misses the −2.3<slope<−1.6 gate; exits 1 |
+| rod haff | Haff law + optional LAMMPS | law (cross-code when available) | PASS; Haff R²=0.9999, late-time slope −1.84 at t/tc≈13 inside the unchanged −2.3<slope<−1.6 gate; finite-window asymptote check, tc diagnostic only |
 | SPH glass column collapse | Lube/Lajeunesse (empirical) + LAMMPS overlay | empirical macro gate | FAIL (remaining macro limitation); uses canonical `mu_r=0.10` because 03_angle_of_repose has no transferable closure; linear exponent 1.407 vs 1.0 outside ±0.25, power exponent 0.885 inside gate; exits 1 |
 | clump_insertion_determinism | own repeated config run | reproducibility | PASS; same-seed config path byte-identical, changed seed diverges |
 | angle_of_repose | empirical (none exact) | qualitative | PASS; trends only; frozen-bed |

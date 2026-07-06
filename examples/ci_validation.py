@@ -46,6 +46,8 @@ FULL_SWEEPS: list[Sweep] = [
     ("examples/bench_bond_breakage/sweep.py", ()),
     ("examples/bench_chung_ooi_impact/sweep.py", ()),
     ("examples/bench_clump_haff_cooling/sweep.py", ()),
+    ("examples/bench_clump_inertia_sampler/sweep.py", ()),
+    ("examples/bench_clump_insertion_determinism/sweep.py", ()),
     ("examples/bench_convergence/sweep.py", ()),
     ("examples/bench_cundall_damping/sweep.py", ()),
     ("examples/bench_dmt_sjkr_cohesion/sweep.py", ()),
@@ -63,6 +65,7 @@ FULL_SWEEPS: list[Sweep] = [
     ("examples/bench_plate_sinkage/sweep.py", ()),
     ("examples/bench_polydisperse_mixing/sweep.py", ()),
     ("examples/bench_restart_determinism/sweep.py", ()),
+    ("examples/bench_rod_haff_cooling/sweep.py", ()),
     ("examples/bench_rolling_decay/sweep.py", ()),
     ("examples/bench_sds_rolling/sweep.py", ()),
     ("examples/bench_sliding_friction/sweep.py", ()),
@@ -84,6 +87,7 @@ FULL_SWEEPS: list[Sweep] = [
         "examples/SPH_glass_sphere_calibration/08_cooperativity_length/sweep.py",
         ("--run",),
     ),
+    ("examples/bond_cantilever/sweep.py", ()),
 ]
 
 DOCUMENTED_EXCLUSIONS = {
@@ -91,13 +95,13 @@ DOCUMENTED_EXCLUSIONS = {
         "documented honest FAIL in examples/VALIDATION.md; retained outside "
         "green PR CI so it cannot be mistaken for a regression"
     ),
-    "examples/bench_rod_haff_cooling/sweep.py": (
-        "documented honest FAIL in examples/VALIDATION.md; retained outside "
-        "green PR CI so it cannot be mistaken for a regression"
-    ),
     "examples/bench_mpi_decomposition/sweep.py": (
         "requires MPI/default-feature runtime, while this workflow deliberately "
         "uses the stock no-MPI quickstart configuration"
+    ),
+    "examples/bond_mpi_drift/sweep.py": (
+        "requires a two-rank MPI run, while this workflow deliberately uses the "
+        "stock no-MPI quickstart configuration"
     ),
     "examples/SPH_glass_sphere_calibration/03_angle_of_repose/sweep.py": (
         "documented honest FAIL in its README: measured glass sliding friction "

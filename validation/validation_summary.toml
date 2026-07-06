@@ -35,6 +35,14 @@ tolerance = "δ_max ≤0.1% & t_c ~1–2% at elastic anchor; |ΔCOR| vs LAMMPS �
 measure_label = "max |ΔCOR| vs LAMMPS"
 measure = 'Max \|DIRT - LAMMPS\| COR = ([0-9.]+)'
 
+[bench.bench_hooke_rebound]
+reference = "linear spring-dashpot damped-oscillator collision closed form"
+reference_type = "analytical"
+quantity = "COR, contact time, peak overlap, and velocity-independence"
+tolerance = "COR 1%; contact time 2%; peak overlap 2%; velocity-independence"
+measure_label = "checks"
+measure = '(ALL CHECKS PASSED|CHECKS? FAILED|[0-9]+/[0-9]+ checks passed)'
+
 [bench.bench_oblique_impact]
 reference = "Maw–Barber–Fawcett (1976) tangential-restitution curve + LAMMPS granular"
 reference_type = "analytical + cross-code"
@@ -62,6 +70,14 @@ reference = "constant-torque rolling-resistance rate a=(5/7)μ_r g (r_eff/R) + L
 reference_type = "analytical (self-consistent)"
 quantity = "fitted rolling deceleration vs μ_r; pure-rolling slip"
 tolerance = "slope ≤2% rel, slip ≤1% of v₀"
+
+[bench.bench_sds_rolling]
+reference = "SDS rolling damped-oscillator dynamics and Coulomb cap"
+reference_type = "analytical (self-consistent)"
+quantity = "elastic rolling ω(t), springless control, saturated spin-down slope, purity"
+tolerance = "elastic ω(t) ≤1.5% of ω₀; cap slope ≤3%; off-axis spin ≤0.1%; drift ≤10 µm"
+measure_label = "verdict"
+measure = 'RESULT: (PASS|FAIL)'
 
 [bench.bench_jkr_adhesion]
 reference = "JKR pull-off force F=(3/2)πwR*"
@@ -108,6 +124,22 @@ quantity = "linearity of 1/√T in t (R²) and late-time cooling slope → −2"
 tolerance = "R² ≥0.999; slope approaching −2 as t/tc grows"
 measure_label = "Haff-law R²"
 measure = 'Haff law \(1/sqrt\(T\) linear\)\s*PASS\s*R\^2=([0-9.]+)'
+
+[bench.bench_clump_inertia_sampler]
+reference = "single-sphere analytical mass and inertia, plus bitwise repeated seeded samples"
+reference_type = "analytical + reproducibility"
+quantity = "repeatability of default/explicit seeds and Monte Carlo inertia error"
+tolerance = "bitwise repeat must hold; seeded 100000-sample inertia estimates within 5%"
+measure_label = "verdict"
+measure = 'RESULT: (PASS|FAIL)'
+
+[bench.bench_clump_insertion_determinism]
+reference = "same-seed clump insertion byte identity and changed-seed divergence"
+reference_type = "reproducibility"
+quantity = "production clump insertion CSV fingerprints for same and changed seeds"
+tolerance = "same-seed runs byte-identical; changed seed produces non-zero divergence"
+measure_label = "verdict"
+measure = 'RESULT: (PASS|FAIL)'
 
 [bench.bench_rod_haff_cooling]
 reference = "Haff's cooling law (4-sphere asymmetric rods) + LAMMPS"
@@ -161,6 +193,14 @@ tolerance = "0.15 ≤ μ ≤ 0.9, P>0, steady-state drift <15%"
 measure_label = "checks passed"
 measure = '([0-9]+/[0-9]+) checks passed'
 
+[bench.bench_nohistory_tangential]
+reference = "LAMMPS documented linear_nohistory velocity-Coulomb tangential law"
+reference_type = "analytical + cross-code documentation"
+quantity = "history-free tangential force path and distinction from Mindlin history"
+tolerance = "8/8 checks: zero history, Coulomb cap, viscous branch, and retained history contrast"
+measure_label = "checks passed"
+measure = 'RESULT: ([0-9]+/[0-9]+) checks passed'
+
 [bench.bench_granular_conductivity]
 reference = "kinetic-theory (Lun/Gidaspow) granular conductivity κ*_KT"
 reference_type = "analytical (law)"
@@ -185,11 +225,27 @@ tolerance = "err ≲1% on F_max, t_c, δ_max across the velocity sweep"
 measure_label = "checks passed"
 measure = 'Overall: ([0-9]+/[0-9]+) checks passed'
 
+[bench.bench_cundall_damping]
+reference = "Cundall non-viscous damping exact piecewise rates + LAMMPS fix damping/cundall"
+reference_type = "analytical + cross-code"
+quantity = "linear and angular acceleration branches across damping fractions"
+tolerance = "all four fitted phase rates within 1% for each γ"
+measure_label = "verdict"
+measure = 'RESULT: (PASS|FAIL)'
+
 [bench.bench_twisting_friction]
 reference = "constant-torque twisting-friction spin-down rate α=(5/4)μ_tw g/R"
 reference_type = "analytical (self-consistent)"
 quantity = "fitted twisting spin-down rate vs μ_tw; off-axis spin and drift"
 tolerance = "slope ≤3% rel, ω_perp ≤0.1% of ω₀, drift ≤10 µm"
+
+[bench.bench_marshall_twisting]
+reference = "LAMMPS/Marshall derived twisting coefficients and exact spin-down"
+reference_type = "analytical + cross-code documentation"
+quantity = "spin-down rate scaling with tangential friction and twist purity"
+tolerance = "spin-down rate within 4%; off-axis spin <0.1%; drift <10 µm"
+measure_label = "verdict"
+measure = 'RESULT: (PASS|FAIL)'
 
 [bench.bench_restart_determinism]
 reference = "bitwise checkpoint/restart continuity and run-to-run determinism"
@@ -198,3 +254,11 @@ quantity = "restart-vs-uninterrupted position/velocity continuity; byte-identica
 tolerance = "continuity ≤1e-9 relative; dumps byte-for-byte identical"
 measure_label = "checks passed"
 measure = 'Result: ([0-9]+/[0-9]+) checks passed'
+
+[bench.bench_mpi_decomposition]
+reference = "single-rank DEM trajectory under fixed seed and identical configuration"
+reference_type = "parallel-correctness (decomposition invariance)"
+quantity = "atom identity/count, momentum, energy, and final per-atom state across MPI decompositions"
+tolerance = "multi-rank deltas within 1e-9 of the 1×1×1 reference"
+measure_label = "checks"
+measure = '(ALL CHECKS PASSED|CHECKS? FAILED|[0-9]+/[0-9]+ checks passed)'
