@@ -17,7 +17,8 @@ stress-strain curve, and fits the slope to recover the Young's modulus set in
 ## Run
 
 ```bash
-cargo run --release --example bond_fiber_tensile --no-default-features -- \
+cargo run --release --example bond_fiber_tensile --no-default-features \
+    --features precision-double -- \
     examples/bond_fiber_tensile/config.toml
 
 python3 examples/bond_fiber_tensile/validate.py
@@ -25,6 +26,15 @@ python3 examples/bond_fiber_tensile/validate.py
 
 The first command produces `data/fiber_tensile.csv`; the second fits the linear
 slope of σ(ε) and compares it to the input `E`.
+
+## Result
+
+![BPM fiber tensile stress-strain validation](plots/fiber_stress_strain_validation.png)
+
+*Measured middle-bond stress versus global strain from the example run. The blue
+line is the input Young's modulus reconstructed from `K_n = E A / L`; the green
+band shows the ±1% pass band, and the fitted slope is within 0.005% of the input
+`E` (PASS).*
 
 ## What's measured
 
