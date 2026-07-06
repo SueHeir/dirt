@@ -34,10 +34,11 @@ they are rebuilt each step, so contacts that end are pruned automatically.
 
 > **Adhesion support depends on wall geometry.** Only **plane walls** support
 > JKR/DMT adhesion (`surface_energy`), including the JKR extended-range pull-off
-> regime. **Cylinder, sphere, and region walls silently ignore `surface_energy`**
-> and apply only SJKR cohesion (`cohesion_energy`). Setting `surface_energy` on a
-> material used by a curved or region wall does nothing — no warning is emitted.
-> Use a plane wall if you need JKR/DMT against a wall.
+> regime. **Cylinder, sphere, and region walls ignore `surface_energy`** and
+> apply only SJKR cohesion (`cohesion_energy`). Setting `surface_energy` on a
+> material used by a curved or region wall emits a setup warning explaining that
+> JKR/DMT `surface_energy` is plane-wall-only. Use a plane wall if you need
+> JKR/DMT against a wall.
 
 - **Plane walls** support JKR and DMT (`surface_energy`) *and* SJKR cohesion
   (`cohesion_energy`), including the JKR extended-range pull-off regime.

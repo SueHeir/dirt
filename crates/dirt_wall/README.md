@@ -12,7 +12,7 @@ Wall contacts reuse the same per-pair `MaterialTable` tables as particle–parti
 
 - **Tangential (Mindlin sliding) friction** and **rolling resistance** (`constant` or `sds`) are applied by **all** wall types. Frictionless walls (`friction = 0`) are byte-for-byte identical to a pure-normal contact.
 - **Twisting friction** is applied by **plane walls only**.
-- **Adhesion is asymmetric by geometry:** plane walls support JKR/DMT (`surface_energy`) *and* SJKR cohesion (`cohesion_energy`); cylinder/sphere/region walls support **SJKR cohesion only** — their `surface_energy` is ignored.
+- **Adhesion is asymmetric by geometry:** plane walls support JKR/DMT (`surface_energy`) *and* SJKR cohesion (`cohesion_energy`); cylinder/sphere/region walls support **SJKR cohesion only**. If their material sets `surface_energy > 0`, setup warns that JKR/DMT `surface_energy` is plane-wall-only.
 - The optional **`temperature`** field is *stored but never read* by this crate — it is a hook for an external heat-transfer system.
 
 Malformed `[[wall]]` config (bad TOML, unknown cylinder axis, wrong-length `center`, missing region, zero normal) prints an `ERROR:` and calls `std::process::exit(1)` at setup.
