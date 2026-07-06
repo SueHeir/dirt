@@ -571,6 +571,15 @@ byte-identically; changing the base seed reproduces none of the config hashes or
 per-case seeds. PASS means the calibration campaign can be regenerated exactly
 from its base seed or manifest, while distinct replicates remain independent.*
 
+`SPH_glass_sphere_calibration/08_cooperativity_length` is intentionally **not**
+listed as a validation gate. The example can generate exploratory DEM estimates
+of the nonlocal cooperativity amplitude `A` and the `g∝sqrt(T)` bridge, but there
+is not yet an independent reference value or justified tolerance for this exact
+geometry. Its default `sweep.py` path therefore reports `SKIPPED` without data
+instead of producing the old zero-duration "no data" FAIL; restoring it to the
+suite requires a bounded criterion rather than a positive-amplitude or loose-fit
+placeholder.
+
 `bench_restart_determinism` runs an uninterrupted periodic granular-gas
 trajectory, a checkpoint/resume trajectory, and an independent same-seed twin of
 the uninterrupted run. The resumed final dump is compared atom-by-atom to the
