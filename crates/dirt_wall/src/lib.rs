@@ -679,16 +679,19 @@ impl Plugin for WallPlugin {
                                 std::process::exit(1);
                             }
                         };
-                        let center_vec = w
-                            .center
-                            .as_ref()
-                            .expect("cylinder wall requires 'center' [c0, c1]");
-                        if center_vec.len() < 2 {
+                        let center_vec = w.center.as_ref().unwrap_or_else(|| {
+                            eprintln!("ERROR: cylinder wall requires 'center' [c0, c1]");
+                            std::process::exit(1);
+                        });
+                        if center_vec.len() != 2 {
                             eprintln!("ERROR: cylinder wall 'center' must have 2 elements");
                             std::process::exit(1);
                         }
                         let center = [center_vec[0], center_vec[1]];
-                        let radius = w.radius.expect("cylinder wall requires 'radius'");
+                        let radius = w.radius.unwrap_or_else(|| {
+                            eprintln!("ERROR: cylinder wall requires 'radius'");
+                            std::process::exit(1);
+                        });
                         let lo = w.lo.unwrap_or(f64::NEG_INFINITY);
                         let hi = w.hi.unwrap_or(f64::INFINITY);
                         let inside = w.inside.unwrap_or(false);
@@ -706,16 +709,19 @@ impl Plugin for WallPlugin {
                         });
                     }
                     "sphere" => {
-                        let center_vec = w
-                            .center
-                            .as_ref()
-                            .expect("sphere wall requires 'center' [x, y, z]");
-                        if center_vec.len() < 3 {
+                        let center_vec = w.center.as_ref().unwrap_or_else(|| {
+                            eprintln!("ERROR: sphere wall requires 'center' [x, y, z]");
+                            std::process::exit(1);
+                        });
+                        if center_vec.len() != 3 {
                             eprintln!("ERROR: sphere wall 'center' must have 3 elements");
                             std::process::exit(1);
                         }
                         let center = [center_vec[0], center_vec[1], center_vec[2]];
-                        let radius = w.radius.expect("sphere wall requires 'radius'");
+                        let radius = w.radius.unwrap_or_else(|| {
+                            eprintln!("ERROR: sphere wall requires 'radius'");
+                            std::process::exit(1);
+                        });
                         let inside = w.inside.unwrap_or(false);
                         spheres.push(WallSphere {
                             center,
@@ -742,8 +748,7 @@ impl Plugin for WallPlugin {
                             temperature: w.temperature,
                         });
                     }
-                    // Default to plane for unrecognized types (backwards compatibility)
-                    "plane" | _ => {
+                    "plane" => {
                         let mag = (w.normal_x * w.normal_x
                             + w.normal_y * w.normal_y
                             + w.normal_z * w.normal_z)
@@ -803,6 +808,13 @@ impl Plugin for WallPlugin {
                             force_accumulator: 0.0,
                             temperature: w.temperature,
                         });
+                    }
+                    other => {
+                        eprintln!(
+                            "ERROR: unknown wall type in [[wall]]: '{}'. Expected 'plane', 'cylinder', 'sphere', or 'region'",
+                            other
+                        );
+                        std::process::exit(1);
                     }
                 }
             }

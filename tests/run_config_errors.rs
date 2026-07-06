@@ -2,7 +2,7 @@ use std::fs;
 use std::process::{Command, Output};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-fn run_config_case(name: &str, particles_insert: &str) -> Output {
+fn run_config_case_with_extra(name: &str, particles_insert: &str, extra_config: &str) -> Output {
     let stamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .expect("system clock must be after Unix epoch")
@@ -48,6 +48,8 @@ material = "glass"
 density = 2500.0
 seed = 1
 
+{extra_config}
+
 [[run]]
 name = "settle"
 dt = 1.0e-5
@@ -79,6 +81,10 @@ thermo = 1
     output
 }
 
+fn run_config_case(name: &str, particles_insert: &str) -> Output {
+    run_config_case_with_extra(name, particles_insert, "")
+}
+
 fn run_config_error_case(name: &str, particles_insert: &str) -> String {
     let output = run_config_case(name, particles_insert);
     let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
@@ -89,6 +95,28 @@ fn run_config_error_case(name: &str, particles_insert: &str) -> String {
     assert!(
         !stderr.contains("panicked at"),
         "malformed config must not panic, got:\n{stderr}"
+    );
+
+    stderr
+}
+
+fn run_wall_config_error_case(name: &str, wall_config: &str) -> String {
+    let output = run_config_case_with_extra(
+        name,
+        r#"
+count = 1
+radius = 0.001
+"#,
+        wall_config,
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    assert!(
+        !output.status.success(),
+        "malformed wall config should exit non-zero"
+    );
+    assert!(
+        !stderr.contains("panicked at"),
+        "malformed wall config must not panic, got:\n{stderr}"
     );
 
     stderr
@@ -209,5 +237,150 @@ radius = 0.001
     assert!(
         stdout.contains("DemAtomInsert: inserting 1 particles"),
         "stdout should show the valid insert path ran, got:\n{stdout}"
+    );
+}
+
+#[test]
+fn cylinder_wall_missing_center_errors_without_panic() {
+    let stderr = run_wall_config_error_case(
+        "cylinder-wall-missing-center",
+        r#"
+[[wall]]
+type = "cylinder"
+axis = "z"
+radius = 0.01
+material = "glass"
+"#,
+    );
+    assert!(
+        stderr.contains("ERROR: cylinder wall requires 'center' [c0, c1]"),
+        "stderr should contain typed wall config error, got:\n{stderr}"
+    );
+}
+
+#[test]
+fn cylinder_wall_missing_radius_errors_without_panic() {
+    let stderr = run_wall_config_error_case(
+        "cylinder-wall-missing-radius",
+        r#"
+[[wall]]
+type = "cylinder"
+axis = "z"
+center = [0.02, 0.02]
+material = "glass"
+"#,
+    );
+    assert!(
+        stderr.contains("ERROR: cylinder wall requires 'radius'"),
+        "stderr should contain typed wall config error, got:\n{stderr}"
+    );
+}
+
+#[test]
+fn cylinder_wall_wrong_center_length_errors_without_panic() {
+    let stderr = run_wall_config_error_case(
+        "cylinder-wall-wrong-center-length",
+        r#"
+[[wall]]
+type = "cylinder"
+axis = "z"
+center = [0.02, 0.02, 0.02]
+radius = 0.01
+material = "glass"
+"#,
+    );
+    assert!(
+        stderr.contains("ERROR: cylinder wall 'center' must have 2 elements"),
+        "stderr should contain typed wall config error, got:\n{stderr}"
+    );
+}
+
+#[test]
+fn cylinder_wall_bad_axis_errors_without_panic() {
+    let stderr = run_wall_config_error_case(
+        "cylinder-wall-bad-axis",
+        r#"
+[[wall]]
+type = "cylinder"
+axis = "q"
+center = [0.02, 0.02]
+radius = 0.01
+material = "glass"
+"#,
+    );
+    assert!(
+        stderr.contains("ERROR: cylinder wall axis must be x, y, or z, got 'q'"),
+        "stderr should contain typed wall config error, got:\n{stderr}"
+    );
+}
+
+#[test]
+fn sphere_wall_missing_center_errors_without_panic() {
+    let stderr = run_wall_config_error_case(
+        "sphere-wall-missing-center",
+        r#"
+[[wall]]
+type = "sphere"
+radius = 0.01
+material = "glass"
+"#,
+    );
+    assert!(
+        stderr.contains("ERROR: sphere wall requires 'center' [x, y, z]"),
+        "stderr should contain typed wall config error, got:\n{stderr}"
+    );
+}
+
+#[test]
+fn sphere_wall_missing_radius_errors_without_panic() {
+    let stderr = run_wall_config_error_case(
+        "sphere-wall-missing-radius",
+        r#"
+[[wall]]
+type = "sphere"
+center = [0.02, 0.02, 0.02]
+material = "glass"
+"#,
+    );
+    assert!(
+        stderr.contains("ERROR: sphere wall requires 'radius'"),
+        "stderr should contain typed wall config error, got:\n{stderr}"
+    );
+}
+
+#[test]
+fn sphere_wall_wrong_center_length_errors_without_panic() {
+    let stderr = run_wall_config_error_case(
+        "sphere-wall-wrong-center-length",
+        r#"
+[[wall]]
+type = "sphere"
+center = [0.02, 0.02]
+radius = 0.01
+material = "glass"
+"#,
+    );
+    assert!(
+        stderr.contains("ERROR: sphere wall 'center' must have 3 elements"),
+        "stderr should contain typed wall config error, got:\n{stderr}"
+    );
+}
+
+#[test]
+fn unknown_wall_type_errors_without_panic() {
+    let stderr = run_wall_config_error_case(
+        "unknown-wall-type",
+        r#"
+[[wall]]
+type = "capsule"
+normal_z = 1.0
+material = "glass"
+"#,
+    );
+    assert!(
+        stderr.contains(
+            "ERROR: unknown wall type in [[wall]]: 'capsule'. Expected 'plane', 'cylinder', 'sphere', or 'region'"
+        ),
+        "stderr should contain typed wall config error, got:\n{stderr}"
     );
 }
