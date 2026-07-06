@@ -63,6 +63,83 @@ system to consult a wall's temperature. It has no effect on the contact force.
 For curved/region walls, `inside = true` means particles live inside the surface
 (the normal points inward); `inside = false` confines them outside.
 
+### Bounded plane faces
+
+Plane walls can be clipped to a finite axis-aligned active box with six optional
+keys:
+
+| Key | Default | Meaning |
+|---|---|---|
+| `bound_x_low` | `-inf` | Lowest particle-center `x` coordinate where the plane can apply contact. |
+| `bound_x_high` | `+inf` | Highest particle-center `x` coordinate where the plane can apply contact. |
+| `bound_y_low` | `-inf` | Lowest particle-center `y` coordinate where the plane can apply contact. |
+| `bound_y_high` | `+inf` | Highest particle-center `y` coordinate where the plane can apply contact. |
+| `bound_z_low` | `-inf` | Lowest particle-center `z` coordinate where the plane can apply contact. |
+| `bound_z_high` | `+inf` | Highest particle-center `z` coordinate where the plane can apply contact. |
+
+The bounds are checked against the particle center before the plane distance is
+computed. Particles outside any bound do not see that plane at all. This makes a
+plane wall act like a finite rectangular face, or like one face of a funnel,
+while keeping the contact normal and distance calculation exactly planar.
+
+The bounds are an activation mask only. Motion remains plane-only: `wall_move`
+updates the plane's point and velocity for `velocity`, `oscillate`, or `servo`,
+but it does not move, rotate, or reshape the bound box itself. If a moving
+finite face is needed, choose bounds that cover the whole swept region or update
+the `Walls` resource from your own system.
+
+Minimal four-face funnel:
+
+```toml
+# +X side face, tilted inward toward the outlet
+[[wall]]
+type = "plane"
+point_x = 0.04
+normal_x = -0.94
+normal_z = 0.34
+bound_y_low = 0.0
+bound_y_high = 0.04
+bound_z_low = 0.02
+bound_z_high = 0.12
+material = "glass"
+
+# -X side face
+[[wall]]
+type = "plane"
+point_x = 0.00
+normal_x = 0.94
+normal_z = 0.34
+bound_y_low = 0.0
+bound_y_high = 0.04
+bound_z_low = 0.02
+bound_z_high = 0.12
+material = "glass"
+
+# +Y side face
+[[wall]]
+type = "plane"
+point_y = 0.04
+normal_y = -0.94
+normal_z = 0.34
+bound_x_low = 0.0
+bound_x_high = 0.04
+bound_z_low = 0.02
+bound_z_high = 0.12
+material = "glass"
+
+# -Y side face
+[[wall]]
+type = "plane"
+point_y = 0.00
+normal_y = 0.94
+normal_z = 0.34
+bound_x_low = 0.0
+bound_x_high = 0.04
+bound_z_low = 0.02
+bound_z_high = 0.12
+material = "glass"
+```
+
 ## Wall motion
 
 | Motion | Description | Config |
@@ -110,6 +187,17 @@ point_z = 0.0
 normal_z = 1.0
 material = "glass"
 name = "floor"                  # optional, for runtime enable/disable
+
+# Finite plane face: active only for particle centers inside the box
+[[wall]]
+type = "plane"
+point_x = 0.04
+normal_x = -1.0
+bound_y_low = 0.0
+bound_y_high = 0.04
+bound_z_low = 0.02
+bound_z_high = 0.12
+material = "glass"
 
 # Cylinder wall (particles confined inside a z-aligned cylinder)
 [[wall]]
