@@ -34,6 +34,7 @@ particle bed is needed. See README "Assumptions".
 Commands (from anywhere):
     python3 examples/SPH_glass_sphere_calibration/03_angle_of_repose/sweep.py generate --base-seed 20260706
     python3 examples/SPH_glass_sphere_calibration/03_angle_of_repose/sweep.py generate --seed-manifest data/seed_manifest.csv
+    python3 examples/SPH_glass_sphere_calibration/03_angle_of_repose/sweep.py seed-check
     python3 examples/SPH_glass_sphere_calibration/03_angle_of_repose/sweep.py start
     python3 examples/SPH_glass_sphere_calibration/03_angle_of_repose/sweep.py graph
     python3 examples/SPH_glass_sphere_calibration/03_angle_of_repose/sweep.py   # all
@@ -85,6 +86,7 @@ import argparse
 import hashlib
 import math
 import subprocess
+import tempfile
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 # This example lives THREE levels under the repo root:
@@ -367,6 +369,10 @@ def case_dir(mu_r, rep):
     return os.path.join(SWEEP_DIR, case_tag(mu_r, rep))
 
 
+def _case_dir_in(root, mu_r, rep):
+    return os.path.join(root, case_tag(mu_r, rep))
+
+
 def _dirt_config(mu_r, outdir, seed):
     return TOML_TEMPLATE.format(
         gz=GZ, youngs=YOUNGS_MOD, nu=POISSON, e_n=RESTITUTION, mu_p=MU_P,
@@ -464,6 +470,19 @@ def _write_seed_manifest(path, seeds, base_seed=None):
             })
 
 
+def _write_configs(root, seeds):
+    n = 0
+    for mu_r in MU_R_LIST:
+        for rep in range(REPS):
+            cdir = _case_dir_in(root, mu_r, rep)
+            os.makedirs(cdir, exist_ok=True)
+            seed = seeds[_case_key(mu_r, rep)]
+            with open(os.path.join(cdir, "config.toml"), "w") as f:
+                f.write(_dirt_config(mu_r, cdir, seed))
+            n += 1
+    return n
+
+
 def _parse_generate_args(argv):
     p = argparse.ArgumentParser(
         prog="sweep.py generate",
@@ -488,19 +507,170 @@ def generate(argv=None):
         manifest_source = f"base seed {args.base_seed}"
         base_seed = args.base_seed
 
-    n = 0
-    for mu_r in MU_R_LIST:
-        for rep in range(REPS):
-            cdir = case_dir(mu_r, rep)
-            os.makedirs(cdir, exist_ok=True)
-            seed = seeds[_case_key(mu_r, rep)]
-            with open(os.path.join(cdir, "config.toml"), "w") as f:
-                f.write(_dirt_config(mu_r, cdir, seed))
-            n += 1
+    n = _write_configs(SWEEP_DIR, seeds)
     _write_seed_manifest(args.write_seed_manifest, seeds, base_seed=base_seed)
     print(f"Generated {n} DIRT configs ({len(MU_R_LIST)} mu_r x {REPS} reps, "
           f"fixed sliding mu_p={MU_P}, seeds from {manifest_source}) under {SWEEP_DIR}")
     print(f"Seed manifest -> {args.write_seed_manifest}")
+
+
+# -- seed reproducibility evidence ---------------------------------------------
+def _config_hashes(root, seeds):
+    rows = []
+    for mu_r, rep in _expected_cases():
+        rel = os.path.join(case_tag(mu_r, rep), "config.toml")
+        path = os.path.join(root, rel)
+        with open(path, "rb") as f:
+            blob = f.read()
+        rows.append({
+            "case": case_tag(mu_r, rep),
+            "mu_r": _fmt_mu(mu_r),
+            "rep": rep,
+            "seed": seeds[_case_key(mu_r, rep)],
+            "relpath": rel,
+            "sha256": hashlib.sha256(blob).hexdigest(),
+        })
+    return rows
+
+
+def _same_hashes(a, b):
+    return [x["sha256"] == y["sha256"] for x, y in zip(a, b)]
+
+
+def _same_seeds(a, b):
+    return [int(x["seed"]) == int(y["seed"]) for x, y in zip(a, b)]
+
+
+def _write_seed_check_csv(path, rows):
+    os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+    fields = ["case", "mu_r", "rep", "base_seed", "seed",
+              "same_base_config_match", "manifest_config_match",
+              "changed_base_config_match", "changed_base_seed_match"]
+    with open(path, "w", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=fields)
+        w.writeheader()
+        for row in rows:
+            w.writerow(row)
+
+
+def _plot_seed_check(rows, out_png):
+    os.makedirs(os.path.dirname(out_png), exist_ok=True)
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    plt.rcParams.update({"figure.dpi": 150, "savefig.dpi": 150, "font.size": 10})
+
+    labels = [
+        "same base seed\n(config hash)",
+        "manifest replay\n(config hash)",
+        "changed base seed\n(config hash)",
+        "changed base seed\n(per-case seed)",
+    ]
+    values = [
+        sum(int(r["same_base_config_match"]) for r in rows),
+        sum(int(r["manifest_config_match"]) for r in rows),
+        sum(int(r["changed_base_config_match"]) for r in rows),
+        sum(int(r["changed_base_seed_match"]) for r in rows),
+    ]
+    expected = [len(rows), len(rows), 0, 0]
+    colors = ["#2ca02c" if v == e else "#d62728" for v, e in zip(values, expected)]
+
+    fig, ax = plt.subplots(figsize=(7.0, 4.2))
+    ax.bar(range(len(labels)), values, color=colors, width=0.65)
+    for i, (v, e) in enumerate(zip(values, expected)):
+        ax.text(i, v + 0.25, f"{v}/{len(rows)}\nexpected {e}",
+                ha="center", va="bottom", fontsize=9)
+    ax.set_ylim(0, len(rows) + 2.0)
+    ax.set_ylabel("matching cases out of %d" % len(rows))
+    ax.set_xticks(range(len(labels)))
+    ax.set_xticklabels(labels)
+    ax.set_title("Seed-manifest generation reproducibility")
+    ax.axhline(len(rows), color="0.75", lw=0.8, zorder=0)
+    fig.tight_layout()
+    fig.savefig(out_png)
+    plt.close(fig)
+
+
+def _parse_seed_check_args(argv):
+    p = argparse.ArgumentParser(
+        prog="sweep.py seed-check",
+        description="Check and plot seed-manifest config reproducibility.",
+    )
+    p.add_argument("--base-seed", type=int, default=DEFAULT_BASE_SEED,
+                   help=f"reference base seed (default: {DEFAULT_BASE_SEED})")
+    p.add_argument("--changed-base-seed", type=int, default=DEFAULT_BASE_SEED + 1,
+                   help="different base seed used to prove a new campaign changes")
+    p.add_argument("--csv", default=os.path.join(DATA_DIR, "seed_reproducibility.csv"),
+                   help="where to write the check table")
+    p.add_argument("--plot", default=os.path.join(PLOT_DIR, "seed_reproducibility.png"),
+                   help="where to write the committed evidence figure")
+    return p.parse_args(argv)
+
+
+def seed_check(argv=None):
+    args = _parse_seed_check_args(argv or [])
+    ref_seeds = _derive_seed_manifest(args.base_seed)
+    repeat_seeds = _derive_seed_manifest(args.base_seed)
+    changed_seeds = _derive_seed_manifest(args.changed_base_seed)
+
+    with tempfile.TemporaryDirectory(prefix="sphcal_seedcheck_") as tmp:
+        # Byte identity is defined for regenerating the same checkout paths.
+        # Keep the output root fixed so the comparison isolates seed selection.
+        root = os.path.join(tmp, "checkout", "sweep")
+        manifest = os.path.join(tmp, "seed_manifest.csv")
+        _write_seed_manifest(manifest, ref_seeds, base_seed=args.base_seed)
+        replay_seeds, _ = _load_seed_manifest(manifest)
+
+        _write_configs(root, ref_seeds)
+        ref = _config_hashes(root, ref_seeds)
+        _write_configs(root, repeat_seeds)
+        repeat = _config_hashes(root, repeat_seeds)
+        _write_configs(root, replay_seeds)
+        replay = _config_hashes(root, replay_seeds)
+        _write_configs(root, changed_seeds)
+        changed = _config_hashes(root, changed_seeds)
+
+    same_base_config = _same_hashes(ref, repeat)
+    manifest_config = _same_hashes(ref, replay)
+    changed_base_config = _same_hashes(ref, changed)
+    changed_base_seed = _same_seeds(ref, changed)
+
+    rows = []
+    for i, r in enumerate(ref):
+        rows.append({
+            "case": r["case"],
+            "mu_r": r["mu_r"],
+            "rep": r["rep"],
+            "base_seed": args.base_seed,
+            "seed": r["seed"],
+            "same_base_config_match": int(same_base_config[i]),
+            "manifest_config_match": int(manifest_config[i]),
+            "changed_base_config_match": int(changed_base_config[i]),
+            "changed_base_seed_match": int(changed_base_seed[i]),
+        })
+
+    _write_seed_check_csv(args.csv, rows)
+    _plot_seed_check(rows, args.plot)
+
+    n = len(rows)
+    ok = (
+        sum(same_base_config) == n
+        and sum(manifest_config) == n
+        and sum(changed_base_config) == 0
+        and sum(changed_base_seed) == 0
+        and len({r["seed"] for r in ref}) == n
+    )
+    print("\n=== Seed-manifest reproducibility check ===")
+    print(f"  cases: {n} ({len(MU_R_LIST)} mu_r x {REPS} reps)")
+    print(f"  same base seed config matches: {sum(same_base_config)}/{n} (expected {n})")
+    print(f"  manifest replay config matches: {sum(manifest_config)}/{n} (expected {n})")
+    print(f"  changed base seed config matches: {sum(changed_base_config)}/{n} (expected 0)")
+    print(f"  changed base seed per-case seed matches: {sum(changed_base_seed)}/{n} (expected 0)")
+    print(f"  distinct seeds in reference campaign: {len({r['seed'] for r in ref})}/{n}")
+    print(f"  table -> {args.csv}")
+    print(f"  figure -> {args.plot}")
+    print("RESULT:", "PASS" if ok else "FAIL")
+    return ok
 
 
 # -- heap geometry fit ----------------------------------------------------------
@@ -831,6 +1001,8 @@ def main():
         rest = args
     if cmd == "generate":
         generate(rest)
+    elif cmd == "seed-check":
+        sys.exit(0 if seed_check(rest) else 1)
     elif cmd == "start":
         if rest:
             print("Usage: sweep.py start")
@@ -848,7 +1020,7 @@ def main():
         sys.exit(0 if graph() else 1)
     else:
         print(f"Unknown command: {cmd!r}")
-        print("Usage: sweep.py [generate|start|graph]   (no arg = all three)")
+        print("Usage: sweep.py [generate|seed-check|start|graph]   (no arg = all three)")
         sys.exit(2)
 
 

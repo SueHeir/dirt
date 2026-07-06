@@ -210,6 +210,7 @@ python3 examples/SPH_glass_sphere_calibration/03_angle_of_repose/sweep.py --base
 
 # Or one stage at a time:
 python3 examples/SPH_glass_sphere_calibration/03_angle_of_repose/sweep.py generate --base-seed 20260706
+python3 examples/SPH_glass_sphere_calibration/03_angle_of_repose/sweep.py seed-check
 python3 examples/SPH_glass_sphere_calibration/03_angle_of_repose/sweep.py start
 python3 examples/SPH_glass_sphere_calibration/03_angle_of_repose/sweep.py graph
 ```
@@ -227,6 +228,11 @@ Rerunning `generate` with the same `--base-seed` or with the same
 `--seed-manifest` rewrites byte-identical configs in the same checkout. Changing
 the base seed produces a new independent campaign, and within one campaign every
 replicate still has a distinct per-case seed.
+
+`seed-check` is the lightweight reproducibility gate for the generation workflow:
+it compares generated config SHA-256 fingerprints for a same-base rerun, a
+manifest replay, and a changed-base campaign, then writes the evidence figure
+shown below.
 
 `graph` re-reads `data/repose_sweep.csv`, so you can re-validate and re-plot
 without re-running the simulations. The LAMMPS cross-code leg is **disabled** for
@@ -248,6 +254,15 @@ This runs the representative case (μ_p = 0.16 fixed, μ_r = 0.15) and writes
 `data/repose_results.csv` (the final particle positions).
 
 ## Expected Plots
+
+### Seed-manifest reproducibility
+![seed reproducibility](plots/seed_reproducibility.png)
+
+Same base seed and manifest replay reproduce all 12 per-case config hashes
+(12/12), while changing the base seed reproduces none of the config hashes or
+per-case seeds (0/12). PASS means a campaign is byte-regenerable from its base
+seed or manifest, while independent campaigns and replicates still use distinct
+seeds.
 
 ### θ_r vs μ_r
 ![theta vs mu_r](plots/theta_vs_mu.png)
