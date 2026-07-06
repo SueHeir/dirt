@@ -64,5 +64,5 @@ region = { type = "block", min = [0.002, 0.002, 0.002], max = [0.038, 0.038, 0.0
 dir = "examples/bench_rod_haff_cooling/data"
 
 [run]
-steps = 700000           # reaches t/tc ≈ 5; local slope ≈ -1.59, still short of the -2 asymptote (slope gate FAILs — see VALIDATION.md)
+steps = 1600000            # reaches deeper into the Haff tail (t/tc ≳ 10) without weakening the slope gate
 thermo = 20000

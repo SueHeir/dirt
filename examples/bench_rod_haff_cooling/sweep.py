@@ -61,12 +61,12 @@ CLUMP = [(-0.0012, 0.0, 0.0), (-0.0004, 0.0, 0.0),
 N = 500
 L = 0.04
 DENSITY = 2500.0
-YOUNGS_MOD = 5.0e7
-POISSON = 0.3
-RESTITUTION = 0.9
-FRICTION = 0.3
+YOUNGS_MOD = 7.0e7
+POISSON = 0.245
+RESTITUTION = 0.926
+FRICTION = 0.16
 SIGMA = 0.5
-STEPS = 700_000
+STEPS = 1_600_000
 OUTPUT_EVERY = 2000
 KB = 1.380649e-23
 
@@ -369,11 +369,13 @@ def graph():
         m = t >= t_eq
         return t[m] - t[m][0], T[m] / T[m][0]
 
-    td2, Td2 = restart(np.array(dirt["time"]), np.array(dirt["T_total"]))
-    _, tcd, _, sd, _ = haff_fit(td2, Td2)
+    td = np.array(dirt["time"])
+    Td = np.array(dirt["T_total"])
+    td2, Td2 = restart(td, Td)
+    T0d, tcd, r2d, sd, ttcd = haff_fit(td, Td, t_eq)
     p = td2 > 0
     ax.loglog(td2[p], Td2[p], "o", ms=3, color="#1f77b4", alpha=0.7,
-              label=f"DIRT  (slope {sd:.2f})")
+              label=f"DIRT  (gate slope {sd:.2f})")
     if lammps:
         tl2, Tl2 = restart(np.array(lammps["time"]), np.array(lammps["T_total"]))
         _, _, _, sl, _ = haff_fit(tl2, Tl2)
@@ -381,11 +383,15 @@ def graph():
         ax.loglog(tl2[q], Tl2[q], "s", ms=3, color="#ff7f0e", alpha=0.7,
                   label=f"LAMMPS  (slope {sl:.2f})")
     tf = np.linspace(td2[p][0], td2[-1], 300)
-    ax.loglog(tf, 1.0 / (1 + tf / tcd) ** 2, "-", color="black", lw=1.5,
+    haff_abs = T0d / (1 + (tf + t_eq) / tcd) ** 2
+    haff_eq = T0d / (1 + t_eq / tcd) ** 2
+    ax.loglog(tf, haff_abs / haff_eq, "-", color="black", lw=1.5,
               label=f"Haff fit  T0/(1+t/tc)²,  tc={tcd:.2e}s")
-    # The Haff fit IS the -2 law (it bends to slope -2 only at t >> tc); this run
-    # reaches t/tc ~ 9, so the data sits at ~-1.6 and a literal -2 line would
-    # diverge from it. The fit lying on the data is the validation.
+    ax.text(0.04, 0.06, f"Gate: -2.3 < slope < -1.6\nmeasured {sd:.2f} at t/tc={ttcd:.1f}\nR²={r2d:.4f}",
+            transform=ax.transAxes, fontsize=9,
+            bbox={"facecolor": "white", "edgecolor": "0.8", "alpha": 0.9})
+    # The Haff fit is the -2 law (it tends to slope -2 only at t >> tc); the
+    # annotation reports the exact slope gate used by validate().
     ax.set_xlabel("Time since equilibration [s]")
     ax.set_ylabel(r"$T_\mathrm{total}/T(t_\mathrm{eq})$")
     ax.set_title(f"Cooling from equilibration onward (skipped first {t_eq:.2f} s)")
