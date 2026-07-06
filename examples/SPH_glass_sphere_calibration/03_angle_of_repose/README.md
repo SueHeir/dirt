@@ -27,7 +27,8 @@ deposits (it does not bounce apart).
 > physical limit of the protocol/parameters, not a wiring bug (the `sds` rolling
 > model is correctly applied to grains and the floor — see "Why μ_r does not
 > close the gate"). The pipeline (build, smoke, full sweep, table, plots,
-> entropy-seeded reps) all run; the validation gate honestly reports FAIL.
+> manifest-recorded independent reps) all run; the validation gate honestly
+> reports FAIL.
 
 ## Physics
 
@@ -51,8 +52,8 @@ the expected behaviour is:
 - θ_r **increases monotonically** with μ_r,
 - at least one μ_r lands θ_r in the measured glass band **[22, 26]°** (the
   calibration closure),
-- the heap is **reproducible**: independent **entropy-seeded** random packs give
-  θ_r with a small but non-zero run-to-run spread.
+- the heap is **reproducible**: independent random packs, with seeds recorded in
+  a manifest, give θ_r with a small but non-zero run-to-run spread.
 
 ## Material Properties
 
@@ -69,15 +70,16 @@ the expected behaviour is:
 | Radius R | 2.0 | mm |
 | Mobile heap particles | 1200 | — |
 | Confining-cylinder radius | 25 | mm |
-| Reps per μ_r (entropy-seeded) | 2 | — |
+| Reps per μ_r (manifest-recorded seeds) | 2 | — |
 | Gravity g_z | −9.81 | m/s² |
 
 E is softened to 10 MPa (a routine DEM practice) so the Rayleigh-criterion
 timestep the solver auto-selects (≈ 2.6 × 10⁻⁵ s at R = 2 mm) is large enough
 that each heap settles in a few seconds of wall-clock time. **μ_p is fixed** at
 the measured glass value while **μ_r is swept**, so θ_r(μ_r) is isolated. Each
-(μ_r, rep) case uses a distinct entropy-derived `seed` on the inserter so the two
-reps are independent random packs (the inserter RNG is otherwise deterministic).
+(μ_r, rep) case uses a distinct recorded `seed` on the inserter so the two reps
+are independent random packs while remaining exactly regenerable (the inserter RNG
+is otherwise deterministic).
 
 ### Rolling resistance — the `sds` spring–dashpot–slider model
 
@@ -126,14 +128,15 @@ harmless: it is deactivated at the lift before the heap forms.
 
 - **Sliding friction μ_p**: 0.16 (FIXED, measured glass)
 - **Rolling friction μ_r**: 0.0, 0.05, 0.10, 0.15, 0.20, 0.30 (SWEPT)
-- **Replicates**: 2 independent **entropy-seeded** random packs per μ_r, giving a
-  direct run-to-run spread for the reproducibility check.
+- **Replicates**: 2 independent random packs per μ_r. Their per-case inserter
+  seeds are derived from a base seed or replayed from a manifest, giving a direct
+  run-to-run spread for the reproducibility check without unrecoverable entropy.
 
 In the lift-the-cylinder protocol the heap forms by a column *collapse* on the
 frictional floor. With μ_p fixed, the intent is that raising μ_r arrests the
 surface grains' rolling and steepens the cone.
 
-### Measured result (2 entropy-seeded packs per μ_r)
+### Measured result (2 manifest-recorded packs per μ_r)
 
 | μ_r | mean θ_r | std |
 |-----|----------|-----|
@@ -147,8 +150,8 @@ surface grains' rolling and steepens the cone.
 **Result: FAIL.** θ_r never reaches the [22, 26]° glass band; it tops out near
 ~6–11° at the highest μ_r (and the heap-fit reads 0° on most cases because the
 deposits are wide, shallow pancakes with no resolvable cone flank). Reps **do**
-differ (distinct entropy seeds → distinct packs → non-zero spread), confirming the
-reproducibility plumbing, but there is **no μ_r closure** to report.
+differ (distinct manifest seeds → distinct packs → non-zero spread), confirming
+the reproducibility plumbing, but there is **no μ_r closure** to report.
 
 ### Why μ_r does not close the gate (a physical limit, not a bug)
 
@@ -191,7 +194,7 @@ The "lift the cylinder" protocol, per case:
 | θ_r monotonic in μ_r | mean may dip ≤ 2.5° between μ_r steps | stochastic slack |
 | θ_r overall increase | θ_r(μ_r,max) > θ_r(μ_r,min) + 1° | rolling raises the heap |
 | Glass-band closure | some μ_r lands θ_r in [22°, 26°] | the calibrated μ_r |
-| Reproducibility | per-μ_r std dev ≤ 5° (but > 0) | over the 2 entropy-seeded packs |
+| Reproducibility | per-μ_r std dev ≤ 5° (but > 0) | over the 2 manifest-recorded packs |
 
 `graph` prints the per-μ_r table and a PASS/FAIL, exits non-zero on FAIL, and — on
 a closure — prints `set rolling_friction = <μ_r> in the canonical material`.
@@ -203,13 +206,27 @@ all three stages in order.
 
 ```bash
 # Everything: generate configs → build & run → validate & plot
-python3 examples/SPH_glass_sphere_calibration/03_angle_of_repose/sweep.py
+python3 examples/SPH_glass_sphere_calibration/03_angle_of_repose/sweep.py --base-seed 20260706
 
 # Or one stage at a time:
-python3 examples/SPH_glass_sphere_calibration/03_angle_of_repose/sweep.py generate
+python3 examples/SPH_glass_sphere_calibration/03_angle_of_repose/sweep.py generate --base-seed 20260706
 python3 examples/SPH_glass_sphere_calibration/03_angle_of_repose/sweep.py start
 python3 examples/SPH_glass_sphere_calibration/03_angle_of_repose/sweep.py graph
 ```
+
+`generate` writes both the per-case TOML files under `sweep/` and the exact seed
+table under `data/seed_manifest.csv` by default. To reproduce a campaign exactly,
+keep that CSV with the run record and regenerate from it:
+
+```bash
+python3 examples/SPH_glass_sphere_calibration/03_angle_of_repose/sweep.py generate \
+  --seed-manifest examples/SPH_glass_sphere_calibration/03_angle_of_repose/data/seed_manifest.csv
+```
+
+Rerunning `generate` with the same `--base-seed` or with the same
+`--seed-manifest` rewrites byte-identical configs in the same checkout. Changing
+the base seed produces a new independent campaign, and within one campaign every
+replicate still has a distinct per-case seed.
 
 `graph` re-reads `data/repose_sweep.csv`, so you can re-validate and re-plot
 without re-running the simulations. The LAMMPS cross-code leg is **disabled** for
@@ -235,10 +252,10 @@ This runs the representative case (μ_p = 0.16 fixed, μ_r = 0.15) and writes
 ### θ_r vs μ_r
 ![theta vs mu_r](plots/theta_vs_mu.png)
 
-Mean DIRT θ_r (filled, with ±1 std-dev error bars over the 2 entropy-seeded packs)
-and the individual runs versus μ_r, with the measured glass band [22, 26]° shaded.
-In the current data the curve stays well below the band (see "Results"): θ_r does
-not reach the band at any μ_r.
+Mean DIRT θ_r (filled, with ±1 std-dev error bars over the 2 manifest-recorded
+independent packs) and the individual runs versus μ_r, with the measured glass
+band [22, 26]° shaded. In the current data the curve stays well below the band
+(see "Results"): θ_r does not reach the band at any μ_r.
 
 ### Heap cross-section
 ![heap profile](plots/heap_profile.png)

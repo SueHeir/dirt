@@ -21,8 +21,9 @@ Validation (the gate):
     2. at least one mu_r lands theta_r in the measured glass band [22,26] deg —
        that mu_r is the closure to set as rolling_friction in the canonical
        glass material,
-    3. results are REPRODUCIBLE: the run-to-run spread (over fresh random packs)
-       is small but NONZERO (the inserter is entropy-seeded, so reps differ).
+    3. results are REPRODUCIBLE: the run-to-run spread (over independent packs)
+       is small but NONZERO. The per-case seeds are derived from a recorded base
+       seed or read back from a seed manifest, so a campaign can be regenerated.
 
 The heap sits directly on a real frictional plane wall (z = 0, normal +z):
 dirt_wall applies Mindlin sliding (tangential) friction on plane walls using the
@@ -31,13 +32,16 @@ the bottom layer from sliding out, so the pile holds a slope — no frozen
 particle bed is needed. See README "Assumptions".
 
 Commands (from anywhere):
-    python3 examples/SPH_glass_sphere_calibration/03_angle_of_repose/sweep.py generate
+    python3 examples/SPH_glass_sphere_calibration/03_angle_of_repose/sweep.py generate --base-seed 20260706
+    python3 examples/SPH_glass_sphere_calibration/03_angle_of_repose/sweep.py generate --seed-manifest data/seed_manifest.csv
     python3 examples/SPH_glass_sphere_calibration/03_angle_of_repose/sweep.py start
     python3 examples/SPH_glass_sphere_calibration/03_angle_of_repose/sweep.py graph
     python3 examples/SPH_glass_sphere_calibration/03_angle_of_repose/sweep.py   # all
 
-Each (mu_r) case is run REPS times with independent random packs (the inserter is
-entropy-seeded), so the spread of theta_r is a direct reproducibility measure.
+Each (mu_r) case is run REPS times with independent random packs. The inserter is
+deterministic given its seed; `generate` assigns a distinct seed to every
+(mu_r, rep) case from a base seed, records those seeds in a manifest, and can read
+that manifest back to reproduce the exact same configs.
 
 The angle is fit in this script from the settled particle positions DIRT dumps:
 the heap is centered on its (x,y) centroid, particles are binned by radial
@@ -77,8 +81,9 @@ Reference (empirical, for context — values vary with material/protocol):
 import os
 import sys
 import csv
+import argparse
+import hashlib
 import math
-import random
 import subprocess
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -92,6 +97,7 @@ DATA_DIR = os.path.join(SCRIPT_DIR, "data")
 PLOT_DIR = os.path.join(SCRIPT_DIR, "plots")
 SWEEP_CSV = os.path.join(DATA_DIR, "repose_sweep.csv")     # DIRT theta_r per (mu, rep)
 LAMMPS_CSV = os.path.join(DATA_DIR, "lammps_results.csv")  # LAMMPS theta_r per mu
+SEED_MANIFEST = os.path.join(DATA_DIR, "seed_manifest.csv")
 
 # LAMMPS leg is DISABLED for this calibration (DIRT-only, for speed). The empty
 # list means the LAMMPS cross-code overlay is never run; only DIRT runs/plots.
@@ -109,7 +115,8 @@ LAMMPS_BINS = []
 # cone, so theta_r rises monotonically with mu_r.
 MU_P = 0.16                                  # FIXED sliding (Coulomb) friction (measured glass)
 MU_R_LIST = [0.0, 0.05, 0.10, 0.15, 0.20, 0.30]  # rolling friction sweep (the swept variable)
-REPS = 2                          # independent packs per mu_r (entropy-seeded; reproducibility)
+REPS = 2                          # independent packs per mu_r (distinct recorded seeds)
+DEFAULT_BASE_SEED = 20260706       # deterministic campaign seed used by generate unless overridden
 
 # Measured glass angle-of-repose band the calibration targets.
 GLASS_BAND_LO_DEG = 22.0
@@ -251,11 +258,9 @@ count = {heap_count}
 radius = {radius}
 density = {density}
 velocity_z = -0.1
-# Per-case insertion seed (entropy-derived at generate time). The inserter RNG is
-# deterministic given a seed, so a distinct seed per rep yields an INDEPENDENT
-# random pack — the run-to-run spread of theta_r is then a real reproducibility
-# measure. The seed is written into the saved config so each case stays
-# reproducible once generated.
+# Per-case insertion seed. The inserter RNG is deterministic given a seed, so a
+# distinct seed per rep yields an INDEPENDENT random pack while the seed manifest
+# makes the campaign exactly regenerable.
 seed = {seed}
 region = {{ type = "cylinder", center = [0.0, 0.0], radius = {ins_r}, axis = "z", lo = 0.003, hi = 0.14 }}
 [output]
@@ -378,23 +383,124 @@ def _dirt_config(mu_r, outdir, seed):
 
 
 # -- generate -------------------------------------------------------------------
-def generate():
+def _fmt_mu(mu_r):
+    return f"{mu_r:g}"
+
+
+def _case_key(mu_r, rep):
+    return (_fmt_mu(mu_r), int(rep))
+
+
+def _seed_from_base(base_seed, mu_r, rep):
+    """Stable 63-bit positive seed for one case, independent across reps."""
+    payload = f"sphcal_angle_of_repose|base={int(base_seed)}|mu_r={_fmt_mu(mu_r)}|rep={int(rep)}"
+    digest = hashlib.blake2b(payload.encode("ascii"), digest_size=8).digest()
+    seed = int.from_bytes(digest, "big") & ((1 << 63) - 1)
+    return seed or 1
+
+
+def _expected_cases():
+    return [(mu_r, rep) for mu_r in MU_R_LIST for rep in range(REPS)]
+
+
+def _derive_seed_manifest(base_seed):
+    return {
+        _case_key(mu_r, rep): _seed_from_base(base_seed, mu_r, rep)
+        for (mu_r, rep) in _expected_cases()
+    }
+
+
+def _load_seed_manifest(path):
+    seeds = {}
+    base_seeds = set()
+    with open(path, newline="") as f:
+        reader = csv.DictReader(f)
+        required = {"mu_r", "rep", "seed"}
+        missing = required - set(reader.fieldnames or [])
+        if missing:
+            raise ValueError(f"{path} is missing columns: {', '.join(sorted(missing))}")
+        for row in reader:
+            mu_s = _fmt_mu(float(row["mu_r"]))
+            rep = int(row["rep"])
+            seed = int(row["seed"])
+            if seed <= 0 or seed >= (1 << 63):
+                raise ValueError(f"{path} has out-of-range seed for mu_r={mu_s} rep={rep}: {seed}")
+            key = (mu_s, rep)
+            if key in seeds:
+                raise ValueError(f"{path} has duplicate seed row for mu_r={mu_s} rep={rep}")
+            seeds[key] = seed
+            base = row.get("base_seed", "").strip()
+            if base:
+                base_seeds.add(int(base))
+    expected = {_case_key(mu_r, rep) for (mu_r, rep) in _expected_cases()}
+    got = set(seeds)
+    missing = sorted(expected - got)
+    extra = sorted(got - expected)
+    if missing or extra:
+        msg = []
+        if missing:
+            msg.append("missing " + ", ".join(f"mu_r={m} rep={r}" for (m, r) in missing))
+        if extra:
+            msg.append("extra " + ", ".join(f"mu_r={m} rep={r}" for (m, r) in extra))
+        raise ValueError(f"{path} does not match this sweep: {'; '.join(msg)}")
+    if len(base_seeds) > 1:
+        raise ValueError(f"{path} has inconsistent base_seed values: {sorted(base_seeds)}")
+    base_seed = next(iter(base_seeds)) if base_seeds else None
+    return seeds, base_seed
+
+
+def _write_seed_manifest(path, seeds, base_seed=None):
+    os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+    with open(path, "w", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=["case", "mu_r", "rep", "seed", "base_seed"])
+        w.writeheader()
+        for (mu_r, rep) in _expected_cases():
+            w.writerow({
+                "case": case_tag(mu_r, rep),
+                "mu_r": _fmt_mu(mu_r),
+                "rep": rep,
+                "seed": seeds[_case_key(mu_r, rep)],
+                "base_seed": "" if base_seed is None else int(base_seed),
+            })
+
+
+def _parse_generate_args(argv):
+    p = argparse.ArgumentParser(
+        prog="sweep.py generate",
+        description="Generate reproducible DIRT configs and a per-case seed manifest.",
+    )
+    p.add_argument("--base-seed", type=int, default=DEFAULT_BASE_SEED,
+                   help=f"base seed used to derive per-case seeds (default: {DEFAULT_BASE_SEED})")
+    p.add_argument("--seed-manifest", default=None,
+                   help="CSV manifest to read exact per-case seeds from")
+    p.add_argument("--write-seed-manifest", default=SEED_MANIFEST,
+                   help=f"where to record the generated/read seed table (default: {SEED_MANIFEST})")
+    return p.parse_args(argv)
+
+
+def generate(argv=None):
+    args = _parse_generate_args(argv or [])
+    if args.seed_manifest:
+        seeds, base_seed = _load_seed_manifest(args.seed_manifest)
+        manifest_source = f"manifest {args.seed_manifest}"
+    else:
+        seeds = _derive_seed_manifest(args.base_seed)
+        manifest_source = f"base seed {args.base_seed}"
+        base_seed = args.base_seed
+
     n = 0
-    # Entropy source for per-case insertion seeds: each (mu_r, rep) gets a fresh
-    # random u64 so the reps are INDEPENDENT packs (the inserter RNG is
-    # deterministic given a seed). The seed is baked into the saved config, so a
-    # generated case re-runs identically — only a re-generate reshuffles the packs.
-    sysrand = random.SystemRandom()
     for mu_r in MU_R_LIST:
         for rep in range(REPS):
             cdir = case_dir(mu_r, rep)
             os.makedirs(cdir, exist_ok=True)
-            seed = sysrand.getrandbits(63)  # u64-safe positive seed
+            seed = seeds[_case_key(mu_r, rep)]
             with open(os.path.join(cdir, "config.toml"), "w") as f:
                 f.write(_dirt_config(mu_r, cdir, seed))
             n += 1
+    _write_seed_manifest(args.write_seed_manifest, seeds, base_seed=base_seed)
     print(f"Generated {n} DIRT configs ({len(MU_R_LIST)} mu_r x {REPS} reps, "
-          f"fixed sliding mu_p={MU_P}, entropy-seeded packs) under {SWEEP_DIR}")
+          f"fixed sliding mu_p={MU_P}, seeds from {manifest_source}) under {SWEEP_DIR}")
+    print(f"Seed manifest -> {args.write_seed_manifest}")
 
 
 # -- heap geometry fit ----------------------------------------------------------
@@ -716,15 +822,27 @@ def graph():
 
 # -- dispatch -------------------------------------------------------------------
 def main():
-    cmd = sys.argv[1] if len(sys.argv) > 1 else "all"
+    args = sys.argv[1:]
+    if args and not args[0].startswith("-"):
+        cmd = args[0]
+        rest = args[1:]
+    else:
+        cmd = "all"
+        rest = args
     if cmd == "generate":
-        generate()
+        generate(rest)
     elif cmd == "start":
+        if rest:
+            print("Usage: sweep.py start")
+            sys.exit(2)
         start()
     elif cmd == "graph":
+        if rest:
+            print("Usage: sweep.py graph")
+            sys.exit(2)
         sys.exit(0 if graph() else 1)
     elif cmd == "all":
-        generate()
+        generate(rest)
         start()
         print()
         sys.exit(0 if graph() else 1)
