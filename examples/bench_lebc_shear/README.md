@@ -91,6 +91,27 @@ near random-close-packing, is reachable. The sweep runs two families:
    `data/calibration.yaml` for `sph_constitutive::MaterialParams`. Glass-bead
    anchors: `μ_s ≈ 0.38`, `μ₂ ≈ 0.64`, `I₀ ≈ 0.28` (possibly lower for spheres).
 
+![Kinetic-theory validation](plots/kt_validation.png)
+
+*Frictionless LEBC shear: DIRT points over the Lun / extended kinetic-theory curves
+and independent LAMMPS / Fortran / LIGGGHTS references. PASS means at least 60% of
+KT points are within the printed 15% normal-stress and 20% shear-stress bands.*
+
+![mu(I) fit](plots/mu_of_I.png)
+
+*Frictional production sweep: measured μ = |σ_xy|/P over inertial number I with the
+fitted GDR MiDi / da Cruz μ(I) curve used by the downstream closure.*
+
+![Phi(I) trend](plots/phi_of_I.png)
+
+*Frictional production sweep: measured solid fraction Φ over inertial number I, the
+compaction side of the μ(I) / Φ(I) calibration.*
+
+![Steady-state convergence](plots/convergence.png)
+
+*Frictionless KT cases: stress and granular temperature versus strain with the
+averaging window shaded. PASS requires the printed window drift to stay below 15%.*
+
 ## Outputs
 
 | Path | Tracked? | Contents |
