@@ -68,7 +68,7 @@ aux:
 
 # ---- Macro validation (not a closure input; the end-to-end gate) -------------
 validation:
-  column_collapse:                 # #7 — runout vs Lube/Lajeunesse (PASS, ~10–15%)
-    mu_r_pinned: 0.10              # pinned here; polydispersity fixed most over-runout
+  column_collapse:                 # #7 — runout vs Lube/Lajeunesse (currently FAILs linear exponent)
+    mu_r_pinned: 0.10              # campaign canonical; 03_angle_of_repose currently reports no transferable mu_r closure
     law: "(L_f−L0)/L0 ≈ 1.2a (a≲3), 1.6a^(2/3) (a≳3)"
   repose: "qualitative only — protocol-sensitive (9–35°); θ_r≈21° at gentle settle → μ_s≈0.38"

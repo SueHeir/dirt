@@ -16,7 +16,7 @@ youngs_mod     = 7.0e7    # softened from ~65 GPa real glass (rigid-grain limit)
 poisson_ratio  = 0.245    # glass
 restitution    = 0.926    # measured glass–glass COR (exact-COR damping → realized = nominal)
 friction       = 0.16     # measured glass–glass sliding μ_p
-# rolling_friction = <pinned by the repose deliverable>
+rolling_friction = 0.10   # campaign canonical; 03_angle_of_repose currently has no transferable μ_r closure
 
 # NOTE: density is a per-insert property, not a material property — it goes on
 # the particle insert block, NOT in [[dem.materials]]:
@@ -30,7 +30,7 @@ density        = 2500.0   # kg/m³ (glass)
 |---|---|---|---|
 | 1 | **Shear rheology** (Lees–Edwards rheometer) | `μ(I)`, `Φ(I)`, `ρ_c = Φ_max ρ_s` | `bench_lebc_shear` |
 | 2 | **Isotropic compression** | bulk modulus `K` / EOS slope | (new) |
-| 3 | **Angle of repose** | rolling friction `μ_r` (pins macroscopic friction) | `bench_angle_of_repose` |
+| 3 | **Angle of repose** | rolling friction `μ_r` check; currently no transferable closure | `bench_angle_of_repose` |
 | 4 | **Enduring-contact stress** (dense rheometer residual) | `σ_contact(Φ)` = `p_DEM − p_KT` (the rate-independent branch) | `bench_lebc_shear` |
 | 5 | **Granular-temperature dissipation** (Haff cooling) | dissipation coefficient / cooling rate | `bench_sphere_haff_cooling` |
 | 6 | **Granular-temperature conductivity** (vibro-fluidized bed) | `κ(Φ)` (fluctuation-energy conduction) | `bench_granular_conductivity` |
