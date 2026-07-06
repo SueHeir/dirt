@@ -735,6 +735,13 @@ Asserted against `1×1×1`, sampled from the MPI-gathered `[dump]` frames:
 - **per-atom trajectory** — final velocities and minimum-image positions agree to
   the FP-associativity floor (measured `pos ~6e-17`, `vel ~8e-14` over 4000 steps).
 
+![MPI decomposition deltas](bench_mpi_decomposition/plots/mpi_decomposition_deltas.png)
+
+*Measured `2×1×1` and `2×2×1` tag/count, momentum, energy, and final per-atom
+state deltas against the `1×1×1` serial reference. The dashed line is the
+unchanged `1e-9` pass tolerance; the tag/count identity delta is exactly zero.
+PASS.*
+
 All well under the `1e-9` gate (the FP floor `bench_restart_determinism` also uses);
 agreement is essentially machine-epsilon, so this is not a loosened band. **Status:
 PASS.** This closes the "MPI domain decomposition" gap formerly listed below.

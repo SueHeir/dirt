@@ -64,6 +64,8 @@ EXAMPLE = "bench_mpi_decomposition"
 BASE_CONFIG = os.path.join(HERE, "config.toml")
 BIN = os.path.join(REPO_ROOT, "target", "release", "examples", EXAMPLE)
 WORK = os.path.join(HERE, "data", "work")  # under data/ so it is gitignored
+PLOTS = os.path.join(HERE, "plots")
+DELTA_PLOT = os.path.join(PLOTS, "mpi_decomposition_deltas.png")
 MARKER = "# === SWEEP CONTROL BELOW"
 
 TOTAL_STEPS = 4000     # integration steps (0 .. TOTAL_STEPS-1)
@@ -249,6 +251,57 @@ def all_finite(atoms):
     return True
 
 
+def write_delta_plot(rows):
+    """Plot the measured multi-rank deltas against the 1x1x1 reference."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    os.makedirs(PLOTS, exist_ok=True)
+
+    metrics = [
+        ("tag/count", "tag_delta"),
+        ("momentum", "momentum_match"),
+        ("KE(t)", "ke_match"),
+        ("final pos", "pos"),
+        ("final vel", "vel"),
+    ]
+    names = [r["name"] for r in rows]
+    x = list(range(len(metrics)))
+    width = 0.34
+
+    fig, ax = plt.subplots(figsize=(8.2, 4.8))
+    colors = ["#2878b5", "#d95f02"]
+    for j, row in enumerate(rows):
+        offset = (j - (len(rows) - 1) / 2.0) * width
+        vals = [row[key] for _, key in metrics]
+        plot_vals = [max(v, 1e-30) for v in vals]  # keep exact-zero tag bars visible on log scale
+        bars = ax.bar([i + offset for i in x], plot_vals, width, label=names[j],
+                      color=colors[j % len(colors)])
+        for bar, val in zip(bars, vals):
+            if val == 0.0:
+                ax.text(bar.get_x() + bar.get_width() / 2, 2e-30, "0",
+                        ha="center", va="bottom", fontsize=8, color="#333333")
+
+    ax.axhline(TOL, color="#b2182b", linestyle="--", linewidth=1.4,
+               label=f"pass tolerance {TOL:.0e}")
+    ax.set_yscale("log")
+    ax.set_ylim(1e-30, 2e-8)
+    ax.set_xticks(x)
+    ax.set_xticklabels([label for label, _ in metrics])
+    ax.set_ylabel("relative delta vs 1x1x1 reference")
+    ax.set_title("bench_mpi_decomposition: multi-rank agreement")
+    ax.grid(True, axis="y", which="both", linestyle=":", linewidth=0.6, alpha=0.6)
+    ax.legend(loc="upper left", ncol=3, fontsize=8)
+    fig.text(0.99, 0.02,
+             "tag/count is an exact identity check; zeros are drawn at the log-scale floor",
+             ha="right", va="bottom", fontsize=8, color="#444444")
+    fig.tight_layout(rect=[0, 0.06, 1, 1])
+    fig.savefig(DELTA_PLOT, dpi=180)
+    plt.close(fig)
+    print(f"\nWrote {os.path.relpath(DELTA_PLOT, REPO_ROOT)}")
+
+
 # ── main ─────────────────────────────────────────────────────────────────────
 
 def main():
@@ -323,6 +376,7 @@ def main():
     worst_mom_drift = 0.0
     worst_mom_match = 0.0
     worst_ke_match = 0.0
+    plot_rows = []
     for (name, px, py, pz, nranks) in DECOMPS:
         fr = frames[name]
         steps = sorted(fr)
@@ -330,6 +384,10 @@ def main():
         # (a) atom-count / identity conservation at EVERY frame.
         count_ok = all(len(fr[s]) == n_expected and set(fr[s]) == ref_tags for s in steps)
         bad = next((s for s in steps if len(fr[s]) != n_expected or set(fr[s]) != ref_tags), None)
+        tag_delta = max(
+            (abs(len(fr[s]) - n_expected) + len(set(fr[s]).symmetric_difference(ref_tags))) / n_expected
+            for s in steps
+        )
         check(f"{name}: atom-count conserved", count_ok,
               f"all {len(steps)} frames hold exactly {n_expected} atoms (tag set intact)"
               if count_ok else f"frame at step {bad} has {len(fr[bad])} atoms / tag mismatch")
@@ -366,11 +424,20 @@ def main():
                   f"max rel = {wp:.2e} (tol {TOL:.0e})")
             check(f"{name}: per-atom velocities", wv <= TOL,
                   f"max rel = {wv:.2e} (tol {TOL:.0e})")
+            plot_rows.append({
+                "name": f"{name} ({px}x{py}x{pz})",
+                "tag_delta": tag_delta,
+                "momentum_match": mom_match,
+                "ke_match": ke_match,
+                "pos": wp,
+                "vel": wv,
+            })
 
     print("-" * 78)
     print(f"Worst per-atom: pos {worst_overall_pos:.2e}, vel {worst_overall_vel:.2e}  |  "
           f"momentum drift {worst_mom_drift:.2e}, match {worst_mom_match:.2e}  |  "
           f"KE match {worst_ke_match:.2e}   (all << {TOL:.0e} FP floor)")
+    write_delta_plot(plot_rows)
     print(f"\nResult: {passed}/{total} checks passed")
     if passed == total:
         print("ALL CHECKS PASSED")

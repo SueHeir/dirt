@@ -50,6 +50,13 @@ momentum  : drift 9.1e-23 , cross-decomposition match 4.2e-23
 KE        : cross-decomposition match 7.5e-16
 ```
 
+![MPI decomposition deltas](plots/mpi_decomposition_deltas.png)
+
+*Measured `2×1×1` and `2×2×1` tag/count, momentum, energy, and final per-atom
+state deltas against the `1×1×1` serial reference. The dashed line is the
+unchanged `1e-9` pass tolerance; the tag/count identity delta is exactly zero.
+PASS.*
+
 — four or more orders of magnitude under the `1e-9` acceptance gate (the same
 FP-floor band `bench_restart_determinism` uses). The gate is not a relaxed
 physics tolerance; the runs agree essentially to machine epsilon.
