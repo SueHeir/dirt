@@ -215,8 +215,8 @@ serde = { version = "1", features = ["derive"] }
 toml = "0.8"
 dirt_clump = { path = "./crates/dirt_clump" }
 dirt_measure_plane = { path = "./crates/dirt_measure_plane" }
-soil_derive = { git = "ssh://git@192.168.0.170:2222/SueHeir/soil.git", branch = "main" }
-soil_deform = { git = "ssh://git@192.168.0.170:2222/SueHeir/soil.git", branch = "main", default-features = false }
+soil_derive = { git = "ssh://git@192.168.0.170:2222/SueHeir/soil.git", branch = "auto/soil-region-fallible-bounded-sampling" }
+soil_deform = { git = "ssh://git@192.168.0.170:2222/SueHeir/soil.git", branch = "auto/soil-region-fallible-bounded-sampling", default-features = false }
 grass_scheduler = { git = "ssh://git@192.168.0.170:2222/SueHeir/grass.git", branch = "main" }
 # Force libffi-sys to use system libffi (via pkg-config) instead of building
 # from source. libffi-sys 2.3.0 has a broken aarch64 macOS assembler; Homebrew

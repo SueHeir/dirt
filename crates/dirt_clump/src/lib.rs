@@ -1165,7 +1165,10 @@ fn insert_clumps_with_rng<R: Rng>(
 
     while inserted < insert.count && attempts < max_attempts {
         attempts += 1;
-        let pos = region.random_point_inside(rng);
+        let pos = region.random_point_inside(rng).unwrap_or_else(|e| {
+            eprintln!("ERROR: invalid region in [[clump.insert]]: {}", e);
+            std::process::exit(1);
+        });
 
         // Check overlap with existing clump COMs
         let min_sep = 2.0 * eff_radius * 1.05; // 5% margin
