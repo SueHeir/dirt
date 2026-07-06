@@ -234,7 +234,12 @@ Common keys (all wall types) and per-geometry keys:
 | `temperature` | f64 | all | none | Stored, never read — hook for external heat transfer. |
 | `point_x/y/z` | f64 | plane | `0.0` | A point on the plane. |
 | `normal_x/y/z` | f64 | plane | `0.0` | Outward normal (normalized; fatal if zero). |
-| `bound_{x,y,z}_{low,high}` | f64 | plane | ±∞ | AABB restricting where the plane is active (finite faces). |
+| `bound_x_low` | f64 | plane | `-inf` | Lowest particle-center `x` coordinate where the plane is active. |
+| `bound_x_high` | f64 | plane | `+inf` | Highest particle-center `x` coordinate where the plane is active. |
+| `bound_y_low` | f64 | plane | `-inf` | Lowest particle-center `y` coordinate where the plane is active. |
+| `bound_y_high` | f64 | plane | `+inf` | Highest particle-center `y` coordinate where the plane is active. |
+| `bound_z_low` | f64 | plane | `-inf` | Lowest particle-center `z` coordinate where the plane is active. |
+| `bound_z_high` | f64 | plane | `+inf` | Highest particle-center `z` coordinate where the plane is active. |
 | `velocity` | [f64;3] | plane | none | Constant-velocity motion [m/s]. |
 | `oscillate` | table | plane | none | `{ amplitude, frequency }` — sinusoidal along normal. |
 | `servo` | table | plane | none | `{ target_force, max_velocity, gain }` — force controller. |
@@ -249,6 +254,63 @@ Motion (`velocity`/`oscillate`/`servo`) is **plane-only**; curved and region
 walls are permanently static. Adhesion via `surface_energy` is also plane-only.
 Plane, cylinder, sphere, and region walls are documented in full in
 [Walls](../physics/walls.md).
+
+Plane bounds are an axis-aligned activation box for the plane wall. A particle
+center outside any configured `bound_*` interval is skipped before the plane
+distance/contact calculation. The bounds do not turn the wall into a moving
+mesh face: wall motion still updates only the plane point and velocity.
+
+Minimal finite funnel from bounded plane faces:
+
+```toml
+# +X face
+[[wall]]
+type = "plane"
+point_x = 0.04
+normal_x = -0.94
+normal_z = 0.34
+bound_y_low = 0.0
+bound_y_high = 0.04
+bound_z_low = 0.02
+bound_z_high = 0.12
+material = "glass"
+
+# -X face
+[[wall]]
+type = "plane"
+point_x = 0.00
+normal_x = 0.94
+normal_z = 0.34
+bound_y_low = 0.0
+bound_y_high = 0.04
+bound_z_low = 0.02
+bound_z_high = 0.12
+material = "glass"
+
+# +Y face
+[[wall]]
+type = "plane"
+point_y = 0.04
+normal_y = -0.94
+normal_z = 0.34
+bound_x_low = 0.0
+bound_x_high = 0.04
+bound_z_low = 0.02
+bound_z_high = 0.12
+material = "glass"
+
+# -Y face
+[[wall]]
+type = "plane"
+point_y = 0.00
+normal_y = 0.94
+normal_z = 0.34
+bound_x_low = 0.0
+bound_x_high = 0.04
+bound_z_low = 0.02
+bound_z_high = 0.12
+material = "glass"
+```
 
 ## Bonds (`DemBondPlugin`)
 
