@@ -60,6 +60,12 @@ Each run writes `config_<variant>_stats.csv`:
 frozen_pairs, skipped_pairs, top_z` (`frozen_pairs` counts plug-frozen
 contacts; `top_z` is the tallest particle, a settled-bed height proxy).
 
+For the short matched validation pair, run both `val_*.toml` configs and then:
+
+```bash
+python3 examples/hopper_quiescence/plot_results.py --prefix val
+```
+
 `bench.sh` runs both variants and reports: **(A)** wall time split by phase
 (filling vs emptying), **(B)** the settled fill height (max z at the
 end-of-filling step) baseline vs coherence, and **(C)** the emptying-speed
@@ -107,6 +113,14 @@ re-piled discharge sleeps fully (KE = 0, 97% pairs skipped) by the end.
   (~1%); both variants reach 90% discharged at step 109000 and fully empty
   (5000/5000) by step 120000.
 
+![Hopper quiescence validation](plots/hopper_quiescence_validation.png)
+
+*Short matched `val_*.toml` run: coherence is plotted against the baseline
+reference discharge curve with the ±1% pass band and against the fill-height
+baseline with the ±1 mm pass band. Latest regenerated figure: PASS, fill-height
+delta 0.34 mm and discharge within ±1% of baseline; phase wall times are shown
+for the same run.*
+
 Key findings:
 
 - **Region coherence delivers 1.46×** end-to-end by skipping sleeping pairs
@@ -137,5 +151,3 @@ Key findings:
   the target workload is co-moving rather than static.
 - The prototype is single-rank; an MPI version needs ghost exchange of the
   sleep/plug flags and rank-agreement on cell states.
-</content>
-</invoke>
