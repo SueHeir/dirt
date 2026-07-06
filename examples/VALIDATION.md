@@ -428,6 +428,22 @@ the μN sliding plateau.*
 *measured* normal force, so the ratio test is somewhat circular. A useful unit-level
 contact-model check, not an independent validation.
 
+## `bond_fiber_tensile` — axial BPM stiffness self-check
+
+An 11-sphere bonded fiber is pulled in tension and the middle-bond stress-strain
+slope is compared to the input Young's modulus implied by `K_n = E A / L`.
+
+![BPM fiber tensile stress-strain](bond_fiber_tensile/plots/fiber_stress_strain_validation.png)
+
+*Measured stress-strain samples from the example run against the input-`E`
+reference line. The shaded band is the ±1% pass band shown in the example README;
+the fitted slope is 1.000050 GPa against 1.000001 GPa, a 0.005% relative error
+(PASS).*
+
+**Honest read:** self-consistent — this confirms the BPM material-mode stiffness
+is propagated into axial force correctly for a simple uniform fiber. It is not an
+independent material calibration or fracture validation.
+
 ---
 
 # Tier 2 — Free cooling (Haff's law)
@@ -801,6 +817,7 @@ will need a benchmark when re-added.)
 | jkr_adhesion | JKR pull-off | analytical (self-consistent) | PASS; measures its own constant force |
 | dmt_sjkr_cohesion | DMT pull-off 2πwR* / SJKR area law cπR*δ | analytical (self-consistent) | PASS; adds DMT+SJKR paths & 4/3 model-selection check |
 | fiber_crossover | Coulomb limit μN | analytical (self-consistent) | PASS; ratio circular vs measured N |
+| bond_fiber_tensile | input Young's modulus via `K_n = E A / L` | analytical (self-consistent) | PASS; fitted E = 1.000050 GPa vs input 1.000001 GPa (0.005% error) |
 | sphere/clump haff | Haff law + LAMMPS | law (cross-code) | PASS; R²≈0.9999, slope −1.88 / −1.79 at t/tc≈5 / 11; −2 not fully reached; tc unvalidated; clump cross-check calibrated |
 | rod haff | Haff law + LAMMPS | law (cross-code) | FAIL (known limitation); Haff R²=0.9999 but late-time slope ≈−1.59 at t/tc≈5 straddles/misses the −2.3<slope<−1.6 gate; exits 1 |
 | clump_insertion_determinism | own repeated config run | reproducibility | PASS; same-seed config path byte-identical, changed seed diverges |
