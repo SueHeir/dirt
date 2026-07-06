@@ -952,7 +952,10 @@ pub fn dem_insert_atoms(
                     while inserted < count && attempts < max_attempts {
                         attempts += 1;
                         // Advance the shared RNG identically on every rank.
-                        let [x, y, z] = region.random_point_inside(&mut rng);
+                        let [x, y, z] = region.random_point_inside(&mut rng).unwrap_or_else(|e| {
+                            eprintln!("ERROR: invalid region in [[particles.insert]]: {}", e);
+                            std::process::exit(1);
+                        });
                         let radius = radius_spec.try_sample(&mut rng).unwrap_or_else(|e| {
                             eprintln!("ERROR: invalid radius in [[particles.insert]]: {}", e);
                             std::process::exit(1);
@@ -1873,7 +1876,13 @@ pub fn dem_rate_insert(
             tag_cursor = tag_cursor.wrapping_add(1);
             attempts += 1;
 
-            let [x, y, z] = region.random_point_inside(&mut rng);
+            let [x, y, z] = region.random_point_inside(&mut rng).unwrap_or_else(|e| {
+                eprintln!(
+                    "ERROR: invalid region in rate-based [[particles.insert]]: {}",
+                    e
+                );
+                std::process::exit(1);
+            });
             let radius = radius_spec.try_sample(&mut rng).unwrap_or_else(|e| {
                 eprintln!(
                     "ERROR: invalid radius in rate-based [[particles.insert]]: {}",

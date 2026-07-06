@@ -130,12 +130,12 @@ tags) this is a slow monotonic memory leak proportional to the total number of t
 that passed near the plane over the whole run. Not a concern for fixed-population
 simulations.
 
-### Window time accuracy (`lib.rs:328-329`)
+### Window time accuracy
 
-`window_time = window_steps × dt` uses the *current* `dt`. If `dt` changes within a
-reporting window (e.g., between `[[run]]` stages), the denominator is wrong for that
-mixed window and rates are only approximate. Rates in single-stage runs with fixed
-`dt` are exact.
+The reporting window stores accumulated elapsed time by adding each step's `dt`
+once per cycle. If `dt` changes within a reporting window (e.g., between
+`[[run]]` stages), rates divide by the mixed window's actual elapsed time. Rates
+in single-stage runs with fixed `dt` remain equivalent to `window_steps × dt`.
 
 ### Plugin is a no-op if no planes are configured (`lib.rs:237-240`)
 
@@ -199,10 +199,10 @@ never counted. Always orient the normal *with* the flow direction.
    `docs/src/physics/diagnostics.md` but the *reason* (no programmatic read API
    is intentional so all I/O goes through the thermo pipeline) is not explained.
    Worth one sentence.
-3. **Interaction with multi-stage `[[run]]` blocks** is not documented. The
-   `report_interval` counts total timesteps (`run_state.total_cycle`), so a window
-   that straddles a stage boundary mixes `dt` values and reports a blended rate.
-   This is the variable-`dt` caveat but the stage-boundary case is more concrete.
+3. **Interaction with multi-stage `[[run]]` blocks** is documented in the caveats.
+   The `report_interval` counts total timesteps (`run_state.total_cycle`), so a
+   window that straddles a stage boundary can mix `dt` values; rates use the
+   accumulated elapsed time for that mixed window.
 4. **No guidance on `report_interval` sizing.** For Beverloo applications, the
    interval should span several grain transit times; a sentence on choosing the
    interval relative to `dt` and expected crossing timescale would help.
