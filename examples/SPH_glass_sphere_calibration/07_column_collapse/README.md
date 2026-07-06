@@ -126,8 +126,10 @@ fitting, and plotting live in `sweep.py`.
 ![Runout scaling](plots/runout_scaling.png)
 
 Normalized runout `(L_f − L0)/L0` vs aspect ratio `a` on log–log axes, with the
-two experimental scaling lines (`1.2 a` and `1.6 a^(2/3)`) overlaid. DIRT is shown
-as filled circles; if LAMMPS was available, its runout is overlaid as open squares.
+two experimental scaling lines (`1.2 a` and `1.6 a^(2/3)`) overlaid. The right
+panel shows the actual exponent gates (target ±0.25) and PASS/FAIL verdicts. DIRT
+is shown as filled circles; if LAMMPS was available, its runout is overlaid as open
+squares.
 
 ### Deposit profile
 ![Deposit profile](plots/deposit_profile.png)

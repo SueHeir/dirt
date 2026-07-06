@@ -951,9 +951,9 @@ linear/power exponent gates strict.
 ![SPH glass column runout scaling](SPH_glass_sphere_calibration/07_column_collapse/plots/runout_scaling.png)
 
 *Normalized runout vs aspect ratio with the empirical `1.2a` and `1.6a^(2/3)`
-lines. Latest regenerated run: FAIL, with DIRT exponents 1.407 for the linear
-regime (target 1.0, outside the +/-0.25 gate) and 0.885 for the power regime
-(target 0.667, inside the gate).*
+lines plus the visible exponent gate panel. Latest regenerated run: FAIL, with
+DIRT exponents 1.407 for the linear regime (target 1.0, outside the +/-0.25
+gate) and 0.885 for the power regime (target 0.667, inside the gate).*
 
 ![SPH glass column deposit profile](SPH_glass_sphere_calibration/07_column_collapse/plots/deposit_profile.png)
 

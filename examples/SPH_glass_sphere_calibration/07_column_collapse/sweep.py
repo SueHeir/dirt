@@ -667,9 +667,18 @@ def plot(rows, lammps_rows=None):
 
     a = np.array([float(r["aspect"]) for r in rows])
     rn = np.array([float(r["runout_norm"]) for r in rows])
+    pairs = [(float(r["aspect"]), float(r["runout_norm"])) for r in rows]
+    low = [(aspect, runout) for aspect, runout in pairs if aspect <= REGIME_SPLIT]
+    high = [(aspect, runout) for aspect, runout in pairs if aspect >= REGIME_SPLIT]
+    e_low, _ = fit_loglog(low)
+    e_high, _ = fit_loglog(high)
+    low_ok = abs(e_low - LINEAR_TARGET) <= EXP_TOL
+    high_ok = abs(e_high - POWER_TARGET) <= EXP_TOL
 
     # ── Plot 1: normalized runout vs aspect ratio (log-log) with scaling lines.
-    fig, ax = plt.subplots(figsize=(7, 5.2))
+    fig, (ax, gate_ax) = plt.subplots(
+        1, 2, figsize=(10.4, 5.2), gridspec_kw={"width_ratios": [3.0, 1.35]}
+    )
     ax.plot(a, rn, "o", color="#1f77b4", markersize=7, label="DIRT")
     if lammps_rows:
         la = np.array([float(r["aspect"]) for r in lammps_rows])
@@ -687,6 +696,38 @@ def plot(rows, lammps_rows=None):
     ax.set_title("Column-Collapse Runout vs Aspect Ratio")
     ax.legend(fontsize=9)
     ax.grid(True, which="both", alpha=0.3)
+
+    # The reviewer-facing plot must show the actual gate, not only the reference
+    # scaling curves. Keep this derived from the same constants used by validate().
+    gate_ax.set_title(f"Exponent gates\n(+/-{EXP_TOL:.2f})")
+    gate_ax.set_xlim(0.35, 1.55)
+    gate_ax.set_ylim(-0.6, 1.6)
+    gate_ax.set_yticks([1, 0])
+    gate_ax.set_yticklabels([f"linear\na <= {REGIME_SPLIT:g}", f"power\na >= {REGIME_SPLIT:g}"])
+    for y, target, measured, ok in [
+        (1, LINEAR_TARGET, e_low, low_ok),
+        (0, POWER_TARGET, e_high, high_ok),
+    ]:
+        gate_ax.fill_betweenx(
+            [y - 0.22, y + 0.22],
+            target - EXP_TOL,
+            target + EXP_TOL,
+            color="#2ca02c",
+            alpha=0.18,
+        )
+        gate_ax.plot([target, target], [y - 0.22, y + 0.22], color="0.25", linewidth=1.1)
+        color = "#2ca02c" if ok else "#d62728"
+        marker = "o" if ok else "X"
+        gate_ax.scatter([measured], [y], s=95, marker=marker, color=color, zorder=3)
+        gate_ax.text(
+            1.53, y,
+            f"{measured:.3f}\n{'PASS' if ok else 'FAIL'}",
+            ha="right", va="center", color=color, fontsize=9, fontweight="bold",
+        )
+    gate_ax.set_xlabel("fitted exponent")
+    gate_ax.grid(True, axis="x", alpha=0.25)
+    gate_ax.spines["top"].set_visible(False)
+    gate_ax.spines["right"].set_visible(False)
     fig.savefig(os.path.join(PLOT_DIR, "runout_scaling.png"), bbox_inches="tight")
     plt.close(fig)
     print(f"Saved: {PLOT_DIR}/runout_scaling.png")
