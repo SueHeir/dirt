@@ -14,9 +14,11 @@
 //!
 //! This is the end-to-end macro check the calibrated material (and later the SPH
 //! closure) must reproduce — it is NOT a fitted closure parameter. It depends on
-//! the calibrated rolling friction mu_r from the 03_angle_of_repose deliverable:
-//! smooth spheres without rolling resistance over-run. The shipped material uses a
-//! PLACEHOLDER rolling_friction = 0.05 until 03 reports its calibrated value.
+//! the campaign rolling resistance. The companion 03_angle_of_repose gate
+//! currently reports no transferable mu_r closure: at the measured glass sliding
+//! friction, the lift-the-cylinder heap remains sliding-limited and never reaches
+//! the 22-26 degree glass repose band. This recorder therefore runs the canonical
+//! material and leaves the macro exponent gate to pass or fail honestly.
 //!
 //! This recorder is analysis-free: it dumps the final (x, y, z, radius) of every
 //! particle to `<output_dir>/data/column_collapse_results.csv`. All runout

@@ -19,25 +19,25 @@ equivalent granular model (including rolling resistance) and overlaid on the
 runout-vs-aspect-ratio plot as a code-to-code cross-check. LAMMPS is optional — the
 example runs and validates against the experimental laws with no LAMMPS present.
 
-## ⚠️ Dependency: calibrated rolling friction μ_r from 03_angle_of_repose
+## Rolling-friction dependency from 03_angle_of_repose
 
-This gate depends on the **calibrated rolling friction `μ_r`** produced by the
-`03_angle_of_repose` deliverable. Smooth, perfectly spherical grains have no
-rolling resistance and **over-run** — they slide into a thin sheet and the runout
-overshoots the experimental laws. The repose-angle calibration sets the `μ_r` that
-brings the static pile (and hence the dynamic runout) into agreement.
+This gate was meant to consume the **calibrated rolling friction `μ_r`** produced
+by `03_angle_of_repose`. That upstream deliverable currently reports **no
+transferable `μ_r` closure**: at the measured glass sliding friction (`μ_p =
+0.16`) its lift-the-cylinder heap is sliding-limited and no swept `μ_r` reaches
+the measured 22-26 degree glass repose band.
 
-**The shipped material uses a PLACEHOLDER `rolling_friction = 0.05`** in both
-`config.toml` and `sweep.py` (`ROLLING_FRICTION`). Before the production runout
-comparison is trusted you **must** replace it with the calibrated value from
-`03_angle_of_repose`:
+This example therefore no longer carries a placeholder rolling friction. It runs
+the campaign canonical material value recorded in `../calibration.yaml`
+(`rolling_friction = 0.10`) and keeps the existing Lube/Lajeunesse exponent gates
+strict. If those gates fail, the failure is reported as a remaining macro
+model/protocol limitation rather than hidden behind "pending 03" wording.
 
-1. Run `03_angle_of_repose` and read off its calibrated `μ_r`.
-2. Set `rolling_friction` in `config.toml` and `ROLLING_FRICTION` in `sweep.py` to
-   that value.
-3. Re-run the sweep.
-
-Until that is done, treat any PASS/FAIL here as provisional.
+The current limitation is consistent with the upstream repose result: rolling
+resistance alone is too small to recover the missing macro friction when the
+protocol is sliding-limited. A future passing 03 closure should replace the
+canonical `0.10` here and re-run this harness without changing the exponent
+tolerances.
 
 ## Physics
 
@@ -65,7 +65,7 @@ Canonical glass-bead (ballotini) material, shared across the SPH calibration.
 | Density ρ | 2500 | kg/m³ |
 | Restitution e | 0.926 | — (measured glass–glass COR) |
 | Sliding friction μ | 0.16 | — (measured glass–glass) |
-| Rolling friction μ_r | **0.05 (PLACEHOLDER)** | — (set from 03_angle_of_repose) |
+| Rolling friction μ_r | 0.10 | — (campaign canonical; 03_angle_of_repose currently has no transferable closure) |
 | Radius R | 1.5 | mm (d = 3 mm) |
 | Column width L0 | 24 | mm (8 diameters) |
 | Slab width W | 9 | mm (3 diameters, quasi-2D) |
@@ -91,8 +91,9 @@ Canonical glass-bead (ballotini) material, shared across the SPH calibration.
 `graph` fits the runout exponent in each regime by least squares on log–log axes
 and exits non-zero if either fit is outside the band.
 
-> Provisional with the placeholder `μ_r`. The PASS/FAIL only reflects the
-> calibrated material once `μ_r` is set from `03_angle_of_repose`.
+> This gate is intentionally allowed to fail. The current 03_angle_of_repose
+> deliverable has no passing `μ_r` closure to transfer, so a non-zero exit here is
+> evidence of a remaining macro limitation, not a placeholder setup.
 
 ## How to Run
 
@@ -125,8 +126,10 @@ fitting, and plotting live in `sweep.py`.
 ![Runout scaling](plots/runout_scaling.png)
 
 Normalized runout `(L_f − L0)/L0` vs aspect ratio `a` on log–log axes, with the
-two experimental scaling lines (`1.2 a` and `1.6 a^(2/3)`) overlaid. DIRT is shown
-as filled circles; if LAMMPS was available, its runout is overlaid as open squares.
+two experimental scaling lines (`1.2 a` and `1.6 a^(2/3)`) overlaid. The right
+panel shows the actual exponent gates (target ±0.25) and PASS/FAIL verdicts. DIRT
+is shown as filled circles; if LAMMPS was available, its runout is overlaid as open
+squares.
 
 ### Deposit profile
 ![Deposit profile](plots/deposit_profile.png)
@@ -173,8 +176,8 @@ the **same** `measure_column()` — so the two codes are compared on equal footi
 - Gate release is an instantaneous support removal (no gate-drag artifact), the
   standard idealization for this benchmark.
 - The scaling laws are for cohesionless, dry grains; no cohesion/adhesion is used.
-- **`μ_r` is a placeholder** until set from `03_angle_of_repose` — see the
-  dependency note above.
+- **`μ_r` is not a placeholder**. It is the campaign canonical value used because
+  `03_angle_of_repose` currently reports no transferable glass-band closure.
 
 ## References
 

@@ -935,6 +935,29 @@ criteria PASS.*
 
 ---
 
+## `SPH_glass_sphere_calibration/07_column_collapse` — SPH glass macro gate
+
+This SPH glass-sphere calibration case releases a quasi-2D column of canonical
+glass grains and fits the runout exponent against the Lube/Lajeunesse scaling
+laws. It no longer carries a placeholder rolling friction: because
+`03_angle_of_repose` currently reports no transferable glass-band `mu_r` closure,
+the case uses the campaign canonical `rolling_friction = 0.10` and keeps the
+linear/power exponent gates strict.
+
+![SPH glass column runout scaling](SPH_glass_sphere_calibration/07_column_collapse/plots/runout_scaling.png)
+
+*Normalized runout vs aspect ratio with the empirical `1.2a` and `1.6a^(2/3)`
+lines plus the visible exponent gate panel. Latest regenerated run: FAIL, with
+DIRT exponents 1.407 for the linear regime (target 1.0, outside the +/-0.25
+gate) and 0.885 for the power regime (target 0.667, inside the gate).*
+
+![SPH glass column deposit profile](SPH_glass_sphere_calibration/07_column_collapse/plots/deposit_profile.png)
+
+*Rest-state deposit for the representative `a = 2` case, used as a visual check
+that the finite pile is being measured rather than a runaway sheet.*
+
+---
+
 ## What is not validated (scope summary)
 
 - **No direct experimental comparison** — references are analytical, empirical
@@ -992,6 +1015,7 @@ will need a benchmark when re-added.)
 | bond_cantilever | Euler-Bernoulli uniform-load cantilever tip deflection | analytical | PASS; final tip deflection −9.476884e-07 m vs −9.535320e-07 m (0.61% error, 5% gate), 9/9 bonds present |
 | sphere/clump haff | Haff law + LAMMPS | law (cross-code) | PASS; R²≈0.9999, slope −1.88 / −1.79 at t/tc≈5 / 11; −2 not fully reached; tc unvalidated; clump cross-check calibrated |
 | rod haff | Haff law + optional LAMMPS | law (cross-code when available) | PASS; Haff R²=0.9999, late-time slope −1.84 at t/tc≈13 inside the unchanged −2.3<slope<−1.6 gate; finite-window asymptote check, tc diagnostic only |
+| SPH glass column collapse | Lube/Lajeunesse (empirical) + LAMMPS overlay | empirical macro gate | FAIL (remaining macro limitation); uses canonical `mu_r=0.10` because 03_angle_of_repose has no transferable closure; linear exponent 1.407 vs 1.0 outside ±0.25, power exponent 0.885 inside gate; exits 1 |
 | clump_insertion_determinism | own repeated config run | reproducibility | PASS; same-seed config path byte-identical, changed seed diverges |
 | angle_of_repose | empirical (none exact) | qualitative | PASS; trends only; frozen-bed |
 | column_collapse | Lube/Lajeunesse (empirical) + LAMMPS cross-check | empirical scaling + cross-code | FAIL (genuine finite-size limit, not fit noise); linear exponent 1.54 vs 1.0 outside ±0.25 after seed-averaging + 11-pt sweep + sub-diameter metric; LAMMPS misses identically (1.27); exits 1 |

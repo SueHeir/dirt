@@ -1,5 +1,5 @@
 # Auto-generated column-collapse config — aspect a = 3.0, N = 660
-# rolling_friction is a PLACEHOLDER pending the 03_angle_of_repose result.
+# rolling_friction is an explicit MU_R sensitivity value; 03_angle_of_repose currently reports no transferable closure.
 [comm]
 processors_x = 1
 processors_y = 1

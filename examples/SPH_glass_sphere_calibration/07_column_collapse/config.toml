@@ -7,10 +7,11 @@
 # the gate and the column spreads along +x until it comes to rest. The example
 # binary dumps the final deposit to data/column_collapse_results.csv.
 #
-# NOTE: rolling_friction below is a PLACEHOLDER (0.05). It must be replaced with
-# the calibrated mu_r from the 03_angle_of_repose deliverable before the
-# production runout comparison is trusted — smooth spheres without rolling
-# resistance over-run and fail the experimental scaling laws. See README.
+# NOTE: 03_angle_of_repose currently reports no transferable rolling-friction
+# closure: with fixed glass sliding friction, its lift-the-cylinder protocol stays
+# sliding-limited and never reaches the 22-26 degree glass repose band. This macro
+# validation therefore uses the campaign canonical material value recorded in
+# ../calibration.yaml and must fail honestly if the runout exponents miss.
 #
 # Run:
 #   cargo run --release --example sphcal_column_collapse --no-default-features -- examples/SPH_glass_sphere_calibration/07_column_collapse/config.toml
@@ -46,14 +47,14 @@ gz = -9.81
 contact_model = "hertz"
 
 # Canonical glass-bead (ballotini) material — shared across the SPH calibration.
-# rolling_friction is a PLACEHOLDER pending the 03_angle_of_repose result.
+# 03_angle_of_repose has no passing μ_r closure; see README and calibration.yaml.
 [[dem.materials]]
 name = "glass"
 youngs_mod = 7.0e7
 poisson_ratio = 0.245
 restitution = 0.926
 friction = 0.16
-rolling_friction = 0.10   # μ_r — PINNED via this column-collapse runout vs Lube/Lajeunesse (2026-06-18; default "constant" rolling model)
+rolling_friction = 0.10   # μ_r — campaign canonical value; 03_angle_of_repose currently reports no transferable closure
 # Canonical density = 2500.0 kg/m^3 — DIRT carries grain density on the particle
 # insert block (below), not on [[dem.materials]], so it is set there to 2500.0.
 

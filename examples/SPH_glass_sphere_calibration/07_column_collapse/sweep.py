@@ -15,10 +15,12 @@ dimensionless runout against the experimental aspect-ratio scaling laws
     (L_f - L0)/L0 ~ 1.2 * a          (a <~ 2-3, linear regime)
     (L_f - L0)/L0 ~ 1.6 * a^(2/3)    (a >~ 3,   power-law regime)
 
-DEPENDENCY: the calibrated rolling friction mu_r from the 03_angle_of_repose
-deliverable. Smooth spheres without rolling resistance over-run and fail these
-laws. ROLLING_FRICTION below is a PLACEHOLDER (0.05) until 03 reports its value;
-set it here (and in config.toml) before the production runout comparison.
+DEPENDENCY: the 03_angle_of_repose deliverable currently reports no transferable
+rolling-friction closure: at the measured glass sliding friction, its heap
+collapse stays sliding-limited and never reaches the 22-26 degree glass band.
+This macro gate therefore runs the campaign canonical material value from
+calibration.yaml and keeps the exponent gate strict; a non-zero exit is a real
+remaining model/protocol limitation, not a placeholder-parameter failure.
 
 Commands (from anywhere):
     python3 examples/SPH_glass_sphere_calibration/07_column_collapse/sweep.py generate
@@ -62,10 +64,9 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.abspath(os.path.join(SCRIPT_DIR, "..", "..", ".."))
 EXAMPLE = "sphcal_column_collapse"
 
-# μ_r pinning: if MU_R is set in the environment, that value overrides the
-# placeholder ROLLING_FRICTION below and all output paths are tagged by μ_r so a
-# sweep over μ_r (one full aspect sweep per μ_r) does not collide. See the bottom
-# of this file (_MU_R_ENV) for where ROLLING_FRICTION is actually resolved.
+# μ_r sensitivity sweeps: if MU_R is set in the environment, that value overrides
+# the canonical ROLLING_FRICTION below and all output paths are tagged by μ_r so a
+# full aspect sweep per μ_r does not collide.
 _MU_R_ENV = os.environ.get("MU_R")
 _TAG = f"_mu{float(_MU_R_ENV):g}" if _MU_R_ENV is not None else ""
 
@@ -89,10 +90,10 @@ YOUNGS_MOD = 7.0e7         # Pa (softened from ~65 GPa real glass)
 POISSON = 0.245
 RESTITUTION = 0.926        # measured glass–glass COR
 FRICTION = 0.16            # measured glass–glass sliding friction
-# PLACEHOLDER rolling friction — REPLACE with the calibrated mu_r from the
-# 03_angle_of_repose deliverable before trusting the production runout comparison.
-# Smooth spheres (mu_r = 0) over-run and fail the experimental scaling laws.
-# Resolved from the MU_R env var when present (μ_r pinning sweep), else placeholder.
+# Campaign canonical rolling friction. 03_angle_of_repose currently has no
+# passing glass-band closure to transfer, so the macro validation must not
+# pretend this value was calibrated there. MU_R is retained only for explicit
+# sensitivity sweeps; default runs use the canonical material value.
 ROLLING_FRICTION = float(_MU_R_ENV) if _MU_R_ENV is not None else 0.10
 DT = 4.0e-6               # s
 SETTLE_STEPS = 80000
@@ -134,7 +135,7 @@ def data_case_dir(aspect):
 # ── DIRT config template ─────────────────────────────────────────────────────
 TOML_TEMPLATE = """\
 # Auto-generated column-collapse config — aspect a = {aspect}, N = {count}
-# rolling_friction is a PLACEHOLDER pending the 03_angle_of_repose result.
+# rolling_friction is the campaign canonical value unless MU_R explicitly overrides it.
 [comm]
 processors_x = 1
 processors_y = 1
@@ -586,7 +587,7 @@ def validate(rows):
     print("=" * 66)
     print(f"  L0 = {L0*1000:.1f} mm, slab W = {W*1000:.1f} mm, d = {2*RADIUS*1000:.1f} mm")
     print(f"  E = {YOUNGS_MOD:.1e} Pa, e = {RESTITUTION}, mu = {FRICTION}, "
-          f"mu_r = {ROLLING_FRICTION} (PLACEHOLDER)\n")
+          f"mu_r = {ROLLING_FRICTION} (campaign canonical; 03 has no closure)\n")
     print(f"  {'a':>5} {'H[mm]':>8} {'L_f[mm]':>9} {'(Lf-L0)/L0':>12}")
 
     pairs = []
@@ -615,11 +616,11 @@ def validate(rows):
     ok = low_ok and high_ok
     if not ok:
         print()
-        print("  NOTE: this gate depends on the calibrated rolling friction mu_r")
-        print("  from the 03_angle_of_repose deliverable. With the PLACEHOLDER")
-        print("  mu_r = 0.05 (or mu_r = 0), smooth spheres over-run and the runout")
-        print("  does not follow the experimental laws. Set mu_r from 03 before")
-        print("  trusting this comparison. See README.")
+        print("  NOTE: 03_angle_of_repose currently reports no transferable")
+        print("  rolling-friction closure at the measured glass sliding friction.")
+        print("  This run used the campaign canonical mu_r and still missed the")
+        print("  exponent gate, so the failure is a remaining macro model/protocol")
+        print("  limitation rather than a placeholder-parameter failure. See README.")
     print("\nALL CHECKS PASSED" if ok else "VALIDATION FAILED (see note above)")
     return ok
 
@@ -666,9 +667,18 @@ def plot(rows, lammps_rows=None):
 
     a = np.array([float(r["aspect"]) for r in rows])
     rn = np.array([float(r["runout_norm"]) for r in rows])
+    pairs = [(float(r["aspect"]), float(r["runout_norm"])) for r in rows]
+    low = [(aspect, runout) for aspect, runout in pairs if aspect <= REGIME_SPLIT]
+    high = [(aspect, runout) for aspect, runout in pairs if aspect >= REGIME_SPLIT]
+    e_low, _ = fit_loglog(low)
+    e_high, _ = fit_loglog(high)
+    low_ok = abs(e_low - LINEAR_TARGET) <= EXP_TOL
+    high_ok = abs(e_high - POWER_TARGET) <= EXP_TOL
 
     # ── Plot 1: normalized runout vs aspect ratio (log-log) with scaling lines.
-    fig, ax = plt.subplots(figsize=(7, 5.2))
+    fig, (ax, gate_ax) = plt.subplots(
+        1, 2, figsize=(10.4, 5.2), gridspec_kw={"width_ratios": [3.0, 1.35]}
+    )
     ax.plot(a, rn, "o", color="#1f77b4", markersize=7, label="DIRT")
     if lammps_rows:
         la = np.array([float(r["aspect"]) for r in lammps_rows])
@@ -686,6 +696,38 @@ def plot(rows, lammps_rows=None):
     ax.set_title("Column-Collapse Runout vs Aspect Ratio")
     ax.legend(fontsize=9)
     ax.grid(True, which="both", alpha=0.3)
+
+    # The reviewer-facing plot must show the actual gate, not only the reference
+    # scaling curves. Keep this derived from the same constants used by validate().
+    gate_ax.set_title(f"Exponent gates\n(+/-{EXP_TOL:.2f})")
+    gate_ax.set_xlim(0.35, 1.55)
+    gate_ax.set_ylim(-0.6, 1.6)
+    gate_ax.set_yticks([1, 0])
+    gate_ax.set_yticklabels([f"linear\na <= {REGIME_SPLIT:g}", f"power\na >= {REGIME_SPLIT:g}"])
+    for y, target, measured, ok in [
+        (1, LINEAR_TARGET, e_low, low_ok),
+        (0, POWER_TARGET, e_high, high_ok),
+    ]:
+        gate_ax.fill_betweenx(
+            [y - 0.22, y + 0.22],
+            target - EXP_TOL,
+            target + EXP_TOL,
+            color="#2ca02c",
+            alpha=0.18,
+        )
+        gate_ax.plot([target, target], [y - 0.22, y + 0.22], color="0.25", linewidth=1.1)
+        color = "#2ca02c" if ok else "#d62728"
+        marker = "o" if ok else "X"
+        gate_ax.scatter([measured], [y], s=95, marker=marker, color=color, zorder=3)
+        gate_ax.text(
+            1.53, y,
+            f"{measured:.3f}\n{'PASS' if ok else 'FAIL'}",
+            ha="right", va="center", color=color, fontsize=9, fontweight="bold",
+        )
+    gate_ax.set_xlabel("fitted exponent")
+    gate_ax.grid(True, axis="x", alpha=0.25)
+    gate_ax.spines["top"].set_visible(False)
+    gate_ax.spines["right"].set_visible(False)
     fig.savefig(os.path.join(PLOT_DIR, "runout_scaling.png"), bbox_inches="tight")
     plt.close(fig)
     print(f"Saved: {PLOT_DIR}/runout_scaling.png")
