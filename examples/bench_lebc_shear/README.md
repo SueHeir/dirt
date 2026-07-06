@@ -94,8 +94,9 @@ near random-close-packing, is reachable. The sweep runs two families:
 ![Kinetic-theory validation](plots/kt_validation.png)
 
 *Frictionless LEBC shear: DIRT points over the Lun / extended kinetic-theory curves
-and independent LAMMPS / Fortran / LIGGGHTS references. PASS means at least 60% of
-KT points are within the printed 15% normal-stress and 20% shear-stress bands.*
+and independent LAMMPS / Fortran / LIGGGHTS references. Shaded bands show the
+unchanged PASS gate: at least 60% of KT points within 15% for normal stress and
+20% for shear stress.*
 
 ![mu(I) fit](plots/mu_of_I.png)
 

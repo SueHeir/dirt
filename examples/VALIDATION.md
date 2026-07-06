@@ -548,8 +548,8 @@ closure used by downstream continuum calibration.
 ![Kinetic-theory validation](bench_lebc_shear/plots/kt_validation.png)
 
 *DIRT frictionless points over the kinetic-theory and cross-code references. The
-printed gate is explicit: at least 60% of points must be within 15% for normal stress
-and 20% for shear stress.*
+shaded bands show the unchanged graph gate: at least 60% of points must be within
+15% for normal stress and 20% for shear stress.*
 
 ![mu(I) fit](bench_lebc_shear/plots/mu_of_I.png)
 
