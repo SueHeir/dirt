@@ -64,6 +64,32 @@ tangential model directly.
 The strongest tests: small, deterministic setups compared to exact results. Some are
 nonetheless partly *self-consistent* — noted where so.
 
+## `bench_cundall_damping` — Cundall non-viscous global damping
+
+A single free sphere is launched upward under gravity and spun under a constant
+opposing torque while the `[[cundall]]` damping fix applies the documented
+component-wise force/torque scaling. The sign of the mechanical power flips at the
+apex and at zero spin, so the benchmark exercises both Cundall branches and fits
+the exact piecewise-constant rates across γ ∈ {0.2, 0.5, 0.8}. All four DIRT rates
+must match the analytical values within 1 %, and the linear acceleration branch is
+also cross-checked against LAMMPS `fix damping/cundall`.
+
+![Cundall fitted rates](bench_cundall_damping/plots/cundall_rates.png)
+
+*Fitted DIRT linear/angular rates vs exact Cundall analytical rates; the shaded
+band is the ±1 % PASS criterion used by the sweep, with LAMMPS overlaid for the
+linear branch. Latest run: PASS, all rates within the 1 % gate.*
+
+![Cundall damping traces](bench_cundall_damping/plots/cundall_traces.png)
+
+*Velocity and angular-velocity traces showing the apex and zero-spin sign flips
+that separate the piecewise-linear analytical branches.*
+
+**Honest read:** the reference is an exact single-particle analytical solution for
+the documented Cundall damping rule, so this is a sharp implementation check for
+the fix. It does not test contacts or quasi-static pack relaxation; those are
+covered by the broader granular benchmarks.
+
 ## `bench_hertz_rebound` — Hertzian normal rebound
 
 A single glass sphere strikes a rigid wall; the benchmark sweeps impact velocity
