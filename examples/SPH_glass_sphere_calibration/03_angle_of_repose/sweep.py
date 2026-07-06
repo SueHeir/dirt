@@ -21,8 +21,9 @@ Validation (the gate):
     2. at least one mu_r lands theta_r in the measured glass band [22,26] deg —
        that mu_r is the closure to set as rolling_friction in the canonical
        glass material,
-    3. results are REPRODUCIBLE: the run-to-run spread (over fresh random packs)
-       is small but NONZERO (the inserter is entropy-seeded, so reps differ).
+    3. results are REPRODUCIBLE: the run-to-run spread (over independent packs)
+       is small but NONZERO. The per-case seeds are derived from a recorded base
+       seed or read back from a seed manifest, so a campaign can be regenerated.
 
 The heap sits directly on a real frictional plane wall (z = 0, normal +z):
 dirt_wall applies Mindlin sliding (tangential) friction on plane walls using the
@@ -31,13 +32,17 @@ the bottom layer from sliding out, so the pile holds a slope — no frozen
 particle bed is needed. See README "Assumptions".
 
 Commands (from anywhere):
-    python3 examples/SPH_glass_sphere_calibration/03_angle_of_repose/sweep.py generate
+    python3 examples/SPH_glass_sphere_calibration/03_angle_of_repose/sweep.py generate --base-seed 20260706
+    python3 examples/SPH_glass_sphere_calibration/03_angle_of_repose/sweep.py generate --seed-manifest data/seed_manifest.csv
+    python3 examples/SPH_glass_sphere_calibration/03_angle_of_repose/sweep.py seed-check
     python3 examples/SPH_glass_sphere_calibration/03_angle_of_repose/sweep.py start
     python3 examples/SPH_glass_sphere_calibration/03_angle_of_repose/sweep.py graph
     python3 examples/SPH_glass_sphere_calibration/03_angle_of_repose/sweep.py   # all
 
-Each (mu_r) case is run REPS times with independent random packs (the inserter is
-entropy-seeded), so the spread of theta_r is a direct reproducibility measure.
+Each (mu_r) case is run REPS times with independent random packs. The inserter is
+deterministic given its seed; `generate` assigns a distinct seed to every
+(mu_r, rep) case from a base seed, records those seeds in a manifest, and can read
+that manifest back to reproduce the exact same configs.
 
 The angle is fit in this script from the settled particle positions DIRT dumps:
 the heap is centered on its (x,y) centroid, particles are binned by radial
@@ -77,9 +82,11 @@ Reference (empirical, for context — values vary with material/protocol):
 import os
 import sys
 import csv
+import argparse
+import hashlib
 import math
-import random
 import subprocess
+import tempfile
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 # This example lives THREE levels under the repo root:
@@ -92,6 +99,7 @@ DATA_DIR = os.path.join(SCRIPT_DIR, "data")
 PLOT_DIR = os.path.join(SCRIPT_DIR, "plots")
 SWEEP_CSV = os.path.join(DATA_DIR, "repose_sweep.csv")     # DIRT theta_r per (mu, rep)
 LAMMPS_CSV = os.path.join(DATA_DIR, "lammps_results.csv")  # LAMMPS theta_r per mu
+SEED_MANIFEST = os.path.join(DATA_DIR, "seed_manifest.csv")
 
 # LAMMPS leg is DISABLED for this calibration (DIRT-only, for speed). The empty
 # list means the LAMMPS cross-code overlay is never run; only DIRT runs/plots.
@@ -109,7 +117,8 @@ LAMMPS_BINS = []
 # cone, so theta_r rises monotonically with mu_r.
 MU_P = 0.16                                  # FIXED sliding (Coulomb) friction (measured glass)
 MU_R_LIST = [0.0, 0.05, 0.10, 0.15, 0.20, 0.30]  # rolling friction sweep (the swept variable)
-REPS = 2                          # independent packs per mu_r (entropy-seeded; reproducibility)
+REPS = 2                          # independent packs per mu_r (distinct recorded seeds)
+DEFAULT_BASE_SEED = 20260706       # deterministic campaign seed used by generate unless overridden
 
 # Measured glass angle-of-repose band the calibration targets.
 GLASS_BAND_LO_DEG = 22.0
@@ -251,11 +260,9 @@ count = {heap_count}
 radius = {radius}
 density = {density}
 velocity_z = -0.1
-# Per-case insertion seed (entropy-derived at generate time). The inserter RNG is
-# deterministic given a seed, so a distinct seed per rep yields an INDEPENDENT
-# random pack — the run-to-run spread of theta_r is then a real reproducibility
-# measure. The seed is written into the saved config so each case stays
-# reproducible once generated.
+# Per-case insertion seed. The inserter RNG is deterministic given a seed, so a
+# distinct seed per rep yields an INDEPENDENT random pack while the seed manifest
+# makes the campaign exactly regenerable.
 seed = {seed}
 region = {{ type = "cylinder", center = [0.0, 0.0], radius = {ins_r}, axis = "z", lo = 0.003, hi = 0.14 }}
 [output]
@@ -362,6 +369,10 @@ def case_dir(mu_r, rep):
     return os.path.join(SWEEP_DIR, case_tag(mu_r, rep))
 
 
+def _case_dir_in(root, mu_r, rep):
+    return os.path.join(root, case_tag(mu_r, rep))
+
+
 def _dirt_config(mu_r, outdir, seed):
     return TOML_TEMPLATE.format(
         gz=GZ, youngs=YOUNGS_MOD, nu=POISSON, e_n=RESTITUTION, mu_p=MU_P,
@@ -378,23 +389,288 @@ def _dirt_config(mu_r, outdir, seed):
 
 
 # -- generate -------------------------------------------------------------------
-def generate():
+def _fmt_mu(mu_r):
+    return f"{mu_r:g}"
+
+
+def _case_key(mu_r, rep):
+    return (_fmt_mu(mu_r), int(rep))
+
+
+def _seed_from_base(base_seed, mu_r, rep):
+    """Stable 63-bit positive seed for one case, independent across reps."""
+    payload = f"sphcal_angle_of_repose|base={int(base_seed)}|mu_r={_fmt_mu(mu_r)}|rep={int(rep)}"
+    digest = hashlib.blake2b(payload.encode("ascii"), digest_size=8).digest()
+    seed = int.from_bytes(digest, "big") & ((1 << 63) - 1)
+    return seed or 1
+
+
+def _expected_cases():
+    return [(mu_r, rep) for mu_r in MU_R_LIST for rep in range(REPS)]
+
+
+def _derive_seed_manifest(base_seed):
+    return {
+        _case_key(mu_r, rep): _seed_from_base(base_seed, mu_r, rep)
+        for (mu_r, rep) in _expected_cases()
+    }
+
+
+def _load_seed_manifest(path):
+    seeds = {}
+    base_seeds = set()
+    with open(path, newline="") as f:
+        reader = csv.DictReader(f)
+        required = {"mu_r", "rep", "seed"}
+        missing = required - set(reader.fieldnames or [])
+        if missing:
+            raise ValueError(f"{path} is missing columns: {', '.join(sorted(missing))}")
+        for row in reader:
+            mu_s = _fmt_mu(float(row["mu_r"]))
+            rep = int(row["rep"])
+            seed = int(row["seed"])
+            if seed <= 0 or seed >= (1 << 63):
+                raise ValueError(f"{path} has out-of-range seed for mu_r={mu_s} rep={rep}: {seed}")
+            key = (mu_s, rep)
+            if key in seeds:
+                raise ValueError(f"{path} has duplicate seed row for mu_r={mu_s} rep={rep}")
+            seeds[key] = seed
+            base = row.get("base_seed", "").strip()
+            if base:
+                base_seeds.add(int(base))
+    expected = {_case_key(mu_r, rep) for (mu_r, rep) in _expected_cases()}
+    got = set(seeds)
+    missing = sorted(expected - got)
+    extra = sorted(got - expected)
+    if missing or extra:
+        msg = []
+        if missing:
+            msg.append("missing " + ", ".join(f"mu_r={m} rep={r}" for (m, r) in missing))
+        if extra:
+            msg.append("extra " + ", ".join(f"mu_r={m} rep={r}" for (m, r) in extra))
+        raise ValueError(f"{path} does not match this sweep: {'; '.join(msg)}")
+    if len(base_seeds) > 1:
+        raise ValueError(f"{path} has inconsistent base_seed values: {sorted(base_seeds)}")
+    base_seed = next(iter(base_seeds)) if base_seeds else None
+    return seeds, base_seed
+
+
+def _write_seed_manifest(path, seeds, base_seed=None):
+    os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+    with open(path, "w", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=["case", "mu_r", "rep", "seed", "base_seed"])
+        w.writeheader()
+        for (mu_r, rep) in _expected_cases():
+            w.writerow({
+                "case": case_tag(mu_r, rep),
+                "mu_r": _fmt_mu(mu_r),
+                "rep": rep,
+                "seed": seeds[_case_key(mu_r, rep)],
+                "base_seed": "" if base_seed is None else int(base_seed),
+            })
+
+
+def _write_configs(root, seeds):
     n = 0
-    # Entropy source for per-case insertion seeds: each (mu_r, rep) gets a fresh
-    # random u64 so the reps are INDEPENDENT packs (the inserter RNG is
-    # deterministic given a seed). The seed is baked into the saved config, so a
-    # generated case re-runs identically — only a re-generate reshuffles the packs.
-    sysrand = random.SystemRandom()
     for mu_r in MU_R_LIST:
         for rep in range(REPS):
-            cdir = case_dir(mu_r, rep)
+            cdir = _case_dir_in(root, mu_r, rep)
             os.makedirs(cdir, exist_ok=True)
-            seed = sysrand.getrandbits(63)  # u64-safe positive seed
+            seed = seeds[_case_key(mu_r, rep)]
             with open(os.path.join(cdir, "config.toml"), "w") as f:
                 f.write(_dirt_config(mu_r, cdir, seed))
             n += 1
+    return n
+
+
+def _parse_generate_args(argv):
+    p = argparse.ArgumentParser(
+        prog="sweep.py generate",
+        description="Generate reproducible DIRT configs and a per-case seed manifest.",
+    )
+    p.add_argument("--base-seed", type=int, default=DEFAULT_BASE_SEED,
+                   help=f"base seed used to derive per-case seeds (default: {DEFAULT_BASE_SEED})")
+    p.add_argument("--seed-manifest", default=None,
+                   help="CSV manifest to read exact per-case seeds from")
+    p.add_argument("--write-seed-manifest", default=SEED_MANIFEST,
+                   help=f"where to record the generated/read seed table (default: {SEED_MANIFEST})")
+    return p.parse_args(argv)
+
+
+def generate(argv=None):
+    args = _parse_generate_args(argv or [])
+    if args.seed_manifest:
+        seeds, base_seed = _load_seed_manifest(args.seed_manifest)
+        manifest_source = f"manifest {args.seed_manifest}"
+    else:
+        seeds = _derive_seed_manifest(args.base_seed)
+        manifest_source = f"base seed {args.base_seed}"
+        base_seed = args.base_seed
+
+    n = _write_configs(SWEEP_DIR, seeds)
+    _write_seed_manifest(args.write_seed_manifest, seeds, base_seed=base_seed)
     print(f"Generated {n} DIRT configs ({len(MU_R_LIST)} mu_r x {REPS} reps, "
-          f"fixed sliding mu_p={MU_P}, entropy-seeded packs) under {SWEEP_DIR}")
+          f"fixed sliding mu_p={MU_P}, seeds from {manifest_source}) under {SWEEP_DIR}")
+    print(f"Seed manifest -> {args.write_seed_manifest}")
+
+
+# -- seed reproducibility evidence ---------------------------------------------
+def _config_hashes(root, seeds):
+    rows = []
+    for mu_r, rep in _expected_cases():
+        rel = os.path.join(case_tag(mu_r, rep), "config.toml")
+        path = os.path.join(root, rel)
+        with open(path, "rb") as f:
+            blob = f.read()
+        rows.append({
+            "case": case_tag(mu_r, rep),
+            "mu_r": _fmt_mu(mu_r),
+            "rep": rep,
+            "seed": seeds[_case_key(mu_r, rep)],
+            "relpath": rel,
+            "sha256": hashlib.sha256(blob).hexdigest(),
+        })
+    return rows
+
+
+def _same_hashes(a, b):
+    return [x["sha256"] == y["sha256"] for x, y in zip(a, b)]
+
+
+def _same_seeds(a, b):
+    return [int(x["seed"]) == int(y["seed"]) for x, y in zip(a, b)]
+
+
+def _write_seed_check_csv(path, rows):
+    os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+    fields = ["case", "mu_r", "rep", "base_seed", "seed",
+              "same_base_config_match", "manifest_config_match",
+              "changed_base_config_match", "changed_base_seed_match"]
+    with open(path, "w", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=fields)
+        w.writeheader()
+        for row in rows:
+            w.writerow(row)
+
+
+def _plot_seed_check(rows, out_png):
+    os.makedirs(os.path.dirname(out_png), exist_ok=True)
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    plt.rcParams.update({"figure.dpi": 150, "savefig.dpi": 150, "font.size": 10})
+
+    labels = [
+        "same base seed\n(config hash)",
+        "manifest replay\n(config hash)",
+        "changed base seed\n(config hash)",
+        "changed base seed\n(per-case seed)",
+    ]
+    values = [
+        sum(int(r["same_base_config_match"]) for r in rows),
+        sum(int(r["manifest_config_match"]) for r in rows),
+        sum(int(r["changed_base_config_match"]) for r in rows),
+        sum(int(r["changed_base_seed_match"]) for r in rows),
+    ]
+    expected = [len(rows), len(rows), 0, 0]
+    colors = ["#2ca02c" if v == e else "#d62728" for v, e in zip(values, expected)]
+
+    fig, ax = plt.subplots(figsize=(7.0, 4.2))
+    ax.bar(range(len(labels)), values, color=colors, width=0.65)
+    for i, (v, e) in enumerate(zip(values, expected)):
+        ax.text(i, v + 0.25, f"{v}/{len(rows)}\nexpected {e}",
+                ha="center", va="bottom", fontsize=9)
+    ax.set_ylim(0, len(rows) + 2.0)
+    ax.set_ylabel("matching cases out of %d" % len(rows))
+    ax.set_xticks(range(len(labels)))
+    ax.set_xticklabels(labels)
+    ax.set_title("Seed-manifest generation reproducibility")
+    ax.axhline(len(rows), color="0.75", lw=0.8, zorder=0)
+    fig.tight_layout()
+    fig.savefig(out_png)
+    plt.close(fig)
+
+
+def _parse_seed_check_args(argv):
+    p = argparse.ArgumentParser(
+        prog="sweep.py seed-check",
+        description="Check and plot seed-manifest config reproducibility.",
+    )
+    p.add_argument("--base-seed", type=int, default=DEFAULT_BASE_SEED,
+                   help=f"reference base seed (default: {DEFAULT_BASE_SEED})")
+    p.add_argument("--changed-base-seed", type=int, default=DEFAULT_BASE_SEED + 1,
+                   help="different base seed used to prove a new campaign changes")
+    p.add_argument("--csv", default=os.path.join(DATA_DIR, "seed_reproducibility.csv"),
+                   help="where to write the check table")
+    p.add_argument("--plot", default=os.path.join(PLOT_DIR, "seed_reproducibility.png"),
+                   help="where to write the committed evidence figure")
+    return p.parse_args(argv)
+
+
+def seed_check(argv=None):
+    args = _parse_seed_check_args(argv or [])
+    ref_seeds = _derive_seed_manifest(args.base_seed)
+    repeat_seeds = _derive_seed_manifest(args.base_seed)
+    changed_seeds = _derive_seed_manifest(args.changed_base_seed)
+
+    with tempfile.TemporaryDirectory(prefix="sphcal_seedcheck_") as tmp:
+        # Byte identity is defined for regenerating the same checkout paths.
+        # Keep the output root fixed so the comparison isolates seed selection.
+        root = os.path.join(tmp, "checkout", "sweep")
+        manifest = os.path.join(tmp, "seed_manifest.csv")
+        _write_seed_manifest(manifest, ref_seeds, base_seed=args.base_seed)
+        replay_seeds, _ = _load_seed_manifest(manifest)
+
+        _write_configs(root, ref_seeds)
+        ref = _config_hashes(root, ref_seeds)
+        _write_configs(root, repeat_seeds)
+        repeat = _config_hashes(root, repeat_seeds)
+        _write_configs(root, replay_seeds)
+        replay = _config_hashes(root, replay_seeds)
+        _write_configs(root, changed_seeds)
+        changed = _config_hashes(root, changed_seeds)
+
+    same_base_config = _same_hashes(ref, repeat)
+    manifest_config = _same_hashes(ref, replay)
+    changed_base_config = _same_hashes(ref, changed)
+    changed_base_seed = _same_seeds(ref, changed)
+
+    rows = []
+    for i, r in enumerate(ref):
+        rows.append({
+            "case": r["case"],
+            "mu_r": r["mu_r"],
+            "rep": r["rep"],
+            "base_seed": args.base_seed,
+            "seed": r["seed"],
+            "same_base_config_match": int(same_base_config[i]),
+            "manifest_config_match": int(manifest_config[i]),
+            "changed_base_config_match": int(changed_base_config[i]),
+            "changed_base_seed_match": int(changed_base_seed[i]),
+        })
+
+    _write_seed_check_csv(args.csv, rows)
+    _plot_seed_check(rows, args.plot)
+
+    n = len(rows)
+    ok = (
+        sum(same_base_config) == n
+        and sum(manifest_config) == n
+        and sum(changed_base_config) == 0
+        and sum(changed_base_seed) == 0
+        and len({r["seed"] for r in ref}) == n
+    )
+    print("\n=== Seed-manifest reproducibility check ===")
+    print(f"  cases: {n} ({len(MU_R_LIST)} mu_r x {REPS} reps)")
+    print(f"  same base seed config matches: {sum(same_base_config)}/{n} (expected {n})")
+    print(f"  manifest replay config matches: {sum(manifest_config)}/{n} (expected {n})")
+    print(f"  changed base seed config matches: {sum(changed_base_config)}/{n} (expected 0)")
+    print(f"  changed base seed per-case seed matches: {sum(changed_base_seed)}/{n} (expected 0)")
+    print(f"  distinct seeds in reference campaign: {len({r['seed'] for r in ref})}/{n}")
+    print(f"  table -> {args.csv}")
+    print(f"  figure -> {args.plot}")
+    print("RESULT:", "PASS" if ok else "FAIL")
+    return ok
 
 
 # -- heap geometry fit ----------------------------------------------------------
@@ -716,21 +992,35 @@ def graph():
 
 # -- dispatch -------------------------------------------------------------------
 def main():
-    cmd = sys.argv[1] if len(sys.argv) > 1 else "all"
+    args = sys.argv[1:]
+    if args and not args[0].startswith("-"):
+        cmd = args[0]
+        rest = args[1:]
+    else:
+        cmd = "all"
+        rest = args
     if cmd == "generate":
-        generate()
+        generate(rest)
+    elif cmd == "seed-check":
+        sys.exit(0 if seed_check(rest) else 1)
     elif cmd == "start":
+        if rest:
+            print("Usage: sweep.py start")
+            sys.exit(2)
         start()
     elif cmd == "graph":
+        if rest:
+            print("Usage: sweep.py graph")
+            sys.exit(2)
         sys.exit(0 if graph() else 1)
     elif cmd == "all":
-        generate()
+        generate(rest)
         start()
         print()
         sys.exit(0 if graph() else 1)
     else:
         print(f"Unknown command: {cmd!r}")
-        print("Usage: sweep.py [generate|start|graph]   (no arg = all three)")
+        print("Usage: sweep.py [generate|seed-check|start|graph]   (no arg = all three)")
         sys.exit(2)
 
 

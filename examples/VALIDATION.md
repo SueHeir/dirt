@@ -563,6 +563,18 @@ validation. It proves deterministic clump positions, velocities, and random
 orientations for the same config and catches any return to entropy-seeded
 insertion in the setup system.
 
+`SPH_glass_sphere_calibration/03_angle_of_repose` records the per-case inserter
+seeds used by the rolling-friction calibration sweep. Its `seed-check` command
+compares generated config SHA-256 fingerprints for a same-base-seed rerun, a
+manifest replay, and a changed-base campaign.
+
+![SPH glass angle-of-repose seed manifest reproducibility](SPH_glass_sphere_calibration/03_angle_of_repose/plots/seed_reproducibility.png)
+
+*Same base seed and manifest replay reproduce all 12 per-case configs
+byte-identically; changing the base seed reproduces none of the config hashes or
+per-case seeds. PASS means the calibration campaign can be regenerated exactly
+from its base seed or manifest, while distinct replicates remain independent.*
+
 `bench_restart_determinism` runs an uninterrupted periodic granular-gas
 trajectory, a checkpoint/resume trajectory, and an independent same-seed twin of
 the uninterrupted run. The resumed final dump is compared atom-by-atom to the
