@@ -36,3 +36,11 @@ Expected result:
 4/4 checks passed
 ALL CHECKS PASSED
 ```
+
+![Peri-to-DEM transition validation](plots/peri_dem_transition_validation.png)
+
+*Measured mass and momentum conservation errors are plotted against the 1e-9
+relative PASS limit, with the same run's fracture/contact diagnostics through
+the peri-to-DEM transition. Latest regenerated run: PASS, with surviving bonds
+below the 10% fracture gate, peak damage at 1.000, and active DEM contacts above
+the required count.*

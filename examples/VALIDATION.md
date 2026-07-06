@@ -872,6 +872,22 @@ axial case checks the configured piecewise envelope, while the bending-plastic
 case checks Guo's trilinear cap and kinematic-hardening trajectory for this
 single loading schedule.
 
+## `peri_dem_interop` — same-substrate peri-to-DEM handoff
+
+The non-`bench_` `peri_dem_interop` example is a closed-system interop check: two
+brittle peridynamic bars collide, bonds break, and the resulting fragments
+continue through ordinary DEM contact on the same soil atom set and neighbor
+list. The hard gate is conservation across the handoff: max relative mass and
+momentum drift must stay below 1e-9. The sweep also requires actual fracture
+(surviving bonds below 10% of the reference family and peak damage >=0.99) and
+post-breakage DEM contacts (at least 8 active contacts).
+
+![Peri-to-DEM transition validation](peri_dem_interop/plots/peri_dem_transition_validation.png)
+
+*Measured mass and momentum conservation errors vs the 1e-9 PASS limit, plus the
+fracture/contact diagnostics through the transition. Latest regenerated run:
+PASS for all four checks.*
+
 ---
 
 ## What is not validated (scope summary)
