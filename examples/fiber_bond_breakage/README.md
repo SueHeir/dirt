@@ -29,6 +29,13 @@ python3 examples/fiber_bond_breakage/validate.py \
 | `combined_strain.toml`             | `CombinedStrain` (migration Eq. 1.7-1) | spaced fiber, kinematic tip-bend   | `y_tip = ε_max·L_c²/(3·r_b)`       | PASS, 30%  |
 | `interaction_linear_stress.toml`   | `InteractionLinearStress` (Clemmer)   | spaced fiber, kinematic tip-bend, bending-only channel | same as CombinedStress              | PASS, 16%  |
 
+![fiber bond breakage criteria validation](plots/breakage_criteria_validation.png)
+
+*Measured first-break strain or tip displacement from the current example runs
+against the analytical or weakest-bond Weibull prediction. Dashed bands show the
+validator gates: ±5% for axial criteria and ±35% for cantilever criteria. Latest
+run: PASS for all six criteria.*
+
 ## Notes on the prediction quality
 
 The **axial** scenarios are exact to machine precision because uniform
