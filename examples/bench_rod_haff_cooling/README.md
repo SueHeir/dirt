@@ -20,11 +20,10 @@ diagnostic for "is this Haff's law?" is that **1/√T is linear in t** (this hol
 across the whole decay), whereas the bare log-log slope only reaches −2
 asymptotically at `t ≫ tc`. A dilute gas cools slowly, so a finite run reaches a
 moderate `t/tc` and a shallower slope; the R² of the 1/√T fit is the robust
-validation. The 4-sphere rod, with its larger `tc` and slower cooling, reaches only
-`t/tc ≈ 5` — where the local slope sits at ≈ −1.59, right on the `−1.6` gate edge —
-so it **FAILs** the `−2.3 < slope < −1.6` late-time-slope check on recent harness
-runs while still passing the Haff-form R² gate (0.9999). See `examples/VALIDATION.md`
-(Tier 2) for the honest read; the gate is not loosened to force a pass.
+validation. The 4-sphere rod, with its larger `tc` and slower cooling, now runs long
+enough to reach `t/tc ≈ 13`; the fitted late-window slope is about −1.84, inside the
+unchanged `−2.3 < slope < −1.6` gate while still short of the formal `t/tc → ∞`
+limit.
 
 ## Setup
 
@@ -32,7 +31,7 @@ runs while still passing the Haff-form R² gate (0.9999). See `examples/VALIDATI
 |----------|-------|
 | Rod | 4 sub-spheres, r_sub = 0.5 mm, centers at ±0.4, ±1.2 mm along x (half-length 1.7 mm) |
 | Count | 500 rods in a 40 mm periodic cube |
-| Material | E = 50 MPa, ν = 0.3, e = 0.9, μ = 0.3, no rolling friction |
+| Material | E = 70 MPa, ν = 0.245, e = 0.926, μ = 0.16, no rolling friction |
 | Initial field | random, σ = 0.5 m/s per component |
 | Contact | Hertz normal + Mindlin tangential, viscoelastic (tsuji) damping |
 
@@ -47,11 +46,12 @@ python3 examples/bench_rod_haff_cooling/sweep.py graph      # validate vs Haff +
 
 ### LAMMPS cross-check
 
-If a LAMMPS binary is on `PATH`, `start` also runs the same gas in LAMMPS as
-**rigid multisphere** (`fix rigid/small molecule` with an auto-generated rod
-molecule template, `pair_style granular` with matched Hertz + Mindlin + tsuji
-damping, intra-clump neighbor exclusion) and overlays its cooling curve. LAMMPS
-is optional — without it the benchmark validates DIRT alone.
+If a LAMMPS binary with the needed packages is on `PATH`, `start` also runs the
+same gas in LAMMPS as **rigid multisphere** (`fix rigid/small molecule` with an
+auto-generated rod molecule template, `pair_style granular` with matched Hertz +
+Mindlin + tsuji damping, intra-clump neighbor exclusion) and overlays its cooling
+curve. LAMMPS is optional — without it, or when the local binary lacks the
+MOLECULE/rigid support, the benchmark validates DIRT alone.
 
 **Caveats** (a cooling-*law* comparison, not point-by-point): the codes use
 different rigid-body integrators and clump-contact handling, and a many-body gas
@@ -76,12 +76,13 @@ fit and the −2 slope.
 
 *Left:* the cooling law **past the rotational-equilibration transient**. DIRT
 starts at `T_rot=0` and LAMMPS starts already spinning (from the rigid-body
-velocity projection), so the first ~10% is discarded and the equilibration point
-is treated as a fresh start (time re-zeroed, `T` re-normalized there). Once the
-two share the same quasi-steady partition they cool together — DIRT and LAMMPS
-overlay on the Haff fit, approaching the −2 slope. *Right:* DIRT's full energy
-partition (translational and rotational), showing the start-up transient that is
-skipped on the left.
+velocity projection), so the early transient is discarded and the equilibration point
+is treated as a fresh start (time re-zeroed, `T` re-normalized there). The DIRT
+curve follows the Haff fit to `t/tc ≈ 13`, where the fitted late-time slope is
+about −1.84 and still approaching the −2 asymptote. If the optional LAMMPS run is
+available, it is overlaid on the same panel. *Right:* DIRT's full energy partition
+(translational and rotational), showing the start-up transient that is skipped on
+the left.
 
 ## References
 
