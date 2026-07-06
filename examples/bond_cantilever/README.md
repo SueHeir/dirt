@@ -38,26 +38,41 @@ Fixes that make this example pass:
 ## Run
 
 ```bash
-cargo run --release --example bond_cantilever --no-default-features -- \
-    examples/bond_cantilever/config.toml
+cargo run --release --example bond_cantilever --no-default-features \
+    --features precision-double -- examples/bond_cantilever/config.toml
 ```
 
-Every 1 000 steps the recorder prints:
+To regenerate the validation figure from the example output:
+
+```bash
+source ~/projects/.build-env
+$BENCH_PYTHON examples/bond_cantilever/sweep.py
+```
+
+Every 1 000 steps the recorder writes `data/cantilever.csv`; every 10 000
+steps it prints a running summary:
 
 ```
-  step  100000  tip_z=-1.007e-6  max_strain=1.12e-11  bonds=9  missing=0  OK
+  step   90000  tip_z=-6.780e-7  max_strain=1.017e-11  bonds=9  missing=0  OK
 ```
 
 ## Verified result
 
-After 100 000 steps (10 ms):
+The latest regenerated run samples through step 99 000 (9.9 ms):
 
 | quantity                | measured        | beam theory (`δ = q·L⁴ / (8·E·I)`) |
 |-------------------------|-----------------|------------------------------------|
-| tip deflection `z_9`    | `~-1.0 × 10⁻⁶ m` | `-9.56 × 10⁻⁷ m`                  |
+| tip deflection `z_9`    | `-9.48 × 10⁻⁷ m` | `-9.54 × 10⁻⁷ m`                  |
 | bond count (per step)   | 9               | 9 (10 atoms, 9 bonds)              |
 | missing-partner skips   | 0               | 0                                  |
 | max bond strain         | `1.12 × 10⁻¹¹`  | (bending, not stretch)             |
+
+![Tip deflection vs Euler-Bernoulli beam theory](plots/tip_deflection_vs_beam.png)
+
+*Tip deflection over time from `data/cantilever.csv` compared with the
+Euler-Bernoulli static reference. The shaded band is the ±5 % PASS criterion;
+the latest sample is 0.61 % from the reference, with all 9 bonds present and
+zero missing-partner skips.*
 
 The tip oscillates within ~the beam-theory deflection (lightly damped flexural
 vibration) and stays bounded. No bond breaks, no partner skips, no exponential
