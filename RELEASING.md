@@ -14,7 +14,7 @@ between releases without a major-version bump.
 
 DIRT lives on two remotes:
 
-- **Gitea** (`192.168.0.170`) is the **primary** development remote. All work
+- **Gitea** (internal host) is the **primary** development remote. All work
   lands on `main` through reviewed pull requests, and the annotated `vX.Y.Z`
   release tag is cut here.
 - **GitHub** (`github.com/SueHeir/dirt`) is a **published downstream mirror** of
