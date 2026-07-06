@@ -9,10 +9,10 @@ in `breakage::BreakageConfig`.
 
 ```bash
 # Build (one-time)
-cargo build --release --example fiber_bond --no-default-features
+cargo build --release --example fiber_bond --no-default-features --features precision-double
 
 # Run + validate any scenario
-cargo run --release --example fiber_bond --no-default-features -- \
+cargo run --release --example fiber_bond --no-default-features --features precision-double -- \
     examples/fiber_bond_breakage/<config>.toml
 python3 examples/fiber_bond_breakage/validate.py \
     examples/fiber_bond_breakage/<scenario>/data/fiber_bond.csv
