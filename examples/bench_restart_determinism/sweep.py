@@ -42,6 +42,8 @@ EXAMPLE = "bench_restart_determinism"
 BASE_CONFIG = os.path.join(HERE, "config.toml")
 BIN = os.path.join(REPO_ROOT, "target", "release", "examples", EXAMPLE)
 WORK = os.path.join(HERE, "data", "work")  # under data/ so it is gitignored
+PLOT_DIR = os.path.join(HERE, "plots")
+PLOT = os.path.join(PLOT_DIR, "restart_determinism.png")
 MARKER = "# === SWEEP CONTROL BELOW"
 
 TOTAL_STEPS = 4000     # total integration steps of the reference trajectory
@@ -223,6 +225,56 @@ def all_finite(atoms):
     return True
 
 
+def plot_results(rel_pos, rel_vel, digest_flags):
+    """Write the README figure from this run's measured validation metrics."""
+    try:
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+    except Exception as e:
+        print(f"\n(matplotlib unavailable, skipped plot: {e})")
+        return
+
+    os.makedirs(PLOT_DIR, exist_ok=True)
+    plt.rcParams.update({"figure.dpi": 150, "savefig.dpi": 150, "font.size": 10})
+
+    fig, (ax0, ax1) = plt.subplots(1, 2, figsize=(9.5, 4.0))
+
+    labels = ["position", "velocity"]
+    values = [rel_pos, rel_vel]
+    colors = ["#2f6f73" if v <= TOL else "#b45f3c" for v in values]
+    ax0.bar(labels, values, color=colors)
+    ax0.axhline(TOL, color="black", linestyle="--", linewidth=1.2,
+                label=f"tolerance = {TOL:.0e}")
+    ax0.set_yscale("log")
+    ax0.set_ylim(max(1e-18, min(values + [TOL]) / 10), max(TOL * 10, max(values + [TOL]) * 10))
+    ax0.set_ylabel("max relative error vs uninterrupted A")
+    ax0.set_title("Restart continuity")
+    ax0.legend(loc="upper right", frameon=False)
+    for i, v in enumerate(values):
+        ax0.text(i, max(v, ax0.get_ylim()[0]) * 1.3, f"{v:.1e}", ha="center", va="bottom")
+
+    names = list(digest_flags.keys())
+    flags = list(digest_flags.values())
+    colors = ["#2f6f73" if v == 0 else "#b45f3c" for v in flags]
+    ax1.bar(names, flags, color=colors)
+    ax1.axhline(0.5, color="black", linestyle="--", linewidth=1.2,
+                label="pass: no digest delta")
+    ax1.set_ylim(0, 1.1)
+    ax1.set_ylabel("SHA-256 mismatch flag vs A")
+    ax1.set_title("Digest deltas")
+    ax1.legend(loc="upper right", frameon=False)
+    ax1.tick_params(axis="x", rotation=20)
+    for i, v in enumerate(flags):
+        ax1.text(i, v + 0.04, "0" if v == 0 else "1", ha="center", va="bottom")
+
+    fig.suptitle("bench_restart_determinism measured validation result")
+    fig.tight_layout()
+    fig.savefig(PLOT, bbox_inches="tight")
+    plt.close(fig)
+    print(f"\nWrote {os.path.relpath(PLOT, REPO_ROOT)}")
+
+
 # ── main ─────────────────────────────────────────────────────────────────────
 
 def main():
@@ -306,11 +358,18 @@ def main():
           f"max rel={rel_vel:.3e} (abs={abs_vel:.3e} m/s), tol={TOL:.0e}")
 
     # (b) run-to-run determinism: A and C bit-identical (final + initial dumps).
+    same_restart_final = sha256(final_a) == sha256(final_b)
     same_final = sha256(final_a) == sha256(final_c)
     same_init = sha256(dump_at(dir_a, 0)) == sha256(dump_at(dir_c, 0))
     check("determinism (final bytes)", same_final,
           f"sha256 A={sha256(final_a)[:12]} C={sha256(final_c)[:12]}")
     check("determinism (initial bytes)", same_init, "seeded ICs identical")
+
+    plot_results(rel_pos, rel_vel, {
+        "restart final": 0 if same_restart_final else 1,
+        "twin final": 0 if same_final else 1,
+        "twin initial": 0 if same_init else 1,
+    })
 
     print("-" * 70)
     print(f"\nResult: {passed}/{total} checks passed")

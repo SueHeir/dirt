@@ -482,6 +482,19 @@ validation. It proves deterministic clump positions, velocities, and random
 orientations for the same config and catches any return to entropy-seeded
 insertion in the setup system.
 
+`bench_restart_determinism` runs an uninterrupted periodic granular-gas
+trajectory, a checkpoint/resume trajectory, and an independent same-seed twin of
+the uninterrupted run. The resumed final dump is compared atom-by-atom to the
+uninterrupted reference for positions and velocities, and the independent twin is
+byte-compared by SHA-256 digest.
+
+![Restart continuity and digest determinism](bench_restart_determinism/plots/restart_determinism.png)
+
+*Measured restart-continuity errors are below the `1e-9` tolerance line for both
+positions and velocities, and the digest mismatch flags versus the uninterrupted
+reference are zero. PASS means the restart preserved the per-atom plus
+per-contact state and the same-seed single-rank run is byte-identical.*
+
 ---
 
 # Tier 3 — Bulk granular phenomena (empirical / qualitative)
