@@ -15,10 +15,10 @@ precision-mixed = ["soil_core/precision-mixed"]
 precision-single = ["soil_core/precision-single"]
 
 [dependencies]
-soil_core = { git = "ssh://git@192.168.0.170:2222/SueHeir/soil.git", branch = "auto/soil-region-fallible-bounded-sampling", default-features = false }
+soil_core = { git = "ssh://git@192.168.0.170:2222/SueHeir/soil.git", branch = "main", default-features = false }
 grass_app = { git = "ssh://git@192.168.0.170:2222/SueHeir/grass.git", branch = "main" }
 grass_scheduler = { git = "ssh://git@192.168.0.170:2222/SueHeir/grass.git", branch = "main" }
-soil_derive = { git = "ssh://git@192.168.0.170:2222/SueHeir/soil.git", branch = "auto/soil-region-fallible-bounded-sampling" }
+soil_derive = { git = "ssh://git@192.168.0.170:2222/SueHeir/soil.git", branch = "main" }
 serde = { version = "1", features = ["derive"] }
 rand = "0.9"
 rand_distr = "0.5.1"
