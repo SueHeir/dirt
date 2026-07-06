@@ -996,7 +996,9 @@ have their own non-`bench_` examples). The cleanest open gaps:
 - **Polydispersity / unequal-radius contact** — size distributions (`RadiusSpec`) and
   the unequal-radius `R* = R₁R₂/(R₁+R₂)` are barely touched (all two-body tests use
   equal spheres or sphere-on-wall).
-- **`dirt_fixes` viscous drag / prescribed motion**, and **GPU-vs-CPU equivalence**.
+- **`dirt_fixes` viscous drag / prescribed motion**. GPU-vs-CPU equivalence is
+  only recorded in historical validation notes; current main does not ship the
+  GPU crates/plugins those notes exercised.
 
 (MPI domain decomposition — previously listed here as untested — is now covered by
 `bench_mpi_decomposition`: a contact-rich `2×1×1` / `2×2×1` run reproduces the

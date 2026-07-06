@@ -1,5 +1,11 @@
 # GPU validation vs CPU
 
+> **Current main-branch status (2026-07-06):** this page records validation from
+> the historical GPU branch/artifacts. The current `main` checkout does **not**
+> contain a `dirt_gpu` crate, `soil_gpu::GpuState`, or the dirt GPU schedule/
+> resident plugins referenced below. Treat the results as historical evidence for
+> that branch, not as a claim that main currently ships GPU support.
+
 **Adapter:** Apple M5 Pro (Metal 4), via wgpu. f32-only (no f64), so the GPU is
 effectively **single** precision (f32 storage + f32 accumulation).
 
@@ -71,7 +77,8 @@ straightforward enough to include here.
 
 End-to-end GPU sims (resident `GpuState` + `WallForce`/`GranularForce` hooks) run
 on the actual baseline scenarios; measured metrics diffed against CPU-single
-(the right reference — GPU is f32). Runner: `crates/dirt_gpu/examples/validate_trajectory.rs`
+(the right reference — GPU is f32). Historical runner:
+`crates/dirt_gpu/examples/validate_trajectory.rs`
 (`cargo run --release -p dirt_gpu --example validate_trajectory --no-default-features --features precision-double`).
 Effective params come from dirt's own `MaterialTable`, so the only difference is f32-vs-f64.
 

@@ -1,5 +1,10 @@
 # Step 1 (residency) — schedule wiring attempt + the real blocker found
 
+> **Current main-branch status (2026-07-06):** this is a historical GPU-branch
+> note. Current `main` has no `dirt_gpu` crate, `soil_gpu::GpuState`, or
+> `GpuGranularResidentPlugin`. The reproduction path and follow-up plugin names
+> below refer to that branch's artifacts.
+
 **Outcome: I did NOT land a working `GpuGranularResidentPlugin`. I found why one
 can't be correct yet:** windowing the resident GPU stepper corrupts the
 stateful tangential contact history at every window boundary. This is the
@@ -20,7 +25,7 @@ tangential spring history** every time it runs. So splitting a run into windows 
 `run_steps(K)` per window, which is exactly the residency model — re-primes (re-
 advances history) at each boundary, double-counting the tangential history there.
 
-## Reproduction (`crates/dirt_gpu/examples/resident_validate.rs`)
+## Reproduction (historical `crates/dirt_gpu/examples/resident_validate.rs`)
 
 Same deterministic wall+gravity frictional pile (n=1000, μ=0.5), advanced 4000
 steps three ways on the Apple M5 Pro:
@@ -56,7 +61,8 @@ points ARE window boundaries.
 
 ## What is NOT affected
 
-- **Milestone 1** (host-authoritative ghost-aware GPU force, on `main`) is
+- **Milestone 1** (host-authoritative ghost-aware GPU force, on the historical
+  GPU branch) is
   untouched and still correct: it uses `eval_force_once` (one force eval per
   step) + host integrate, so it advances history exactly once per step. This
   step-1 work added only a new example; it changed neither the milestone-1 plugin
@@ -106,4 +112,5 @@ work — the `GpuGranularResidentPlugin` schedule wiring — can now be built on
 `run_steps`/`run_steps_continue` at the neighbour-rebuild cadence.
 
 Requires the soil_gpu commit (deterministic cell list + run_steps_continue);
-soil `main` must be pushed before this dirt branch builds against it.
+the matching historical soil GPU branch had to be available before this dirt
+branch could build against it.

@@ -1,10 +1,17 @@
 # Roadmap Step 1 — Single-GPU residency: design + first increment
 
+> **Current main-branch status (2026-07-06):** this is a historical GPU-branch
+> design/measurement note. Current `main` has no `dirt_gpu` crate,
+> `soil_gpu::GpuState`, `dirt_granular::gpu_granular_force`,
+> `GpuGranularForcePlugin`, or `GpuGranularResidentPlugin`. The "current state"
+> below refers to the GPU branch state at the time this note was written, not to
+> today's main branch.
+
 **Goal:** keep the granular sim resident on the GPU — data stays on device, the
 host touches it only for I/O/checkpoints and (later) MPI halo exchange — instead
 of the per-step host↔device round-trip the schedule plugin does today.
 
-## The two GPU paths (current state)
+## The two GPU paths (historical GPU-branch state)
 
 **1. Standalone resident stepper — `soil_gpu::GpuState::run_steps` (gpu_state.rs:278).**
 One command encoder, one `submit`: it primes `F(x₀)`, then for each of K steps
@@ -17,7 +24,8 @@ residency therefore already exists and is validated:
 - `validate_trajectory`: resident trajectories match the CPU baseline to ~1e-4.
 - This is the path the benchmark below measures.
 
-**2. Schedule plugin — `dirt_granular::gpu_granular_force` (dirt_granular/src/gpu.rs:119).**
+**2. Schedule plugin — `dirt_granular::gpu_granular_force` (historical
+`dirt_granular/src/gpu.rs:119`).**
 Host-authoritative force *offload* (the LAMMPS GPU-package model, its own docs say
 so at gpu.rs:8–10). Per step: re-upload pos/vel/omega + cell-list rebuild
 (`set_state`), `eval_force_once` (force only, no integrate), `download_force` +
@@ -29,7 +37,8 @@ and it pays a full host↔device round-trip — including two blocking GPU readb
 
 ## First increment (this commit): quantify the residency win, prove batching exact
 
-`crates/dirt_gpu/examples/residency_bench.rs` advances the *same* granular scene
+Historical runner `crates/dirt_gpu/examples/residency_bench.rs` advances the
+*same* granular scene
 K=500 steps two ways and measures wall-clock on the Apple M5 Pro:
 
 | N | resident `run_steps(K)` | per-step-sync (plugin model) | speedup | batched vs stepwise |
@@ -99,5 +108,5 @@ measurement that residency is 15–38× cheaper than per-step sync. It does **no
 yet wire the resident model into the dirt schedule — that is the
 `GpuGranularResidentPlugin` refactor (step 1 proper), which then unlocks
 GPU-resident halos (step 2b). The standalone resident path remains validated and
-usable today via `GpuState` directly (`pile`, `validate_trajectory`,
-`residency_bench`).
+usable on that branch via `GpuState` directly (`pile`, `validate_trajectory`,
+`residency_bench`). These files are not present on current main.

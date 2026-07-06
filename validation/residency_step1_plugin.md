@@ -1,5 +1,10 @@
 # Step 1 — `GpuGranularResidentPlugin` (windowed-resident GPU schedule plugin)
 
+> **Current main-branch status (2026-07-06):** this is a historical GPU-branch
+> validation note. Current `main` does not contain `GpuGranularResidentPlugin`,
+> `crates/dirt_granular/src/gpu_resident.rs`, or the `dirt_gpu` crate. The
+> measurements below describe the branch where that plugin existed.
+
 The device-resident counterpart to milestone 1's host-authoritative GPU force
 plugin. Instead of a host↔device round-trip every step, it keeps pos/vel/force/
 omega **resident on the device** and advances the whole velocity-Verlet loop
@@ -8,8 +13,8 @@ GPU for a **window of K steps per schedule tick** via soil's `run_steps` /
 `run_steps_continue`, syncing the host `Atom`/`DemAtom` only at window boundaries.
 
 ## How it slots into the schedule
-- New file `crates/dirt_granular/src/gpu_resident.rs` — milestone 1's
-  `gpu.rs` is byte-for-byte untouched (`git diff main` = 0), so the
+- Historical branch file `crates/dirt_granular/src/gpu_resident.rs` — milestone 1's
+  `gpu.rs` was byte-for-byte untouched relative to that branch base, so the
   host-authoritative path stays the safe default for MPI / mixed-physics configs.
 - It is added **instead of** `VelocityVerletPlugin` + host force +
   `RotationalDynamicsPlugin`: one system at the `Force` phase advances the device

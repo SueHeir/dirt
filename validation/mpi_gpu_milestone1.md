@@ -1,5 +1,10 @@
 # Milestone 1 — MPI domain decomposition + GPU contact force (correctness)
 
+> **Current main-branch status (2026-07-06):** this is a historical GPU-branch
+> validation note. Current `main` does not contain the GPU force plugin or
+> `crates/dirt_granular/src/gpu.rs`; the results below do not imply GPU contact
+> force support ships on main today.
+
 **Result: a 2-rank MPI run with the GPU contact force now reproduces the 1-rank
 and CPU results to the f32 noise floor.** The scale-out architecture (MPI
 domain-decomp + GPU per rank) is functionally correct for particle–particle
@@ -7,7 +12,8 @@ contact.
 
 ## The bug that was fixed
 
-`gpu_granular_force` / `GpuGranular::build` (crates/dirt_granular/src/gpu.rs)
+`gpu_granular_force` / `GpuGranular::build` (historical
+`crates/dirt_granular/src/gpu.rs`)
 uploaded and binned only **local** atoms (`0..nlocal`), ignoring **ghost** atoms
 (`nlocal..atoms.len()`). The CPU `hertz_mindlin_contact_force` uses the neighbour
 list, which includes ghost pairs. So under MPI a local atom contacting a
