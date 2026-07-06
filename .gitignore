@@ -37,3 +37,6 @@ examples/run/hopper_discharge/
 # precision-validation: raw per-run trajectories are reproducible via the harness
 validation/results/
 validation/run.log
+
+# local knowledge-graph tooling output
+graphify-out/
