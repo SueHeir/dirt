@@ -32,9 +32,9 @@
 <text x="850.0" y="494.0" font-family="Arial, sans-serif" font-size="15" text-anchor="middle" fill="#1f2933" font-weight="400">simulation step</text>
 <text x="544.0" y="260.0" font-family="Arial, sans-serif" font-size="14" text-anchor="middle" fill="#2f855a" font-weight="400">surviving peri bonds</text>
 <text x="1166.0" y="250.0" font-family="Arial, sans-serif" font-size="14" text-anchor="middle" fill="#805ad5" font-weight="400">DEM contacts / damage</text>
-<text x="608.0" y="108.0" font-family="Arial, sans-serif" font-size="13" text-anchor="start" fill="#2f855a" font-weight="400">fracture PASS: <10% initial bonds</text>
-<text x="608.0" y="128.0" font-family="Arial, sans-serif" font-size="13" text-anchor="start" fill="#805ad5" font-weight="400">contact PASS: >=8</text>
-<text x="608.0" y="148.0" font-family="Arial, sans-serif" font-size="13" text-anchor="start" fill="#718096" font-weight="400">damage PASS: >=0.99</text>
+<text x="608.0" y="108.0" font-family="Arial, sans-serif" font-size="13" text-anchor="start" fill="#2f855a" font-weight="400">fracture PASS: &lt;10% initial bonds</text>
+<text x="608.0" y="128.0" font-family="Arial, sans-serif" font-size="13" text-anchor="start" fill="#805ad5" font-weight="400">contact PASS: &gt;=8</text>
+<text x="608.0" y="148.0" font-family="Arial, sans-serif" font-size="13" text-anchor="start" fill="#718096" font-weight="400">damage PASS: &gt;=0.99</text>
 <text x="590.0" y="478.0" font-family="Arial, sans-serif" font-size="12" text-anchor="middle" fill="#1f2933" font-weight="400">0</text>
 <text x="1110.0" y="478.0" font-family="Arial, sans-serif" font-size="12" text-anchor="middle" fill="#1f2933" font-weight="400">2800</text>
 <text x="580.0" y="424.8" font-family="Arial, sans-serif" font-size="12" text-anchor="end" fill="#2f855a" font-weight="400">3438</text>

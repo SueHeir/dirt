@@ -30,6 +30,7 @@ import re
 import sys
 import subprocess
 import math
+from html import escape
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.abspath(os.path.join(SCRIPT_DIR, "..", ".."))
@@ -111,7 +112,7 @@ def write_plot(steps, rel_mass, rel_p, tol):
         return (
             f'<text x="{x:.1f}" y="{y:.1f}" font-family="Arial, sans-serif" '
             f'font-size="{size}" text-anchor="{anchor}" fill="{color}" '
-            f'font-weight="{weight}">{body}</text>'
+            f'font-weight="{weight}">{escape(str(body), quote=False)}</text>'
         )
 
     floor = max(tol * 1e-9, 1e-18)
