@@ -64,6 +64,8 @@ EXAMPLE = "bench_mpi_decomposition"
 BASE_CONFIG = os.path.join(HERE, "config.toml")
 BIN = os.path.join(REPO_ROOT, "target", "release", "examples", EXAMPLE)
 WORK = os.path.join(HERE, "data", "work")  # under data/ so it is gitignored
+PLOTS = os.path.join(HERE, "plots")
+DELTA_PLOT = os.path.join(PLOTS, "mpi_decomposition_deltas.svg")
 MARKER = "# === SWEEP CONTROL BELOW"
 
 TOTAL_STEPS = 4000     # integration steps (0 .. TOTAL_STEPS-1)
@@ -249,6 +251,113 @@ def all_finite(atoms):
     return True
 
 
+def write_delta_plot(rows):
+    """Write a dependency-free SVG of multi-rank deltas against 1x1x1."""
+    os.makedirs(PLOTS, exist_ok=True)
+
+    metrics = [
+        ("tag/count", "tag_delta"),
+        ("momentum", "momentum_match"),
+        ("KE(t)", "ke_match"),
+        ("final pos", "pos"),
+        ("final vel", "vel"),
+    ]
+    width, height = 840, 500
+    left, right, top, bottom = 82, 26, 54, 92
+    plot_w = width - left - right
+    plot_h = height - top - bottom
+    ymin, ymax = 1e-30, 2e-8
+    log_min, log_max = math.log10(ymin), math.log10(ymax)
+
+    def sx(i, series_idx):
+        group_w = plot_w / len(metrics)
+        bar_w = group_w * 0.28
+        center = left + group_w * (i + 0.5)
+        return center + (series_idx - (len(rows) - 1) / 2.0) * bar_w * 1.25 - bar_w / 2.0
+
+    def sy(value):
+        clipped = min(max(value, ymin), ymax)
+        frac = (math.log10(clipped) - log_min) / (log_max - log_min)
+        return top + plot_h * (1.0 - frac)
+
+    def esc(text):
+        return (str(text).replace("&", "&amp;").replace("<", "&lt;")
+                .replace(">", "&gt;").replace('"', "&quot;"))
+
+    colors = ["#2878b5", "#d95f02"]
+    bar_w = (plot_w / len(metrics)) * 0.28
+    tol_y = sy(TOL)
+    tick_values = [1e-30, 1e-25, 1e-20, 1e-15, 1e-10]
+    label_y = top + plot_h + 24
+
+    parts = [
+        '<?xml version="1.0" encoding="UTF-8"?>',
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" '
+        f'viewBox="0 0 {width} {height}" role="img" '
+        f'aria-label="bench_mpi_decomposition multi-rank agreement">',
+        "<style><![CDATA["
+        "text{font-family:Arial,Helvetica,sans-serif;fill:#222}"
+        ".small{font-size:12px}.tick{font-size:11px;fill:#444}"
+        ".title{font-size:19px;font-weight:700}.axis{stroke:#333;stroke-width:1}"
+        ".grid{stroke:#d4d4d4;stroke-width:1;stroke-dasharray:2 4}"
+        ".tol{stroke:#b2182b;stroke-width:2;stroke-dasharray:7 5}"
+        "]]></style>",
+        '<rect width="100%" height="100%" fill="#ffffff"/>',
+        '<text class="title" x="82" y="28">bench_mpi_decomposition: multi-rank agreement</text>',
+        f'<text class="small" x="82" y="47">relative delta vs 1x1x1 reference; dashed line is unchanged {TOL:.0e} pass tolerance</text>',
+    ]
+
+    for tv in tick_values:
+        y = sy(tv)
+        parts.append(f'<line class="grid" x1="{left}" y1="{y:.1f}" x2="{left + plot_w}" y2="{y:.1f}"/>')
+        parts.append(f'<text class="tick" x="{left - 8}" y="{y + 4:.1f}" text-anchor="end">{tv:.0e}</text>')
+
+    parts.extend([
+        f'<line class="axis" x1="{left}" y1="{top}" x2="{left}" y2="{top + plot_h}"/>',
+        f'<line class="axis" x1="{left}" y1="{top + plot_h}" x2="{left + plot_w}" y2="{top + plot_h}"/>',
+        f'<line class="tol" x1="{left}" y1="{tol_y:.1f}" x2="{left + plot_w}" y2="{tol_y:.1f}"/>',
+        f'<text class="small" fill="#b2182b" x="{left + plot_w - 4}" y="{tol_y - 6:.1f}" text-anchor="end">pass tolerance {TOL:.0e}</text>',
+    ])
+
+    for i, (label, _) in enumerate(metrics):
+        group_w = plot_w / len(metrics)
+        cx = left + group_w * (i + 0.5)
+        parts.append(f'<text class="small" x="{cx:.1f}" y="{label_y}" text-anchor="middle">{esc(label)}</text>')
+
+    for j, row in enumerate(rows):
+        for i, (_, key) in enumerate(metrics):
+            value = row[key]
+            drawn = max(value, ymin)
+            x = sx(i, j)
+            y = sy(drawn)
+            h = top + plot_h - y
+            parts.append(
+                f'<rect x="{x:.1f}" y="{y:.1f}" width="{bar_w:.1f}" height="{h:.1f}" '
+                f'fill="{colors[j % len(colors)]}"><title>{esc(row["name"])} {esc(key)} = {value:.3e}</title></rect>'
+            )
+            if value == 0.0:
+                parts.append(
+                    f'<text class="tick" x="{x + bar_w / 2:.1f}" y="{sy(2e-30):.1f}" '
+                    f'text-anchor="middle">0</text>'
+                )
+
+    legend_x = left + 8
+    legend_y = top + 16
+    for j, row in enumerate(rows):
+        lx = legend_x + j * 150
+        parts.append(f'<rect x="{lx}" y="{legend_y - 10}" width="14" height="14" fill="{colors[j % len(colors)]}"/>')
+        parts.append(f'<text class="small" x="{lx + 20}" y="{legend_y + 2}">{esc(row["name"])}</text>')
+
+    parts.append(
+        f'<text class="small" x="{width - 20}" y="{height - 18}" text-anchor="end">'
+        "tag/count is an exact identity check; zeros are drawn at the log-scale floor</text>"
+    )
+    parts.append("</svg>")
+    with open(DELTA_PLOT, "w") as f:
+        f.write("\n".join(parts) + "\n")
+    print(f"\nWrote {os.path.relpath(DELTA_PLOT, REPO_ROOT)}")
+
+
 # ── main ─────────────────────────────────────────────────────────────────────
 
 def main():
@@ -323,6 +432,7 @@ def main():
     worst_mom_drift = 0.0
     worst_mom_match = 0.0
     worst_ke_match = 0.0
+    plot_rows = []
     for (name, px, py, pz, nranks) in DECOMPS:
         fr = frames[name]
         steps = sorted(fr)
@@ -330,6 +440,10 @@ def main():
         # (a) atom-count / identity conservation at EVERY frame.
         count_ok = all(len(fr[s]) == n_expected and set(fr[s]) == ref_tags for s in steps)
         bad = next((s for s in steps if len(fr[s]) != n_expected or set(fr[s]) != ref_tags), None)
+        tag_delta = max(
+            (abs(len(fr[s]) - n_expected) + len(set(fr[s]).symmetric_difference(ref_tags))) / n_expected
+            for s in steps
+        )
         check(f"{name}: atom-count conserved", count_ok,
               f"all {len(steps)} frames hold exactly {n_expected} atoms (tag set intact)"
               if count_ok else f"frame at step {bad} has {len(fr[bad])} atoms / tag mismatch")
@@ -366,11 +480,20 @@ def main():
                   f"max rel = {wp:.2e} (tol {TOL:.0e})")
             check(f"{name}: per-atom velocities", wv <= TOL,
                   f"max rel = {wv:.2e} (tol {TOL:.0e})")
+            plot_rows.append({
+                "name": f"{name} ({px}x{py}x{pz})",
+                "tag_delta": tag_delta,
+                "momentum_match": mom_match,
+                "ke_match": ke_match,
+                "pos": wp,
+                "vel": wv,
+            })
 
     print("-" * 78)
     print(f"Worst per-atom: pos {worst_overall_pos:.2e}, vel {worst_overall_vel:.2e}  |  "
           f"momentum drift {worst_mom_drift:.2e}, match {worst_mom_match:.2e}  |  "
           f"KE match {worst_ke_match:.2e}   (all << {TOL:.0e} FP floor)")
+    write_delta_plot(plot_rows)
     print(f"\nResult: {passed}/{total} checks passed")
     if passed == total:
         print("ALL CHECKS PASSED")
