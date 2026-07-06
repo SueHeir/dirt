@@ -712,6 +712,25 @@ exponent/form. The measured 1.36 is below the textbook 3/2 (finite hopper, wedge
 modest width range); the ±0.25 tolerance is wide. 2D slot only (the 3D `5/2` form is
 untested).
 
+## `hopper_quiescence` — region-coherence optimization fidelity
+
+This non-`bench_` example compares the region-coherence quiescence optimization
+against the same hopper run without the optimization. The fidelity checks are
+baseline-vs-coherence fill height and discharge history; phase wall times show the
+performance effect for the same run.
+
+![Hopper quiescence validation](hopper_quiescence/plots/hopper_quiescence_validation.png)
+
+*Short matched `val_*.toml` run: coherence tracks the baseline discharge curve
+inside the ±1% pass band and the end-of-fill height stays inside the ±1 mm pass
+band. Latest regenerated figure: PASS, fill-height delta 0.34 mm and discharge
+within ±1% of baseline.*
+
+**Honest read:** this is a prototype optimization/fidelity check, not an independent
+physics validation. The reference is the unoptimized baseline run, so the figure
+shows whether the optimization preserves this scenario's behavior while reducing
+wall time; it does not validate hopper discharge against theory or experiment.
+
 ## `bench_plate_sinkage` — pressure–sinkage
 
 A plate is pushed into a settled bed; pressure vs sinkage is fit against the **Bekker**
@@ -854,7 +873,7 @@ single loading schedule.
   now covered by `bench_convergence` (see "Numerical convergence" above).
 - **Empirical references** (Beverloo, Bekker) are correlations with fitted constants;
   only forms/exponents are tested.
-- **Other `examples/`** (bonds, hopper, granular_gas_benchmark,
+- **Other `examples/`** (bonds, granular_gas_benchmark,
   granular_basic, lj_argon) are outside this document.
 
 ## Capabilities implemented but not benchmarked
@@ -902,6 +921,7 @@ will need a benchmark when re-added.)
 | column_collapse | Lube/Lajeunesse (empirical) + LAMMPS cross-check | empirical scaling + cross-code | FAIL (genuine finite-size limit, not fit noise); linear exponent 1.54 vs 1.0 outside ±0.25 after seed-averaging + 11-pt sweep + sub-diameter metric; LAMMPS misses identically (1.27); exits 1 |
 | lebc_shear | Lun / extended kinetic theory + LAMMPS / Fortran / LIGGGHTS; GDR MiDi / da Cruz μ(I) form | kinetic theory + calibration | PASS/diagnostic; KT gate requires ≥60% of points within 15% normal-stress and 20% shear-stress bands; dense/jamming deviations expected |
 | hopper_beverloo | Beverloo (empirical) | empirical correlation | PASS; exponent 1.36 vs 1.5; prefactor untested |
+| hopper_quiescence | unoptimized baseline run | optimization fidelity | PASS; short matched run preserves discharge within ±1% and fill height within 0.34 mm of baseline; phase wall time speedup 1.15x |
 | plate_sinkage | Bekker (empirical) | empirical / qualitative | PASS; form only; loose bands; softened grains |
 | convergence | finest-dt / large-N / large-box limit (+ Hertz anchor) | numerical (self-convergence) | PASS; dt, N, and box-size convergence; observed order p≈2; box-size error 3.80→2.27→1.64→0% |
 | mpi_decomposition | own 1×1×1 trajectory | parallel-correctness (decomposition-invariance) | PASS; 2×1×1 & 2×2×1 reproduce serial to FP floor (pos ~6e-17, vel ~8e-14); momentum/energy/atom-count conserved |
