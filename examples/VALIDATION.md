@@ -90,6 +90,32 @@ the documented Cundall damping rule, so this is a sharp implementation check for
 the fix. It does not test contacts or quasi-static pack relaxation; those are
 covered by the broader granular benchmarks.
 
+## `bench_chung_ooi_impact` — Chung & Ooi elastic normal impact
+
+Reproduces Chung & Ooi's (2011) elastic normal-impact Tests 1 and 2: identical
+sphere-sphere impact and sphere-wall impact. Both cases are undamped
+(`restitution = 1`), so the reference is the independent closed-form Hertz
+solution. The sweep checks maximum force, contact duration, and peak overlap across
+relative impact velocities from 0.5 to 10 m/s; all 31 checks pass with force and
+overlap errors at round-off scale and contact-duration errors below 0.5%.
+
+![](bench_chung_ooi_impact/plots/max_force.png)
+
+*Maximum contact force vs impact velocity for DIRT (points) and the Hertz
+analytical reference (lines). The shaded band is the ±2% force PASS criterion;
+both Chung & Ooi elastic normal-impact cases pass inside it.*
+
+![](bench_chung_ooi_impact/plots/contact_time.png)
+
+*Contact duration vs impact velocity for DIRT and Hertz. The shaded band is the
+±2% contact-time PASS criterion; the remaining residual is integer timestep
+resolution, and all cases pass inside it.*
+
+![](bench_chung_ooi_impact/plots/max_overlap.png)
+
+*Maximum overlap vs impact velocity for DIRT and Hertz. The shaded band is the
+±2% overlap PASS criterion; both cases pass inside it.*
+
 ## `bench_hertz_rebound` — Hertzian normal rebound
 
 A single glass sphere strikes a rigid wall; the benchmark sweeps impact velocity

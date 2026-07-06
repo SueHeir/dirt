@@ -91,6 +91,24 @@ Tolerances (force 2%, overlap 2%, contact-time 2%) bound the discretisation
 residual and are not loosened to force a pass; the actual errors are far inside
 them.
 
+![](plots/max_force.png)
+
+*Maximum contact force across impact velocity: measured DIRT points overlaid on
+the independent Hertz analytical reference for Chung & Ooi Tests 1 and 2. The
+shaded band is the ±2% PASS criterion; all force checks PASS inside it.*
+
+![](plots/contact_time.png)
+
+*Contact duration across impact velocity: DIRT's measured contact step counts
+compared with the Hertz collision duration. The shaded band is the ±2% PASS
+criterion; all contact-time checks PASS inside it.*
+
+![](plots/max_overlap.png)
+
+*Maximum overlap across impact velocity: DIRT's geometric peak overlap compared
+with the Hertz analytical reference. The shaded band is the ±2% PASS criterion;
+all overlap checks PASS inside it.*
+
 ## License
 
 MIT OR Apache-2.0
