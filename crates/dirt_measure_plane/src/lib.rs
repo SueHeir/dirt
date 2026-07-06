@@ -291,11 +291,14 @@ impl Plugin for MeasurePlanePlugin {
 
         app.add_resource(MeasurePlanes { planes });
         app.add_update_system(
-            measure_plane_detect_crossings,
+            measure_plane_detect_crossings.label("measure_plane_detect_crossings"),
             ParticleSimScheduleSet::PostFinalIntegration,
         );
         app.add_update_system(
-            measure_plane_report,
+            measure_plane_report
+                .label("measure_plane_report")
+                .after("measure_plane_detect_crossings")
+                .before(soil_print::print_thermo),
             ParticleSimScheduleSet::PostFinalIntegration,
         );
     }
