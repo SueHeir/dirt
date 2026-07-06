@@ -50,7 +50,7 @@ momentum  : drift 9.1e-23 , cross-decomposition match 4.2e-23
 KE        : cross-decomposition match 7.5e-16
 ```
 
-![MPI decomposition deltas](plots/mpi_decomposition_deltas.png)
+![MPI decomposition deltas](plots/mpi_decomposition_deltas.svg)
 
 *Measured `2×1×1` and `2×2×1` tag/count, momentum, energy, and final per-atom
 state deltas against the `1×1×1` serial reference. The dashed line is the

@@ -735,7 +735,7 @@ Asserted against `1×1×1`, sampled from the MPI-gathered `[dump]` frames:
 - **per-atom trajectory** — final velocities and minimum-image positions agree to
   the FP-associativity floor (measured `pos ~6e-17`, `vel ~8e-14` over 4000 steps).
 
-![MPI decomposition deltas](bench_mpi_decomposition/plots/mpi_decomposition_deltas.png)
+![MPI decomposition deltas](bench_mpi_decomposition/plots/mpi_decomposition_deltas.svg)
 
 *Measured `2×1×1` and `2×2×1` tag/count, momentum, energy, and final per-atom
 state deltas against the `1×1×1` serial reference. The dashed line is the

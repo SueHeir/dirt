@@ -65,7 +65,7 @@ BASE_CONFIG = os.path.join(HERE, "config.toml")
 BIN = os.path.join(REPO_ROOT, "target", "release", "examples", EXAMPLE)
 WORK = os.path.join(HERE, "data", "work")  # under data/ so it is gitignored
 PLOTS = os.path.join(HERE, "plots")
-DELTA_PLOT = os.path.join(PLOTS, "mpi_decomposition_deltas.png")
+DELTA_PLOT = os.path.join(PLOTS, "mpi_decomposition_deltas.svg")
 MARKER = "# === SWEEP CONTROL BELOW"
 
 TOTAL_STEPS = 4000     # integration steps (0 .. TOTAL_STEPS-1)
@@ -252,11 +252,7 @@ def all_finite(atoms):
 
 
 def write_delta_plot(rows):
-    """Plot the measured multi-rank deltas against the 1x1x1 reference."""
-    import matplotlib
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
-
+    """Write a dependency-free SVG of multi-rank deltas against 1x1x1."""
     os.makedirs(PLOTS, exist_ok=True)
 
     metrics = [
@@ -266,39 +262,99 @@ def write_delta_plot(rows):
         ("final pos", "pos"),
         ("final vel", "vel"),
     ]
-    names = [r["name"] for r in rows]
-    x = list(range(len(metrics)))
-    width = 0.34
+    width, height = 840, 500
+    left, right, top, bottom = 82, 26, 54, 92
+    plot_w = width - left - right
+    plot_h = height - top - bottom
+    ymin, ymax = 1e-30, 2e-8
+    log_min, log_max = math.log10(ymin), math.log10(ymax)
 
-    fig, ax = plt.subplots(figsize=(8.2, 4.8))
+    def sx(i, series_idx):
+        group_w = plot_w / len(metrics)
+        bar_w = group_w * 0.28
+        center = left + group_w * (i + 0.5)
+        return center + (series_idx - (len(rows) - 1) / 2.0) * bar_w * 1.25 - bar_w / 2.0
+
+    def sy(value):
+        clipped = min(max(value, ymin), ymax)
+        frac = (math.log10(clipped) - log_min) / (log_max - log_min)
+        return top + plot_h * (1.0 - frac)
+
+    def esc(text):
+        return (str(text).replace("&", "&amp;").replace("<", "&lt;")
+                .replace(">", "&gt;").replace('"', "&quot;"))
+
     colors = ["#2878b5", "#d95f02"]
-    for j, row in enumerate(rows):
-        offset = (j - (len(rows) - 1) / 2.0) * width
-        vals = [row[key] for _, key in metrics]
-        plot_vals = [max(v, 1e-30) for v in vals]  # keep exact-zero tag bars visible on log scale
-        bars = ax.bar([i + offset for i in x], plot_vals, width, label=names[j],
-                      color=colors[j % len(colors)])
-        for bar, val in zip(bars, vals):
-            if val == 0.0:
-                ax.text(bar.get_x() + bar.get_width() / 2, 2e-30, "0",
-                        ha="center", va="bottom", fontsize=8, color="#333333")
+    bar_w = (plot_w / len(metrics)) * 0.28
+    tol_y = sy(TOL)
+    tick_values = [1e-30, 1e-25, 1e-20, 1e-15, 1e-10]
+    label_y = top + plot_h + 24
 
-    ax.axhline(TOL, color="#b2182b", linestyle="--", linewidth=1.4,
-               label=f"pass tolerance {TOL:.0e}")
-    ax.set_yscale("log")
-    ax.set_ylim(1e-30, 2e-8)
-    ax.set_xticks(x)
-    ax.set_xticklabels([label for label, _ in metrics])
-    ax.set_ylabel("relative delta vs 1x1x1 reference")
-    ax.set_title("bench_mpi_decomposition: multi-rank agreement")
-    ax.grid(True, axis="y", which="both", linestyle=":", linewidth=0.6, alpha=0.6)
-    ax.legend(loc="upper left", ncol=3, fontsize=8)
-    fig.text(0.99, 0.02,
-             "tag/count is an exact identity check; zeros are drawn at the log-scale floor",
-             ha="right", va="bottom", fontsize=8, color="#444444")
-    fig.tight_layout(rect=[0, 0.06, 1, 1])
-    fig.savefig(DELTA_PLOT, dpi=180)
-    plt.close(fig)
+    parts = [
+        '<?xml version="1.0" encoding="UTF-8"?>',
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" '
+        f'viewBox="0 0 {width} {height}" role="img" '
+        f'aria-label="bench_mpi_decomposition multi-rank agreement">',
+        "<style><![CDATA["
+        "text{font-family:Arial,Helvetica,sans-serif;fill:#222}"
+        ".small{font-size:12px}.tick{font-size:11px;fill:#444}"
+        ".title{font-size:19px;font-weight:700}.axis{stroke:#333;stroke-width:1}"
+        ".grid{stroke:#d4d4d4;stroke-width:1;stroke-dasharray:2 4}"
+        ".tol{stroke:#b2182b;stroke-width:2;stroke-dasharray:7 5}"
+        "]]></style>",
+        '<rect width="100%" height="100%" fill="#ffffff"/>',
+        '<text class="title" x="82" y="28">bench_mpi_decomposition: multi-rank agreement</text>',
+        f'<text class="small" x="82" y="47">relative delta vs 1x1x1 reference; dashed line is unchanged {TOL:.0e} pass tolerance</text>',
+    ]
+
+    for tv in tick_values:
+        y = sy(tv)
+        parts.append(f'<line class="grid" x1="{left}" y1="{y:.1f}" x2="{left + plot_w}" y2="{y:.1f}"/>')
+        parts.append(f'<text class="tick" x="{left - 8}" y="{y + 4:.1f}" text-anchor="end">{tv:.0e}</text>')
+
+    parts.extend([
+        f'<line class="axis" x1="{left}" y1="{top}" x2="{left}" y2="{top + plot_h}"/>',
+        f'<line class="axis" x1="{left}" y1="{top + plot_h}" x2="{left + plot_w}" y2="{top + plot_h}"/>',
+        f'<line class="tol" x1="{left}" y1="{tol_y:.1f}" x2="{left + plot_w}" y2="{tol_y:.1f}"/>',
+        f'<text class="small" fill="#b2182b" x="{left + plot_w - 4}" y="{tol_y - 6:.1f}" text-anchor="end">pass tolerance {TOL:.0e}</text>',
+    ])
+
+    for i, (label, _) in enumerate(metrics):
+        group_w = plot_w / len(metrics)
+        cx = left + group_w * (i + 0.5)
+        parts.append(f'<text class="small" x="{cx:.1f}" y="{label_y}" text-anchor="middle">{esc(label)}</text>')
+
+    for j, row in enumerate(rows):
+        for i, (_, key) in enumerate(metrics):
+            value = row[key]
+            drawn = max(value, ymin)
+            x = sx(i, j)
+            y = sy(drawn)
+            h = top + plot_h - y
+            parts.append(
+                f'<rect x="{x:.1f}" y="{y:.1f}" width="{bar_w:.1f}" height="{h:.1f}" '
+                f'fill="{colors[j % len(colors)]}"><title>{esc(row["name"])} {esc(key)} = {value:.3e}</title></rect>'
+            )
+            if value == 0.0:
+                parts.append(
+                    f'<text class="tick" x="{x + bar_w / 2:.1f}" y="{sy(2e-30):.1f}" '
+                    f'text-anchor="middle">0</text>'
+                )
+
+    legend_x = left + 8
+    legend_y = top + 16
+    for j, row in enumerate(rows):
+        lx = legend_x + j * 150
+        parts.append(f'<rect x="{lx}" y="{legend_y - 10}" width="14" height="14" fill="{colors[j % len(colors)]}"/>')
+        parts.append(f'<text class="small" x="{lx + 20}" y="{legend_y + 2}">{esc(row["name"])}</text>')
+
+    parts.append(
+        f'<text class="small" x="{width - 20}" y="{height - 18}" text-anchor="end">'
+        "tag/count is an exact identity check; zeros are drawn at the log-scale floor</text>"
+    )
+    parts.append("</svg>")
+    with open(DELTA_PLOT, "w") as f:
+        f.write("\n".join(parts) + "\n")
     print(f"\nWrote {os.path.relpath(DELTA_PLOT, REPO_ROOT)}")
 
 
