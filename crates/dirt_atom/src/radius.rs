@@ -409,6 +409,61 @@ mod tests {
     }
 
     #[test]
+    fn bad_gaussian_radius_parameters_report_error() {
+        let mut rng = rand::rng();
+        let spec = RadiusSpec::Distribution(RadiusDistribution::Gaussian {
+            mean: 0.001,
+            std: 0.0,
+        });
+
+        let err = spec
+            .try_sample(&mut rng)
+            .expect_err("zero Gaussian std should not panic");
+        assert!(err.contains("Gaussian radius std must be finite and > 0"));
+    }
+
+    #[test]
+    fn bad_lognormal_radius_parameters_report_error() {
+        let mut rng = rand::rng();
+        let spec = RadiusSpec::Distribution(RadiusDistribution::Lognormal {
+            mean: 0.001,
+            std: -0.1,
+        });
+
+        let err = spec
+            .try_sample(&mut rng)
+            .expect_err("negative lognormal std should not panic");
+        assert!(err.contains("lognormal radius std must be finite and > 0"));
+    }
+
+    #[test]
+    fn bad_discrete_radius_parameters_report_error() {
+        let mut rng = rand::rng();
+        let spec = RadiusSpec::Distribution(RadiusDistribution::Discrete {
+            values: vec![0.001, 0.002],
+            weights: vec![1.0],
+        });
+
+        let err = spec
+            .try_sample(&mut rng)
+            .expect_err("mismatched discrete values/weights should not panic");
+        assert!(err.contains("values/weights length match"));
+    }
+
+    #[test]
+    fn zero_weight_discrete_radius_reports_error() {
+        let spec = RadiusSpec::Distribution(RadiusDistribution::Discrete {
+            values: vec![0.001, 0.002],
+            weights: vec![0.0, 0.0],
+        });
+
+        let err = spec
+            .try_max_radius()
+            .expect_err("zero total discrete weight should not panic");
+        assert!(err.contains("positive total weight"));
+    }
+
+    #[test]
     fn empty_discrete_radius_distribution_reports_error() {
         let mut rng = rand::rng();
         let spec = RadiusSpec::Distribution(RadiusDistribution::Discrete {
