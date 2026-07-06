@@ -9,6 +9,8 @@ across rank boundaries — no silent "partner not found" skips.
 - 3 glass-like spheres, radius `r = 1 mm`, spaced `2 r` apart on the x-axis
 - 2 bonds (auto-bonded at setup), BPM with `E = 1 GPa`, `G = 400 MPa`
 - Domain `x ∈ [0, 10 mm]`, **periodic** in x (fiber laps the box)
+- The chain starts in the left half of the 2-rank split, then migrates across
+  the rank boundary during the run
 - All three atoms drift at `v_x = 1 m/s`
 - Timestep `dt = 1e-7 s`, run 200 000 steps (= 20 ms, ~2 periodic laps)
 
@@ -30,7 +32,7 @@ Pass criterion: **`bond_missing == 0` at every sample and
 ### Single-process sanity
 
 ```bash
-cargo run --release --example bond_mpi_drift --no-default-features -- \
+cargo run --release --example bond_mpi_drift -- \
     examples/bond_mpi_drift/config.toml
 ```
 
@@ -43,9 +45,9 @@ mpiexec -n 2 target/release/examples/bond_mpi_drift \
 ```
 
 `config_mpi2.toml` sets `processors_x = 2`, splitting the domain at
-`x = 5 mm`. The chain starts straddling that plane (atoms at 3, 5, 7 mm) and
-loops through the periodic box at 1 m/s, so each atom crosses the rank
-boundary every 5 ms (~50 000 steps) for the full 200 000-step run.
+`x = 5 mm`. The chain starts at `x = 0.8, 2.8, 4.8 mm` and loops through the
+periodic box at 1 m/s, so the bonded chain crosses the rank boundary and
+periodic wrap repeatedly during the full 200 000-step run.
 
 ## Verified result
 
@@ -54,6 +56,13 @@ Both the single-process and 2-rank MPI runs produce, every sample line:
 ```
 step    N  atoms=3  bond_count=2  bond_missing=0  [min=2, max_miss=0]  OK
 ```
+
+![BPM MPI bond migration counts](plots/bond_mpi_drift_counts.png)
+
+*Measured 2-rank MPI `bond_count` and `bond_missing` over 200 migration
+samples against the exact `2/0` reference. The shaded band and red dotted
+lines show the integer pass gate; latest run: PASS, `bond_count` min/max =
+2/2 and `bond_missing` max = 0.*
 
 At setup, the plugin prints:
 

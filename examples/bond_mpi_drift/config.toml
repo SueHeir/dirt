@@ -5,7 +5,7 @@
 # number of bonds (2 for this 3-atom chain).
 #
 # Single-process:
-#   cargo run --release --example bond_mpi_drift --no-default-features -- \
+#   cargo run --release --example bond_mpi_drift -- \
 #       examples/bond_mpi_drift/config.toml
 #
 # MPI (2 ranks along x):
@@ -46,10 +46,10 @@ poisson_ratio = 0.25
 restitution = 0.9
 friction = 0.0
 
-# 3 atoms loaded from cluster.csv; they all get vx = 1 m/s → drift through
+# 3 atoms loaded from cluster.csv; they all get vx = 1 m/s and drift through
 # the 10 mm periodic domain once every 10 ms (~100 000 steps at dt = 1e-7).
-# Combined with the 2-rank split in x, each atom crosses a rank boundary
-# every 5 ms / ~50 000 steps.
+# In the 2-rank split, the bonded chain crosses the rank boundary and periodic
+# wrap repeatedly after the bonds are created.
 [[particles.insert]]
 source = "file"
 file = "examples/bond_mpi_drift/cluster.csv"

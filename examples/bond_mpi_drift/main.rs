@@ -12,7 +12,7 @@
 //!
 //! Single-process run:
 //! ```bash
-//! cargo run --release --example bond_mpi_drift --no-default-features -- \
+//! cargo run --release --example bond_mpi_drift -- \
 //!     examples/bond_mpi_drift/config.toml
 //! ```
 //!
@@ -20,7 +20,7 @@
 //! ```bash
 //! cargo build --release --example bond_mpi_drift
 //! mpiexec -n 2 target/release/examples/bond_mpi_drift \
-//!     examples/bond_mpi_drift/config.toml
+//!     examples/bond_mpi_drift/config_mpi2.toml
 //! ```
 
 use dirt_core::dirt_bond::BondMetrics;
