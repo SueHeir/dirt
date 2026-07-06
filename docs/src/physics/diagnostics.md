@@ -51,9 +51,9 @@ Read these before trusting the numbers:
   particle migrates between subdomains its previous distance does not follow it,
   so a crossing straddling a migration step can be missed or counted on the
   wrong rank. Summing across ranks at report time does not repair this.
-- **Variable `dt` makes the window time approximate.** `window_time` uses the
-  *current* timestep; if `dt` changes within a window (e.g. across run stages)
-  the reported rates are only approximate for that window.
+- **Variable `dt` windows use accumulated elapsed time.** If `dt` changes
+  within a window (e.g. across run stages), rates divide by the sum of the
+  per-step timesteps in that window.
 - **Degenerate normals are rejected.** A normal with magnitude `≤ 1e-30` is a
   configuration error. Setup exits instead of silently measuring a different
   cross-section.

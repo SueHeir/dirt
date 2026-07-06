@@ -71,9 +71,9 @@ This is a deliberately simple **directional gate**, not a flux meter:
   between subdomains does not carry its previous distance, so a crossing across
   a migration step can be missed or counted on the wrong rank. The report-time
   all-reduce sums totals but does not repair this.
-- **Variable `dt` makes the window time approximate.** `window_time` uses the
-  *current* `dt × window_steps`; if `dt` changes within a reporting window
-  (e.g. across run stages), that window's rates are only approximate.
+- **Variable `dt` windows use accumulated elapsed time.** If `dt` changes
+  within a reporting window (e.g. across run stages), rates divide by the sum
+  of the per-step timesteps in that window.
 - **Degenerate normals are rejected.** A normal with magnitude `≤ 1e-30` is a
   configuration error; setup exits instead of silently measuring a different
   cross-section.

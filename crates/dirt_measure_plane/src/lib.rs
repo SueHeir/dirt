@@ -67,10 +67,9 @@
 //!   previous distance does not follow it, so a crossing straddling a migration
 //!   step can be missed or counted on the wrong rank. Counts are only summed
 //!   across ranks at report time, which does not repair this.
-//! - **Variable `dt` makes the window time approximate.** `window_time` is
-//!   `window_steps × dt` using the *current* timestep. If `dt` changes within a
-//!   reporting window (e.g. across run stages), the reported rates are only
-//!   approximate for that window.
+//! - **Variable `dt` windows use accumulated elapsed time.** If `dt` changes
+//!   within a reporting window (e.g. across run stages), reported rates divide
+//!   by the sum of the elapsed per-step timesteps in that window.
 //! - **Degenerate normals are rejected.** A normal with magnitude `≤ 1e-30`
 //!   is a configuration error. The plugin exits during setup instead of
 //!   silently measuring a different cross-section.
@@ -152,8 +151,10 @@ struct MeasurePlaneState {
     mass_window: f64,
     /// Total cumulative crossings since simulation start (never reset).
     total_crossings: u64,
-    /// Timestep at which the current reporting window started.
-    window_start_step: usize,
+    /// Elapsed physical time accumulated in the current reporting window.
+    window_elapsed_time: f64,
+    /// Last timestep whose `dt` has been accumulated into `window_elapsed_time`.
+    last_elapsed_step: usize,
 }
 
 impl MeasurePlaneState {
@@ -188,8 +189,20 @@ impl MeasurePlaneState {
             crossings_window: 0,
             mass_window: 0.0,
             total_crossings: 0,
-            window_start_step: 0,
+            window_elapsed_time: 0.0,
+            last_elapsed_step: 0,
         })
+    }
+
+    /// Add one simulation step's physical time to the current reporting window.
+    ///
+    /// `RunState::total_cycle` is used as a guard so a repeated call in the
+    /// same cycle cannot double-count elapsed time.
+    fn record_elapsed_step(&mut self, step: usize, dt: f64) {
+        if step > self.last_elapsed_step {
+            self.window_elapsed_time += dt;
+            self.last_elapsed_step = step;
+        }
     }
 
     /// Compute the signed distance from the plane for a given position.
@@ -203,6 +216,20 @@ impl MeasurePlaneState {
         let dz = pos[2] - self.point[2];
         dx * self.normal[0] + dy * self.normal[1] + dz * self.normal[2]
     }
+}
+
+fn window_rates(global_mass: f64, global_crossings: f64, window_time: f64) -> (f64, f64) {
+    let mass_flow_rate = if window_time > 0.0 {
+        global_mass / window_time
+    } else {
+        0.0
+    };
+    let crossing_rate = if window_time > 0.0 {
+        global_crossings / window_time
+    } else {
+        0.0
+    };
+    (mass_flow_rate, crossing_rate)
 }
 
 /// Resource holding runtime state for all configured measurement planes.
@@ -283,10 +310,18 @@ impl Plugin for MeasurePlanePlugin {
 /// it to the previous step's distance (stored by atom tag). A crossing is
 /// recorded when the signed distance transitions from `≤ 0` to `> 0`,
 /// meaning the particle moved through the plane in the positive-normal direction.
-fn measure_plane_detect_crossings(atoms: Res<Atom>, mut planes: ResMut<MeasurePlanes>) {
+fn measure_plane_detect_crossings(
+    run_state: Res<RunState>,
+    atoms: Res<Atom>,
+    mut planes: ResMut<MeasurePlanes>,
+) {
     let nlocal = atoms.nlocal as usize;
+    let step = run_state.total_cycle;
+    let dt = atoms.dt;
 
     for plane in planes.planes.iter_mut() {
+        plane.record_elapsed_step(step, dt);
+
         for i in 0..nlocal {
             let tag = atoms.tag[i];
 
@@ -326,7 +361,6 @@ fn measure_plane_detect_crossings(atoms: Res<Atom>, mut planes: ResMut<MeasurePl
 /// window counters.
 fn measure_plane_report(
     run_state: Res<RunState>,
-    atoms: Res<Atom>,
     comm: Res<CommResource>,
     mut planes: ResMut<MeasurePlanes>,
     mut thermo: ResMut<Thermo>,
@@ -349,21 +383,11 @@ fn measure_plane_report(
         let global_mass = comm.all_reduce_sum_f64(local_mass);
         let global_total = comm.all_reduce_sum_f64(plane.total_crossings as f64);
 
-        // Compute time-averaged rates over the reporting window.
-        let dt = atoms.dt;
-        let window_steps = step - plane.window_start_step;
-        let window_time = window_steps as f64 * dt;
-
-        let mass_flow_rate = if window_time > 0.0 {
-            global_mass / window_time
-        } else {
-            0.0
-        };
-        let crossing_rate = if window_time > 0.0 {
-            global_crossings / window_time
-        } else {
-            0.0
-        };
+        // Compute time-averaged rates over the physical time accumulated during
+        // the reporting window. This remains exact when dt changes mid-window.
+        let window_time = plane.window_elapsed_time;
+        let (mass_flow_rate, crossing_rate) =
+            window_rates(global_mass, global_crossings, window_time);
 
         // Push to thermo for output.
         thermo.set(&format!("crossings_{}", plane.name), global_total);
@@ -380,7 +404,7 @@ fn measure_plane_report(
         // Reset window counters.
         plane.crossings_window = 0;
         plane.mass_window = 0.0;
-        plane.window_start_step = step;
+        plane.window_elapsed_time = 0.0;
     }
 }
 
@@ -468,5 +492,49 @@ mod tests {
         let prev_dist3 = 0.1_f64;
         let curr_dist3 = -0.1_f64;
         assert!(!(prev_dist3 <= 0.0 && curr_dist3 > 0.0));
+    }
+
+    #[test]
+    fn test_staged_variable_dt_window_rates_use_accumulated_elapsed_time() {
+        let def = MeasurePlaneDef {
+            name: "variable_dt".to_string(),
+            point: [0.0, 0.0, 0.0],
+            normal: [1.0, 0.0, 0.0],
+            report_interval: 4,
+        };
+        let mut state = MeasurePlaneState::try_new(&def).unwrap();
+
+        state.record_elapsed_step(1, 0.25);
+        state.record_elapsed_step(2, 0.25);
+        state.record_elapsed_step(3, 0.50);
+        state.record_elapsed_step(4, 0.50);
+
+        let accumulated_window_time = state.window_elapsed_time;
+        let final_dt_window_time = 4.0 * 0.50;
+        assert!((accumulated_window_time - 1.50).abs() < 1e-15);
+        assert_ne!(accumulated_window_time, final_dt_window_time);
+
+        let (flow_rate, cross_rate) = window_rates(3.0, 6.0, accumulated_window_time);
+        assert!((flow_rate - 2.0).abs() < 1e-15);
+        assert!((cross_rate - 4.0).abs() < 1e-15);
+    }
+
+    #[test]
+    fn test_fixed_dt_window_time_matches_step_count_times_dt() {
+        let def = MeasurePlaneDef {
+            name: "fixed_dt".to_string(),
+            point: [0.0, 0.0, 0.0],
+            normal: [1.0, 0.0, 0.0],
+            report_interval: 4,
+        };
+        let mut state = MeasurePlaneState::try_new(&def).unwrap();
+
+        for step in 1..=4 {
+            state.record_elapsed_step(step, 0.25);
+        }
+
+        let accumulated_window_time = state.window_elapsed_time;
+        let step_count_window_time = 4.0 * 0.25;
+        assert!((accumulated_window_time - step_count_window_time).abs() < 1e-15);
     }
 }
