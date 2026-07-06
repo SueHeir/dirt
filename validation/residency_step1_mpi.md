@@ -1,6 +1,12 @@
 # Step 1 × MPI: 2-rank resident GPU (correctness)
 
-`GpuGranularResidentMpiPlugin` (crates/dirt_granular/src/gpu_resident_mpi.rs) fuses
+> **Current main-branch status (2026-07-06):** this is a historical GPU-branch
+> validation note. Current `main` does not contain
+> `GpuGranularResidentMpiPlugin` or
+> `crates/dirt_granular/src/gpu_resident_mpi.rs`.
+
+`GpuGranularResidentMpiPlugin` (historical
+`crates/dirt_granular/src/gpu_resident_mpi.rs`) fuses
 milestone-1's ghost-awareness with step-1 residency: each schedule tick it uploads
 **local+ghost** (so cross-rank boundary contacts aren't dropped), advances `window`
 velocity-Verlet steps on-device, and writes **locals** back. Verified on a dense

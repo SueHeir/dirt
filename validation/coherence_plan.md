@@ -1,13 +1,16 @@
 # Design plan: scheduler-mediated host↔device coherence
 
-Status: **approved for implementation** (2026-06-23). This is the spec a `/goal`
-run should follow. It continues the GPU/MPI residency roadmap (steps 1–5 complete).
+Status: **historical GPU-branch plan** (approved for implementation 2026-06-23).
+Current `main` (2026-07-06) does **not** contain `gpu_coherence`, the resident GPU
+bridge, `GpuGranularResidentPlugin`, `GpuGranularResidentMpiPlugin`, or
+`crates/dirt_granular/src/gpu_resident*.rs`. This note preserves the branch plan
+and validation provenance; it is not a statement of current main-branch features.
 
 ## Problem
 
 In a GPU-resident config the device owns the canonical trajectory between window
 syncs; the host `Atom`/`DemAtom` arrays are a mirror refreshed each window
-(`crates/dirt_granular/src/gpu_resident.rs:145-152`). The sync is one-directional:
+(historical `crates/dirt_granular/src/gpu_resident.rs:145-152`). The sync is one-directional:
 device→host every window, host→device never (for owned atoms). Consequences today:
 
 - A CPU system that **reads** `Atom` *before* the resident step in a tick sees
@@ -131,7 +134,8 @@ Deliverable: a list of offending systems + the fix; tests still green.
   `indices`; add `System::accesses() -> &[(usize, AccessKind)]` (default `&[]`).
 
 Deliverable + test: a sample multi-param system reports the correct
-`(resource_index, kind)` set. Ships harmlessly on `main`.
+`(resource_index, kind)` set. Intended to ship harmlessly on the historical
+branch base.
 
 ### Phase 2 — coherence registry + bridge trait (`grass_scheduler`, wgpu-free)
 
@@ -151,7 +155,7 @@ Deliverable + test: a sample multi-param system reports the correct
 Deliverable + test: registry state transitions (Coherent→DeviceDirty→sync→Coherent;
 write→HostDirty→reprime) with a fake in-memory bridge; counters correct.
 
-### Phase 3 — GPU bridge + resident integration (`dirt_gpu` / `dirt_granular`)
+### Phase 3 — GPU bridge + resident integration (historical `dirt_gpu` / `dirt_granular`)
 
 - `impl MirrorBridge` for the resident GPU: `download` = `GpuState::download_*`
   → `Atom`/`DemAtom`; `upload` = upload host slices + re-prime.
@@ -185,14 +189,16 @@ write→HostDirty→reprime) with a fake in-memory bridge; counters correct.
    workflows are confirmed to read through systems — it's a one-line change
    (`gpu_coherence` into `dirt_core` default features).
 
-All five phases are implemented, validated (`coherence_validation.md`), and on
-`main`; the feature is enabled explicitly with `--features gpu_coherence`.
+On the historical branch, all five phases were implemented and validated
+(`coherence_validation.md`) with the feature enabled explicitly via
+`--features gpu_coherence`. Current main no longer contains these GPU/coherence
+artifacts.
 
 ## Open risk to watch
 
 The bridge's `upload` + re-prime (policy A) must reproduce a valid resident state
 from host arrays alone. The MPI resident step
-(`crates/dirt_granular/src/gpu_resident_mpi.rs`) already does ghost-slice upload +
+(`crates/dirt_granular/src/gpu_resident_mpi.rs` on the historical branch) already does ghost-slice upload +
 `run_steps` re-prime every tick and is bit-exact at `window=1`, so it is the
 template for the upload path. Confirm history behavior under a *local* (not just
 ghost) re-upload during Phase 3.

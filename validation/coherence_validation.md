@@ -1,8 +1,15 @@
 # Coherence validation (coherence_plan.md Phase 4)
 
+> **Current main-branch status (2026-07-06):** this page records validation from
+> the historical GPU/coherence branch. Current `main` has no `gpu_coherence`
+> feature, resident GPU bridge, `GpuGranularResidentPlugin`, or
+> `GpuGranularResidentMpiPlugin`. The results below are branch provenance, not a
+> claim that main currently includes these GPU-resident coherence pieces.
+
 Scheduler-mediated host↔device coherence: a CPU system added to a GPU-resident
 config now syncs transparently (and is attributed/counted) instead of silently
-dropping. Implemented across three repos, behind the `gpu_coherence` feature.
+dropping. On the historical branch this was implemented across three repos,
+behind the `gpu_coherence` feature.
 
 ## What landed
 
@@ -78,6 +85,6 @@ tests); dirt_granular 33 tests green with `gpu_coherence` on and off.
 - **Position-teleporting writes:** `reupload_locals` assumes positions stay within
   the existing grid bounds (true for velocity/force edits); a teleport would also
   need a `set_grid`.
-- **MPI resident variant:** coherence is wired for the single-GPU
-  `GpuGranularResidentPlugin`; `GpuGranularResidentMpiPlugin` (which re-primes every
-  tick anyway) is unchanged.
+- **MPI resident variant:** on the historical branch, coherence was wired for the
+  single-GPU `GpuGranularResidentPlugin`; `GpuGranularResidentMpiPlugin` (which
+  re-primes every tick anyway) was unchanged.
