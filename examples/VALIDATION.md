@@ -470,6 +470,25 @@ the fitted slope is 1.000050 GPa against 1.000001 GPa, a 0.005% relative error
 is propagated into axial force correctly for a simple uniform fiber. It is not an
 independent material calibration or fracture validation.
 
+## `bond_cantilever` — frozen-anchor bonded cantilever
+
+A 10-sphere bonded chain is anchored with `[[freeze]]` at one end and bends under
+its own weight. The example compares the latest measured free-tip deflection with
+the Euler-Bernoulli uniform-load cantilever prediction, while also requiring all 9
+bonds to remain present and all missing-partner skips to stay at zero.
+
+![Bond cantilever tip deflection](bond_cantilever/plots/tip_deflection_vs_beam.png)
+
+*Tip deflection over time from `bond_cantilever/data/cantilever.csv` against the
+Euler-Bernoulli reference. The shaded band is the ±5 % PASS criterion; the latest
+regenerated run is 0.61 % from the reference, with 9 bonds and zero
+missing-partner skips. PASS.*
+
+**Honest read:** this is an analytical small-deflection beam-theory check of the
+bonded chain's static scale and the frozen-anchor failure mode. The reference uses
+the committed 10-sphere chain mass spread over the 18 mm span, so it is not a
+continuum calibration sweep or a direct experiment.
+
 ---
 
 # Tier 2 — Free cooling (Haff's law)
@@ -928,6 +947,7 @@ will need a benchmark when re-added.)
 | dmt_sjkr_cohesion | DMT pull-off 2πwR* / SJKR area law cπR*δ | analytical (self-consistent) | PASS; adds DMT+SJKR paths & 4/3 model-selection check |
 | fiber_crossover | Coulomb limit μN | analytical (self-consistent) | PASS; ratio circular vs measured N |
 | bond_fiber_tensile | input Young's modulus via `K_n = E A / L` | analytical (self-consistent) | PASS; fitted E = 1.000050 GPa vs input 1.000001 GPa (0.005% error) |
+| bond_cantilever | Euler-Bernoulli uniform-load cantilever tip deflection | analytical | PASS; final tip deflection −9.476884e-07 m vs −9.535320e-07 m (0.61% error, 5% gate), 9/9 bonds present |
 | sphere/clump haff | Haff law + LAMMPS | law (cross-code) | PASS; R²≈0.9999, slope −1.88 / −1.79 at t/tc≈5 / 11; −2 not fully reached; tc unvalidated; clump cross-check calibrated |
 | rod haff | Haff law + LAMMPS | law (cross-code) | FAIL (known limitation); Haff R²=0.9999 but late-time slope ≈−1.59 at t/tc≈5 straddles/misses the −2.3<slope<−1.6 gate; exits 1 |
 | clump_insertion_determinism | own repeated config run | reproducibility | PASS; same-seed config path byte-identical, changed seed diverges |
