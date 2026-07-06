@@ -790,6 +790,30 @@ PASS.** This closes the "MPI domain decomposition" gap formerly listed below.
 
 ---
 
+## `fiber_bond` — bonded-particle fiber mechanics
+
+The non-`bench_` `fiber_bond` example runs five small bonded-sphere fiber cases
+against Guo et al. (2018) or closed-form references: axial elastic stiffness,
+cantilever static bending, free bending vibration using the discrete chain mass,
+configured axial piecewise plasticity, and Guo trilinear bending plasticity. The
+validator computes the measured quantity from each run's recorded bond kinematics
+and compares it to the reference without changing the scenario tolerances.
+
+![fiber_bond measured-vs-reference summary](fiber_bond/plots/fiber_bond_measured_vs_reference.png)
+
+*Measured quantities divided by their Guo / closed-form references. The black
+interval on each bar is the relevant PASS band (0.5 % axial elastic, 5 % bending
+and axial plastic checks, 1 % bending-plastic cap). Latest regenerated run: PASS
+for all plotted checks.*
+
+**Honest read:** this is a deterministic mechanics validation for a short
+bonded-particle chain, not an experimental fiber-calibration study. The plastic
+axial case checks the configured piecewise envelope, while the bending-plastic
+case checks Guo's trilinear cap and kinematic-hardening trajectory for this
+single loading schedule.
+
+---
+
 ## What is not validated (scope summary)
 
 - **No direct experimental comparison** — references are analytical, empirical
@@ -803,7 +827,7 @@ PASS.** This closes the "MPI domain decomposition" gap formerly listed below.
   now covered by `bench_convergence` (see "Numerical convergence" above).
 - **Empirical references** (Beverloo, Bekker) are correlations with fitted constants;
   only forms/exponents are tested.
-- **Other `examples/`** (bonds, fiber_bond, hopper, granular_gas_benchmark,
+- **Other `examples/`** (bonds, hopper, granular_gas_benchmark,
   granular_basic, lj_argon) are outside this document.
 
 ## Capabilities implemented but not benchmarked

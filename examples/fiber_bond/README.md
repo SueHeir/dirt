@@ -33,6 +33,13 @@ python3 examples/fiber_bond/validate.py \
 | `axial_plastic_piecewise.toml` | Axial plastic loading | Piecewise-linear hardening envelope (this code's config) | PASS, < 0.1% error |
 | `bending_plastic_guo.toml`     | Guo three-step bending plasticity (trilinear) | `|M_bend| ≤ M_p = (4/3)·σ_0·r_b³` (Guo Eq. 31); envelope follows Eqs. 27, 29, 32, 33, 35 | PASS, M traces all three trilinear regimes |
 
+![fiber_bond measured-vs-reference summary](plots/fiber_bond_measured_vs_reference.png)
+
+*Measured scenario quantities divided by their Guo / closed-form references; the
+black interval on each bar is that scenario's PASS band. Latest regenerated run:
+PASS for axial elastic, cantilever bending, bending vibration, axial plastic, and
+bending plastic.*
+
 ## Breakage scenarios — see [`../fiber_bond_breakage`](../fiber_bond_breakage)
 
 All breakage scenarios (criterion variants, Weibull thresholds, etc.)
