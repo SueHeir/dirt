@@ -176,6 +176,37 @@ fn default_wall_type() -> String {
     "plane".to_string()
 }
 
+fn curved_or_region_wall_surface_energy_warning(
+    wall: &WallDef,
+    material_table: &MaterialTable,
+    material_index: usize,
+) -> Option<String> {
+    let geometry = match wall.wall_type.as_str() {
+        "cylinder" => "cylinder",
+        "sphere" => "sphere",
+        "region" => "region",
+        _ => return None,
+    };
+    let surface_energy = *material_table.surface_energy.get(material_index)?;
+    if surface_energy <= 0.0 {
+        return None;
+    }
+
+    let wall_name = wall
+        .name
+        .as_ref()
+        .map(|name| format!(" named '{name}'"))
+        .unwrap_or_default();
+    Some(format!(
+        "WARNING: {geometry} wall{wall_name} uses material '{}' with \
+         surface_energy = {surface_energy}, but JKR/DMT `surface_energy` is \
+         plane-wall-only and is ignored by cylinder, sphere, and region walls. \
+         Use a plane wall for JKR/DMT wall adhesion, or use `cohesion_energy` \
+         for unchanged SJKR cohesion on curved/region walls.",
+        wall.material
+    ))
+}
+
 // ── Config structs ──────────────────────────────────────────────────────────
 
 /// Sinusoidal oscillation parameters for a wall.
@@ -663,6 +694,12 @@ impl Plugin for WallPlugin {
                         std::process::exit(1);
                     }
                 };
+
+                if let Some(msg) =
+                    curved_or_region_wall_surface_energy_warning(w, &material_table, mat_idx)
+                {
+                    eprintln!("{msg}");
+                }
 
                 match w.wall_type.as_str() {
                     "cylinder" => {
@@ -1870,6 +1907,91 @@ mod tests {
             tangential_springs: std::collections::HashMap::new(),
             rolling_springs: std::collections::HashMap::new(),
         }
+    }
+
+    fn wall_def(wall_type: &str, material: &str) -> WallDef {
+        WallDef {
+            wall_type: wall_type.to_string(),
+            point_x: 0.0,
+            point_y: 0.0,
+            point_z: 0.0,
+            normal_x: 0.0,
+            normal_y: 0.0,
+            normal_z: 1.0,
+            axis: None,
+            center: None,
+            radius: None,
+            lo: None,
+            hi: None,
+            inside: None,
+            material: material.to_string(),
+            name: None,
+            bound_x_low: f64::NEG_INFINITY,
+            bound_x_high: f64::INFINITY,
+            bound_y_low: f64::NEG_INFINITY,
+            bound_y_high: f64::INFINITY,
+            bound_z_low: f64::NEG_INFINITY,
+            bound_z_high: f64::INFINITY,
+            velocity: None,
+            oscillate: None,
+            servo: None,
+            region: None,
+            temperature: None,
+        }
+    }
+
+    fn material_table_with_surface_energy() -> MaterialTable {
+        let mut mt = MaterialTable::new();
+        mt.add_material_full("dry", 8.7e9, 0.3, 0.95, 0.4, 0.0, 0.0, 0.0);
+        mt.add_material_full("sticky", 8.7e9, 0.3, 0.95, 0.4, 0.0, 0.0, 0.25);
+        mt.add_material("sjkr", 8.7e9, 0.3, 0.95, 0.4, 0.0, 1.0);
+        mt
+    }
+
+    #[test]
+    fn warns_for_curved_and_region_wall_surface_energy() {
+        let mt = material_table_with_surface_energy();
+
+        for geometry in ["cylinder", "sphere", "region"] {
+            let mut wall = wall_def(geometry, "sticky");
+            wall.name = Some(format!("{geometry}-guard"));
+            let msg = curved_or_region_wall_surface_energy_warning(&wall, &mt, 1)
+                .expect("curved/region walls with surface_energy must warn");
+
+            assert!(
+                msg.contains(&format!("{geometry} wall")),
+                "warning must name the wall geometry: {msg}"
+            );
+            assert!(
+                msg.contains("sticky") && msg.contains("surface_energy"),
+                "warning must name the material and ignored field: {msg}"
+            );
+            assert!(
+                msg.contains("plane-wall-only") && msg.contains("JKR/DMT"),
+                "warning must explain the plane-wall-only JKR/DMT limitation: {msg}"
+            );
+        }
+    }
+
+    #[test]
+    fn surface_energy_warning_keeps_valid_wall_configs_silent() {
+        let mt = material_table_with_surface_energy();
+
+        assert!(
+            curved_or_region_wall_surface_energy_warning(&wall_def("plane", "sticky"), &mt, 1)
+                .is_none(),
+            "plane walls with surface_energy remain accepted without warning"
+        );
+        assert!(
+            curved_or_region_wall_surface_energy_warning(&wall_def("cylinder", "dry"), &mt, 0)
+                .is_none(),
+            "curved walls without surface_energy must not warn"
+        );
+        assert!(
+            curved_or_region_wall_surface_energy_warning(&wall_def("region", "sjkr"), &mt, 2)
+                .is_none(),
+            "region walls using cohesion_energy for SJKR behavior must not warn"
+        );
     }
 
     #[test]
