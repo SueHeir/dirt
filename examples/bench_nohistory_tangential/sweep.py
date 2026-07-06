@@ -38,12 +38,18 @@ import sys
 import tomllib
 import subprocess
 import numpy as np
+import matplotlib
+
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.abspath(os.path.join(SCRIPT_DIR, "..", ".."))
 EXAMPLE = "bench_nohistory_tangential"
 CONFIG = os.path.join(SCRIPT_DIR, "config.toml")
 CSV = os.path.join(SCRIPT_DIR, "data", "nohistory_tangential_results.csv")
+PLOT_DIR = os.path.join(SCRIPT_DIR, "plots")
+PLOT = os.path.join(PLOT_DIR, "nohistory_tangential_lammps.png")
 
 
 def build_and_run():
@@ -160,11 +166,94 @@ def validate():
     return ok
 
 
+def plot_reference_comparison():
+    rows, mu = load()
+    vt_nh, fn_nh, ft_nh, xi_nh = split(rows, "linear_nohistory")
+    vt_h, fn_h, ft_h, xi_h = split(rows, "history")
+
+    mu_fn_nh = mu * np.abs(fn_nh)
+    cap = np.median(mu_fn_nh)
+    capped = np.abs(ft_nh) > 0.999 * mu_fn_nh
+    subcap = (~capped) & (np.abs(vt_nh) > 1e-6)
+
+    A = np.vstack([vt_nh[subcap], np.ones(subcap.sum())]).T
+    (eta_t, _intercept), *_ = np.linalg.lstsq(A, ft_nh[subcap], rcond=None)
+    ft_ref = np.sign(vt_nh) * np.minimum(mu_fn_nh, eta_t * np.abs(vt_nh))
+    tol = 1e-3 * cap
+
+    order = np.argsort(vt_nh)
+    os.makedirs(PLOT_DIR, exist_ok=True)
+
+    fig, (ax, ax_resid) = plt.subplots(
+        2, 1, figsize=(8.0, 7.0), sharex=True,
+        gridspec_kw={"height_ratios": [3, 1]},
+    )
+
+    ax.fill_between(
+        vt_nh[order],
+        ft_ref[order] - tol,
+        ft_ref[order] + tol,
+        color="#4c78a8",
+        alpha=0.18,
+        linewidth=0,
+        label="pass band (±0.1% cap)",
+    )
+    ax.plot(
+        vt_nh[order],
+        ft_ref[order],
+        color="#1f4e79",
+        linewidth=2.0,
+        label="LAMMPS documented law",
+    )
+    ax.scatter(
+        vt_nh,
+        ft_nh,
+        s=12,
+        color="#d62728",
+        alpha=0.78,
+        edgecolors="none",
+        label="DIRT linear_nohistory",
+    )
+    ax.scatter(
+        vt_h,
+        ft_h,
+        s=9,
+        color="#666666",
+        alpha=0.22,
+        edgecolors="none",
+        label="DIRT history (contrast)",
+    )
+    ax.axhline(cap, color="#333333", linestyle="--", linewidth=1.1, label="Coulomb cap ±μ|Fₙ|")
+    ax.axhline(-cap, color="#333333", linestyle="--", linewidth=1.1)
+    ax.axhline(0.0, color="#999999", linewidth=0.8)
+    ax.set_ylabel("Tangential force $F_t$ [N]")
+    ax.set_title("History-free tangential force vs LAMMPS velocity-Coulomb reference")
+    ax.grid(True, color="#dddddd", linewidth=0.8)
+    ax.legend(loc="best", frameon=False, fontsize=9)
+
+    resid = ft_nh - ft_ref
+    ax_resid.scatter(vt_nh, resid, s=10, color="#d62728", alpha=0.78, edgecolors="none")
+    ax_resid.axhline(tol, color="#1f4e79", linestyle="--", linewidth=1.0, label="± pass tolerance")
+    ax_resid.axhline(-tol, color="#1f4e79", linestyle="--", linewidth=1.0)
+    ax_resid.axhline(0.0, color="#777777", linewidth=0.8)
+    ax_resid.set_xlabel("Relative tangential velocity $v_t$ [m/s]")
+    ax_resid.set_ylabel("DIRT - ref [N]")
+    ax_resid.grid(True, color="#dddddd", linewidth=0.8)
+    ax_resid.legend(loc="best", frameon=False, fontsize=9)
+
+    fig.tight_layout()
+    fig.savefig(PLOT, dpi=180)
+    plt.close(fig)
+    print(f"[plot] {PLOT}")
+
+
 def main():
     cmd = sys.argv[1] if len(sys.argv) > 1 else "all"
     if cmd in ("all", "start"):
         build_and_run()
     ok = validate()
+    if ok:
+        plot_reference_comparison()
     sys.exit(0 if ok else 1)
 
 

@@ -32,6 +32,12 @@ F_t = -min(μ·F_n, η_t·|v_t|) · t̂ ,   t̂ = v_t/|v_t|
 6. in the sliding regime `|F_t| = μ·|F_n|` exactly, with `μ` taken independently
    from the input deck — the documented Coulomb critical force.
 
+![History-free tangential force vs LAMMPS reference](plots/nohistory_tangential_lammps.png)
+
+*DIRT `linear_nohistory` measured tangential force against the documented LAMMPS
+velocity-Coulomb law. The dashed lines mark the Coulomb cap and the shaded band /
+residual lines show the PASS tolerance used by `sweep.py`; current run: PASS.*
+
 **history (Mindlin) is genuinely distinct** — the point of the goal:
 
 7. it **accumulates** a nonzero tangential displacement `|ξ| > 0`;

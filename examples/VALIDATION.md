@@ -171,6 +171,26 @@ suite. Still no direct comparison to raw experimental points (it matches the Maw
 *theory* curve), and the projectile is aimed dead-centre so the impact normal is
 exact.
 
+## `bench_nohistory_tangential` — history-free tangential law
+
+Two identical glass spheres are held at fixed normal overlap and driven through a
+reversing tangential-velocity path. The `linear_nohistory` force is checked against
+the documented LAMMPS `pair_granular` velocity-Coulomb law
+`F_t = min(μ|F_n|, η_t|v_t|)` with zero stored tangential displacement, while the
+default history model is run on the same path as a contrast case.
+
+![History-free tangential force vs LAMMPS reference](bench_nohistory_tangential/plots/nohistory_tangential_lammps.png)
+
+*DIRT `linear_nohistory` points lie on the LAMMPS documented law, with the Coulomb
+cap and the `sweep.py` PASS tolerance shown directly. The history model retains an
+elastic force at zero tangential velocity, demonstrating that the new mode is
+genuinely history-free rather than a relabeled Mindlin path.*
+
+**Honest read:** this is a deterministic single-contact law check, not an
+integrated collision validation. It strongly pins the history-free force expression
+and Coulomb cap, but the tangential damping coefficient is identified from the
+sub-cap branch before checking the full documented `min()` shape.
+
 ## `bench_kharaz_oblique` — replicate Kharaz, Gorham & Salman (2001)
 
 Reproduces Kharaz et al.'s (2001) elastic-rebound *experimental protocol* — a 5 mm
