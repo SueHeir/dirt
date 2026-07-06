@@ -772,6 +772,20 @@ All well under the `1e-9` gate (the FP floor `bench_restart_determinism` also us
 agreement is essentially machine-epsilon, so this is not a loosened band. **Status:
 PASS.** This closes the "MPI domain decomposition" gap formerly listed below.
 
+## `bond_mpi_drift` — BPM bonds across MPI migration
+
+A 3-sphere bonded chain drifts through a periodic 2-rank x-domain. The run samples
+global bond metrics every 1000 steps while the chain crosses rank boundaries and
+periodic wrap. The check is exact integer agreement with the two expected bonds:
+`bond_count == 2` and `bond_missing == 0` at every sample.
+
+![BPM MPI bond migration counts](bond_mpi_drift/plots/bond_mpi_drift_counts.png)
+
+*Measured 2-rank MPI `bond_count` and `bond_missing` over 200 migration samples
+against the exact `2/0` reference. The shaded band and red dotted lines show the
+integer pass gate; latest run: PASS, `bond_count` min/max = 2/2 and
+`bond_missing` max = 0.*
+
 ---
 
 ## What is not validated (scope summary)
@@ -836,3 +850,4 @@ will need a benchmark when re-added.)
 | plate_sinkage | Bekker (empirical) | empirical / qualitative | PASS; form only; loose bands; softened grains |
 | convergence | finest-dt / large-N / large-box limit (+ Hertz anchor) | numerical (self-convergence) | PASS; dt, N, and box-size convergence; observed order p≈2; box-size error 3.80→2.27→1.64→0% |
 | mpi_decomposition | own 1×1×1 trajectory | parallel-correctness (decomposition-invariance) | PASS; 2×1×1 & 2×2×1 reproduce serial to FP floor (pos ~6e-17, vel ~8e-14); momentum/energy/atom-count conserved |
+| bond_mpi_drift | expected BPM bond metrics | parallel-correctness (bond migration) | PASS; 2-rank migration keeps `bond_count` = 2 and `bond_missing` = 0 over 200 samples |

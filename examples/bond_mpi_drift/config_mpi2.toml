@@ -1,8 +1,8 @@
 # ── BPM MPI bond-migration test — 2-rank MPI configuration ──────────────────
 # Identical to config.toml except the domain is split across 2 MPI ranks in x.
 # Rank 0 owns x ∈ [0, 0.005], rank 1 owns x ∈ [0.005, 0.01]. The 3-atom chain
-# starts straddling the rank-boundary plane (x = 0.005) and drifts through
-# the periodic domain, so every atom crosses the boundary repeatedly.
+# starts in the left half, auto-bonds there, then drifts through the periodic
+# domain and crosses the rank boundary repeatedly.
 #
 # Run:
 #   cargo build --release --example bond_mpi_drift
