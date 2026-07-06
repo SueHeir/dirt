@@ -909,6 +909,24 @@ PASS for all four checks.*
 
 ---
 
+## `fiber_bond_breakage` — BPM breakage criteria
+
+This non-`bench_` validation example reuses the `fiber_bond` binary to exercise
+six bond-breakage criteria: constant axial stress, constant axial strain,
+per-bond Weibull axial stress, combined stress, combined strain, and
+bending-only interaction-linear stress. The axial cases compare first-break
+global strain to the analytical or weakest-bond Weibull prediction with a 5%
+gate; the cantilever cases compare tip displacement at first break to the
+Euler-Bernoulli estimate with the documented 35% discrete-chain gate.
+
+![Fiber bond breakage criteria](fiber_bond_breakage/plots/breakage_criteria_validation.png)
+
+*Measured first-break strain or tip displacement vs the reference prediction for
+each criterion. Dashed bands are the validator PASS gates. Latest run: all six
+criteria PASS.*
+
+---
+
 ## What is not validated (scope summary)
 
 - **No direct experimental comparison** — references are analytical, empirical
