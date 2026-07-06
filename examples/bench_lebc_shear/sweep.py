@@ -586,7 +586,10 @@ def graph():
         axT.set_ylabel(r"$T/(\dot\gamma d)^2$"); axT.set_title("Granular temperature")
 
         # ── normal stress σ_yy/(ρ_s d²γ̇²) (references report σ_yy) ──
-        axp.plot(phi_line, [v[1] for v in lun], "k--", lw=1.3, label=f"Lun KT (e={e0})")
+        lun_p = [v[1] for v in lun]
+        axp.fill_between(phi_line, [0.85 * y for y in lun_p], [1.15 * y for y in lun_p],
+                         color="tab:blue", alpha=0.12, label="PASS band: ±15%")
+        axp.plot(phi_line, lun_p, "k--", lw=1.3, label=f"Lun KT (e={e0})")
         axp.plot(phi_line, [v[1] for v in ekt], "k-", lw=2, label="Extended KT (Berzi)")
         axp.plot(phi_line, [v[1] for v in lun_real], ":", c="tab:blue", lw=1.5, label=f"Lun KT (DIRT realized e={e_real})")
         axp.scatter([p["phi"] for p in kt], [p["syy"] / bag(p) for p in kt],
@@ -594,9 +597,15 @@ def graph():
         if refs["lammps"][0]:
             axp.scatter(refs["lammps"][0], refs["lammps"][2], c="tab:red", marker="^", zorder=3, label="LAMMPS")
         axp.set_ylabel(r"$\sigma_{yy}\,/\,\rho_s d^2 \dot\gamma^2$"); axp.set_title("Normal stress")
+        axp.text(0.98, 0.04, f"Gate: {p_ok}/{len(kt)} within ±15%",
+                 transform=axp.transAxes, ha="right", va="bottom", fontsize=8,
+                 bbox=dict(facecolor="white", edgecolor="0.7", alpha=0.85, pad=3))
 
         # ── shear stress σ_xy/(ρ_s d²γ̇²) (all codes) ──
-        axs.plot(phi_line, [v[0] for v in lun], "k--", lw=1.3, label=f"Lun KT (e={e0})")
+        lun_s = [v[0] for v in lun]
+        axs.fill_between(phi_line, [0.80 * y for y in lun_s], [1.20 * y for y in lun_s],
+                         color="tab:orange", alpha=0.12, label="PASS band: ±20%")
+        axs.plot(phi_line, lun_s, "k--", lw=1.3, label=f"Lun KT (e={e0})")
         axs.plot(phi_line, [v[0] for v in ekt], "k-", lw=2, label="Extended KT (Berzi)")
         axs.plot(phi_line, [v[0] for v in lun_real], ":", c="tab:blue", lw=1.5, label=f"Lun KT (DIRT realized e={e_real})")
         axs.scatter([p["phi"] for p in kt], [abs(p["sxy"]) / bag(p) for p in kt],
@@ -606,6 +615,9 @@ def graph():
         axs.scatter(refs["fortran"][0], refs["fortran"][1], facecolors="none", edgecolors="tab:green", marker="o", zorder=3, label="Fortran LEBC")
         axs.scatter(refs["liggghts"][0], refs["liggghts"][1], c="tab:purple", marker="D", zorder=3, label="LIGGGHTS")
         axs.set_ylabel(r"$\sigma_{xy}\,/\,\rho_s d^2 \dot\gamma^2$"); axs.set_title("Shear stress")
+        axs.text(0.98, 0.04, f"Gate: {s_ok}/{len(kt)} within ±20%",
+                 transform=axs.transAxes, ha="right", va="bottom", fontsize=8,
+                 bbox=dict(facecolor="white", edgecolor="0.7", alpha=0.85, pad=3))
 
         for ax in (axT, axp, axs):
             ax.set_xlabel("Φ"); ax.set_yscale("log"); ax.grid(True, alpha=0.3)

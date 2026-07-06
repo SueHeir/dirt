@@ -664,6 +664,33 @@ slab, ~×10 more grains so the front becomes continuum-like), not more seeds. **
 tolerance was loosened to force a pass**; the bench is retained in regression as an
 honest, visible FAIL rather than reported green.
 
+## `bench_lebc_shear` — Lees-Edwards homogeneous shear rheometer
+
+A triperiodic glass-bead box is sheared with native Lees-Edwards deformation. The
+frictionless sub-sweep checks Bagnold-normalized normal and shear stresses against
+Lun / extended kinetic theory and independent LAMMPS / Fortran / LIGGGHTS reference
+points over solid fraction; the frictional production sweep fits the μ(I) and Φ(I)
+closure used by downstream continuum calibration.
+
+![Kinetic-theory validation](bench_lebc_shear/plots/kt_validation.png)
+
+*DIRT frictionless points over the kinetic-theory and cross-code references. The
+shaded bands show the unchanged graph gate: at least 60% of points must be within
+15% for normal stress and 20% for shear stress.*
+
+![mu(I) fit](bench_lebc_shear/plots/mu_of_I.png)
+
+*Measured frictional μ(I) with the fitted GDR MiDi / da Cruz curve.*
+
+![Phi(I) trend](bench_lebc_shear/plots/phi_of_I.png)
+
+*Measured frictional Φ(I), paired with the μ(I) fit for closure calibration.*
+
+**Honest read:** the strongest physics check is the frictionless stress collapse
+against kinetic theory and cross-code data; it is expected to deviate near jamming,
+where enduring contacts leave the collisional KT regime. The frictional μ(I) / Φ(I)
+fit is a calibration curve, not an independent theory validation.
+
 ## `bench_hopper_beverloo` — silo discharge rate
 
 A 2D slot hopper discharges under gravity; the mass flow rate is fit against
@@ -873,6 +900,7 @@ will need a benchmark when re-added.)
 | clump_insertion_determinism | own repeated config run | reproducibility | PASS; same-seed config path byte-identical, changed seed diverges |
 | angle_of_repose | empirical (none exact) | qualitative | PASS; trends only; frozen-bed |
 | column_collapse | Lube/Lajeunesse (empirical) + LAMMPS cross-check | empirical scaling + cross-code | FAIL (genuine finite-size limit, not fit noise); linear exponent 1.54 vs 1.0 outside ±0.25 after seed-averaging + 11-pt sweep + sub-diameter metric; LAMMPS misses identically (1.27); exits 1 |
+| lebc_shear | Lun / extended kinetic theory + LAMMPS / Fortran / LIGGGHTS; GDR MiDi / da Cruz μ(I) form | kinetic theory + calibration | PASS/diagnostic; KT gate requires ≥60% of points within 15% normal-stress and 20% shear-stress bands; dense/jamming deviations expected |
 | hopper_beverloo | Beverloo (empirical) | empirical correlation | PASS; exponent 1.36 vs 1.5; prefactor untested |
 | plate_sinkage | Bekker (empirical) | empirical / qualitative | PASS; form only; loose bands; softened grains |
 | convergence | finest-dt / large-N / large-box limit (+ Hertz anchor) | numerical (self-convergence) | PASS; dt, N, and box-size convergence; observed order p≈2; box-size error 3.80→2.27→1.64→0% |
