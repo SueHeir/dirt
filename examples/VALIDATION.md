@@ -297,6 +297,26 @@ that blew up neighbor binning is gone). The `(5/7)v₀` plateau is model-indepen
 it genuinely tests the Hertz–Mindlin tangential law; `a = μg` is partly
 self-consistent (the cap is μ|Fₙ| by construction). Gross sliding only; no LAMMPS.
 
+## `bench_wall_activate_by_name` — named wall runtime reactivation
+
+A single sphere is held at fixed overlap with a named `dirt_wall` plane. The
+example samples the wall force while the wall is active, calls
+`Walls::deactivate_by_name("gate")`, then calls `Walls::activate_by_name("gate")`
+on the same resource and samples again. Geometry and material state are unchanged,
+so the deactivated window should be exactly force-free and the reactivated window
+should recover the same nonzero force as the initial active window.
+
+![Named wall force response](bench_wall_activate_by_name/plots/wall_activate_by_name_force.png)
+
+*Particle-wall normal force during active, deactivated, and reactivated windows.
+Latest run: PASS, the inactive force is zero within `1e-14` N and the reactivated
+mean force matches the initial active force within `1e-12` relative error.*
+
+**Honest read:** this is an API behavior validation for runtime wall control, not
+a new physics reference. The physical force law is already covered by the wall
+contact benchmarks; this check pins that `activate_by_name` restores participation
+in the same force path that `deactivate_by_name` removes.
+
 ## `bench_polydisperse_mixing` — per-pair mixing rules (R*, E*, e_ij, μ_ij)
 
 Single binary collisions between spheres of **unequal radius** and/or **different
@@ -1017,6 +1037,7 @@ will need a benchmark when re-added.)
 | oblique_impact | Maw 1976 + LAMMPS | analytical + cross-code (strong) | PASS; full S-curve; vs theory not raw experiment |
 | kharaz_oblique | Kharaz 2001 protocol: rigid-body kinematics + Maw, anchored to measured eₙ, μ | analytical + experiment-anchored (strong) | PASS; eₙ=0.980 flat, sliding branch exact; raw glass-anvil points paywalled |
 | sliding_friction | rigid-body slip-to-roll | analytical | PASS; (5/7)v₀ model-independent; a=μg partly self-consistent |
+| wall_activate_by_name | active/inactive named wall control | API behavior | PASS; inactive force zero within 1e-14 N, reactivated mean force recovers initial active force within 1e-12 relative |
 | rolling_decay | own-model rate + LAMMPS | analytical (self-consistent) | PASS; rate derived from same model |
 | sds_rolling | own-model damped-oscillator + Coulomb cap | analytical (self-consistent) | PASS; elastic ω(t) to 0.1 %/0.56 % (springless control 2.4 %/131 %), cap slope 0.00 % |
 | jkr_adhesion | JKR pull-off | analytical (self-consistent) | PASS; measures its own constant force |
