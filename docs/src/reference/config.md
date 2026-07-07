@@ -221,7 +221,7 @@ type = "plane"
 point_z = 0.0
 normal_z = 1.0
 material = "glass"
-name = "floor"            # optional, for runtime deactivate_by_name
+name = "floor"            # optional, for runtime deactivate_by_name/activate_by_name
 ```
 
 Common keys (all wall types) and per-geometry keys:
@@ -230,7 +230,7 @@ Common keys (all wall types) and per-geometry keys:
 |---|---|---|---|---|
 | `type` | string | all | `"plane"` | `"plane"`, `"cylinder"`, `"sphere"`, `"region"`. |
 | `material` | string | all | required | A `[[dem.materials]]` name. |
-| `name` | string | all | none | Optional; enables runtime `deactivate_by_name`. |
+| `name` | string | all | none | Optional; enables runtime `deactivate_by_name` and `activate_by_name`. |
 | `temperature` | f64 | all | none | Stored, never read — hook for external heat transfer. |
 | `point_x/y/z` | f64 | plane | `0.0` | A point on the plane. |
 | `normal_x/y/z` | f64 | plane | `0.0` | Outward normal (normalized; fatal if zero). |

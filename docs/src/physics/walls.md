@@ -162,18 +162,23 @@ the scalar force a servo controller reads next step (`Force`).
 ## Named walls and runtime control
 
 Give a wall a `name` and you can flip it on and off at runtime via
-`Walls::deactivate_by_name`. This is how the hopper example removes a blocker to
-start discharge, and how the servo-lid example releases the bed:
+`Walls::deactivate_by_name` and `Walls::activate_by_name`. This is how the
+hopper example removes a blocker to start discharge, and how the servo-lid
+example releases the bed:
 
 ```rust
 walls.deactivate_by_name("blocker");
 ```
 
-> **Deactivation is one-way.** `deactivate_by_name` only clears a wall's active
-> flag; there is no `activate_by_name`. Re-enabling a wall at runtime requires
-> mutating the resource directly — set `walls.active[i] = true` for the wall's
-> index in its type vec. Plan for this if your simulation needs a wall to come
-> back (e.g. a gate that opens and closes).
+If a staged run needs the same wall again, reactivate it by the same name:
+
+```rust
+walls.activate_by_name("blocker");
+```
+
+Both methods search plane, cylinder, sphere, and region walls. Unknown names are
+ignored, so optional stages can call them without first checking whether a wall
+was configured.
 
 ## TOML configuration
 
