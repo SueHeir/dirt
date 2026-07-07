@@ -83,15 +83,16 @@
 //! [`ContactAnalysisPlugin`] does not own a force or output pipeline — it hooks
 //! into existing ones, so **registration order matters**:
 //!
-//! - A **Hertz-Mindlin contact plugin must be registered first.** The analysis
-//!   system is scheduled `.after("hertz_mindlin_contact")` so it runs in
-//!   `PostForce` once positions and the neighbor list are settled. With no
-//!   system carrying that label, the scheduler has no ordering anchor for the
-//!   analysis pass.
+//! - A **Hertz-Mindlin contact plugin must be registered first.** A
+//!   validation-only system in the `Force` phase requires the
+//!   `"hertz_mindlin_contact"` label during schedule validation. With no system
+//!   carrying that label, setup fails with a diagnostic naming
+//!   `GranularDefaultPlugins` / `HertzMindlinContactPlugin`. The analysis itself
+//!   runs in `PostForce`, after the whole `Force` phase has completed.
 //! - **`PrintPlugin` must be registered first** when `coordination = true`. The
 //!   plugin registers the `coordination` per-atom dump scalar against the
-//!   `DumpRegistry` at build time; if the registry is absent it **panics** with
-//!   `"DumpRegistry not found — PrintPlugin must be added first"`.
+//!   `DumpRegistry` at build time; if the registry is absent setup fails with a
+//!   diagnostic naming `CorePlugins` / `PrintPlugin`.
 //!
 //! In practice both are satisfied by adding `GranularDefaultPlugins` (contact)
 //! and `CorePlugins` (which includes `PrintPlugin`) **before**
@@ -185,6 +186,13 @@ pub fn contact_analysis_config_warning(config: &ContactAnalysisConfig) -> Option
         );
     }
     None
+}
+
+fn missing_dump_registry_diagnostic() -> String {
+    "ContactAnalysisPlugin setup error: [contact_analysis] coordination = true registers the \
+     per-atom dump scalar `coordination`, but DumpRegistry is missing. Add CorePlugins (or \
+     soil_print::PrintPlugin) before ContactAnalysisPlugin."
+        .to_string()
 }
 
 // ── Per-atom coordination data ──────────────────────────────────────────────
@@ -335,12 +343,19 @@ file_prefix = "contact""#,
         app.add_resource(FabricTensorAccum::default());
 
         if config.coordination {
+            if app
+                .get_mut_resource(std::any::TypeId::of::<DumpRegistry>())
+                .is_none()
+            {
+                panic!("{}", missing_dump_registry_diagnostic());
+            }
+
             register_atom_data!(app, ContactAnalysis::new());
 
-            // Register coordination as dump scalar
+            // Register coordination as dump scalar.
             let dump_reg = app
                 .get_mut_resource(std::any::TypeId::of::<DumpRegistry>())
-                .expect("DumpRegistry not found — PrintPlugin must be added first");
+                .unwrap_or_else(|| panic!("{}", missing_dump_registry_diagnostic()));
             dump_reg
                 .borrow_mut()
                 .downcast_mut::<DumpRegistry>()
@@ -358,12 +373,19 @@ file_prefix = "contact""#,
             );
         }
 
+        // Validate the contact dependency in the Force ScheduleSet where the
+        // hertz_mindlin_contact label is registered.
+        app.add_update_system(
+            contact_analysis_requires_hertz_mindlin_contact_add_granular_default_plugins
+                .after("hertz_mindlin_contact")
+                .requires_label("hertz_mindlin_contact"),
+            ParticleSimScheduleSet::Force,
+        );
+
         // Coordination + contact record collection + fabric tensor accumulation
         // (PostForce, after contact forces — single neighbor traversal)
         app.add_update_system(
-            compute_contact_analysis
-                .label("contact_analysis")
-                .after("hertz_mindlin_contact"),
+            compute_contact_analysis.label("contact_analysis"),
             ParticleSimScheduleSet::PostForce,
         );
 
@@ -386,6 +408,8 @@ file_prefix = "contact""#,
 }
 
 // ── Systems ─────────────────────────────────────────────────────────────────
+
+fn contact_analysis_requires_hertz_mindlin_contact_add_granular_default_plugins() {}
 
 /// Post-force system: iterate neighbor pairs once, detect contacts (overlap > 0),
 /// increment coordination numbers, collect per-contact records, and accumulate
@@ -701,8 +725,20 @@ fn dump_contact_csv(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use grass_app::App;
     use soil_core::Atom;
     use soil_core::Neighbor;
+    use std::panic::{catch_unwind, AssertUnwindSafe};
+
+    fn panic_message(panic: Box<dyn std::any::Any + Send>) -> String {
+        if let Some(msg) = panic.downcast_ref::<String>() {
+            msg.clone()
+        } else if let Some(msg) = panic.downcast_ref::<&str>() {
+            msg.to_string()
+        } else {
+            "<non-string panic>".to_string()
+        }
+    }
 
     /// Helper: create a neighbor list from atom positions using brute force.
     fn build_neighbor_list(atoms: &Atom) -> Neighbor {
@@ -994,5 +1030,78 @@ mod tests {
             contact_analysis_config_warning(&config).is_none(),
             "rattlers with coordination enabled is valid and must not warn"
         );
+    }
+
+    #[test]
+    fn coordination_without_print_plugin_reports_setup_diagnostic() {
+        let mut app = App::new();
+        app.add_resource(Config::from_str(
+            r#"
+[contact_analysis]
+coordination = true
+"#,
+        ));
+
+        let err = catch_unwind(AssertUnwindSafe(|| {
+            app.add_plugins(ContactAnalysisPlugin);
+        }))
+        .expect_err("missing DumpRegistry should fail during plugin setup");
+        let msg = panic_message(err);
+
+        assert!(
+            msg.contains("ContactAnalysisPlugin setup error"),
+            "diagnostic should name setup failure: {msg}"
+        );
+        assert!(
+            msg.contains("DumpRegistry"),
+            "diagnostic should name missing resource: {msg}"
+        );
+        assert!(
+            msg.contains("CorePlugins") && msg.contains("PrintPlugin"),
+            "diagnostic should name the plugins that fix the setup: {msg}"
+        );
+        assert!(
+            !msg.contains("DumpRegistry not found"),
+            "old raw expect panic should not surface: {msg}"
+        );
+    }
+
+    #[test]
+    fn missing_contact_label_reports_setup_diagnostic() {
+        let mut app = App::new();
+        app.add_plugins(ContactAnalysisPlugin);
+
+        let err = catch_unwind(AssertUnwindSafe(|| {
+            app.organize_systems();
+        }))
+        .expect_err("missing hertz_mindlin_contact label should fail schedule validation");
+        let msg = panic_message(err);
+
+        assert!(
+            msg.contains("requires label \"hertz_mindlin_contact\""),
+            "diagnostic should name the missing contact label: {msg}"
+        );
+        assert!(
+            msg.contains("granular_default_plugins"),
+            "diagnostic should point toward GranularDefaultPlugins in the setup checker name: {msg}"
+        );
+    }
+
+    fn labeled_contact_force_for_ordering_test() {}
+
+    #[test]
+    fn contact_label_in_force_phase_allows_schedule_to_organize() {
+        let mut app = App::new();
+        app.add_resource(Atom::default());
+        app.add_resource(Neighbor::default());
+        app.add_resource(AtomDataRegistry::default());
+        app.add_resource(RunState::new());
+        app.add_update_system(
+            labeled_contact_force_for_ordering_test.label("hertz_mindlin_contact"),
+            ParticleSimScheduleSet::Force,
+        );
+        app.add_plugins(ContactAnalysisPlugin);
+
+        app.organize_systems();
     }
 }
