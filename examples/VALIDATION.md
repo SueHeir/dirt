@@ -541,19 +541,23 @@ sample estimate stays within the 5% inertia tolerance.*
 
 ![Rod Haff cooling](bench_rod_haff_cooling/plots/haff_cooling.png)
 
-*4-sphere rods (asymmetric inertia). Same construction; DIRT tracks the Haff cooling
-law over a longer tail; the optional LAMMPS overlay appears when the local binary has
-the required rigid-molecule packages.*
+*4-sphere rods (asymmetric inertia). Same construction; the harness tracks the
+linearized Haff cooling law and the late-time slope, with the optional LAMMPS overlay
+when the local binary has the required rigid-molecule packages.*
 
 **Honest read:** the cooling *form* is well supported (`1/√T` linear, **R² ≈ 0.9994–0.9999**
 on every run of all three benches), but the **−2 asymptote is only approached over finite
 time** — these dilute gases cool to a finite `t/tc`, where the *local* log-log slope is
 still short of −2. Spheres and clumps cool far enough (`t/tc ≈ 5` and `≈ 11`, slopes ≈
 **−1.88** and **−1.79**) to land inside the `−2.3 < slope < −1.6` gate and **PASS**.
-The 4-sphere rod now runs longer, reaching `t/tc ≈ 13` with slope **≈ −1.84**, so it
-also **PASSes** the unchanged late-time-slope gate. This is still a finite-window Haff
-check, not a direct `t/tc → ∞` measurement; `tc` is only an order-of-magnitude match to
-kinetic theory (a printed diagnostic). Single realizations;
+The rod bench is **borderline near the unchanged late-slope gate**. The
+`20260707T070320Z` regression row failed 5/6 checks because the late slope was
+**−1.598 at `t/tc = 5.3`**, just outside the lower gate of −1.6. A direct rerun on the
+same main (`20260707T092151Z`) passed 6/6 with **R² = 0.9998** and slope
+**−1.621 at `t/tc = 5.5`**, just inside the same gate. Treat rods as a current PASS
+only at the harness level, with a real finite-window margin issue still visible near
+the asymptote. `tc` is only an order-of-magnitude match to kinetic theory (a printed
+diagnostic). Single realizations;
 a many-body gas is chaotic, so only curve-level agreement is meaningful. For clumps/rods
 the LAMMPS cross-check is **calibrated** (the rigid velocity projection otherwise starts
 LAMMPS ~4× hotter) and compared **past the rotational transient**; different rigid
@@ -1008,22 +1012,26 @@ that the finite pile is being measured rather than a runaway sheet.*
 Physics DIRT exposes that no `bench_*` currently exercises (bonds excluded — they
 have their own non-`bench_` examples). The cleanest open gaps:
 
-- **Twisting friction** (`twisting_friction`; both `constant` and `sds`) — no
-  benchmark applies a twisting torque.
-- **Multi-material mixing** — every config uses a single material, so the per-pair
-  geometric/harmonic mixing rules (`e_eff_ij`, `friction_ij`, `beta_ij`, …) are never
-  exercised between two *different* materials.
-- **Polydispersity / unequal-radius contact** — size distributions (`RadiusSpec`) and
-  the unequal-radius `R* = R₁R₂/(R₁+R₂)` are barely touched (all two-body tests use
-  equal spheres or sphere-on-wall).
 - **`dirt_fixes` viscous drag / prescribed motion**. GPU-vs-CPU equivalence is
   only recorded in historical validation notes; current main does not ship the
   GPU crates/plugins those notes exercised.
 
-(MPI domain decomposition — previously listed here as untested — is now covered by
-`bench_mpi_decomposition`: a contact-rich `2×1×1` / `2×2×1` run reproduces the
-`1×1×1` trajectory to the FP floor with momentum, energy, and atom count conserved.
-See its section above.)
+Recent benchmark work removed several former gaps from this list:
+
+- **Linear Hooke contact** is covered by `bench_hooke_rebound`, an exact damped
+  oscillator collision check.
+- **Twisting friction** (`constant` and `sds`) is covered by
+  `bench_twisting_friction`, a pure torsional spin-down check.
+- **SDS rolling** is covered by `bench_sds_rolling`, including elastic
+  spring-dashpot and Coulomb-cap regimes.
+- **Multi-material / polydisperse pair mixing** is covered by
+  `bench_polydisperse_mixing`, including `R*`, `E*`, restitution, and friction
+  mixing for unequal-radius and different-material pairs.
+- **Timestep, particle-count, and periodic-box convergence** are covered by
+  `bench_convergence`.
+- **MPI domain decomposition** is covered by `bench_mpi_decomposition`: a
+  contact-rich `2×1×1` / `2×2×1` run reproduces the `1×1×1` trajectory to the FP
+  floor with momentum, energy, and atom count conserved.
 
 (Contact heat conduction was removed from the codebase, so it is no longer a gap; it
 will need a benchmark when re-added.)
@@ -1040,13 +1048,14 @@ will need a benchmark when re-added.)
 | wall_activate_by_name | active/inactive named wall control | API behavior | PASS; inactive force zero within 1e-14 N, reactivated mean force recovers initial active force within 1e-12 relative |
 | rolling_decay | own-model rate + LAMMPS | analytical (self-consistent) | PASS; rate derived from same model |
 | sds_rolling | own-model damped-oscillator + Coulomb cap | analytical (self-consistent) | PASS; elastic ω(t) to 0.1 %/0.56 % (springless control 2.4 %/131 %), cap slope 0.00 % |
+| twisting_friction | own-model torsional spin-down | analytical (self-consistent) | PASS; constant and SDS twisting spin-down match α=(5/4)μ_tw g/R to round-off; off-axis spin and drift remain zero |
 | jkr_adhesion | JKR pull-off | analytical (self-consistent) | PASS; measures its own constant force |
 | dmt_sjkr_cohesion | DMT pull-off 2πwR* / SJKR area law cπR*δ | analytical (self-consistent) | PASS; adds DMT+SJKR paths & 4/3 model-selection check |
 | fiber_crossover | Coulomb limit μN | analytical (self-consistent) | PASS; ratio circular vs measured N |
 | bond_fiber_tensile | input Young's modulus via `K_n = E A / L` | analytical (self-consistent) | PASS; fitted E = 1.000050 GPa vs input 1.000001 GPa (0.005% error) |
 | bond_cantilever | Euler-Bernoulli uniform-load cantilever tip deflection | analytical | PASS; final tip deflection −9.476884e-07 m vs −9.535320e-07 m (0.61% error, 5% gate), 9/9 bonds present |
 | sphere/clump haff | Haff law + LAMMPS | law (cross-code) | PASS; R²≈0.9999, slope −1.88 / −1.79 at t/tc≈5 / 11; −2 not fully reached; tc unvalidated; clump cross-check calibrated |
-| rod haff | Haff law + optional LAMMPS | law (cross-code when available) | PASS; Haff R²=0.9999, late-time slope −1.84 at t/tc≈13 inside the unchanged −2.3<slope<−1.6 gate; finite-window asymptote check, tc diagnostic only |
+| rod haff | Haff law + optional LAMMPS | law (cross-code when available) | PASS on latest rerun but borderline; 20260707T070320Z failed 5/6 with slope −1.598 at t/tc=5.3, latest 20260707T092151Z passes 6/6 with R²=0.9998 and slope −1.621 at t/tc=5.5 against the unchanged −2.3<slope<−1.6 gate |
 | SPH glass column collapse | Lube/Lajeunesse (empirical) + LAMMPS overlay | empirical macro gate | FAIL (remaining macro limitation); uses canonical `mu_r=0.10` because 03_angle_of_repose has no transferable closure; linear exponent 1.407 vs 1.0 outside ±0.25, power exponent 0.885 inside gate; exits 1 |
 | clump_insertion_determinism | own repeated config run | reproducibility | PASS; same-seed config path byte-identical, changed seed diverges |
 | angle_of_repose | empirical (none exact) | qualitative | PASS; trends only; frozen-bed |
