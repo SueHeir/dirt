@@ -25,6 +25,11 @@ enough to reach `t/tc ≈ 13`; the fitted late-window slope is about −1.84, in
 unchanged `−2.3 < slope < −1.6` gate while still short of the formal `t/tc → ∞`
 limit.
 
+If this benchmark reports a slope near -1.60 at only `t/tc ≈ 5`, it is running
+the older 700k-step setup. That run length is too short for the rod case's
+finite-window slope gate even though the linear Haff fit is already good; the
+current benchmark uses 1.6M steps so the same unchanged gate is reached honestly.
+
 ## Setup
 
 | Property | Value |
