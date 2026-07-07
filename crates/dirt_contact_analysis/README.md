@@ -39,8 +39,15 @@ file_prefix = "contact"  # CSV filename prefix (default "contact")
 ```rust
 use dirt_contact_analysis::ContactAnalysisPlugin;
 
-app.add_plugin(ContactAnalysisPlugin);
+app.add_plugins(CorePlugins)            // includes PrintPlugin / DumpRegistry
+   .add_plugins(GranularDefaultPlugins) // labels "hertz_mindlin_contact"
+   .add_plugins(ContactAnalysisPlugin);
 ```
+
+`ContactAnalysisPlugin` is an opt-in diagnostic that hooks into the existing
+contact and output pipelines. Register it after `GranularDefaultPlugins` and,
+when `coordination = true`, after `CorePlugins` or `PrintPlugin`; setup reports
+an actionable diagnostic if either dependency is missing.
 
 Thermo output (on thermo intervals):
 

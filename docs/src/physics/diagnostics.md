@@ -110,12 +110,14 @@ accumulators correct for this so the reported quantities are list-independent:
 existing ones, so **registration order matters**:
 
 - A **Hertz–Mindlin contact plugin must be registered first.** The analysis runs
-  `.after("hertz_mindlin_contact")` in `PostForce`; with no system carrying that
-  label the scheduler has no ordering anchor.
+  `.after("hertz_mindlin_contact")` in `PostForce` and validates that the label
+  exists during setup. With no system carrying that label, setup reports the
+  missing `hertz_mindlin_contact` anchor and points back to
+  `GranularDefaultPlugins` / `HertzMindlinContactPlugin`.
 - **`PrintPlugin` must be registered first** when `coordination = true` — the
   plugin registers the `coordination` dump scalar against the `DumpRegistry` at
-  build time, and **panics** with `"DumpRegistry not found — PrintPlugin must be
-  added first"` if it is absent.
+  build time, and setup reports that `CorePlugins` / `PrintPlugin` must be added
+  first if it is absent.
 
 In practice both are satisfied by adding `GranularDefaultPlugins` (contact) and
 `CorePlugins` (which includes `PrintPlugin`) **before** `ContactAnalysisPlugin`:
