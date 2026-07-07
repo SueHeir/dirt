@@ -3,8 +3,7 @@
 **DIRT** — the Discrete-element Interaction-Resolved Toolkit — is a Discrete
 Element Method (DEM) physics engine written in Rust. It resolves every
 inter-particle contact individually: Hertz–Mindlin contact, rotational
-dynamics, parallel bonds, walls, multisphere clumps, heat conduction, and
-contact analysis.
+dynamics, parallel bonds, walls, multisphere clumps, and contact analysis.
 
 DIRT is the top tier of a three-repo stack. Each tier depends only on the ones
 below it:

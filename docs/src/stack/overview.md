@@ -19,7 +19,7 @@ GRASS    framework: App, Plugin, Scheduler, IO, coupling      (no particles)
 |---|---|---|---|
 | **GRASS** | [grass](https://github.com/SueHeir/grass) | `App`, `Plugin`, scheduler, TOML config, MPI coupling | particles, physics |
 | **SOIL** | [soil](https://github.com/SueHeir/soil) | base `Atom`, domain decomposition, ghost comm, migration, neighbor lists | contact forces, bonds, damage |
-| **DIRT** | [dirt](https://github.com/SueHeir/dirt) | Hertz–Mindlin contact, bonds, walls, clumps, conduction | — |
+| **DIRT** | [dirt](https://github.com/SueHeir/dirt) | Hertz–Mindlin contact, bonds, walls, clumps | — |
 
 ## Why split it this way
 
