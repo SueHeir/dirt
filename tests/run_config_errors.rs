@@ -87,6 +87,10 @@ fn run_config_case(name: &str, particles_insert: &str) -> Output {
 
 fn run_config_error_case(name: &str, particles_insert: &str) -> String {
     let output = run_config_case(name, particles_insert);
+    output_to_config_error_stderr(output)
+}
+
+fn output_to_config_error_stderr(output: Output) -> String {
     let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
     assert!(
         !output.status.success(),
@@ -120,6 +124,73 @@ radius = 0.001
     );
 
     stderr
+}
+
+fn assert_missing_fix_group_error(fix_kind: &str, requested_group: &str, stderr: &str) {
+    let expected =
+        format!("ERROR: fix {fix_kind}: group '{requested_group}' not found; available groups:");
+    assert!(
+        stderr.contains(&expected),
+        "stderr should contain missing group error `{expected}`, got:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("all"),
+        "stderr should list the built-in all group, got:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("mobile"),
+        "stderr should list configured groups, got:\n{stderr}"
+    );
+}
+
+#[test]
+fn addforce_missing_group_errors_during_setup() {
+    let stderr = run_config_case_with_extra(
+        "addforce-missing-group",
+        r#"
+count = 1
+radius = 0.001
+"#,
+        r#"
+[[group]]
+name = "mobile"
+
+[[addforce]]
+group = "moblie"
+fz = -1.0
+"#,
+    );
+    let stderr = output_to_config_error_stderr(stderr);
+    assert!(
+        !stderr.contains("step"),
+        "group validation should fail before the run loop emits timestep output, got:\n{stderr}"
+    );
+    assert_missing_fix_group_error("addforce", "moblie", &stderr);
+}
+
+#[test]
+fn nve_limit_missing_group_errors_during_setup() {
+    let stderr = run_config_case_with_extra(
+        "nve-limit-missing-group",
+        r#"
+count = 1
+radius = 0.001
+"#,
+        r#"
+[[group]]
+name = "mobile"
+
+[[nve_limit]]
+group = "mover"
+max_displacement = 0.0001
+"#,
+    );
+    let stderr = output_to_config_error_stderr(stderr);
+    assert!(
+        !stderr.contains("step"),
+        "group validation should fail before the run loop emits timestep output, got:\n{stderr}"
+    );
+    assert_missing_fix_group_error("nve_limit", "mover", &stderr);
 }
 
 #[test]
