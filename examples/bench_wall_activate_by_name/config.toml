@@ -1,0 +1,13 @@
+[material]
+name = "glass"
+youngs_mod = 7.0e7
+poisson_ratio = 0.245
+restitution = 1.0
+friction = 0.0
+
+[scenario]
+wall_name = "gate"
+radius = 0.001
+overlap = 0.0002
+dt = 1.0e-5
+samples_per_phase = 8

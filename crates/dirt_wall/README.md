@@ -36,7 +36,7 @@ Plane motion modes: static, constant velocity, sinusoidal oscillation along the 
 | `WallDef`, `OscillateDef`, `ServoDef` | TOML config structs |
 | `WallPlane`, `WallCylinder`, `WallSphere`, `WallRegion` | Runtime wall representations |
 | `WallMotion` | `Static`, `ConstantVelocity`, `Oscillate`, `Servo` |
-| `Walls` | Resource holding all walls with per-wall active flags; `deactivate_by_name` |
+| `Walls` | Resource holding all walls with per-wall active flags; `deactivate_by_name`, `activate_by_name` |
 | `wall_move`, `wall_zero_force_accumulators`, `wall_contact_force` | Systems (PreInitialIntegration / PreForce / Force) |
 
 ## TOML configuration

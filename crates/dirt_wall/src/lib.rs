@@ -304,7 +304,8 @@ pub struct WallDef {
     // ── Common fields ───────────────────────────────────────────────────
     /// Material name — must match a `[[dem.materials]]` entry.
     pub material: String,
-    /// Optional name for runtime enable/disable via [`Walls::deactivate_by_name`].
+    /// Optional name for runtime enable/disable via [`Walls::deactivate_by_name`]
+    /// and [`Walls::activate_by_name`].
     #[serde(default)]
     pub name: Option<String>,
     /// Lower X bound for the plane wall's active region (default: −∞).
@@ -536,8 +537,9 @@ pub struct WallRegion {
 
 /// Collection of all wall types with per-wall active/inactive flags.
 ///
-/// Stored as a resource in the [`App`]. Individual walls can be enabled or
-/// disabled at runtime via [`deactivate_by_name`](Self::deactivate_by_name).
+/// Stored as a resource in the [`App`]. Individual walls can be disabled or
+/// enabled at runtime via [`deactivate_by_name`](Self::deactivate_by_name) and
+/// [`activate_by_name`](Self::activate_by_name).
 pub struct Walls {
     /// Plane walls.
     pub planes: Vec<WallPlane>,
@@ -593,6 +595,34 @@ impl Walls {
         for (i, wall) in self.regions.iter().enumerate() {
             if wall.name.as_deref() == Some(name) {
                 self.region_active[i] = false;
+            }
+        }
+    }
+
+    /// Activate all walls (of any type) whose `name` matches the given string.
+    ///
+    /// Reactivated walls participate in contact force computation and, for
+    /// moving plane walls, motion updates again. Unknown names are ignored,
+    /// matching [`deactivate_by_name`](Self::deactivate_by_name).
+    pub fn activate_by_name(&mut self, name: &str) {
+        for (i, wall) in self.planes.iter().enumerate() {
+            if wall.name.as_deref() == Some(name) {
+                self.active[i] = true;
+            }
+        }
+        for (i, wall) in self.cylinders.iter().enumerate() {
+            if wall.name.as_deref() == Some(name) {
+                self.cylinder_active[i] = true;
+            }
+        }
+        for (i, wall) in self.spheres.iter().enumerate() {
+            if wall.name.as_deref() == Some(name) {
+                self.sphere_active[i] = true;
+            }
+        }
+        for (i, wall) in self.regions.iter().enumerate() {
+            if wall.name.as_deref() == Some(name) {
+                self.region_active[i] = true;
             }
         }
     }
@@ -2464,6 +2494,84 @@ mod tests {
             tangential_springs: std::collections::HashMap::new(),
             rolling_springs: std::collections::HashMap::new(),
         }
+    }
+
+    fn make_named_wall_set(name: &str) -> Walls {
+        let mut plane = make_wall_plane(0.0, 0.0, 0.0, 0.0, 0.0, 1.0);
+        plane.name = Some(name.to_string());
+
+        Walls {
+            planes: vec![plane],
+            active: vec![true],
+            cylinders: vec![WallCylinder {
+                axis: 2,
+                center: [0.005, 0.005],
+                radius: 0.004,
+                lo: 0.0,
+                hi: 0.01,
+                inside: true,
+                material_index: 0,
+                name: Some(name.to_string()),
+                force_accumulator: 0.0,
+                temperature: None,
+            }],
+            cylinder_active: vec![true],
+            spheres: vec![WallSphere {
+                center: [0.005, 0.005, 0.005],
+                radius: 0.004,
+                inside: true,
+                material_index: 0,
+                name: Some(name.to_string()),
+                force_accumulator: 0.0,
+                temperature: None,
+            }],
+            sphere_active: vec![true],
+            regions: vec![WallRegion {
+                region: Region::Sphere {
+                    center: [0.005, 0.005, 0.005],
+                    radius: 0.004,
+                },
+                inside: true,
+                material_index: 0,
+                name: Some(name.to_string()),
+                force_accumulator: 0.0,
+                temperature: None,
+            }],
+            region_active: vec![true],
+            time: 0.0,
+            tangential_springs: std::collections::HashMap::new(),
+            rolling_springs: std::collections::HashMap::new(),
+        }
+    }
+
+    #[test]
+    fn activate_by_name_reactivates_all_wall_geometries() {
+        let mut walls = make_named_wall_set("gate");
+
+        walls.deactivate_by_name("gate");
+        assert_eq!(walls.active, vec![false]);
+        assert_eq!(walls.cylinder_active, vec![false]);
+        assert_eq!(walls.sphere_active, vec![false]);
+        assert_eq!(walls.region_active, vec![false]);
+
+        walls.activate_by_name("gate");
+        assert_eq!(walls.active, vec![true]);
+        assert_eq!(walls.cylinder_active, vec![true]);
+        assert_eq!(walls.sphere_active, vec![true]);
+        assert_eq!(walls.region_active, vec![true]);
+    }
+
+    #[test]
+    fn activate_by_name_unknown_name_is_noop() {
+        let mut walls = make_named_wall_set("gate");
+
+        walls.deactivate_by_name("gate");
+        walls.activate_by_name("missing");
+
+        assert_eq!(walls.active, vec![false]);
+        assert_eq!(walls.cylinder_active, vec![false]);
+        assert_eq!(walls.sphere_active, vec![false]);
+        assert_eq!(walls.region_active, vec![false]);
     }
 
     #[test]

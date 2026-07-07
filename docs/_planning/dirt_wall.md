@@ -39,9 +39,7 @@ restarting the simulation.
 | Method | Location | Signature |
 |---|---|---|
 | `Walls::deactivate_by_name` | `lib.rs:540` | `(&mut self, name: &str)` — searches all four wall-type vecs, sets parallel active flag to false for any matching name |
-
-There is no `activate_by_name` — deactivation is one-way in the current code
-(lib.rs:540–561). This is a doc gap and potential user surprise.
+| `Walls::activate_by_name` | `lib.rs:603` | `(&mut self, name: &str)` — searches all four wall-type vecs, sets parallel active flag to true for any matching name |
 
 ### Geometry Types (runtime structs)
 
@@ -89,7 +87,7 @@ All walls are `[[wall]]` array-of-table entries. `material` is always required.
 |---|---|---|---|
 | `type` | string | `"plane"` | `"plane"`, `"cylinder"`, `"sphere"`, `"region"` |
 | `material` | string | required | Must match a `[[dem.materials]]` name; fatal error if not found |
-| `name` | string | None | Optional; enables `deactivate_by_name` at runtime |
+| `name` | string | None | Optional; enables `deactivate_by_name` and `activate_by_name` at runtime |
 | `temperature` | f64 | None | Stored, never read by this crate — hook for external heat-transfer |
 
 ### Plane-specific keys
@@ -168,12 +166,12 @@ assigned to a curved wall.
 region walls are permanently static. Servo and oscillation are unavailable for
 curved/region geometries.
 
-### 5. Deactivation is irreversible (one-way)
+### 5. Runtime deactivation and reactivation
 
-`deactivate_by_name` sets `active[i] = false` with no inverse method
-(lib.rs:540–561). A deactivated wall cannot be re-enabled without direct field
-mutation (`walls.active[i] = true`). This is not documented anywhere in the
-current mdBook.
+`deactivate_by_name` clears the active flag for every matching plane, cylinder,
+sphere, or region wall. `activate_by_name` sets the same flags back to true, so
+staged runs can remove and later restore named walls without direct mutation of
+the `Walls` resource internals.
 
 ### 6. Tangential- and rolling-spring history: per-step rebuild
 
@@ -235,7 +233,8 @@ section should walk through:
 
 1. **Minimal floor** — one `[[wall]]` entry; run and observe no particles escape.
 2. **Named blocker** — add `name = "blocker"`; write a system that calls
-   `deactivate_by_name`; show the hopper discharge pattern.
+   `deactivate_by_name`; call `activate_by_name` for staged runs that need the
+   same wall again.
 3. **Cylindrical container** — `type = "cylinder"`, `inside = true`; contrast
    with four bounding plane walls; mention axial `lo`/`hi` gap.
 4. **Funnel with bounded planes** — use `bound_z_low` / `bound_z_high` to clip
@@ -251,14 +250,12 @@ section should walk through:
 
 | Gap | Severity | Notes |
 |---|---|---|
-| `deactivate_by_name` is one-way; no `activate_by_name` | Medium | Not documented; users wanting to re-enable a wall must reach into `Walls::active` directly |
 | Adhesion asymmetry by geometry (cylinder/sphere/region silently ignore `surface_energy`) | High | Mentioned in module-level docs and README, but not in the mdBook; easy to waste hours wondering why JKR has no effect |
 | Twisting friction plane-only limitation | Low | Undocumented in mdBook; material with `twisting_friction > 0` assigned to cylinder wall silently has no twisting effect |
 | Motion is plane-only | Low | Mentioned in `physics/walls.md` but not in `reference/config.md` schema table |
 | Bounding box on plane walls (`bound_x/y/z_low/high`) | Medium | Not mentioned in `physics/walls.md` or `reference/config.md`; key for finite-face funnel walls |
 | Servo one-step force lag | Low | Worth a callout in the servo section — the controller reads last step's force |
 | `temperature` field is stored, never read | Low | Mentioned in module docs and `physics/walls.md`; should note which future crate is expected to read it |
-| No `activate_by_name` | Medium | Only deactivation is supported; re-activation requires direct `Walls::active[i] = true` |
 | `inside = false` (outside) mode for cylinder and sphere | Low | Exists in code but not demonstrated or explained in any example config |
 
 ---
@@ -273,8 +270,8 @@ It should be **extended**, not replaced, with:
 - An **"Adhesion by geometry"** callout box (currently in the code docs but
   absent from mdBook prose).
 - A **"Twisting friction: plane only"** note in the friction table.
-- A **"Runtime control"** subsection explaining that deactivation is one-way
-  and how to re-enable via direct field access.
+- A **"Runtime control"** subsection explaining `deactivate_by_name` and
+  `activate_by_name`.
 - A **"Servo timing"** note under the Servo motion entry.
 
 The `docs/src/reference/config.md` `## Walls` section (currently 6 lines) should
