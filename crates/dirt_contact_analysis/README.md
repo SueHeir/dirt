@@ -47,7 +47,9 @@ app.add_plugins(CorePlugins)            // includes PrintPlugin / DumpRegistry
 `ContactAnalysisPlugin` is an opt-in diagnostic that hooks into the existing
 contact and output pipelines. Register it after `GranularDefaultPlugins` and,
 when `coordination = true`, after `CorePlugins` or `PrintPlugin`; setup reports
-an actionable diagnostic if either dependency is missing.
+an actionable diagnostic if either dependency is missing. The contact dependency
+is validated in the `Force` phase where the `"hertz_mindlin_contact"` label is
+registered; analysis output runs later in `PostForce`.
 
 Thermo output (on thermo intervals):
 

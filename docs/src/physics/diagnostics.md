@@ -109,11 +109,13 @@ accumulators correct for this so the reported quantities are list-independent:
 `ContactAnalysisPlugin` does not own a force or output pipeline — it hooks into
 existing ones, so **registration order matters**:
 
-- A **Hertz–Mindlin contact plugin must be registered first.** The analysis runs
-  `.after("hertz_mindlin_contact")` in `PostForce` and validates that the label
-  exists during setup. With no system carrying that label, setup reports the
-  missing `hertz_mindlin_contact` anchor and points back to
-  `GranularDefaultPlugins` / `HertzMindlinContactPlugin`.
+- A **Hertz-Mindlin contact plugin must be registered first.** A validation-only
+  checker runs in the `Force` phase, where the contact system's
+  `"hertz_mindlin_contact"` label is registered, and requires that label during
+  setup. With no system carrying that label, setup reports the missing
+  `hertz_mindlin_contact` anchor and points back to `GranularDefaultPlugins` /
+  `HertzMindlinContactPlugin`. The analysis itself runs in `PostForce`, after
+  the whole `Force` phase has completed.
 - **`PrintPlugin` must be registered first** when `coordination = true` — the
   plugin registers the `coordination` dump scalar against the `DumpRegistry` at
   build time, and setup reports that `CorePlugins` / `PrintPlugin` must be added

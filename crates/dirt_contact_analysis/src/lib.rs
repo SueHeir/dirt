@@ -83,12 +83,12 @@
 //! [`ContactAnalysisPlugin`] does not own a force or output pipeline — it hooks
 //! into existing ones, so **registration order matters**:
 //!
-//! - A **Hertz-Mindlin contact plugin must be registered first.** The analysis
-//!   system is scheduled `.after("hertz_mindlin_contact")` and requires that
-//!   label during schedule validation, so it runs in `PostForce` once positions
-//!   and the neighbor list are settled. With no system carrying that label,
-//!   setup fails with a diagnostic naming `GranularDefaultPlugins` /
-//!   `HertzMindlinContactPlugin`.
+//! - A **Hertz-Mindlin contact plugin must be registered first.** A
+//!   validation-only system in the `Force` phase requires the
+//!   `"hertz_mindlin_contact"` label during schedule validation. With no system
+//!   carrying that label, setup fails with a diagnostic naming
+//!   `GranularDefaultPlugins` / `HertzMindlinContactPlugin`. The analysis itself
+//!   runs in `PostForce`, after the whole `Force` phase has completed.
 //! - **`PrintPlugin` must be registered first** when `coordination = true`. The
 //!   plugin registers the `coordination` per-atom dump scalar against the
 //!   `DumpRegistry` at build time; if the registry is absent setup fails with a
@@ -373,17 +373,19 @@ file_prefix = "contact""#,
             );
         }
 
+        // Validate the contact dependency in the Force ScheduleSet where the
+        // hertz_mindlin_contact label is registered.
+        app.add_update_system(
+            contact_analysis_requires_hertz_mindlin_contact_add_granular_default_plugins
+                .after("hertz_mindlin_contact")
+                .requires_label("hertz_mindlin_contact"),
+            ParticleSimScheduleSet::Force,
+        );
+
         // Coordination + contact record collection + fabric tensor accumulation
         // (PostForce, after contact forces — single neighbor traversal)
         app.add_update_system(
-            contact_analysis_requires_hertz_mindlin_contact_add_granular_default_plugins
-                .requires_label("hertz_mindlin_contact"),
-            ParticleSimScheduleSet::PostForce,
-        );
-        app.add_update_system(
-            compute_contact_analysis
-                .label("contact_analysis")
-                .after("hertz_mindlin_contact"),
+            compute_contact_analysis.label("contact_analysis"),
             ParticleSimScheduleSet::PostForce,
         );
 
@@ -1083,5 +1085,23 @@ coordination = true
             msg.contains("granular_default_plugins"),
             "diagnostic should point toward GranularDefaultPlugins in the setup checker name: {msg}"
         );
+    }
+
+    fn labeled_contact_force_for_ordering_test() {}
+
+    #[test]
+    fn contact_label_in_force_phase_allows_schedule_to_organize() {
+        let mut app = App::new();
+        app.add_resource(Atom::default());
+        app.add_resource(Neighbor::default());
+        app.add_resource(AtomDataRegistry::default());
+        app.add_resource(RunState::new());
+        app.add_update_system(
+            labeled_contact_force_for_ordering_test.label("hertz_mindlin_contact"),
+            ParticleSimScheduleSet::Force,
+        );
+        app.add_plugins(ContactAnalysisPlugin);
+
+        app.organize_systems();
     }
 }
