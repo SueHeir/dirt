@@ -165,6 +165,41 @@ fn mdr_round_up_negative_epsilon(value: f64) -> f64 {
     }
 }
 
+/// Willett et al. (2000) dimensionless closed-form pendular bridge force for
+/// two spheres, using the common equal-sphere effective-radius extension:
+///
+/// `F = 2*pi*R*gamma*cos(theta) / (1 + 1.05*s_hat + 2.5*s_hat^2)`,
+/// `s_hat = s*sqrt(R*/V)`, active for `0 <= s <= s_rupture`.
+///
+/// Returns a positive tensile magnitude; the contact force path subtracts it
+/// from the normal force so it acts attractively.
+pub fn willett2000_liquid_bridge_force(
+    separation: f64,
+    r_eff: f64,
+    volume: f64,
+    surface_tension: f64,
+    contact_angle: f64,
+    rupture_distance: f64,
+) -> f64 {
+    if separation < 0.0 || r_eff <= 0.0 || volume <= 0.0 || surface_tension <= 0.0 {
+        return 0.0;
+    }
+    let rupture = if rupture_distance > 0.0 {
+        rupture_distance
+    } else {
+        // Lian, Thornton & Adams' volume-scaled rupture estimate, also used
+        // with the Willett force in DEM implementations.
+        (1.0 + 0.5 * contact_angle) * volume.cbrt()
+    };
+    if separation > rupture {
+        return 0.0;
+    }
+    let s_hat = separation * (r_eff / volume).sqrt();
+    let denom = 1.0 + 1.05 * s_hat + 2.5 * s_hat * s_hat;
+    let wetting = contact_angle.cos().max(0.0);
+    2.0 * std::f64::consts::PI * r_eff * surface_tension * wetting / denom
+}
+
 fn mdr_adhesive_force(
     delta_e: f64,
     a_shape: f64,
@@ -590,6 +625,21 @@ pub fn contact_force_core(
         let r_eff = (r1 * r2) / sum_r;
         // Effective Young's modulus: 1/E* = (1-ν1²)/E1 + (1-ν2²)/E2
         let e_eff = material_table.e_eff_ij[mat_i][mat_j];
+        let liquid_bridge_active = material_table.liquid_bridge_model == "willett2000";
+        let liquid_volume = material_table.liquid_bridge_volume_ij[mat_i][mat_j];
+        let liquid_surface_tension = material_table.liquid_surface_tension_ij[mat_i][mat_j];
+        let liquid_contact_angle = material_table.liquid_contact_angle_ij[mat_i][mat_j];
+        let liquid_rupture_distance = material_table.liquid_rupture_distance_ij[mat_i][mat_j];
+        let liquid_range =
+            if liquid_bridge_active && liquid_volume > 0.0 && liquid_surface_tension > 0.0 {
+                if liquid_rupture_distance > 0.0 {
+                    liquid_rupture_distance
+                } else {
+                    (1.0 + 0.5 * liquid_contact_angle) * liquid_volume.cbrt()
+                }
+            } else {
+                0.0
+            };
         // JKR pull-off distance: particles interact beyond geometric contact
         let delta_pulloff = if surface_energy > 0.0 && !use_dmt {
             let gamma = surface_energy;
@@ -601,7 +651,7 @@ pub fn contact_force_core(
         };
 
         // Check contact: geometric touch or within JKR adhesion range
-        let interaction_r = sum_r + delta_pulloff;
+        let interaction_r = sum_r + delta_pulloff.max(liquid_range);
         if dist_sq >= interaction_r * interaction_r {
             continue;
         }
@@ -643,8 +693,10 @@ pub fn contact_force_core(
             // repulsion and cause runaway penetration).
         }
 
-        // For non-JKR, skip if no geometric overlap
-        if delta <= 0.0 && surface_energy <= 0.0 {
+        let separation = (distance - sum_r).max(0.0);
+
+        // For non-JKR/non-liquid, skip if no geometric overlap
+        if delta <= 0.0 && surface_energy <= 0.0 && liquid_range <= 0.0 {
             continue;
         }
 
@@ -681,6 +733,19 @@ pub fn contact_force_core(
         // JKR adhesion-only regime: gap exists but within pull-off distance
         // DMT has no adhesion-only regime (no force beyond contact)
         let jkr_adhesion_only = surface_energy > 0.0 && !use_dmt && delta <= 0.0;
+        let f_liquid_bridge = if liquid_range > 0.0 {
+            willett2000_liquid_bridge_force(
+                separation,
+                r_eff,
+                liquid_volume,
+                liquid_surface_tension,
+                liquid_contact_angle,
+                liquid_rupture_distance,
+            )
+        } else {
+            0.0
+        };
+        let bridge_only = delta <= 0.0 && !jkr_adhesion_only && f_liquid_bridge > 0.0;
 
         // Hertz stiffness parameters (only meaningful when δ > 0)
         // S_n = 2 E* √(R* δ)  — normal stiffness parameter (used in damping)
@@ -740,7 +805,7 @@ pub fn contact_force_core(
         // ── Normal force ─────────────────────────────────────────────────
         // F_n > 0 → repulsive (along contact normal from i to j)
         // F_n < 0 → attractive (adhesion/cohesion pulls particles together)
-        let (f_n_mag, k_t) = if use_mdr {
+        let (mut f_n_mag, k_t) = if use_mdr {
             let (f, _k_mdr, kt_mdr) = mdr_normal_force(
                 delta.max(0.0),
                 r1,
@@ -791,6 +856,7 @@ pub fn contact_force_core(
                 (f_total, k_t)
             }
         };
+        f_n_mag -= f_liquid_bridge;
 
         let fn_x = f_n_mag * nx;
         let fn_y = f_n_mag * ny;
@@ -807,8 +873,8 @@ pub fn contact_force_core(
 
         // ── Tangential force (skip in JKR adhesion-only regime) ──────────
         // No tangential friction when particles are not in geometric contact
-        if jkr_adhesion_only {
-            // No tangential, rolling, or spring history in adhesion-only regime
+        if jkr_adhesion_only || bridge_only {
+            // No tangential, rolling, or spring history in gap-only attraction.
             // Virial contribution from normal only
             if let Some(ref mut v) = virial {
                 if v.active {
@@ -3606,5 +3672,26 @@ mod tests {
                 atom.force[1][d]
             );
         }
+    }
+
+    #[test]
+    fn willett_liquid_bridge_force_matches_closed_form_and_ruptures() {
+        let r_eff: f64 = 2.5e-3;
+        let volume: f64 = 1.0e-11;
+        let gamma: f64 = 0.072;
+        let theta: f64 = 0.0;
+        let rupture: f64 = 5.0e-5;
+        for separation in [0.0, 1.0e-6, 1.0e-5, 4.0e-5] {
+            let s_hat = separation * (r_eff / volume).sqrt();
+            let expected = 2.0 * std::f64::consts::PI * r_eff * gamma * theta.cos()
+                / (1.0 + 1.05 * s_hat + 2.5 * s_hat * s_hat);
+            let got =
+                willett2000_liquid_bridge_force(separation, r_eff, volume, gamma, theta, rupture);
+            assert!((got - expected).abs() < 1.0e-15);
+        }
+        assert_eq!(
+            willett2000_liquid_bridge_force(rupture * 1.01, r_eff, volume, gamma, theta, rupture),
+            0.0
+        );
     }
 }

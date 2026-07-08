@@ -662,6 +662,7 @@ fn insert_single_particle(
     pos: [f64; 3],
     vel: [f64; 3],
     radius: f64,
+    cutoff_padding: f64,
     density: f64,
     mat_idx: u32,
     tag: u32,
@@ -670,7 +671,8 @@ fn insert_single_particle(
     atom.nlocal += 1;
     atom.tag.push(tag);
     atom.origin_index.push(0);
-    atom.cutoff_radius.push(radius as Real);
+    atom.cutoff_radius
+        .push((radius + cutoff_padding.max(0.0)) as Real);
     atom.image.push([0, 0, 0]);
     atom.is_ghost.push(false);
     atom.pos
@@ -886,6 +888,7 @@ pub fn dem_insert_atoms(
                         std::process::exit(1);
                     });
                     let mat_idx = resolve_material(&material_table, mat_name);
+                    let cutoff_padding = material_table.liquid_bridge_cutoff_padding(mat_idx);
                     let count = insert.count.unwrap_or_else(|| {
                         eprintln!("ERROR: [[particles.insert]] requires 'count' for random insertion (without rate)");
                         std::process::exit(1);
@@ -1011,6 +1014,7 @@ pub fn dem_insert_atoms(
                                 candidate,
                                 vel,
                                 radius,
+                                cutoff_padding,
                                 density,
                                 mat_idx,
                                 tag,
@@ -1201,6 +1205,7 @@ fn read_csv_particles(
             }
             None => mat_idx,
         };
+        let cutoff_padding = material_table.liquid_bridge_cutoff_padding(row_mat_idx);
 
         // Tag advances for every file particle (keeps tags globally consistent
         // across ranks); the atom is only stored if it lies in this subdomain.
@@ -1211,6 +1216,7 @@ fn read_csv_particles(
                 [x, y, z],
                 [vx, vy, vz],
                 radius,
+                cutoff_padding,
                 density,
                 row_mat_idx,
                 *max_tag,
@@ -1387,6 +1393,7 @@ fn read_lammps_dump_particles(
                 Some(t) => lookup_material_for_type(t as u32, type_index_map.as_ref(), mat_idx),
                 None => mat_idx,
             };
+            let cutoff_padding = material_table.liquid_bridge_cutoff_padding(row_mat_idx);
 
             if owns_position(domain, &[x, y, z]) {
                 insert_single_particle(
@@ -1395,6 +1402,7 @@ fn read_lammps_dump_particles(
                     [x, y, z],
                     [vx, vy, vz],
                     radius,
+                    cutoff_padding,
                     density,
                     row_mat_idx,
                     *max_tag,
@@ -1657,6 +1665,7 @@ fn read_lammps_data_particles(
     for pa in parsed_atoms {
         let vel = velocity_map.get(&pa.id).copied().unwrap_or([0.0; 3]);
         let row_mat_idx = lookup_material_for_type(pa.atom_type, type_index_map.as_ref(), mat_idx);
+        let cutoff_padding = material_table.liquid_bridge_cutoff_padding(row_mat_idx);
         if owns_position(domain, &pa.pos) {
             insert_single_particle(
                 atom,
@@ -1664,6 +1673,7 @@ fn read_lammps_data_particles(
                 pa.pos,
                 vel,
                 pa.radius,
+                cutoff_padding,
                 pa.density,
                 row_mat_idx,
                 *max_tag,
@@ -1694,6 +1704,7 @@ pub fn dem_rate_insert(
     mut atom: ResMut<Atom>,
     registry: Res<AtomDataRegistry>,
     run_state: Res<RunState>,
+    material_table: Res<MaterialTable>,
     mut rate_state: ResMut<RateInsertState>,
     mut comm_state: ResMut<CurrentState<CommState>>,
 ) {
@@ -1801,6 +1812,7 @@ pub fn dem_rate_insert(
         }
 
         let mat_idx = rate_state.entries[entry_idx].mat_idx;
+        let cutoff_padding = material_table.liquid_bridge_cutoff_padding(mat_idx);
 
         let max_r = radius_spec.try_max_radius().unwrap_or_else(|e| {
             eprintln!(
@@ -1932,6 +1944,7 @@ pub fn dem_rate_insert(
                     candidate,
                     vel,
                     radius,
+                    cutoff_padding,
                     density,
                     mat_idx,
                     tag,

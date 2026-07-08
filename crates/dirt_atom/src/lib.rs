@@ -236,6 +236,19 @@ pub struct MaterialConfig {
     /// Dimensionless MDR normal damping prefactor.
     #[serde(default)]
     pub mdr_damping: f64,
+    /// Liquid bridge volume per contact (m^3, 0 = disabled).
+    #[serde(default)]
+    pub liquid_bridge_volume: f64,
+    /// Liquid-vapor surface tension for pendular bridges (N/m).
+    #[serde(default)]
+    pub liquid_surface_tension: f64,
+    /// Solid-liquid contact angle for pendular bridges (radians).
+    #[serde(default)]
+    pub liquid_contact_angle: f64,
+    /// Optional rupture distance for liquid bridges (m). If 0, the Willett/Lian
+    /// volume-scaled estimate is used.
+    #[serde(default)]
+    pub liquid_rupture_distance: f64,
 }
 
 fn default_adhesion_model() -> String {
@@ -256,6 +269,10 @@ fn default_twisting_model() -> String {
 
 fn default_limit_damping() -> bool {
     true
+}
+
+fn default_liquid_bridge_model() -> String {
+    "off".to_string()
 }
 
 /// TOML `[dem]` — top-level DEM configuration containing material definitions.
@@ -323,6 +340,9 @@ pub struct DemConfig {
     /// away raises the realized COR by up to ~0.03. See `bench_hertz_rebound`.
     #[serde(default = "default_limit_damping")]
     pub limit_damping: bool,
+    /// Pendular capillary bridge model: `"off"` (default) or `"willett2000"`.
+    #[serde(default = "default_liquid_bridge_model")]
+    pub liquid_bridge_model: String,
 }
 
 impl Default for DemConfig {
@@ -336,6 +356,7 @@ impl Default for DemConfig {
             tangential_model: default_tangential_model(),
             track_orientation: false,
             limit_damping: default_limit_damping(),
+            liquid_bridge_model: default_liquid_bridge_model(),
         }
     }
 }
@@ -383,6 +404,17 @@ pub fn hooke_surface_energy_warning(config: &DemConfig) -> Option<String> {
          under Hooke, use `cohesion_energy` (SJKR) instead.",
         offenders.join(", ")
     ))
+}
+
+fn liquid_bridge_model_error(config: &DemConfig) -> Option<String> {
+    match config.liquid_bridge_model.as_str() {
+        "off" | "willett2000" => None,
+        other => Some(format!(
+            "ERROR: invalid [dem].liquid_bridge_model = {:?}. Supported values are \
+             \"off\" and \"willett2000\".",
+            other
+        )),
+    }
 }
 
 // ── MaterialTable — per-material and per-pair precomputed properties ────────
@@ -528,6 +560,14 @@ pub struct MaterialTable {
     pub mdr_psi_b: Vec<f64>,
     /// Per-material MDR damping prefactor.
     pub mdr_damping: Vec<f64>,
+    /// Per-material liquid bridge volume (m^3).
+    pub liquid_bridge_volume: Vec<f64>,
+    /// Per-material liquid-vapor surface tension (N/m).
+    pub liquid_surface_tension: Vec<f64>,
+    /// Per-material liquid bridge contact angle (radians).
+    pub liquid_contact_angle: Vec<f64>,
+    /// Per-material liquid bridge rupture distance override (m).
+    pub liquid_rupture_distance: Vec<f64>,
     /// Per-pair rolling stiffness (harmonic mean).
     pub rolling_stiffness_ij: Vec<Vec<f64>>,
     /// Per-pair rolling damping (geometric mean).
@@ -542,6 +582,16 @@ pub struct MaterialTable {
     pub mdr_psi_b_ij: Vec<Vec<f64>>,
     /// Per-pair MDR damping prefactor (geometric mean).
     pub mdr_damping_ij: Vec<Vec<f64>>,
+    /// Per-pair liquid bridge volume (geometric mean, m^3).
+    pub liquid_bridge_volume_ij: Vec<Vec<f64>>,
+    /// Per-pair liquid-vapor surface tension (geometric mean, N/m).
+    pub liquid_surface_tension_ij: Vec<Vec<f64>>,
+    /// Per-pair liquid bridge contact angle (arithmetic mean, radians).
+    pub liquid_contact_angle_ij: Vec<Vec<f64>>,
+    /// Per-pair liquid bridge rupture distance override (geometric mean, m).
+    pub liquid_rupture_distance_ij: Vec<Vec<f64>>,
+    /// Pendular capillary bridge model: "off" or "willett2000".
+    pub liquid_bridge_model: String,
 }
 
 impl Default for MaterialTable {
@@ -620,6 +670,10 @@ impl MaterialTable {
             mdr_yield_stress: Vec::new(),
             mdr_psi_b: Vec::new(),
             mdr_damping: Vec::new(),
+            liquid_bridge_volume: Vec::new(),
+            liquid_surface_tension: Vec::new(),
+            liquid_contact_angle: Vec::new(),
+            liquid_rupture_distance: Vec::new(),
             rolling_stiffness_ij: Vec::new(),
             rolling_damping_ij: Vec::new(),
             twisting_stiffness_ij: Vec::new(),
@@ -627,6 +681,11 @@ impl MaterialTable {
             mdr_yield_stress_ij: Vec::new(),
             mdr_psi_b_ij: Vec::new(),
             mdr_damping_ij: Vec::new(),
+            liquid_bridge_volume_ij: Vec::new(),
+            liquid_surface_tension_ij: Vec::new(),
+            liquid_contact_angle_ij: Vec::new(),
+            liquid_rupture_distance_ij: Vec::new(),
+            liquid_bridge_model: "off".to_string(),
         }
     }
 
@@ -786,6 +845,59 @@ impl MaterialTable {
         mdr_psi_b: f64,
         mdr_damping: f64,
     ) -> u32 {
+        self.add_material_with_liquid_bridge(
+            name,
+            youngs_mod,
+            poisson_ratio,
+            restitution,
+            friction,
+            rolling_friction,
+            cohesion_energy,
+            surface_energy,
+            twisting_friction,
+            kn,
+            kt,
+            rolling_stiffness,
+            rolling_damping,
+            twisting_stiffness,
+            twisting_damping,
+            mdr_yield_stress,
+            mdr_psi_b,
+            mdr_damping,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+        )
+    }
+
+    /// Add a material with all fields including SDS, MDR, and liquid bridge parameters.
+    #[allow(clippy::too_many_arguments)]
+    pub fn add_material_with_liquid_bridge(
+        &mut self,
+        name: &str,
+        youngs_mod: f64,
+        poisson_ratio: f64,
+        restitution: f64,
+        friction: f64,
+        rolling_friction: f64,
+        cohesion_energy: f64,
+        surface_energy: f64,
+        twisting_friction: f64,
+        kn: f64,
+        kt: f64,
+        rolling_stiffness: f64,
+        rolling_damping: f64,
+        twisting_stiffness: f64,
+        twisting_damping: f64,
+        mdr_yield_stress: f64,
+        mdr_psi_b: f64,
+        mdr_damping: f64,
+        liquid_bridge_volume: f64,
+        liquid_surface_tension: f64,
+        liquid_contact_angle: f64,
+        liquid_rupture_distance: f64,
+    ) -> u32 {
         if cohesion_energy > 0.0 && surface_energy > 0.0 {
             eprintln!(
                 "ERROR: material '{}' has both cohesion_energy and surface_energy > 0. Use only one.",
@@ -812,12 +924,54 @@ impl MaterialTable {
         self.mdr_yield_stress.push(mdr_yield_stress);
         self.mdr_psi_b.push(mdr_psi_b);
         self.mdr_damping.push(mdr_damping);
+        self.liquid_bridge_volume.push(liquid_bridge_volume);
+        self.liquid_surface_tension.push(liquid_surface_tension);
+        self.liquid_contact_angle.push(liquid_contact_angle);
+        self.liquid_rupture_distance.push(liquid_rupture_distance);
         idx
     }
 
     /// Looks up a material by name, returning its index if found.
     pub fn find_material(&self, name: &str) -> Option<u32> {
         self.names.iter().position(|n| n == name).map(|i| i as u32)
+    }
+
+    /// Extra per-atom neighbor cutoff needed for opt-in liquid bridges.
+    ///
+    /// SOIL owns only a generic per-atom `cutoff_radius`; DIRT must expand that
+    /// radius when a DEM force law acts across a finite gap. Returning the full
+    /// maximum range for this material is conservative: for any pair, at least
+    /// one side contributes enough padding for the configured bridge rupture
+    /// distance, while dry/off materials keep the historical radius-only cutoff.
+    pub fn liquid_bridge_cutoff_padding(&self, material_idx: u32) -> f64 {
+        if self.liquid_bridge_model != "willett2000" {
+            return 0.0;
+        }
+        let i = material_idx as usize;
+        if i >= self.names.len()
+            || i >= self.liquid_bridge_volume_ij.len()
+            || i >= self.liquid_surface_tension_ij.len()
+            || i >= self.liquid_contact_angle_ij.len()
+            || i >= self.liquid_rupture_distance_ij.len()
+        {
+            return 0.0;
+        }
+        let mut padding = 0.0_f64;
+        for j in 0..self.names.len() {
+            let volume = self.liquid_bridge_volume_ij[i][j];
+            let gamma = self.liquid_surface_tension_ij[i][j];
+            if volume <= 0.0 || gamma <= 0.0 {
+                continue;
+            }
+            let theta = self.liquid_contact_angle_ij[i][j];
+            let rupture = if self.liquid_rupture_distance_ij[i][j] > 0.0 {
+                self.liquid_rupture_distance_ij[i][j]
+            } else {
+                (1.0 + 0.5 * theta) * volume.cbrt()
+            };
+            padding = padding.max(rupture.max(0.0));
+        }
+        padding
     }
 
     /// Computes all per-pair mixing tables from the registered per-material properties.
@@ -843,6 +997,10 @@ impl MaterialTable {
         self.mdr_yield_stress_ij = vec![vec![0.0; n]; n];
         self.mdr_psi_b_ij = vec![vec![0.0; n]; n];
         self.mdr_damping_ij = vec![vec![0.0; n]; n];
+        self.liquid_bridge_volume_ij = vec![vec![0.0; n]; n];
+        self.liquid_surface_tension_ij = vec![vec![0.0; n]; n];
+        self.liquid_contact_angle_ij = vec![vec![0.0; n]; n];
+        self.liquid_rupture_distance_ij = vec![vec![0.0; n]; n];
         // Pad optional fields if old API was used
         while self.surface_energy.len() < n {
             self.surface_energy.push(0.0);
@@ -876,6 +1034,18 @@ impl MaterialTable {
         }
         while self.mdr_damping.len() < n {
             self.mdr_damping.push(0.0);
+        }
+        while self.liquid_bridge_volume.len() < n {
+            self.liquid_bridge_volume.push(0.0);
+        }
+        while self.liquid_surface_tension.len() < n {
+            self.liquid_surface_tension.push(0.0);
+        }
+        while self.liquid_contact_angle.len() < n {
+            self.liquid_contact_angle.push(0.0);
+        }
+        while self.liquid_rupture_distance.len() < n {
+            self.liquid_rupture_distance.push(0.0);
         }
         for i in 0..n {
             for j in 0..n {
@@ -985,6 +1155,17 @@ impl MaterialTable {
                 self.mdr_psi_b_ij[i][j] = 0.5 * (self.mdr_psi_b[i] + self.mdr_psi_b[j]);
                 self.mdr_damping_ij[i][j] =
                     (self.mdr_damping[i].max(0.0) * self.mdr_damping[j].max(0.0)).sqrt();
+                self.liquid_bridge_volume_ij[i][j] = (self.liquid_bridge_volume[i].max(0.0)
+                    * self.liquid_bridge_volume[j].max(0.0))
+                .sqrt();
+                self.liquid_surface_tension_ij[i][j] = (self.liquid_surface_tension[i].max(0.0)
+                    * self.liquid_surface_tension[j].max(0.0))
+                .sqrt();
+                self.liquid_contact_angle_ij[i][j] =
+                    0.5 * (self.liquid_contact_angle[i] + self.liquid_contact_angle[j]);
+                self.liquid_rupture_distance_ij[i][j] = (self.liquid_rupture_distance[i].max(0.0)
+                    * self.liquid_rupture_distance[j].max(0.0))
+                .sqrt();
             }
         }
     }
@@ -1083,6 +1264,10 @@ friction = 0.4
 # rolling_friction = 0.1      # rolling resistance coefficient (default 0.0 = disabled)
 # cohesion_energy = 0.05       # SJKR cohesion energy density J/m² (default 0.0 = disabled)
 # surface_energy = 0.05        # JKR/DMT surface energy J/m² (default 0.0 = disabled)
+# liquid_bridge_volume = 1e-12 # m^3/contact, with liquid_bridge_model = "willett2000"
+# liquid_surface_tension = 0.072 # N/m
+# liquid_contact_angle = 0.0   # radians
+# liquid_rupture_distance = 0.0 # m; 0 = volume-scaled estimate
 # mdr_yield_stress = 1.0e5     # Pa, for contact_model = "mdr"
 # mdr_psi_b = 0.5              # parsed for LAMMPS MDR parity; bulk branch not yet active
 # mdr_damping = 0.0            # MDR normal damping prefactor
@@ -1111,6 +1296,10 @@ friction = 0.4
         if let Some(msg) = hooke_surface_energy_warning(&dem_config) {
             eprintln!("{}", msg);
         }
+        if let Some(msg) = liquid_bridge_model_error(&dem_config) {
+            eprintln!("{}", msg);
+            std::process::exit(1);
+        }
 
         // Build MaterialTable from config at plugin build time
         let mut material_table = MaterialTable::new();
@@ -1122,10 +1311,11 @@ friction = 0.4
         material_table.tangential_model = dem_config.tangential_model.clone();
         material_table.track_orientation = dem_config.track_orientation;
         material_table.limit_damping = dem_config.limit_damping;
+        material_table.liquid_bridge_model = dem_config.liquid_bridge_model.clone();
 
         if let Some(ref materials) = dem_config.materials {
             for mat in materials {
-                material_table.add_material_with_mdr(
+                material_table.add_material_with_liquid_bridge(
                     &mat.name,
                     mat.youngs_mod,
                     mat.poisson_ratio,
@@ -1144,6 +1334,10 @@ friction = 0.4
                     mat.mdr_yield_stress,
                     mat.mdr_psi_b,
                     mat.mdr_damping,
+                    mat.liquid_bridge_volume,
+                    mat.liquid_surface_tension,
+                    mat.liquid_contact_angle,
+                    mat.liquid_rupture_distance,
                 );
             }
             material_table.build_pair_tables();
@@ -1269,6 +1463,24 @@ mod tests {
         );
     }
 
+    #[test]
+    fn liquid_bridge_cutoff_padding_tracks_active_rupture_range() {
+        let mut mt = MaterialTable::new();
+        mt.liquid_bridge_model = "willett2000".to_string();
+        let glass = mt.add_material_with_liquid_bridge(
+            "glass", 1.0e6, 0.25, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+            0.0, 0.0, 1.0e-11, 0.072, 0.0, 1.5e-4,
+        );
+        mt.add_material("dry", 1.0e6, 0.25, 1.0, 0.0, 0.0, 0.0);
+        mt.build_pair_tables();
+
+        assert!((mt.liquid_bridge_cutoff_padding(glass) - 1.5e-4).abs() < 1.0e-15);
+        assert_eq!(mt.liquid_bridge_cutoff_padding(1), 0.0);
+
+        mt.liquid_bridge_model = "off".to_string();
+        assert_eq!(mt.liquid_bridge_cutoff_padding(glass), 0.0);
+    }
+
     // ── hooke_surface_energy_warning: silent-drop ergonomics guard ────────────
 
     /// Build a minimal `MaterialConfig` with a given `surface_energy`; all other
@@ -1293,6 +1505,10 @@ mod tests {
             mdr_yield_stress: 0.0,
             mdr_psi_b: 0.0,
             mdr_damping: 0.0,
+            liquid_bridge_volume: 0.0,
+            liquid_surface_tension: 0.0,
+            liquid_contact_angle: 0.0,
+            liquid_rupture_distance: 0.0,
         }
     }
 
@@ -1375,6 +1591,45 @@ mod tests {
         assert!(
             hooke_surface_energy_warning(&config).is_none(),
             "hooke with no materials must NOT warn"
+        );
+    }
+
+    #[test]
+    fn accepts_supported_liquid_bridge_model_selectors() {
+        let mut config = DemConfig::default();
+        for model in ["off", "willett2000"] {
+            config.liquid_bridge_model = model.to_string();
+            assert!(
+                liquid_bridge_model_error(&config).is_none(),
+                "{model} must be accepted"
+            );
+        }
+    }
+
+    #[test]
+    fn rejects_invalid_liquid_bridge_model_selector() {
+        let mut config = DemConfig {
+            liquid_bridge_model: "willet2000".to_string(),
+            ..DemConfig::default()
+        };
+        let msg = liquid_bridge_model_error(&config).expect("typo must be rejected");
+        assert!(
+            msg.contains("liquid_bridge_model"),
+            "must name the bad selector field: {msg}"
+        );
+        assert!(
+            msg.contains("willet2000"),
+            "must echo the invalid value: {msg}"
+        );
+        assert!(
+            msg.contains("willett2000") && msg.contains("off"),
+            "must list supported values: {msg}"
+        );
+
+        config.liquid_bridge_model = "Willett2000".to_string();
+        assert!(
+            liquid_bridge_model_error(&config).is_some(),
+            "case-mismatched selectors must not silently disable bridge physics"
         );
     }
 }
