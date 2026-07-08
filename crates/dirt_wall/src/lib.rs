@@ -1,6 +1,6 @@
-//! Wall contact forces for DEM simulations using Hertz normal contact with
-//! viscous damping, tangential/rolling/twisting friction, and optional adhesion
-//! (JKR, DMT, SJKR cohesion).
+//! Wall contact forces for DEM simulations using Hertz or Hooke normal contact
+//! with viscous damping, tangential/rolling/twisting friction, and optional
+//! adhesion (JKR, DMT, SJKR cohesion).
 //!
 //! # Contact mechanics
 //!
@@ -12,7 +12,7 @@
 //! particle radius** (`R* = particle_radius`) and the reduced mass is the
 //! particle mass.
 //!
-//! Beyond the normal Hertz force + damping, walls apply:
+//! Beyond the normal force + damping, walls apply:
 //!
 //! - **Tangential (Mindlin sliding) friction** — incremental spring-history
 //!   model with a per-contact tangential spring, Coulomb-capped at `μ |F_n|`.
@@ -20,7 +20,8 @@
 //! - **Rolling resistance** — `constant` (default) or `sds` (spring–dashpot–
 //!   slider) model, mirroring the particle–particle rolling model with the wall
 //!   as a zero-spin second body. Supported by **all** wall types.
-//! - **Twisting friction** — `constant`/`sds`, **plane walls only**.
+//! - **Twisting friction** — constant-torque model opposing spin about the
+//!   local contact normal. Supported by **all** wall types.
 //!
 //! Frictionless walls (`friction = 0`) are byte-for-byte unchanged from a
 //! pure-normal contact. Tangential and rolling spring histories are stored on
@@ -150,7 +151,7 @@
 //! |--------|----------|---------|
 //! | [`wall_move`] | `PreInitialIntegration` | Updates wall positions from motion modes |
 //! | [`wall_zero_force_accumulators`] | `PreForce` | Zeros per-wall force accumulators |
-//! | [`wall_contact_force`] | `Force` | Computes Hertz contact + damping + adhesion |
+//! | [`wall_contact_force`] | `Force` | Computes normal contact + damping + adhesion |
 
 // Public API documentation-completeness gate: every public item in this crate
 // must carry a doc comment. Enforced on both `cargo build` (rustc) and
@@ -1010,7 +1011,7 @@ pub fn wall_zero_force_accumulators(mut walls: ResMut<Walls>) {
 /// 3. Applies Hertz elastic force: `F_n = (4/3) * E_eff * sqrt(R_eff * delta) * delta`
 /// 4. Adds viscous damping: `F_diss = 2 * beta * sqrt(5/6) * sqrt(S_n * m) * v_n`
 /// 5. Optionally adds adhesion (JKR, DMT, or SJKR cohesion)
-/// 6. Applies twisting friction torque (plane walls only)
+/// 6. Applies twisting friction torque about the local contact normal
 /// 7. Accumulates the scalar contact force for servo control
 ///
 /// Runs in [`ParticleSimScheduleSet::Force`].
@@ -1172,6 +1173,102 @@ fn wall_rolling_torque(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
+fn wall_normal_force(
+    material_table: &MaterialTable,
+    mat_i: usize,
+    wall_mat: usize,
+    radius: f64,
+    delta: f64,
+    v_n: f64,
+    m_r: f64,
+    allow_plane_surface_energy: bool,
+) -> f64 {
+    let beta = material_table.beta_ij[mat_i][wall_mat];
+    let cohesion_energy = material_table.cohesion_energy_ij[mat_i][wall_mat];
+
+    if material_table.contact_model == "hooke" {
+        let kn = material_table.kn_ij[mat_i][wall_mat];
+        let gamma_n = 2.0 * beta * (kn * m_r).sqrt();
+        let f_total = if cohesion_energy > 0.0 {
+            let f_cohesion = cohesion_energy * std::f64::consts::PI * delta * radius;
+            kn * delta - gamma_n * v_n - f_cohesion
+        } else {
+            kn * delta - gamma_n * v_n
+        };
+        if material_table.limit_damping && cohesion_energy <= 0.0 {
+            f_total.max(0.0)
+        } else {
+            f_total
+        }
+    } else {
+        let r_eff = radius;
+        let e_eff = material_table.e_eff_ij[mat_i][wall_mat];
+        let sdr = (delta * r_eff).sqrt();
+        let k_n = 4.0 / 3.0 * e_eff * sdr;
+        let s_n = 2.0 * e_eff * sdr;
+        let surface_energy = if allow_plane_surface_energy {
+            material_table.surface_energy_ij[mat_i][wall_mat]
+        } else {
+            0.0
+        };
+        let use_dmt = material_table.adhesion_model == "dmt";
+
+        if surface_energy > 0.0 && use_dmt {
+            let f_dmt = 2.0 * std::f64::consts::PI * surface_energy * r_eff;
+            let f_diss = 2.0 * beta * SQRT_5_6 * (s_n * m_r).sqrt() * v_n;
+            k_n * delta - f_diss - f_dmt
+        } else if surface_energy > 0.0 {
+            let f_adhesion = 1.5 * std::f64::consts::PI * surface_energy * r_eff;
+            let f_diss = 2.0 * beta * SQRT_5_6 * (s_n * m_r).sqrt() * v_n;
+            k_n * delta - f_diss - f_adhesion
+        } else if cohesion_energy > 0.0 {
+            let f_diss = 2.0 * beta * SQRT_5_6 * (s_n * m_r).sqrt() * v_n;
+            let f_cohesion = cohesion_energy * std::f64::consts::PI * delta * r_eff;
+            k_n * delta - f_diss - f_cohesion
+        } else {
+            let f_diss = 2.0 * beta * SQRT_5_6 * (s_n * m_r).sqrt() * v_n;
+            let f_total = k_n * delta - f_diss;
+            if material_table.limit_damping {
+                f_total.max(0.0)
+            } else {
+                f_total
+            }
+        }
+    }
+}
+
+/// Constant twisting-friction torque for a particle-wall contact.
+///
+/// The local contact normal points from the wall surface toward the particle
+/// center. Twisting friction opposes the particle spin component about that
+/// normal and uses the same cap as the existing plane-wall model,
+/// `tau = mu_tw * |F_n| * R*` with `R* = particle_radius`.
+fn wall_twisting_torque(
+    n: [f64; 3],
+    omega: [f64; 3],
+    radius: f64,
+    f_n: f64,
+    mu_tw: f64,
+) -> [f64; 3] {
+    if mu_tw <= 0.0 {
+        return [0.0; 3];
+    }
+
+    let twist = omega[0] * n[0] + omega[1] * n[1] + omega[2] * n[2];
+    if twist.abs() <= 1e-30 {
+        return [0.0; 3];
+    }
+
+    let tau = mu_tw * f_n.abs() * radius;
+    let sign_tw = if twist > 0.0 { -1.0 } else { 1.0 };
+    [
+        sign_tw * tau * n[0],
+        sign_tw * tau * n[1],
+        sign_tw * tau * n[2],
+    ]
+}
+
 /// System that applies wall–particle contact forces for every registered wall.
 ///
 /// For each local atom in contact with a wall it evaluates the Hertzian normal
@@ -1238,16 +1335,15 @@ pub fn wall_contact_force(
             let radius = dem.radius[i];
             let mat_i = atoms.atom_type[i] as usize;
 
-            // Wall has infinite radius → r_eff = r_particle
-            let r_eff = radius;
-            let e_eff = material_table.e_eff_ij[mat_i][wall_mat];
             let surface_energy = material_table.surface_energy_ij[mat_i][wall_mat];
-
+            let use_hertz = material_table.contact_model != "hooke";
             let use_dmt = material_table.adhesion_model == "dmt";
 
             // JKR pull-off distance for extended interaction range
             // DMT: no extended range (particles separate at delta = 0)
-            let delta_pulloff = if surface_energy > 0.0 && !use_dmt {
+            let delta_pulloff = if use_hertz && surface_energy > 0.0 && !use_dmt {
+                let r_eff = radius;
+                let e_eff = material_table.e_eff_ij[mat_i][wall_mat];
                 let gamma = surface_energy;
                 (std::f64::consts::PI * std::f64::consts::PI * gamma * gamma * r_eff
                     / (4.0 * e_eff * e_eff))
@@ -1259,7 +1355,7 @@ pub fn wall_contact_force(
             let delta = (radius - distance).min(0.5 * radius);
 
             // Skip if no contact and no JKR adhesion range
-            if delta <= 0.0 && surface_energy <= 0.0 {
+            if delta <= 0.0 && (!use_hertz || surface_energy <= 0.0) {
                 continue;
             }
             if delta < -delta_pulloff {
@@ -1267,15 +1363,7 @@ pub fn wall_contact_force(
             }
 
             // JKR adhesion-only regime; DMT has no adhesion-only regime
-            let jkr_adhesion_only = surface_energy > 0.0 && !use_dmt && delta <= 0.0;
-
-            // Hertz stiffness (only when delta > 0)
-            let (s_n, k_n) = if delta > 0.0 {
-                let sdr = (delta * r_eff).sqrt();
-                (2.0 * e_eff * sdr, 4.0 / 3.0 * e_eff * sdr)
-            } else {
-                (0.0, 0.0)
-            };
+            let jkr_adhesion_only = use_hertz && surface_energy > 0.0 && !use_dmt && delta <= 0.0;
 
             // Wall has infinite mass → m_reduced = m_particle
             let m_r = atoms.mass[i] as f64;
@@ -1286,38 +1374,20 @@ pub fn wall_contact_force(
             let v_rel_z = atoms.vel[i][2] as f64 - wall.velocity[2];
             let v_n = v_rel_x * wall.normal_x + v_rel_y * wall.normal_y + v_rel_z * wall.normal_z;
 
-            let beta = material_table.beta_ij[mat_i][wall_mat];
-            let cohesion_energy = material_table.cohesion_energy_ij[mat_i][wall_mat];
-
-            let f_net = if surface_energy > 0.0 && use_dmt {
-                // DMT model: pure Hertz contact + constant attractive force
-                let f_dmt = 2.0 * std::f64::consts::PI * surface_energy * r_eff;
-                let f_diss = 2.0 * beta * SQRT_5_6 * (s_n * m_r).sqrt() * v_n;
-                k_n * delta - f_diss - f_dmt
-            } else if surface_energy > 0.0 {
-                // JKR simplified explicit model
-                let f_adhesion = 1.5 * std::f64::consts::PI * surface_energy * r_eff;
-                if jkr_adhesion_only {
-                    -f_adhesion
-                } else {
-                    let f_diss = 2.0 * beta * SQRT_5_6 * (s_n * m_r).sqrt() * v_n;
-                    k_n * delta - f_diss - f_adhesion
-                }
-            } else if cohesion_energy > 0.0 {
-                let f_diss = 2.0 * beta * SQRT_5_6 * (s_n * m_r).sqrt() * v_n;
-                let f_cohesion = cohesion_energy * std::f64::consts::PI * delta * r_eff;
-                k_n * delta - f_diss - f_cohesion
+            let f_net = if jkr_adhesion_only {
+                let f_adhesion = 1.5 * std::f64::consts::PI * surface_energy * radius;
+                -f_adhesion
             } else {
-                let f_diss = 2.0 * beta * SQRT_5_6 * (s_n * m_r).sqrt() * v_n;
-                // `limit_damping` (default) clamps to repulsive-only; disabling it
-                // lets the damping go net-attractive near separation, matching
-                // LAMMPS `fix wall/gran` default (no tensile cutoff).
-                let f_total = k_n * delta - f_diss;
-                if material_table.limit_damping {
-                    f_total.max(0.0)
-                } else {
-                    f_total
-                }
+                wall_normal_force(
+                    &material_table,
+                    mat_i,
+                    wall_mat,
+                    radius,
+                    delta,
+                    v_n,
+                    m_r,
+                    true,
+                )
             };
 
             // Force direction: along wall normal (pushes atom away from wall)
@@ -1328,23 +1398,22 @@ pub fn wall_contact_force(
             // Twisting friction torque (wall-particle)
             if delta > 0.0 {
                 let mu_tw = material_table.twisting_friction_ij[mat_i][wall_mat];
-                if mu_tw > 0.0 {
-                    let twist = dem.omega[i][0] * wall.normal_x
-                        + dem.omega[i][1] * wall.normal_y
-                        + dem.omega[i][2] * wall.normal_z;
-                    if twist.abs() > 1e-30 {
-                        let tau = mu_tw * f_net.abs() * r_eff;
-                        let sign_tw = if twist > 0.0 { -1.0 } else { 1.0 };
-                        dem.torque[i][0] += sign_tw * tau * wall.normal_x;
-                        dem.torque[i][1] += sign_tw * tau * wall.normal_y;
-                        dem.torque[i][2] += sign_tw * tau * wall.normal_z;
-                    }
-                }
+                let tt = wall_twisting_torque(
+                    [wall.normal_x, wall.normal_y, wall.normal_z],
+                    dem.omega[i],
+                    radius,
+                    f_net,
+                    mu_tw,
+                );
+                dem.torque[i][0] += tt[0];
+                dem.torque[i][1] += tt[1];
+                dem.torque[i][2] += tt[2];
             }
 
             // Tangential (Mindlin) sliding friction.
             let mu = material_table.friction_ij[mat_i][wall_mat];
             if mu > 0.0 && delta > 0.0 {
+                let beta = material_table.beta_ij[mat_i][wall_mat];
                 let g_eff = material_table.g_eff_ij[mat_i][wall_mat];
                 let n = [wall.normal_x, wall.normal_y, wall.normal_z];
                 let v_rel = [v_rel_x, v_rel_y, v_rel_z];
@@ -1483,42 +1552,38 @@ pub fn wall_contact_force(
             }
             let delta = delta.min(0.5 * radius);
 
-            let r_eff = radius;
-            let e_eff = material_table.e_eff_ij[mat_i][wall_mat];
-            let sdr = (delta * r_eff).sqrt();
-            let k_n = 4.0 / 3.0 * e_eff * sdr;
-            let s_n = 2.0 * e_eff * sdr;
             let m_r = atoms.mass[i] as f64;
             let v_n = atoms.vel[i][0] as f64 * nx
                 + atoms.vel[i][1] as f64 * ny
                 + atoms.vel[i][2] as f64 * nz;
-            let beta = material_table.beta_ij[mat_i][wall_mat];
-            let cohesion_energy = material_table.cohesion_energy_ij[mat_i][wall_mat];
-
-            let f_net = if cohesion_energy > 0.0 {
-                let f_diss = 2.0 * beta * SQRT_5_6 * (s_n * m_r).sqrt() * v_n;
-                let f_cohesion = cohesion_energy * std::f64::consts::PI * delta * r_eff;
-                k_n * delta - f_diss - f_cohesion
-            } else {
-                let f_diss = 2.0 * beta * SQRT_5_6 * (s_n * m_r).sqrt() * v_n;
-                // `limit_damping` (default) clamps to repulsive-only; disabling it
-                // lets the damping go net-attractive near separation, matching
-                // LAMMPS `fix wall/gran` default (no tensile cutoff).
-                let f_total = k_n * delta - f_diss;
-                if material_table.limit_damping {
-                    f_total.max(0.0)
-                } else {
-                    f_total
-                }
-            };
+            let f_net = wall_normal_force(
+                &material_table,
+                mat_i,
+                wall_mat,
+                radius,
+                delta,
+                v_n,
+                m_r,
+                false,
+            );
 
             atoms.force[i][0] += (f_net * nx) as Accum;
             atoms.force[i][1] += (f_net * ny) as Accum;
             atoms.force[i][2] += (f_net * nz) as Accum;
 
+            // Twisting friction torque (cylinder wall is static).
+            let mu_tw = material_table.twisting_friction_ij[mat_i][wall_mat];
+            if mu_tw > 0.0 {
+                let tt = wall_twisting_torque([nx, ny, nz], dem.omega[i], radius, f_net, mu_tw);
+                dem.torque[i][0] += tt[0];
+                dem.torque[i][1] += tt[1];
+                dem.torque[i][2] += tt[2];
+            }
+
             // Tangential (Mindlin) sliding friction (cylinder wall is static).
             let mu = material_table.friction_ij[mat_i][wall_mat];
             if mu > 0.0 {
+                let beta = material_table.beta_ij[mat_i][wall_mat];
                 let g_eff = material_table.g_eff_ij[mat_i][wall_mat];
                 let key = (1u8, cyl_idx, atoms.tag[i]);
                 let old = old_springs.get(&key).copied().unwrap_or([0.0; 3]);
@@ -1627,42 +1692,38 @@ pub fn wall_contact_force(
             }
             let delta = delta.min(0.5 * radius);
 
-            let r_eff = radius;
-            let e_eff = material_table.e_eff_ij[mat_i][wall_mat];
-            let sdr = (delta * r_eff).sqrt();
-            let k_n = 4.0 / 3.0 * e_eff * sdr;
-            let s_n = 2.0 * e_eff * sdr;
             let m_r = atoms.mass[i] as f64;
             let v_n = atoms.vel[i][0] as f64 * nx
                 + atoms.vel[i][1] as f64 * ny
                 + atoms.vel[i][2] as f64 * nz;
-            let beta = material_table.beta_ij[mat_i][wall_mat];
-            let cohesion_energy = material_table.cohesion_energy_ij[mat_i][wall_mat];
-
-            let f_net = if cohesion_energy > 0.0 {
-                let f_diss = 2.0 * beta * SQRT_5_6 * (s_n * m_r).sqrt() * v_n;
-                let f_cohesion = cohesion_energy * std::f64::consts::PI * delta * r_eff;
-                k_n * delta - f_diss - f_cohesion
-            } else {
-                let f_diss = 2.0 * beta * SQRT_5_6 * (s_n * m_r).sqrt() * v_n;
-                // `limit_damping` (default) clamps to repulsive-only; disabling it
-                // lets the damping go net-attractive near separation, matching
-                // LAMMPS `fix wall/gran` default (no tensile cutoff).
-                let f_total = k_n * delta - f_diss;
-                if material_table.limit_damping {
-                    f_total.max(0.0)
-                } else {
-                    f_total
-                }
-            };
+            let f_net = wall_normal_force(
+                &material_table,
+                mat_i,
+                wall_mat,
+                radius,
+                delta,
+                v_n,
+                m_r,
+                false,
+            );
 
             atoms.force[i][0] += (f_net * nx) as Accum;
             atoms.force[i][1] += (f_net * ny) as Accum;
             atoms.force[i][2] += (f_net * nz) as Accum;
 
+            // Twisting friction torque (sphere wall is static).
+            let mu_tw = material_table.twisting_friction_ij[mat_i][wall_mat];
+            if mu_tw > 0.0 {
+                let tt = wall_twisting_torque([nx, ny, nz], dem.omega[i], radius, f_net, mu_tw);
+                dem.torque[i][0] += tt[0];
+                dem.torque[i][1] += tt[1];
+                dem.torque[i][2] += tt[2];
+            }
+
             // Tangential (Mindlin) sliding friction (sphere wall is static).
             let mu = material_table.friction_ij[mat_i][wall_mat];
             if mu > 0.0 {
+                let beta = material_table.beta_ij[mat_i][wall_mat];
                 let g_eff = material_table.g_eff_ij[mat_i][wall_mat];
                 let key = (2u8, sph_idx, atoms.tag[i]);
                 let old = old_springs.get(&key).copied().unwrap_or([0.0; 3]);
@@ -1776,42 +1837,38 @@ pub fn wall_contact_force(
                 (sr.normal[0], sr.normal[1], sr.normal[2])
             };
 
-            let r_eff = radius;
-            let e_eff = material_table.e_eff_ij[mat_i][wall_mat];
-            let sdr = (delta * r_eff).sqrt();
-            let k_n = 4.0 / 3.0 * e_eff * sdr;
-            let s_n = 2.0 * e_eff * sdr;
             let m_r = atoms.mass[i] as f64;
             let v_n = atoms.vel[i][0] as f64 * nx
                 + atoms.vel[i][1] as f64 * ny
                 + atoms.vel[i][2] as f64 * nz;
-            let beta = material_table.beta_ij[mat_i][wall_mat];
-            let cohesion_energy = material_table.cohesion_energy_ij[mat_i][wall_mat];
-
-            let f_net = if cohesion_energy > 0.0 {
-                let f_diss = 2.0 * beta * SQRT_5_6 * (s_n * m_r).sqrt() * v_n;
-                let f_cohesion = cohesion_energy * std::f64::consts::PI * delta * r_eff;
-                k_n * delta - f_diss - f_cohesion
-            } else {
-                let f_diss = 2.0 * beta * SQRT_5_6 * (s_n * m_r).sqrt() * v_n;
-                // `limit_damping` (default) clamps to repulsive-only; disabling it
-                // lets the damping go net-attractive near separation, matching
-                // LAMMPS `fix wall/gran` default (no tensile cutoff).
-                let f_total = k_n * delta - f_diss;
-                if material_table.limit_damping {
-                    f_total.max(0.0)
-                } else {
-                    f_total
-                }
-            };
+            let f_net = wall_normal_force(
+                &material_table,
+                mat_i,
+                wall_mat,
+                radius,
+                delta,
+                v_n,
+                m_r,
+                false,
+            );
 
             atoms.force[i][0] += (f_net * nx) as Accum;
             atoms.force[i][1] += (f_net * ny) as Accum;
             atoms.force[i][2] += (f_net * nz) as Accum;
 
+            // Twisting friction torque (region wall is static).
+            let mu_tw = material_table.twisting_friction_ij[mat_i][wall_mat];
+            if mu_tw > 0.0 {
+                let tt = wall_twisting_torque([nx, ny, nz], dem.omega[i], radius, f_net, mu_tw);
+                dem.torque[i][0] += tt[0];
+                dem.torque[i][1] += tt[1];
+                dem.torque[i][2] += tt[2];
+            }
+
             // Tangential (Mindlin) sliding friction (region wall is static).
             let mu = material_table.friction_ij[mat_i][wall_mat];
             if mu > 0.0 {
+                let beta = material_table.beta_ij[mat_i][wall_mat];
                 let g_eff = material_table.g_eff_ij[mat_i][wall_mat];
                 let key = (3u8, reg_idx, atoms.tag[i]);
                 let old = old_springs.get(&key).copied().unwrap_or([0.0; 3]);
@@ -1976,6 +2033,149 @@ mod tests {
         mt.add_material_full("sticky", 8.7e9, 0.3, 0.95, 0.4, 0.0, 0.0, 0.25);
         mt.add_material("sjkr", 8.7e9, 0.3, 0.95, 0.4, 0.0, 1.0);
         mt
+    }
+
+    fn material_table_with_twisting() -> MaterialTable {
+        let mut mt = MaterialTable::new();
+        mt.add_material_extended("glass", 8.7e9, 0.3, 1.0, 0.0, 0.0, 0.0, 0.0, 0.25, 0.0, 0.0);
+        mt.build_pair_tables();
+        mt
+    }
+
+    fn run_wall_twist_case(walls: Walls, pos: [f64; 3], omega: [f64; 3]) -> [f64; 3] {
+        let mut atom = Atom::new();
+        let mut dem = DemAtom::new();
+        push_dem_test_atom(&mut atom, &mut dem, 0, pos, 0.001);
+        dem.omega[0] = omega;
+        atom.nlocal = 1;
+        atom.natoms = 1;
+
+        let mut registry = AtomDataRegistry::new();
+        registry.register(dem);
+
+        let mut app = App::new();
+        app.add_resource(atom);
+        app.add_resource(registry);
+        app.add_resource(material_table_with_twisting());
+        app.add_resource(walls);
+        app.add_update_system(wall_contact_force, ParticleSimScheduleSet::Force);
+        app.organize_systems();
+        app.run();
+
+        let registry = app.get_resource_ref::<AtomDataRegistry>().unwrap();
+        let torque = registry.expect::<DemAtom>("run_wall_twist_case").torque[0];
+        torque
+    }
+
+    #[test]
+    fn twisting_friction_matches_plane_for_equivalent_curved_wall_normals() {
+        let pos = [0.0095, 0.0, 0.0];
+        let omega = [-5.0, 0.0, 0.0];
+
+        let plane = run_wall_twist_case(
+            make_walls(vec![make_wall_plane(0.01, 0.0, 0.0, -1.0, 0.0, 0.0)]),
+            pos,
+            omega,
+        );
+        let cylinder = run_wall_twist_case(
+            make_walls_with_cylinder(WallCylinder {
+                axis: 2,
+                center: [0.0, 0.0],
+                radius: 0.01,
+                lo: -0.01,
+                hi: 0.01,
+                inside: true,
+                material_index: 0,
+                name: None,
+                force_accumulator: 0.0,
+                temperature: None,
+            }),
+            pos,
+            omega,
+        );
+        let sphere = run_wall_twist_case(
+            make_walls_with_sphere(WallSphere {
+                center: [0.0, 0.0, 0.0],
+                radius: 0.01,
+                inside: true,
+                material_index: 0,
+                name: None,
+                force_accumulator: 0.0,
+                temperature: None,
+            }),
+            pos,
+            omega,
+        );
+
+        assert!(
+            plane[0] > 0.0 && plane[1].abs() < 1e-20 && plane[2].abs() < 1e-20,
+            "plane twist torque should oppose spin about -x, got {plane:?}"
+        );
+        for (name, torque) in [("cylinder", cylinder), ("sphere", sphere)] {
+            for axis in 0..3 {
+                assert!(
+                    (torque[axis] - plane[axis]).abs() < 1e-12,
+                    "{name} twisting torque should match plane axis {axis}: plane={plane:?} {name}={torque:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn twisting_friction_matches_plane_for_equivalent_region_wall_normal() {
+        let pos = [0.0095, 0.0, 0.0];
+        let omega = [-5.0, 0.0, 0.0];
+
+        let plane = run_wall_twist_case(
+            make_walls(vec![make_wall_plane(0.01, 0.0, 0.0, -1.0, 0.0, 0.0)]),
+            pos,
+            omega,
+        );
+        let region = run_wall_twist_case(
+            make_walls_with_region(WallRegion {
+                region: Region::Sphere {
+                    center: [0.0, 0.0, 0.0],
+                    radius: 0.01,
+                },
+                inside: true,
+                material_index: 0,
+                name: None,
+                force_accumulator: 0.0,
+                temperature: None,
+            }),
+            pos,
+            omega,
+        );
+
+        for axis in 0..3 {
+            assert!(
+                (region[axis] - plane[axis]).abs() < 1e-12,
+                "region twisting torque should match plane axis {axis}: plane={plane:?} region={region:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn hooke_wall_normal_uses_kn_and_beta_tables() {
+        let mut mt = MaterialTable::new();
+        mt.contact_model = "hooke".to_string();
+        mt.limit_damping = false;
+        mt.add_material_extended(
+            "grain", 8.7e9, 0.3, 0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0e5, 0.0,
+        );
+        mt.build_pair_tables();
+
+        let delta = 2.5e-5;
+        let m_r = 0.002;
+        let v_n = -0.2;
+        let beta = mt.beta_ij[0][0];
+        let expected = 1.0e5 * delta - 2.0 * beta * (1.0e5_f64 * m_r).sqrt() * v_n;
+
+        let force = wall_normal_force(&mt, 0, 0, 0.005, delta, v_n, m_r, false);
+        assert!(
+            (force - expected).abs() / expected.abs() < 1.0e-12,
+            "Hooke wall force should use kn_ij and beta_ij: got {force}, expected {expected}"
+        );
     }
 
     #[test]
@@ -2238,7 +2438,7 @@ mod tests {
         plane.velocity = [0.0, 0.0, -0.01];
         plane.motion = WallMotion::ConstantVelocity;
 
-        let mut walls = make_walls(vec![plane]);
+        let walls = make_walls(vec![plane]);
 
         let mut app = App::new();
         app.add_resource(atom);
@@ -2271,7 +2471,7 @@ mod tests {
             frequency,
         };
 
-        let mut walls = make_walls(vec![plane]);
+        let walls = make_walls(vec![plane]);
 
         let mut app = App::new();
         app.add_resource(atom);
@@ -2307,7 +2507,7 @@ mod tests {
         // Simulate accumulated force = 50 (below target)
         plane.force_accumulator = 50.0;
 
-        let mut walls = make_walls(vec![plane]);
+        let walls = make_walls(vec![plane]);
 
         let mut app = App::new();
         app.add_resource(atom);
@@ -3372,7 +3572,7 @@ mod tests {
         atom.natoms = 0;
 
         let plane = make_wall_plane(0.0, 0.0, 0.5, 0.0, 0.0, 1.0);
-        let mut walls = make_walls(vec![plane]);
+        let walls = make_walls(vec![plane]);
 
         let mut app = App::new();
         app.add_resource(atom);

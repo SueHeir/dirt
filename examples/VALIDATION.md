@@ -150,6 +150,20 @@ on the line.*
 a viscoelastic damping *mapping* that is calibrated, not derived. Contact-duration
 accuracy is floored at ~1–2 % by timestep quantization.
 
+## `bench_wall_twisting_parity` — wall twisting torque parity
+
+A one-sphere contact check compares plane, cylinder, sphere, and spherical-region
+walls at the same overlap and local contact normal. The sphere is spun purely
+about the normal, so the only wall torque should be the constant twisting couple
+`tau = mu_tw |F_n| R*` inherited from the plane-wall implementation. The benchmark
+gates each geometry against that plane-law reference to round-off tolerance.
+
+![Wall twisting torque parity](bench_wall_twisting_parity/plots/wall_twisting_parity.png)
+
+*Measured wall twisting torque for plane, cylinder, sphere, and region contacts
+against the local plane-wall reference. Latest run: PASS, max relative error below
+1e-12.*
+
 ## `bench_hooke_rebound` — linear-spring normal rebound (exact damped closed form)
 
 Exercises the **Hooke** normal contact (`contact_model = "hooke"`, per-material
@@ -194,6 +208,31 @@ damped closed form (not just the elastic limit, and not a calibrated mapping), s
 validates the linear stiffness, the restitution→damping derivation, and the
 integrator simultaneously. It shares `bench_hertz_rebound`'s ~1–2 % contact-duration
 floor from timestep quantization, but here the resolved error is far below it.
+
+## `bench_hooke_wall_rebound` — linear-spring wall rebound
+
+A single sphere strikes a real `dirt_wall` plane with
+`contact_model = "hooke"`. This closes the wall-side Hooke normal-force check:
+the reduced mass is the particle mass, `kn_ij` is the wall spring stiffness, and
+`beta_ij` gives the exact linear spring-dashpot damping ratio. The sweep checks
+measured COR, contact duration, peak overlap, and velocity-independence against
+the same closed-form damped oscillator used for the particle-particle Hooke
+benchmark, but with the rigid-wall effective mass.
+
+![Measured vs input COR](bench_hooke_wall_rebound/plots/cor_validation.png)
+
+*Measured wall rebound COR vs the exact `COR = e` reference; the gray band is the
+PASS criterion.*
+
+![Contact duration](bench_hooke_wall_rebound/plots/contact_duration.png)
+
+*Measured wall contact duration vs the exact damped half-period; the gray band is
+the PASS criterion.*
+
+![Peak overlap](bench_hooke_wall_rebound/plots/peak_overlap.png)
+
+*Measured peak overlap vs the closed-form wall collision reference; shaded bands
+show the PASS criterion.*
 
 ## `bench_oblique_impact` — tangential contact vs Maw (1976)
 
@@ -242,6 +281,25 @@ genuinely history-free rather than a relabeled Mindlin path.*
 integrated collision validation. It strongly pins the history-free force expression
 and Coulomb cap, but the tangential damping coefficient is identified from the
 sub-cap branch before checking the full documented `min()` shape.
+
+## `bench_mindlin_rescale_tangential` — Mindlin unloading rescale
+
+Two identical spheres are held at prescribed overlaps: first tangentially loaded
+at fixed peak overlap, then normally unloaded with zero tangential velocity. The
+benchmark checks `history`, `mindlin_rescale`, `mindlin_rescale/force`, and
+`linear_nohistory` against the documented LAMMPS recurrences for the unloading
+gate `history <- history * a/a_prev`.
+
+![Mindlin unloading rescale](bench_mindlin_rescale_tangential/plots/mindlin_rescale_unload.png)
+
+*DIRT unloading forces against the documented recurrence. The pass gate verifies
+that `mindlin_rescale` drops quadratically relative to displacement-history
+Mindlin during unload, `mindlin_rescale/force` scales its elastic-force history,
+and `linear_nohistory` remains zero when `v_t = 0`.*
+
+**Honest read:** this is an isolated force-law benchmark, not a free collision.
+That is intentional: prescribed positions remove integrator noise and expose the
+load-unload history update directly.
 
 ## `bench_kharaz_oblique` — replicate Kharaz, Gorham & Salman (2001)
 
@@ -1057,6 +1115,7 @@ will need a benchmark when re-added.)
 | hertz_rebound | Hertz + LAMMPS | analytical (strong) | PASS; damped vs elastic only; damping mapping calibrated |
 | hooke_rebound | linear damped-oscillator collision (COR=e, t_c=π/ω_d, δ_max) | analytical (strong, exact) | PASS; exact closed form (not just elastic), COR/t_c/overlap ≤0.05%; velocity-independence confirmed |
 | oblique_impact | Maw 1976 + LAMMPS | analytical + cross-code (strong) | PASS; full S-curve; vs theory not raw experiment |
+| mindlin_rescale_tangential | LAMMPS documented unloading recurrence | analytical / documented law | PASS; isolates load-unload gate; prescribed path, not free dynamics |
 | kharaz_oblique | Kharaz 2001 protocol: rigid-body kinematics + Maw, anchored to measured eₙ, μ | analytical + experiment-anchored (strong) | PASS; eₙ=0.980 flat, sliding branch exact; raw glass-anvil points paywalled |
 | sliding_friction | rigid-body slip-to-roll | analytical | PASS; (5/7)v₀ model-independent; a=μg partly self-consistent |
 | wall_activate_by_name | active/inactive named wall control | API behavior | PASS; inactive force zero within 1e-14 N, reactivated mean force recovers initial active force within 1e-12 relative |

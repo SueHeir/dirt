@@ -10,8 +10,10 @@
 //!
 //! 1. Rotate previous spring into current tangent plane (remove normal component)
 //! 2. Integrate: `s += v_t · dt`
-//! 3. Cap spring at Coulomb limit: `|k_t s| ≤ μ |F_n|`
-//! 4. Tangential force: `F_t = k_t s - γ_t v_t`, capped at `μ |F_n|`
+//! 3. Optionally rescale the history on normal unloading for the
+//!    `mindlin_rescale` variants
+//! 4. Cap spring at Coulomb limit: `|k_t s| ≤ μ |F_n|`
+//! 5. Tangential force: `F_t = k_t s - γ_t v_t`, capped at `μ |F_n|`
 //!
 //! where `k_t = 8 G* √(R* δ)` is the tangential stiffness, `G*` is the effective
 //! shear modulus, and `γ_t = 2 β √(5/6) √(k_t m_r)` is the tangential damping.
@@ -26,6 +28,12 @@ use soil_core::AtomData;
 
 // ── ContactHistoryStore ─────────────────────────────────────────────────────
 
+/// Number of scalar history values stored for each active contact.
+pub const CONTACT_HISTORY_LEN: usize = 23;
+
+/// Fixed-width per-contact history payload; see [`ContactHistoryStore`] for slot meanings.
+pub type ContactHistory = [f64; CONTACT_HISTORY_LEN];
+
 /// Per-contact spring displacement history for tangential, rolling, and twisting models.
 ///
 /// Each contact entry is stored in **canonical form** — from the perspective of the
@@ -39,14 +47,13 @@ use soil_core::AtomData;
 ///
 /// | Indices | Model              | Description                             |
 /// |---------|--------------------|-----------------------------------------|
-/// | `[0..3]`| Mindlin tangential | Tangential spring displacement vector   |
+/// | `[0..3]`| Mindlin tangential | Tangential displacement, or elastic force for `/force` variants |
 /// | `[3..6]`| SDS rolling        | Rolling spring displacement vector      |
 /// | `[6]`  | SDS twisting       | Twisting spring displacement (scalar)   |
-/// | `[7..]`| MDR normal         | LAMMPS-style per-side rigid-flat history |
+/// | `[7]`  | Mindlin rescale    | Previous contact radius `a = sqrt(R* delta)` |
+/// | `[8..]`| MDR normal         | LAMMPS-style per-side rigid-flat history |
 ///
 /// Rolling and twisting slots are zero when the constant-torque model is used.
-/// Number of scalar history values stored for each active contact.
-pub const CONTACT_HISTORY_LEN: usize = 24;
 
 /// Per-contact spring and MDR normal history store.
 pub struct ContactHistoryStore {
@@ -55,7 +62,7 @@ pub struct ContactHistoryStore {
     /// `active_flag` is reset to `false` before each pair loop and set to `true`
     /// when a contact is touched. Stale entries (broken contacts) are pruned after
     /// the loop completes.
-    pub contacts: Vec<Vec<(u32, [f64; CONTACT_HISTORY_LEN], bool)>>,
+    pub contacts: Vec<Vec<(u32, ContactHistory, bool)>>,
 }
 
 impl ContactHistoryStore {
@@ -88,7 +95,7 @@ impl AtomData for ContactHistoryStore {
     }
 
     fn apply_permutation(&mut self, perm: &[usize], n: usize) {
-        let new_contacts: Vec<Vec<(u32, [f64; CONTACT_HISTORY_LEN], bool)>> =
+        let new_contacts: Vec<Vec<(u32, ContactHistory, bool)>> =
             perm.iter().map(|&p| self.contacts[p].clone()).collect();
         self.contacts[..n].clone_from_slice(&new_contacts);
     }
@@ -112,12 +119,23 @@ impl AtomData for ContactHistoryStore {
         let count = buf[0] as usize;
         let mut list = Vec::with_capacity(count);
         let mut pos = 1;
+        let old_seven_slot_format = buf.len() == 1 + count * 8;
+        let old_eight_slot_format = buf.len() == 1 + count * 9;
         for _ in 0..count {
             let tag = buf[pos] as u32;
             let mut s = [0.0; CONTACT_HISTORY_LEN];
-            s[..CONTACT_HISTORY_LEN].copy_from_slice(&buf[pos + 1..pos + 1 + CONTACT_HISTORY_LEN]);
+            if old_seven_slot_format {
+                s[..7].copy_from_slice(&buf[pos + 1..pos + 8]);
+                pos += 8;
+            } else if old_eight_slot_format {
+                s[..8].copy_from_slice(&buf[pos + 1..pos + 9]);
+                pos += 9;
+            } else {
+                s[..CONTACT_HISTORY_LEN]
+                    .copy_from_slice(&buf[pos + 1..pos + 1 + CONTACT_HISTORY_LEN]);
+                pos += 1 + CONTACT_HISTORY_LEN;
+            }
             list.push((tag, s, false));
-            pos += 1 + CONTACT_HISTORY_LEN;
         }
         self.contacts.push(list);
         pos

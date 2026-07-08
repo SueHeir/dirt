@@ -44,8 +44,23 @@ use soil_core::{
     VirialStressPlugin,
 };
 
-use crate::tangential::{ContactHistoryStore, CONTACT_HISTORY_LEN};
+use crate::tangential::{ContactHistory, ContactHistoryStore, CONTACT_HISTORY_LEN};
 use crate::{LARGE_OVERLAP_WARN_THRESHOLD, MAX_OVERLAP_WARNINGS, SQRT_5_6, TANGENTIAL_EPSILON};
+
+fn is_mindlin_rescale(model: &str) -> bool {
+    matches!(
+        model,
+        "mindlin_rescale" | "mindlin_rescale_force" | "mindlin_rescale/force"
+    )
+}
+
+fn is_mindlin_force_history(model: &str) -> bool {
+    matches!(model, "mindlin_rescale_force" | "mindlin_rescale/force")
+}
+
+fn zero_contact_history() -> ContactHistory {
+    [0.0; CONTACT_HISTORY_LEN]
+}
 
 /// Fused Hertz normal + Mindlin tangential contact force plugin.
 ///
@@ -278,8 +293,8 @@ fn mdr_normal_force(
     // force path, but without apparent-radius, bulk/free-surface, or penalty
     // state from fix GRANULAR/MDR.
     const MDR_OVERLAP_LIMIT: f64 = 0.95;
-    const TOTAL_DELTAMAX: usize = 7;
-    const SIDE0: usize = 8;
+    const TOTAL_DELTAMAX: usize = 8;
+    const SIDE0: usize = 9;
     const SIDE1: usize = 16;
     const DELTA_PREV: usize = 0;
     const DELTA_MAX_MDR: usize = 1;
@@ -671,14 +686,14 @@ pub fn contact_force_core(
         // S_n = 2 E* √(R* δ)  — normal stiffness parameter (used in damping)
         // k_n = 4/3 E* √(R* δ) — normal spring constant
         // k_t = 8 G* √(R* δ)  — tangential spring constant (Mindlin)
-        let (s_n, k_n, k_t) = if delta > 0.0 {
+        let (s_n, k_n, k_t, contact_radius) = if delta > 0.0 {
             let sdr = (delta * r_eff).sqrt();
             let sn = 2.0 * e_eff * sdr;
             let kn = 4.0 / 3.0 * e_eff * sdr;
             let kt = 8.0 * g_eff * sdr;
-            (sn, kn, kt)
+            (sn, kn, kt, sdr)
         } else {
-            (0.0, 0.0, 0.0)
+            (0.0, 0.0, 0.0, 0.0)
         };
 
         // Full relative velocity (including angular contributions)
@@ -719,7 +734,7 @@ pub fn contact_force_core(
         let entry_idx = history.contacts[i].iter().position(|(t, _, _)| *t == tag_j);
         let mut stored = match entry_idx {
             Some(idx) => history.contacts[i][idx].1,
-            None => [0.0; CONTACT_HISTORY_LEN],
+            None => zero_contact_history(),
         };
 
         // ── Normal force ─────────────────────────────────────────────────
@@ -815,15 +830,47 @@ pub fn contact_force_core(
         // (LAMMPS pair_granular `tangential linear_nohistory`, and the classic
         // `pair gran/hooke`) — the force depends only on the instantaneous
         // relative tangential velocity, with NO accumulated displacement.
-        let nohistory = material_table.tangential_model == "linear_nohistory";
+        let tangential_model = material_table.tangential_model.as_str();
+        let nohistory = tangential_model == "linear_nohistory";
+        let mindlin_rescale = is_mindlin_rescale(tangential_model);
+        let mindlin_force_history = is_mindlin_force_history(tangential_model);
         let f_t_max = mu * f_n_mag.abs();
         let (sx, sy, sz) = if nohistory {
             (0.0, 0.0, 0.0)
+        } else if mindlin_force_history {
+            // LAMMPS `mindlin_rescale/force` stores the elastic tangential force
+            // itself as history. On normal unloading it scales that force by the
+            // contact-radius ratio a_n/a_{n-1} before adding the new increment.
+            let mut fx = sign * stored[0];
+            let mut fy = sign * stored[1];
+            let mut fz = sign * stored[2];
+            let prev_a = stored[7];
+            if mindlin_rescale && prev_a > TANGENTIAL_EPSILON && contact_radius < prev_a {
+                let scale = contact_radius / prev_a;
+                fx *= scale;
+                fy *= scale;
+                fz *= scale;
+            }
+            let f_dot_n = fx * nx + fy * ny + fz * nz;
+            fx -= f_dot_n * nx;
+            fy -= f_dot_n * ny;
+            fz -= f_dot_n * nz;
+            fx += k_t * vt_x * dt;
+            fy += k_t * vt_y * dt;
+            fz += k_t * vt_z * dt;
+            (fx, fy, fz)
         } else {
             // Convert stored spring from canonical form to local (i,j) frame
             let mut sx = sign * stored[0];
             let mut sy = sign * stored[1];
             let mut sz = sign * stored[2];
+            let prev_a = stored[7];
+            if mindlin_rescale && prev_a > TANGENTIAL_EPSILON && contact_radius < prev_a {
+                let scale = contact_radius / prev_a;
+                sx *= scale;
+                sy *= scale;
+                sz *= scale;
+            }
             // Rotate spring into current tangent plane (remove normal component)
             let s_dot_n = sx * nx + sy * ny + sz * nz;
             sx -= s_dot_n * nx;
@@ -848,9 +895,9 @@ pub fn contact_force_core(
 
         // Tangential damping coefficient: γ_t = 2 β √(5/6) √(k_t m_r)
         let gamma_t = 2.0 * SQRT_5_6 * beta * (k_t * m_r).sqrt();
-        let mut ft_x = k_t * sx + gamma_t * vt_x;
-        let mut ft_y = k_t * sy + gamma_t * vt_y;
-        let mut ft_z = k_t * sz + gamma_t * vt_z;
+        let mut ft_x = (if mindlin_force_history { sx } else { k_t * sx }) + gamma_t * vt_x;
+        let mut ft_y = (if mindlin_force_history { sy } else { k_t * sy }) + gamma_t * vt_y;
+        let mut ft_z = (if mindlin_force_history { sz } else { k_t * sz }) + gamma_t * vt_z;
 
         // Coulomb cap on total tangential force
         let f_t_mag = (ft_x * ft_x + ft_y * ft_y + ft_z * ft_z).sqrt();
@@ -860,6 +907,17 @@ pub fn contact_force_core(
             ft_y *= scale;
             ft_z *= scale;
         }
+
+        let (sx, sy, sz) =
+            if mindlin_force_history && f_t_mag > f_t_max && f_t_mag > TANGENTIAL_EPSILON {
+                (
+                    ft_x - gamma_t * vt_x,
+                    ft_y - gamma_t * vt_y,
+                    ft_z - gamma_t * vt_z,
+                )
+            } else {
+                (sx, sy, sz)
+            };
 
         // Torques: τ_i = (r1 * n) × f_t, τ_j = (-r2 * n) × (-f_t) = (r2 * n) × f_t
         let ti_x = r1n_y * ft_z - r1n_z * ft_y;
@@ -1086,6 +1144,7 @@ pub fn contact_force_core(
         new_spring[4] = sign * roll_disp_y;
         new_spring[5] = sign * roll_disp_z;
         new_spring[6] = sign * twist_disp;
+        new_spring[7] = contact_radius;
         match entry_idx {
             Some(idx) => {
                 history.contacts[i][idx].1 = new_spring;
@@ -1235,6 +1294,7 @@ pub fn hooke_contact_force(
 
         let kn = material_table.kn_ij[mat_i][mat_j];
         let kt = material_table.kt_ij[mat_i][mat_j];
+        let contact_radius = (r_eff * delta).sqrt();
 
         // Hooke normal: f_n = kn * delta
         // Damping: gamma_n = 2 * beta * sqrt(kn * m_r)
@@ -1307,20 +1367,49 @@ pub fn hooke_contact_force(
         let entry_idx = history.contacts[i].iter().position(|(t, _, _)| *t == tag_j);
         let stored = match entry_idx {
             Some(idx) => history.contacts[i][idx].1,
-            None => [0.0; CONTACT_HISTORY_LEN],
+            None => zero_contact_history(),
         };
 
         // History-free `linear_nohistory` tangential model → zero spring (see the
         // Hertz path above); the force reduces to velocity-Coulomb with no
         // accumulated displacement. "history" keeps the incremental Hooke spring.
-        let nohistory = material_table.tangential_model == "linear_nohistory";
+        let tangential_model = material_table.tangential_model.as_str();
+        let nohistory = tangential_model == "linear_nohistory";
+        let mindlin_rescale = is_mindlin_rescale(tangential_model);
+        let mindlin_force_history = is_mindlin_force_history(tangential_model);
         let f_t_max = mu * f_n_mag.abs();
         let (sx, sy, sz) = if nohistory {
             (0.0, 0.0, 0.0)
+        } else if mindlin_force_history {
+            let mut fx = sign * stored[0];
+            let mut fy = sign * stored[1];
+            let mut fz = sign * stored[2];
+            let prev_a = stored[7];
+            if mindlin_rescale && prev_a > TANGENTIAL_EPSILON && contact_radius < prev_a {
+                let scale = contact_radius / prev_a;
+                fx *= scale;
+                fy *= scale;
+                fz *= scale;
+            }
+            let f_dot_n = fx * nx + fy * ny + fz * nz;
+            fx -= f_dot_n * nx;
+            fy -= f_dot_n * ny;
+            fz -= f_dot_n * nz;
+            fx += kt * vt_x * dt;
+            fy += kt * vt_y * dt;
+            fz += kt * vt_z * dt;
+            (fx, fy, fz)
         } else {
             let mut sx = sign * stored[0];
             let mut sy = sign * stored[1];
             let mut sz = sign * stored[2];
+            let prev_a = stored[7];
+            if mindlin_rescale && prev_a > TANGENTIAL_EPSILON && contact_radius < prev_a {
+                let scale = contact_radius / prev_a;
+                sx *= scale;
+                sy *= scale;
+                sz *= scale;
+            }
             let s_dot_n = sx * nx + sy * ny + sz * nz;
             sx -= s_dot_n * nx;
             sy -= s_dot_n * ny;
@@ -1341,9 +1430,9 @@ pub fn hooke_contact_force(
         };
 
         let gamma_t = 2.0 * SQRT_5_6 * beta * (kt * m_r).sqrt();
-        let mut ft_x = kt * sx + gamma_t * vt_x;
-        let mut ft_y = kt * sy + gamma_t * vt_y;
-        let mut ft_z = kt * sz + gamma_t * vt_z;
+        let mut ft_x = (if mindlin_force_history { sx } else { kt * sx }) + gamma_t * vt_x;
+        let mut ft_y = (if mindlin_force_history { sy } else { kt * sy }) + gamma_t * vt_y;
+        let mut ft_z = (if mindlin_force_history { sz } else { kt * sz }) + gamma_t * vt_z;
 
         let f_t_mag = (ft_x * ft_x + ft_y * ft_y + ft_z * ft_z).sqrt();
         if f_t_mag > f_t_max && f_t_mag > TANGENTIAL_EPSILON {
@@ -1352,6 +1441,17 @@ pub fn hooke_contact_force(
             ft_y *= scale;
             ft_z *= scale;
         }
+
+        let (sx, sy, sz) =
+            if mindlin_force_history && f_t_mag > f_t_max && f_t_mag > TANGENTIAL_EPSILON {
+                (
+                    ft_x - gamma_t * vt_x,
+                    ft_y - gamma_t * vt_y,
+                    ft_z - gamma_t * vt_z,
+                )
+            } else {
+                (sx, sy, sz)
+            };
 
         // Torques
         let ti_x = r1n_y * ft_z - r1n_z * ft_y;
@@ -1552,6 +1652,7 @@ pub fn hooke_contact_force(
         new_spring[4] = sign * roll_disp_y;
         new_spring[5] = sign * roll_disp_z;
         new_spring[6] = sign * twist_disp;
+        new_spring[7] = contact_radius;
         match entry_idx {
             Some(idx) => {
                 history.contacts[i][idx].1 = new_spring;

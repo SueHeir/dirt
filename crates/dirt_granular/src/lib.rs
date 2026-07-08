@@ -18,6 +18,10 @@
 //! - **Mindlin** — incremental spring-history model with Coulomb friction cap `μ |F_n|`.
 //!   Spring displacement is stored per-contact and rotated to stay in the tangent plane
 //!   each step. Damping: `γ_t = 2 β √(5/6) √(k_t m_r)`.
+//! - **Mindlin rescale** — LAMMPS-style unloading variants (`mindlin_rescale`,
+//!   `mindlin_rescale/force`) that scale the tangential history by the contact-radius
+//!   ratio when the normal contact unloads.
+//! - **linear_nohistory** — velocity-Coulomb tangential damping with no spring history.
 //!
 //! ## Rolling resistance
 //! - **Constant torque** (default) — `τ_r = μ_r |F_n| R*` opposing relative rolling
@@ -62,6 +66,7 @@
 //! ```toml
 //! [dem]
 //! contact_model = "hertz"     # "hertz" (default), "hooke", or "mdr"
+//! tangential_model = "history" # "history", "linear_nohistory", "mindlin_rescale", "mindlin_rescale/force"
 //! adhesion_model = "jkr"      # "jkr" (default) or "dmt" (only when surface_energy > 0)
 //! rolling_model = "constant"  # "constant" (default) or "sds"
 //! twisting_model = "constant" # "constant" (default), "sds", or "marshall" (coeffs derived from tangential)
@@ -95,10 +100,11 @@
 //! **incremental, history-dependent** springs: a displacement is integrated
 //! across timesteps, rotated to stay in the current tangent plane, and capped at
 //! a Coulomb limit. That history lives in
-//! [`tangential::ContactHistoryStore`], which stores **7 `f64` per contact** —
-//! `[0..3]` tangential spring vector, `[3..6]` rolling spring vector, `[6]`
-//! twisting scalar (rolling/twisting slots are zero under the constant-torque
-//! models).
+//! [`tangential::ContactHistoryStore`], which stores **8 `f64` per contact** —
+//! `[0..3]` tangential spring vector (or elastic force for `/force` variants),
+//! `[3..6]` rolling spring vector, `[6]` twisting scalar, and `[7]` the previous
+//! contact radius used by Mindlin rescale variants (rolling/twisting slots are
+//! zero under the constant-torque models).
 //!
 //! Each entry is kept in **canonical form** (from the lower-tag particle's
 //! perspective) so the spring is frame-consistent no matter which particle is

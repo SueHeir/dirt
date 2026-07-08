@@ -23,7 +23,8 @@ Beyond the normal Hertz force + damping, walls apply:
 - **Rolling resistance** — `constant` (default) or `sds`, mirroring the
   particle–particle rolling model with the wall as a zero-spin second body.
   Supported by **all** wall types.
-- **Twisting friction** — `constant`/`sds`, **plane walls only**.
+- **Twisting friction** — constant torque opposing particle spin about the local
+  contact normal. Supported by **all** wall types.
 
 Frictionless walls (`friction = 0`) are byte-for-byte unchanged from a
 pure-normal contact. The tangential and rolling spring histories are stored on

@@ -281,7 +281,8 @@ pub struct DemConfig {
     /// Twisting friction model: "constant" (default) or "sds".
     #[serde(default = "default_twisting_model")]
     pub twisting_model: String,
-    /// Tangential friction model: "history" (default) or "linear_nohistory".
+    /// Tangential friction model: "history" (default), "linear_nohistory",
+    /// "mindlin_rescale", or "mindlin_rescale/force".
     ///
     /// - **history** (default): the incremental Mindlin tangential spring — the
     ///   force accumulates the sliding displacement `ξ` over the contact lifetime
@@ -292,6 +293,11 @@ pub struct DemConfig {
     ///   `pair gran/hooke`). The tangential force is `F_t = -min(μ |F_n|, γ_t |v_t|) t̂`
     ///   with **no** accumulated spring displacement — the force depends only on the
     ///   instantaneous relative tangential velocity. Rolling/twisting are unaffected.
+    /// - **mindlin_rescale**: the Mindlin displacement-history spring, with the
+    ///   LAMMPS unloading rule `ξ <- ξ * a/a_prev` when contact radius decreases.
+    /// - **mindlin_rescale/force** (alias: `mindlin_rescale_force`): stores the
+    ///   elastic tangential force as history and applies the same unloading gate to
+    ///   that force, mirroring LAMMPS `mindlin_rescale/force`.
     #[serde(default = "default_tangential_model")]
     pub tangential_model: String,
     /// Track per-sphere orientation (quaternion). Default `false`.
@@ -500,8 +506,7 @@ pub struct MaterialTable {
     pub rolling_model: String,
     /// Twisting friction model: "constant" or "sds".
     pub twisting_model: String,
-    /// Tangential friction model: "history" (Mindlin spring) or "linear_nohistory"
-    /// (velocity-Coulomb, no accumulated displacement). See [`DemConfig::tangential_model`].
+    /// Tangential friction model. See [`DemConfig::tangential_model`].
     pub tangential_model: String,
     /// Track per-sphere orientation (quaternion). Default `false`; see [`DemConfig::track_orientation`].
     pub track_orientation: bool,

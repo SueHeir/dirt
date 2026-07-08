@@ -84,9 +84,9 @@ calibrated from restitution.
 | `linear_history` (spring on accumulated ξ) | ✅ `pair_granular.rst:550`; `.h:71` | ✅ Hooke-path linear `k_t` + Coulomb cap — `crates/dirt_granular/src/contact.rs:722` (tangential block) |
 | **Mindlin** (adds contact-radius `a`, `k_t=8G*`) | ✅ `pair_granular.rst:613`; `.h:98` | ✅ incremental spring-history + Coulomb cap `μ|F_n|`, damping `γ_t=2β√(5/6)√(k_t m_r)` — `crates/dirt_granular/src/contact.rs:432` (`k_t` ~348, damping 484) |
 | `mindlin/force` (history stored as elastic force) | ✅ `pair_granular.rst:645`; `.h:112` | ❌ — DIRT stores tangential *displacement* history (`crates/dirt_granular/src/tangential.rs:49` `ContactHistoryStore`), not the force form |
-| `mindlin_rescale` / `mindlin_rescale/force` (rescale ξ on unloading) | ✅ `pair_granular.rst:675, 700`; `.h:119, 126` | ❌ — no unloading-rescale variant found |
+| `mindlin_rescale` / `mindlin_rescale/force` (rescale history on unloading) | ✅ `pair_granular.rst:675, 700`; `.h:119, 126` | ✅ selectable `tangential_model = "mindlin_rescale"` or `"mindlin_rescale/force"` (`"mindlin_rescale_force"` alias); scales tangential history by `a/a_prev` on unloading — `crates/dirt_granular/src/contact.rs`; validated by `examples/bench_mindlin_rescale_tangential` |
 | `linear_history_classic`, `mindlin_classic` (legacy, source-only) | ✅ `gran_sub_mod_tangential.h:83, 91` (undocumented) | ❌ (n/a) |
-| Per-contact tangential history store | ✅ implicit in sub-models | ✅ canonical-frame store, 7 f64/contact — `crates/dirt_granular/src/tangential.rs:49` |
+| Per-contact tangential history store | ✅ implicit in sub-models | ✅ canonical-frame store, 8 f64/contact (tangential/rolling/twist plus previous contact radius for rescale) — `crates/dirt_granular/src/tangential.rs:49` |
 
 ## Rolling resistance
 
@@ -130,11 +130,11 @@ velocity-fluctuation *diagnostic* (unrelated to real heat transfer).
 | **Cylinder** wall | ✅ `zcylinder` (Z-axis only) — `fix_wall_gran.rst:158` | ✅ `WallCylinder` X/Y/Z + finite axial bounds, inside/outside — `crates/dirt_wall/src/lib.rs:421` |
 | **Sphere** wall | ❌ — not a `fix wall/gran` primitive | ✅ `WallSphere` — `crates/dirt_wall/src/lib.rs:460` |
 | **Region** wall (arbitrary geometry) | ✅ `fix wall/gran/region` — `fix_wall_gran_region.cpp`; `fix_wall_gran.rst:77` | ✅ `WallRegion` (block/sphere/cylinder/cone/union) — `crates/dirt_wall/src/lib.rs:484` |
-| Wall **normal**: Hooke *and* Hertz | ✅ `hooke`/`hooke/history`/`hertz/history`/`granular` — `fix_wall_gran.rst:91` | ⚠️ **Hertz only** — `crates/dirt_wall/src/lib.rs:1062` (no Hooke wall path) |
+| Wall **normal**: Hooke *and* Hertz | ✅ `hooke`/`hooke/history`/`hertz/history`/`granular` — `fix_wall_gran.rst:91` | ✅ Hertz and Hooke — `crates/dirt_wall/src/lib.rs:1175` (`wall_normal_force`); Hooke wall rebound validated by `examples/bench_hooke_wall_rebound` |
 | Wall full sub-model set (rolling/twisting/heat via `granular`) | ✅ `fstyle granular` — `fix_wall_gran.rst:113` | ⚠️ partial (see below) |
 | Wall **tangential** (Mindlin sliding), all shapes | ✅ | ✅ `wall_tangential_force` — `crates/dirt_wall/src/lib.rs:926` |
 | Wall **rolling** (constant + SDS), all shapes | ✅ (via `granular`) | ✅ `wall_rolling_torque` — `crates/dirt_wall/src/lib.rs:1004` |
-| Wall **twisting** | ✅ (via `granular`) | ⚠️ **plane walls only** — `crates/dirt_wall/src/lib.rs:1204` (note `:23`) |
+| Wall **twisting** | ✅ (via `granular`) | ✅ constant wall torque on plane, cylinder, sphere, and region walls — `crates/dirt_wall/src/lib.rs:1173,1356,1545,1698,1856` |
 | Wall **JKR/DMT** adhesion | ✅ (via `granular`) | ⚠️ **plane walls only** (SJKR on all) — `crates/dirt_wall/src/lib.rs:1173` (note `:33`) |
 | Wall **heat/temperature** transfer | ✅ `temperature` keyword — `fix_wall_gran.rst:196` | ❌ stub field only (see Thermal) |
 | Wall **motion** | ✅ `wiggle` (oscillate), `shear` (constant tangential) — `fix_wall_gran.rst:165, 186` | ✅ Static / ConstantVelocity / Oscillate / **Servo** (plane only) — `crates/dirt_wall/src/lib.rs:311` (`ServoDef` 206) |
@@ -142,8 +142,8 @@ velocity-fluctuation *diagnostic* (unrelated to real heat transfer).
 
 **Notes.** DIRT walls add **sphere** primitives and a **servo** (force-controlled)
 motion mode LAMMPS lacks; LAMMPS walls support a **Hooke** normal and
-**temperature** boundary DIRT lacks. DIRT's curved/region walls are missing
-twisting and JKR/DMT (plane-only).
+**temperature** boundary DIRT lacks. DIRT's curved/region walls still do not
+support JKR/DMT adhesion (`surface_energy` remains plane-only).
 
 ## Bonded particles (BPM ↔ dirt_bond)
 
@@ -208,8 +208,9 @@ Rough parity on rigid clumps.
    `fix_granular_mdr.cpp`) — DIRT now has the particle-pair MDR normal-force
    path, but not apparent-radius updates, bulk/free-surface state, contact
    penalties, or MDR walls.
-3. **Mindlin `force`-form history and `mindlin_rescale` unloading variants**
-   (`pair_granular.rst:645, 675`) — DIRT stores displacement history only.
+3. **Mindlin `force`-form history without unloading rescale** (`mindlin/force`,
+   `pair_granular.rst:645`) — DIRT now has the unloading-rescale displacement and
+   force-history variants, but not the standalone `mindlin/force` keyword.
 4. ~~**Marshall twisting** (coeffs derived from the tangential model,
    `pair_granular.rst:818`)~~ — ✅ **CLOSED**: `twisting_model="marshall"`
    (`crates/dirt_granular/src/contact.rs:614`) derives `k_twist=½k_t a²`,
@@ -221,7 +222,7 @@ Rough parity on rigid clumps.
    history-based.~~ **Closed:** `tangential_model = "linear_nohistory"` adds the
    history-free velocity-Coulomb law (`examples/bench_nohistory_tangential`).
 6. **Cundall non-viscous global damping** (`fix_damping_cundall.cpp`).
-7. **Hooke-normal walls** and **curved/region-wall twisting + JKR/DMT**
+7. **Curved/region-wall twisting + JKR/DMT**
    (currently plane-only, `crates/dirt_wall/src/lib.rs:1204, 1173`).
 8. **Wall temperature boundary** transfer (stub today,
    `crates/dirt_wall/src/lib.rs:303`).
