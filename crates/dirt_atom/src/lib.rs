@@ -925,6 +925,44 @@ impl MaterialTable {
         self.names.iter().position(|n| n == name).map(|i| i as u32)
     }
 
+    /// Extra per-atom neighbor cutoff needed for opt-in liquid bridges.
+    ///
+    /// SOIL owns only a generic per-atom `cutoff_radius`; DIRT must expand that
+    /// radius when a DEM force law acts across a finite gap. Returning the full
+    /// maximum range for this material is conservative: for any pair, at least
+    /// one side contributes enough padding for the configured bridge rupture
+    /// distance, while dry/off materials keep the historical radius-only cutoff.
+    pub fn liquid_bridge_cutoff_padding(&self, material_idx: u32) -> f64 {
+        if self.liquid_bridge_model != "willett2000" {
+            return 0.0;
+        }
+        let i = material_idx as usize;
+        if i >= self.names.len()
+            || i >= self.liquid_bridge_volume_ij.len()
+            || i >= self.liquid_surface_tension_ij.len()
+            || i >= self.liquid_contact_angle_ij.len()
+            || i >= self.liquid_rupture_distance_ij.len()
+        {
+            return 0.0;
+        }
+        let mut padding = 0.0_f64;
+        for j in 0..self.names.len() {
+            let volume = self.liquid_bridge_volume_ij[i][j];
+            let gamma = self.liquid_surface_tension_ij[i][j];
+            if volume <= 0.0 || gamma <= 0.0 {
+                continue;
+            }
+            let theta = self.liquid_contact_angle_ij[i][j];
+            let rupture = if self.liquid_rupture_distance_ij[i][j] > 0.0 {
+                self.liquid_rupture_distance_ij[i][j]
+            } else {
+                (1.0 + 0.5 * theta) * volume.cbrt()
+            };
+            padding = padding.max(rupture.max(0.0));
+        }
+        padding
+    }
+
     /// Computes all per-pair mixing tables from the registered per-material properties.
     ///
     /// Must be called after all materials have been added. Populates `*_ij` fields using
@@ -1408,6 +1446,24 @@ mod tests {
             expected,
             mt.e_eff_ij[0][0]
         );
+    }
+
+    #[test]
+    fn liquid_bridge_cutoff_padding_tracks_active_rupture_range() {
+        let mut mt = MaterialTable::new();
+        mt.liquid_bridge_model = "willett2000".to_string();
+        let glass = mt.add_material_with_liquid_bridge(
+            "glass", 1.0e6, 0.25, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+            0.0, 0.0, 1.0e-11, 0.072, 0.0, 1.5e-4,
+        );
+        mt.add_material("dry", 1.0e6, 0.25, 1.0, 0.0, 0.0, 0.0);
+        mt.build_pair_tables();
+
+        assert!((mt.liquid_bridge_cutoff_padding(glass) - 1.5e-4).abs() < 1.0e-15);
+        assert_eq!(mt.liquid_bridge_cutoff_padding(1), 0.0);
+
+        mt.liquid_bridge_model = "off".to_string();
+        assert_eq!(mt.liquid_bridge_cutoff_padding(glass), 0.0);
     }
 
     // ── hooke_surface_energy_warning: silent-drop ergonomics guard ────────────

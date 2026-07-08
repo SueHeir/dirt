@@ -7,12 +7,14 @@ normal force to Willett et al.'s closed-form pendular bridge expression,
 `F = 2*pi*R*gamma*cos(theta) / (1 + 1.05*s_hat + 2.5*s_hat^2)`,
 
 with `s_hat = s*sqrt(R/V)` and an explicit rupture distance.
+The force arm runs with `skin_fraction = 1.0`, so bridge-only samples require
+DIRT's DEM cutoff radius to include the configured rupture distance.
 
 ![liquid bridge force](plots/bridge_force.png)
 
 *Measured DIRT force versus the Willett et al. (2000) closed form. Latest run:
 PASS, maximum relative error `4.24e-13` inside the `1.0e-9` gate; force drops at
-the configured rupture distance.*
+the configured rupture distance under the default neighbor skin.*
 
 The bulk arm reuses the lifted-cylinder angle-of-repose protocol at small scale
 and sweeps liquid bridge volume. The check is deliberately a trend check:

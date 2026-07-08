@@ -518,7 +518,9 @@ Adds the opt-in `liquid_bridge_model = "willett2000"` capillary bridge force for
 near-contact particle pairs. The single-contact arm separates two spheres and
 checks the tensile normal force against Willett et al.'s closed-form expression
 with an explicit rupture distance; the latest maximum relative error is
-`4.24e-13` against a `1e-9` gate. A dry identity arm also compares the default dry
+`4.24e-13` against a `1e-9` gate. This force arm runs with `skin_fraction = 1.0`,
+so bridge-only samples prove the DEM cutoff includes the configured rupture
+distance instead of relying on extra neighbor skin. A dry identity arm also compares the default dry
 configuration to `liquid_bridge_model = "off"` with nonzero liquid parameters and
 requires byte-identical traces.
 

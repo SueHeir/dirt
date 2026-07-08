@@ -1080,6 +1080,7 @@ fn clump_insert_atoms(
                     insert.material
                 );
             }) as u32;
+        let cutoff_padding = material_table.liquid_bridge_cutoff_padding(mat_idx);
 
         // Compute effective radius for overlap checks (max sub-sphere extent from COM)
         let eff_radius = def
@@ -1123,6 +1124,7 @@ fn clump_insert_atoms(
             def,
             insert,
             mat_idx,
+            cutoff_padding,
             eff_radius,
             &region,
             &mut rng,
@@ -1152,6 +1154,7 @@ fn insert_clumps_with_rng<R: Rng>(
     def: &ClumpDef,
     insert: &ClumpInsertConfig,
     mat_idx: u32,
+    cutoff_padding: f64,
     eff_radius: f64,
     region: &Region,
     rng: &mut R,
@@ -1246,7 +1249,7 @@ fn insert_clumps_with_rng<R: Rng>(
             [0.0; 3]
         };
 
-        insert_clump(
+        insert_clump_with_cutoff_padding(
             atoms,
             dem_data,
             clump_data,
@@ -1256,6 +1259,7 @@ fn insert_clumps_with_rng<R: Rng>(
             vel,
             insert.density,
             mat_idx,
+            cutoff_padding,
             next_clump_id,
         );
 
@@ -1285,6 +1289,26 @@ pub fn insert_clump(
     com_vel: [f64; 3],
     density: f64,
     atom_type: u32,
+    clump_id: u32,
+) -> usize {
+    insert_clump_with_cutoff_padding(
+        atoms, dem, clump_data, body_store, def, com_pos, com_vel, density, atom_type, 0.0,
+        clump_id,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn insert_clump_with_cutoff_padding(
+    atoms: &mut Atom,
+    dem: &mut DemAtom,
+    clump_data: &mut ClumpAtom,
+    body_store: &mut MultisphereBodyStore,
+    def: &ClumpDef,
+    com_pos: [f64; 3],
+    com_vel: [f64; 3],
+    density: f64,
+    atom_type: u32,
+    cutoff_padding: f64,
     clump_id: u32,
 ) -> usize {
     // Compute inertia tensor (auto-detect overlap)
@@ -1358,7 +1382,9 @@ pub fn insert_clump(
         atoms.force.push([0.0 as Accum; 3]);
         atoms.mass.push(sub_mass as Real);
         atoms.inv_mass.push(0.0 as Real); // Sub-spheres don't integrate via Verlet
-        atoms.cutoff_radius.push(sphere.radius as Real);
+        atoms
+            .cutoff_radius
+            .push((sphere.radius + cutoff_padding.max(0.0)) as Real);
         atoms.image.push([0, 0, 0]);
         atoms.is_ghost.push(false);
 
@@ -1496,6 +1522,7 @@ mod tests {
             &def,
             &insert,
             0,
+            0.0,
             eff_radius,
             &region,
             &mut rng,

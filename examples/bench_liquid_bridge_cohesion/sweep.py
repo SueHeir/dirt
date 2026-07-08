@@ -290,6 +290,11 @@ def graph():
             f_n = float(row["normal_force"])
             if 0.0 <= s <= RUPTURE and f_n < 0.0:
                 samples.append((s, f_n, bridge_ref(s)))
+    if not samples:
+        raise SystemExit(
+            "no tensile liquid-bridge samples found; the DEM cutoff must include "
+            "bridge-only separations with skin_fraction=1.0"
+        )
     max_rel = max(abs((f - ref) / ref) for s, f, ref in samples)
     force_pass = max_rel <= FORCE_TOL and max(s for s, _, _ in samples) > 0.95 * RUPTURE
 
