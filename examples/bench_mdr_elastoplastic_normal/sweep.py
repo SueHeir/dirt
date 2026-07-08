@@ -52,6 +52,86 @@ def nonadhesive_force(delta, a_shape, e_eff, b_shape):
     )
 
 
+def round_up_negative_epsilon(value):
+    if value < 0.0 and value > -1.0e-20:
+        return 0.0
+    return value
+
+
+def adhesive_force(delta_e, a_shape, e_eff, gamma, b_shape, a_na, a_adh, at_max_delta):
+    # Direct transcription of the adhesive branch in LAMMPS
+    # src/GRANULAR/gran_sub_mod_normal.cpp:799-885.
+    a_fac = 0.99
+    active_a_adh = min(a_adh, a_fac * 0.5 * b_shape)
+    if at_max_delta or a_na >= active_a_adh:
+        return nonadhesive_force(delta_e, a_shape, e_eff, b_shape), a_fac * a_na, a_fac * a_na
+
+    e_eff_inv = 1.0 / e_eff
+    b_inv = 1.0 / b_shape
+    b_sq = b_shape * b_shape
+    a_sq = a_shape * a_shape
+    a_inv_sq = 1.0 / (a_shape * a_shape)
+
+    l_max = math.sqrt(2.0 * math.pi * active_a_adh * gamma * e_eff_inv)
+    g_a_adh = 0.5 * a_shape - a_shape * b_inv * math.sqrt(0.25 * b_sq - active_a_adh * active_a_adh)
+    g_a_adh = round_up_negative_epsilon(g_a_adh)
+
+    gamma_sq = gamma * gamma
+    gamma3 = gamma_sq * gamma
+    gamma4 = gamma_sq * gamma_sq
+    e_eff_sq = e_eff * e_eff
+    e_eff_sq_inv = e_eff_inv * e_eff_inv
+    a4 = a_sq * a_sq
+    b4 = b_sq * b_sq
+    b6 = b4 * b_sq
+    disc = max(0.0, 27.0 * a4 * e_eff_sq * gamma_sq - 4.0 * b_sq * gamma4 * math.pi * math.pi)
+    tmp = 27.0 * a4 * b4 * gamma * e_eff_inv
+    tmp -= 2.0 * b6 * gamma3 * math.pi * math.pi * e_eff_inv**3
+    tmp += math.sqrt(27.0) * a_sq * b4 * math.sqrt(disc) * e_eff_sq_inv
+    tmp = math.copysign(abs(tmp) ** (1.0 / 3.0), tmp)
+
+    a_crit = -b_sq * gamma * math.pi * a_inv_sq * e_eff_inv
+    a_crit += 1.2599210498948732 * b4 * gamma_sq * 6.738808595698141 / (a_sq * e_eff_sq * tmp)
+    a_crit += 1.1624473515096265 * tmp * a_inv_sq
+    a_crit /= 6.0
+
+    if delta_e + l_max - g_a_adh >= 0.0:
+        f_na = nonadhesive_force(g_a_adh, a_shape, e_eff, b_shape)
+        f_adhes = 2.0 * e_eff * (delta_e - g_a_adh) * active_a_adh
+        return f_na + f_adhes, active_a_adh, active_a_adh
+
+    if active_a_adh >= a_crit:
+        a_tmp = active_a_adh
+        for it in range(100):
+            radicand = 0.25 * b_sq - a_tmp * a_tmp
+            if radicand <= 0.0 or a_tmp <= 0.0:
+                a_tmp = 0.0
+                break
+            fa_tmp = delta_e - 0.5 * a_shape + a_shape * math.sqrt(radicand) * b_inv
+            fa = fa_tmp + math.sqrt(2.0 * math.pi * a_tmp * gamma * e_eff_inv)
+            if abs(fa) < 1.0e-10:
+                break
+            dfda = -a_tmp * a_shape / (b_shape * math.sqrt(radicand))
+            dfda += gamma * 1.2533141373155001 / math.sqrt(a_tmp * gamma * e_eff)
+            nxt = a_tmp - fa / dfda
+            fa2 = fa_tmp + math.sqrt(2.0 * math.pi * nxt * gamma * e_eff_inv) if nxt > 0.0 else float("nan")
+            a_tmp = nxt
+            if abs(fa - fa2) < 1.0e-16:
+                break
+            if it == 99:
+                a_tmp = 0.0
+        active_a_adh = a_tmp
+
+    if active_a_adh < a_crit or active_a_adh <= 0.0:
+        return 0.0, 0.0, 0.0
+
+    g_active = 0.5 * a_shape - a_shape * b_inv * math.sqrt(0.25 * b_sq - active_a_adh * active_a_adh)
+    g_active = round_up_negative_epsilon(g_active)
+    f_na = nonadhesive_force(g_active, a_shape, e_eff, b_shape)
+    f_adhes = 2.0 * e_eff * (delta_e - g_active) * active_a_adh
+    return f_na + f_adhes, active_a_adh, active_a_adh
+
+
 def reference_trace(cfg):
     radius = cfg["radius"]
     e_eff = 1.0 / (2.0 * (1.0 - cfg["poisson_ratio"] ** 2) / cfg["youngs_mod"])
@@ -104,7 +184,11 @@ def reference_trace(cfg):
                     a_shape = max(1.0e-30, 4.0 * p_y / e_eff * a_max)
                     b_shape = max(1.0e-30, 2.0 * a_max)
                     delta_e_max = 0.5 * a_shape
-                    f_max = 0.25 * math.pi * e_eff * a_shape * b_shape
+                    # LAMMPS lines 755-756 assign only the acos term to Fmax's
+                    # E*A*B/4 scale before subtracting the second term.
+                    x = delta_e_max / a_shape
+                    f_max = e_eff * (a_shape * b_shape * 0.25) * math.acos(1.0 - 2.0 * x)
+                    f_max -= (2.0 - 4.0 * x) * math.sqrt(max(0.0, x - x * x))
                     z_r = radius - (side_delta_max - delta_e_max)
                     delta_r = (
                         2.0 * a_max_sq * (cfg["poisson_ratio"] - 1.0)
@@ -114,23 +198,30 @@ def reference_trace(cfg):
                     )
                     delta_r *= f_max / (2.0 * math.pi * a_max_sq * shear_mod * math.sqrt(a_max_sq + z_r * z_r))
                     delta_e = (side_delta - side_delta_max + delta_e_max + delta_r) / (1.0 + delta_r / delta_e_max)
-                    delta_e = max(0.0, min(delta_e, delta_e_max))
                     side["deltap"] = side_delta_max - (delta_e_max + delta_r)
                 else:
                     a_shape = 4.0 * radius
                     b_shape = 2.0 * radius
                     delta_e = side_delta
 
-                force = nonadhesive_force(delta_e, a_shape, e_eff, b_shape)
                 if delta_e > 0.0:
                     a_contact = b_shape * math.sqrt(max(0.0, a_shape - delta_e)) * math.sqrt(delta_e) / a_shape
                 else:
                     a_contact = 0.0
                 if gamma > 0.0:
-                    if abs(side_delta - side_delta_max) <= 1.0e-14 or a_contact >= side["a_adh"]:
-                        side["a_adh"] = 0.99 * a_contact
-                    elif side["a_adh"] > 0.0:
-                        force -= 2.0 * math.pi * gamma * side["a_adh"]
+                    force, side["a_adh"], _ = adhesive_force(
+                        delta_e,
+                        a_shape,
+                        e_eff,
+                        gamma,
+                        b_shape,
+                        a_contact,
+                        side["a_adh"],
+                        abs(side_delta - side_delta_max) <= 1.0e-14,
+                    )
+                else:
+                    force = nonadhesive_force(delta_e, a_shape, e_eff, b_shape)
+                    side["a_adh"] = a_contact
                 forces.append(force)
             rows.append({"phase": phase, "delta": delta, "force": 0.5 * sum(forces)})
     return rows

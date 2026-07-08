@@ -142,6 +142,125 @@ fn mdr_nonadhesive_force(delta: f64, a_inv: f64, e_eff: f64, a: f64, b: f64) -> 
     0.25 * e_eff * a * b * ((1.0 - 2.0 * x).acos() - (2.0 - 4.0 * x) * root)
 }
 
+fn mdr_round_up_negative_epsilon(value: f64) -> f64 {
+    if value < 0.0 && value > -1.0e-20 {
+        0.0
+    } else {
+        value
+    }
+}
+
+fn mdr_adhesive_force(
+    delta_e: f64,
+    a_shape: f64,
+    a_inv: f64,
+    e_eff: f64,
+    surface_energy: f64,
+    b_shape: f64,
+    a_na: f64,
+    a_adh: &mut f64,
+    at_max_delta: bool,
+) -> (f64, f64) {
+    // Direct transcription of LAMMPS GranSubModNormalMDR adhesive cases 1-3.
+    const A_FAC: f64 = 0.99;
+    const MDR_MAX_IT: usize = 100;
+    const MDR_EPSILON1: f64 = 1.0e-10;
+    const MDR_EPSILON2: f64 = 1.0e-16;
+    const CBRT2: f64 = 1.259_921_049_894_873_2;
+    const SQRTHALFPI: f64 = 1.253_314_137_315_500_1;
+    const CBRTHALFPI: f64 = 1.162_447_351_509_626_5;
+    const PITOFIVETHIRDS: f64 = 6.738_808_595_698_141;
+
+    let mut active_a_adh = (*a_adh).min(A_FAC * 0.5 * b_shape);
+    if at_max_delta || a_na >= active_a_adh {
+        let force = mdr_nonadhesive_force(delta_e, a_inv, e_eff, a_shape, b_shape);
+        *a_adh = A_FAC * a_na;
+        return (force, *a_adh);
+    }
+
+    let e_eff_inv = 1.0 / e_eff;
+    let b_inv = 1.0 / b_shape;
+    let b_sq = b_shape * b_shape;
+    let a_sq = a_shape * a_shape;
+    let a_inv_sq = a_inv * a_inv;
+
+    let l_max = (2.0 * std::f64::consts::PI * active_a_adh * surface_energy * e_eff_inv).sqrt();
+    let mut g_a_adh =
+        0.5 * a_shape - a_shape * b_inv * (0.25 * b_sq - active_a_adh * active_a_adh).sqrt();
+    g_a_adh = mdr_round_up_negative_epsilon(g_a_adh);
+
+    let gamma_sq = surface_energy * surface_energy;
+    let gamma3 = gamma_sq * surface_energy;
+    let gamma4 = gamma_sq * gamma_sq;
+    let e_eff_sq = e_eff * e_eff;
+    let e_eff_sq_inv = e_eff_inv * e_eff_inv;
+    let a4 = a_sq * a_sq;
+    let b4 = b_sq * b_sq;
+    let b6 = b4 * b_sq;
+    let disc = (27.0 * a4 * e_eff_sq * gamma_sq
+        - 4.0 * b_sq * gamma4 * std::f64::consts::PI * std::f64::consts::PI)
+        .max(0.0);
+    let mut tmp = 27.0 * a4 * b4 * surface_energy * e_eff_inv;
+    tmp -= 2.0 * b6 * gamma3 * std::f64::consts::PI * std::f64::consts::PI * e_eff_inv.powi(3);
+    tmp += 27.0_f64.sqrt() * a_sq * b4 * disc.sqrt() * e_eff_sq_inv;
+    tmp = tmp.cbrt();
+
+    let mut a_crit = -b_sq * surface_energy * std::f64::consts::PI * a_inv_sq * e_eff_inv;
+    a_crit += CBRT2 * b4 * gamma_sq * PITOFIVETHIRDS / (a_sq * e_eff_sq * tmp);
+    a_crit += CBRTHALFPI * tmp * a_inv_sq;
+    a_crit /= 6.0;
+
+    if delta_e + l_max - g_a_adh >= 0.0 {
+        let f_na = mdr_nonadhesive_force(g_a_adh, a_inv, e_eff, a_shape, b_shape);
+        let f_adhes = 2.0 * e_eff * (delta_e - g_a_adh) * active_a_adh;
+        return (f_na + f_adhes, active_a_adh);
+    }
+
+    if active_a_adh >= a_crit {
+        let mut a_tmp = active_a_adh;
+        for iter in 0..MDR_MAX_IT {
+            let radicand = 0.25 * b_sq - a_tmp * a_tmp;
+            if radicand <= 0.0 || a_tmp <= 0.0 {
+                a_tmp = 0.0;
+                break;
+            }
+            let fa_tmp = delta_e - 0.5 * a_shape + a_shape * radicand.sqrt() * b_inv;
+            let fa =
+                fa_tmp + (2.0 * std::f64::consts::PI * a_tmp * surface_energy * e_eff_inv).sqrt();
+            if fa.abs() < MDR_EPSILON1 {
+                break;
+            }
+            let mut dfda = -a_tmp * a_shape / (b_shape * radicand.sqrt());
+            dfda += surface_energy * SQRTHALFPI / (a_tmp * surface_energy * e_eff).sqrt();
+            let next = a_tmp - fa / dfda;
+            let fa2 =
+                fa_tmp + (2.0 * std::f64::consts::PI * next * surface_energy * e_eff_inv).sqrt();
+            a_tmp = next;
+            if (fa - fa2).abs() < MDR_EPSILON2 {
+                break;
+            }
+            if iter == MDR_MAX_IT - 1 {
+                a_tmp = 0.0;
+            }
+        }
+        active_a_adh = a_tmp;
+    }
+
+    if active_a_adh < a_crit || active_a_adh <= 0.0 {
+        active_a_adh = 0.0;
+        *a_adh = active_a_adh;
+        (0.0, active_a_adh)
+    } else {
+        let mut g_active =
+            0.5 * a_shape - a_shape * b_inv * (0.25 * b_sq - active_a_adh * active_a_adh).sqrt();
+        g_active = mdr_round_up_negative_epsilon(g_active);
+        let f_na = mdr_nonadhesive_force(g_active, a_inv, e_eff, a_shape, b_shape);
+        let f_adhes = 2.0 * e_eff * (delta_e - g_active) * active_a_adh;
+        *a_adh = active_a_adh;
+        (f_na + f_adhes, active_a_adh)
+    }
+}
+
 fn mdr_normal_force(
     delta: f64,
     r_i: f64,
@@ -246,7 +365,12 @@ fn mdr_normal_force(
             let a_shape = (4.0 * p_y / e_eff * a_max).max(1.0e-30);
             let b_shape = (2.0 * a_max).max(1.0e-30);
             let delta_e_max = 0.5 * a_shape;
-            let f_max = 0.25 * std::f64::consts::PI * e_eff * a_shape * b_shape;
+            // Match LAMMPS gran_sub_mod_normal.cpp lines 755-756 exactly:
+            // only the acos term is multiplied by E*A*B/4 before subtracting
+            // the second term.
+            let x = delta_e_max / a_shape;
+            let f_max = e_eff * (a_shape * b_shape * 0.25) * (1.0 - 2.0 * x).acos()
+                - (2.0 - 4.0 * x) * (x - x * x).max(0.0).sqrt();
             let z_r = radius - (side_delta_max - delta_e_max);
             let delta_r = (2.0 * a_max_sq * (poisson - 1.0)
                 - (2.0 * poisson - 1.0) * z_r * (-z_r + (a_max_sq + z_r * z_r).sqrt()))
@@ -259,27 +383,42 @@ fn mdr_normal_force(
             let delta_e = (side_delta - side_delta_max + delta_e_max + delta_r)
                 / (1.0 + delta_r / delta_e_max);
             stored[base + DELTAP] = side_delta_max - (delta_e_max + delta_r);
-            (a_shape, b_shape, delta_e.max(0.0).min(delta_e_max))
+            (a_shape, b_shape, delta_e)
         };
 
         let a_inv = 1.0 / a_shape;
-        let mut force = mdr_nonadhesive_force(delta_e, a_inv, e_eff, a_shape, b_shape);
         let a_contact = if delta_e > 0.0 {
             b_shape * (a_shape - delta_e).max(0.0).sqrt() * delta_e.sqrt() * a_inv
         } else {
             0.0
         };
 
-        if surface_energy > 0.0 {
-            if (side_delta - side_delta_max).abs() <= 1.0e-14 || a_contact >= stored[base + A_ADH] {
-                stored[base + A_ADH] = 0.99 * a_contact;
-            } else if stored[base + A_ADH] > 0.0 {
-                force -= 2.0 * std::f64::consts::PI * surface_energy * stored[base + A_ADH];
+        let force = if surface_energy > 0.0 {
+            let at_max_delta = (side_delta - side_delta_max).abs() <= 1.0e-14;
+            let (force, a_adh) = mdr_adhesive_force(
+                delta_e,
+                a_shape,
+                a_inv,
+                e_eff,
+                surface_energy,
+                b_shape,
+                a_contact,
+                &mut stored[base + A_ADH],
+                at_max_delta,
+            );
+            if a_adh > a_contact {
+                total_a_contact += a_adh;
+            } else {
+                total_a_contact += a_contact;
             }
-        }
+            force
+        } else {
+            stored[base + A_ADH] = a_contact;
+            total_a_contact += a_contact;
+            mdr_nonadhesive_force(delta_e, a_inv, e_eff, a_shape, b_shape)
+        };
 
         total_force += force;
-        total_a_contact += a_contact;
     }
 
     let mut force = 0.5 * total_force;
