@@ -53,9 +53,12 @@ monolayer (though that bench still **FAILs** its exponent gate — a genuine fin
 limitation confirmed cross-code against LAMMPS, see below), and let
 `bench_angle_of_repose` stand its
 heap on a real frictional floor wall. Two examples still use a **frozen partner**
-for legitimate reasons: `rolling_decay` needs a curved surface to define `r_eff`,
-and `oblique_impact` uses a sphere–sphere contact to exercise the *particle–particle*
-tangential model directly.
+for legitimate reasons: `oblique_impact` uses a sphere–sphere contact to exercise
+the *particle–particle* tangential model directly, and single-contact spin tests
+such as `bench_sds_rolling` and `bench_twisting_friction` use frozen anchors to
+isolate the rotational degree of freedom under a known normal load. `rolling_decay`
+no longer uses a frozen floor sphere: it now runs on a real flat wall, so
+`r_eff = R` exactly.
 
 ## `bench_plate_sinkage` — plate pressure-sinkage against Bekker and published parameters
 
@@ -458,11 +461,15 @@ held for the entire contact), covered by a 5 % tolerance; it still separates
 cleanly from the arithmetic mean. Equal density throughout, so `m*` varies through
 radius only.
 
-## `bench_rolling_decay` — rolling-resistance deceleration
+## `bench_rolling_decay` — flat-wall constant rolling-resistance deceleration
 
-A sphere set in pure rolling on a (locally flat) frozen floor sphere is decelerated by
-rolling resistance; for DIRT's constant-torque model the deceleration is
-`a = (5/7)·μ_r·g·(r_eff/R)`, constant in time.
+A sphere set in pure rolling on a real flat `[[wall]]` floor is decelerated by
+DIRT's `rolling_model = "constant"` wall rolling-resistance couple. With the
+Mindlin sliding spring enforcing the no-slip constraint and a flat wall giving
+`r_eff = R` exactly, the analytical deceleration is the constant
+`a = (5/7)·μ_r·g`. The sweep checks μ_r ∈ {0.02, 0.05, 0.10}; all three fitted
+rates match the exact line to below the 2 % gate and the slip stays below the
+1 % pure-rolling gate.
 
 ![Velocity decay](bench_rolling_decay/plots/velocity_decay.png)
 
@@ -471,13 +478,17 @@ constant-deceleration lines (dashed); pure rolling (v = ωR) held to < 1 % slip.
 
 ![Deceleration vs rolling friction](bench_rolling_decay/plots/deceleration_vs_mu_r.png)
 
-*Fitted deceleration vs μ_r on the `(5/7)μ_r g (r_eff/R)` line; DIRT (filled) and, when
-present, LAMMPS `rolling sds` (open). Within 5 %.*
+*Fitted deceleration vs μ_r on the `(5/7)μ_r g` flat-wall line; DIRT (filled) and,
+when present, LAMMPS `rolling sds` (open). The DIRT gate is 2 % against the
+constant-model analytical rate; the optional LAMMPS overlay/cross-code gate uses
+the saturated SDS cap on the same flat floor.*
 
 **Honest read:** largely **self-consistent** — the rate is derived from the same couple
 the code applies, so it confirms the integrator reproduces the model's own coefficient,
-not the rolling model vs experiment. The frozen sphere is legitimate here (it defines
-the curvature / `r_eff`). LAMMPS overlay is printed, not asserted.
+not the rolling model vs experiment. This benchmark covers the constant rolling model
+on wall contacts, not the particle-particle SDS rolling spring dynamics; the latter is
+covered separately by `bench_sds_rolling`. The optional LAMMPS comparison is a
+cross-code check against saturated `rolling sds`, not an independent experiment.
 
 ## `bench_sds_rolling` — SDS (spring-dashpot-slider) rolling model
 
@@ -512,6 +523,40 @@ Coulomb cap are. The springless control makes the elastic check discriminating (
 the spring term is dropped). The same SDS rolling model is documented in LAMMPS
 `pair_granular` (rolling `sds`); the analytical dynamics here are model-defining, not
 DIRT-specific.
+
+## `bench_twisting_friction` — constant and SDS twisting spin-down
+
+Two equal spheres are stacked on the contact normal: the lower sphere is frozen and
+the upper sphere is seated at the static Hertz overlap so `F_n = mg`, then spun
+purely about the normal. Because the contact point lies on the spin axis, there is
+no sliding or rolling; the only active couple is twisting friction. For equal
+spheres, `r_eff = R/2` and `I = (2/5)mR²`, so both twisting models are checked
+against the exact spin-down rate `α = (5/4)·μ_tw·g/R`.
+
+- **`constant` twisting** applies the Coulomb torsional couple directly.
+- **`sds` twisting** winds up its torsional spring-dashpot-slider, reaches the same
+  cap `τ_max = μ_tw F_n r_eff`, and is fitted after the short wind-up.
+
+The sweep covers μ_tw ∈ {0.05, 0.10, 0.20} for both models. PASS requires the fitted
+spin-down rate to match the analytical rate within 3 %, off-axis spin below 0.1 %
+of the initial spin, and lateral drift below 10 µm. The committed run reports all
+six fitted rates on the analytical line to round-off, with zero off-axis spin and
+zero lateral drift.
+
+![Twisting spin-down](bench_twisting_friction/plots/twist_spindown.png)
+
+*ω_z(t) for constant and SDS twisting on the analytical linear spin-down traces;
+the SDS cases are fitted after the brief spring wind-up.*
+
+![Twisting spin-down vs μ_tw](bench_twisting_friction/plots/spindown_vs_mu_tw.png)
+
+*Fitted spin-down rate vs μ_tw for both twisting models on
+`α = (5/4) μ_tw g / R`; latest committed result: PASS.*
+
+**Honest read:** self-consistent and deliberately narrow. This proves the twisting
+couple, saturation cap, torsional-history path, and purity of the normal-axis torque
+in an isolated enduring contact. It does not validate twisting friction against an
+external experiment, nor does it exercise arbitrary multi-contact spin histories.
 
 ## `bench_jkr_adhesion` — adhesive pull-off
 

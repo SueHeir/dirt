@@ -42,7 +42,9 @@ write-up — what each figure shows and exactly where each test is weak — live
 | `bench_hertz_rebound` | COR, contact duration, peak overlap for a sphere on a flat wall | Analytical + cross-code |
 | `bench_oblique_impact` | tangential rebound (Maw curve) | Analytical |
 | `bench_sliding_friction` | slip-to-roll transition on a frictional wall | Analytical |
-| `bench_rolling_decay` | rolling-resistance velocity decay | Analytical |
+| `bench_rolling_decay` | constant rolling-resistance velocity decay on a real flat wall | Analytical |
+| `bench_sds_rolling` | SDS rolling spring-dashpot and Coulomb-cap spin dynamics | Analytical |
+| `bench_twisting_friction` | constant and SDS twisting-friction spin-down | Analytical |
 | `bench_sphere_haff_cooling` / `bench_rod_haff_cooling` / `bench_clump_haff_cooling` | Haff's `T_g ∝ t⁻²` cooling for spheres, rods, and clumps | Analytical |
 | `bench_lebc_shear` | steady-shear rheology under Lees–Edwards boundaries | Analytical / law |
 | `bench_angle_of_repose` | repose angle vs. friction coefficient | Empirical |
@@ -58,6 +60,21 @@ These tests catch real bugs. The oblique-impact validation alone drove two
 contact-model fixes (a tangential damping-sign error injecting energy, and the
 requirement that a frozen contact partner also have its rotation frozen), and the
 rebound benchmark surfaced a mislabeled damping constant.
+
+Current rolling/twisting coverage is split deliberately. `bench_rolling_decay`
+checks the **constant** rolling model on a real flat wall (`r_eff = R`) against
+`a = (5/7) μ_r g`, with the committed `velocity_decay.png` and
+`deceleration_vs_mu_r.png` figures showing the fitted rates and optional LAMMPS
+`rolling sds` overlay. `bench_sds_rolling` covers the particle-particle SDS rolling
+spring and saturated cap separately. `bench_twisting_friction` covers both
+`constant` and `sds` twisting models on an isolated enduring contact; its committed
+`twist_spindown.png` and `spindown_vs_mu_tw.png` figures show all six fitted
+spin-down rates against `α = (5/4) μ_tw g / R`.
+
+Those rolling/twisting checks are analytical but mostly self-consistent: they
+verify that DIRT realizes the model-defined torque laws, saturation caps, and
+rotational degrees of freedom cleanly. They are not direct experimental validations
+of rolling or twisting friction coefficients.
 
 ## Calibration note: nominal vs. realized restitution
 
