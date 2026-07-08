@@ -28,8 +28,11 @@ use soil_core::AtomData;
 
 // ── ContactHistoryStore ─────────────────────────────────────────────────────
 
+/// Number of scalar history values stored for each active contact.
+pub const CONTACT_HISTORY_LEN: usize = 23;
+
 /// Fixed-width per-contact history payload; see [`ContactHistoryStore`] for slot meanings.
-pub type ContactHistory = [f64; 8];
+pub type ContactHistory = [f64; CONTACT_HISTORY_LEN];
 
 /// Per-contact spring displacement history for tangential, rolling, and twisting models.
 ///
@@ -40,7 +43,7 @@ pub type ContactHistory = [f64; 8];
 ///
 /// # Storage layout
 ///
-/// Each contact stores 8 `f64` displacement values:
+/// Each contact stores [`CONTACT_HISTORY_LEN`] `f64` displacement/history values:
 ///
 /// | Indices | Model              | Description                             |
 /// |---------|--------------------|-----------------------------------------|
@@ -48,10 +51,13 @@ pub type ContactHistory = [f64; 8];
 /// | `[3..6]`| SDS rolling        | Rolling spring displacement vector      |
 /// | `[6]`  | SDS twisting       | Twisting spring displacement (scalar)   |
 /// | `[7]`  | Mindlin rescale    | Previous contact radius `a = sqrt(R* delta)` |
+/// | `[8..]`| MDR normal         | LAMMPS-style per-side rigid-flat history |
 ///
 /// Rolling and twisting slots are zero when the constant-torque model is used.
+
+/// Per-contact spring and MDR normal history store.
 pub struct ContactHistoryStore {
-    /// Per-atom list of `(partner_tag, spring_displacement[7], active_flag)`.
+    /// Per-atom list of `(partner_tag, spring_displacement/history, active_flag)`.
     ///
     /// `active_flag` is reset to `false` before each pair loop and set to `true`
     /// when a contact is touched. Stale entries (broken contacts) are pruned after
@@ -100,14 +106,9 @@ impl AtomData for ContactHistoryStore {
             buf.push(list.len() as f64);
             for &(tag, ref s, _) in list {
                 buf.push(tag as f64);
-                buf.push(s[0]);
-                buf.push(s[1]);
-                buf.push(s[2]);
-                buf.push(s[3]);
-                buf.push(s[4]);
-                buf.push(s[5]);
-                buf.push(s[6]);
-                buf.push(s[7]);
+                for value in s {
+                    buf.push(*value);
+                }
             }
         } else {
             buf.push(0.0); // no contacts
@@ -119,33 +120,22 @@ impl AtomData for ContactHistoryStore {
         let mut list = Vec::with_capacity(count);
         let mut pos = 1;
         let old_seven_slot_format = buf.len() == 1 + count * 8;
+        let old_eight_slot_format = buf.len() == 1 + count * 9;
         for _ in 0..count {
             let tag = buf[pos] as u32;
-            let s = if old_seven_slot_format {
-                [
-                    buf[pos + 1],
-                    buf[pos + 2],
-                    buf[pos + 3],
-                    buf[pos + 4],
-                    buf[pos + 5],
-                    buf[pos + 6],
-                    buf[pos + 7],
-                    0.0,
-                ]
+            let mut s = [0.0; CONTACT_HISTORY_LEN];
+            if old_seven_slot_format {
+                s[..7].copy_from_slice(&buf[pos + 1..pos + 8]);
+                pos += 8;
+            } else if old_eight_slot_format {
+                s[..8].copy_from_slice(&buf[pos + 1..pos + 9]);
+                pos += 9;
             } else {
-                [
-                    buf[pos + 1],
-                    buf[pos + 2],
-                    buf[pos + 3],
-                    buf[pos + 4],
-                    buf[pos + 5],
-                    buf[pos + 6],
-                    buf[pos + 7],
-                    buf[pos + 8],
-                ]
-            };
+                s[..CONTACT_HISTORY_LEN]
+                    .copy_from_slice(&buf[pos + 1..pos + 1 + CONTACT_HISTORY_LEN]);
+                pos += 1 + CONTACT_HISTORY_LEN;
+            }
             list.push((tag, s, false));
-            pos += if old_seven_slot_format { 8 } else { 9 };
         }
         self.contacts.push(list);
         pos

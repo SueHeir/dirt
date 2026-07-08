@@ -256,5 +256,9 @@ name = "bench_hooke_rebound"
 path = "examples/bench_hooke_rebound/main.rs"
 
 [[example]]
+name = "bench_mdr_elastoplastic_normal"
+path = "examples/bench_mdr_elastoplastic_normal/main.rs"
+
+[[example]]
 name = "bench_hooke_wall_rebound"
 path = "examples/bench_hooke_wall_rebound/main.rs"

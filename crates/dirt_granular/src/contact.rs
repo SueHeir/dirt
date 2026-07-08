@@ -9,7 +9,7 @@
 //!
 //! | Component   | Models                                    |
 //! |-------------|-------------------------------------------|
-//! | Normal      | Hertz (nonlinear), Hooke (linear)         |
+//! | Normal      | Hertz (nonlinear), Hooke (linear), MDR (elastic-plastic) |
 //! | Tangential  | Mindlin incremental spring + Coulomb cap  |
 //! | Rolling     | Constant torque, SDS (spring-dashpot-slider) |
 //! | Twisting    | Constant torque, SDS (spring-dashpot-slider), Marshall (derived from tangential) |
@@ -28,7 +28,7 @@
 //!
 //! ```toml
 //! [materials]
-//! contact_model = "hertz"  # or "hooke"
+//! contact_model = "hertz"  # or "hooke" / "mdr"
 //! ```
 //!
 //! See the [crate-level documentation](crate) for the full material parameter list.
@@ -44,7 +44,7 @@ use soil_core::{
     VirialStressPlugin,
 };
 
-use crate::tangential::{ContactHistory, ContactHistoryStore};
+use crate::tangential::{ContactHistory, ContactHistoryStore, CONTACT_HISTORY_LEN};
 use crate::{LARGE_OVERLAP_WARN_THRESHOLD, MAX_OVERLAP_WARNINGS, SQRT_5_6, TANGENTIAL_EPSILON};
 
 fn is_mindlin_rescale(model: &str) -> bool {
@@ -59,7 +59,7 @@ fn is_mindlin_force_history(model: &str) -> bool {
 }
 
 fn zero_contact_history() -> ContactHistory {
-    [0.0; 8]
+    [0.0; CONTACT_HISTORY_LEN]
 }
 
 /// Fused Hertz normal + Mindlin tangential contact force plugin.
@@ -146,6 +146,304 @@ pub enum ForcePass {
     Interior,
     /// Boundary pairs only (does NOT reset, prunes at the end).
     Boundary,
+}
+
+fn mdr_nonadhesive_force(delta: f64, a_inv: f64, e_eff: f64, a: f64, b: f64) -> f64 {
+    if delta <= 0.0 || a <= 0.0 || b <= 0.0 {
+        return 0.0;
+    }
+    let x = (delta * a_inv).clamp(0.0, 1.0);
+    let root = (x - x * x).max(0.0).sqrt();
+    0.25 * e_eff * a * b * ((1.0 - 2.0 * x).acos() - (2.0 - 4.0 * x) * root)
+}
+
+fn mdr_round_up_negative_epsilon(value: f64) -> f64 {
+    if value < 0.0 && value > -1.0e-20 {
+        0.0
+    } else {
+        value
+    }
+}
+
+fn mdr_adhesive_force(
+    delta_e: f64,
+    a_shape: f64,
+    a_inv: f64,
+    e_eff: f64,
+    surface_energy: f64,
+    b_shape: f64,
+    a_na: f64,
+    a_adh: &mut f64,
+    at_max_delta: bool,
+) -> (f64, f64) {
+    // Direct transcription of LAMMPS GranSubModNormalMDR adhesive cases 1-3.
+    const A_FAC: f64 = 0.99;
+    const MDR_MAX_IT: usize = 100;
+    const MDR_EPSILON1: f64 = 1.0e-10;
+    const MDR_EPSILON2: f64 = 1.0e-16;
+    const CBRT2: f64 = 1.259_921_049_894_873_2;
+    const SQRTHALFPI: f64 = 1.253_314_137_315_500_1;
+    const CBRTHALFPI: f64 = 1.162_447_351_509_626_5;
+    const PITOFIVETHIRDS: f64 = 6.738_808_595_698_141;
+
+    let mut active_a_adh = (*a_adh).min(A_FAC * 0.5 * b_shape);
+    if at_max_delta || a_na >= active_a_adh {
+        let force = mdr_nonadhesive_force(delta_e, a_inv, e_eff, a_shape, b_shape);
+        *a_adh = A_FAC * a_na;
+        return (force, *a_adh);
+    }
+
+    let e_eff_inv = 1.0 / e_eff;
+    let b_inv = 1.0 / b_shape;
+    let b_sq = b_shape * b_shape;
+    let a_sq = a_shape * a_shape;
+    let a_inv_sq = a_inv * a_inv;
+
+    let l_max = (2.0 * std::f64::consts::PI * active_a_adh * surface_energy * e_eff_inv).sqrt();
+    let mut g_a_adh =
+        0.5 * a_shape - a_shape * b_inv * (0.25 * b_sq - active_a_adh * active_a_adh).sqrt();
+    g_a_adh = mdr_round_up_negative_epsilon(g_a_adh);
+
+    let gamma_sq = surface_energy * surface_energy;
+    let gamma3 = gamma_sq * surface_energy;
+    let gamma4 = gamma_sq * gamma_sq;
+    let e_eff_sq = e_eff * e_eff;
+    let e_eff_sq_inv = e_eff_inv * e_eff_inv;
+    let a4 = a_sq * a_sq;
+    let b4 = b_sq * b_sq;
+    let b6 = b4 * b_sq;
+    let disc = (27.0 * a4 * e_eff_sq * gamma_sq
+        - 4.0 * b_sq * gamma4 * std::f64::consts::PI * std::f64::consts::PI)
+        .max(0.0);
+    let mut tmp = 27.0 * a4 * b4 * surface_energy * e_eff_inv;
+    tmp -= 2.0 * b6 * gamma3 * std::f64::consts::PI * std::f64::consts::PI * e_eff_inv.powi(3);
+    tmp += 27.0_f64.sqrt() * a_sq * b4 * disc.sqrt() * e_eff_sq_inv;
+    tmp = tmp.cbrt();
+
+    let mut a_crit = -b_sq * surface_energy * std::f64::consts::PI * a_inv_sq * e_eff_inv;
+    a_crit += CBRT2 * b4 * gamma_sq * PITOFIVETHIRDS / (a_sq * e_eff_sq * tmp);
+    a_crit += CBRTHALFPI * tmp * a_inv_sq;
+    a_crit /= 6.0;
+
+    if delta_e + l_max - g_a_adh >= 0.0 {
+        let f_na = mdr_nonadhesive_force(g_a_adh, a_inv, e_eff, a_shape, b_shape);
+        let f_adhes = 2.0 * e_eff * (delta_e - g_a_adh) * active_a_adh;
+        return (f_na + f_adhes, active_a_adh);
+    }
+
+    if active_a_adh >= a_crit {
+        let mut a_tmp = active_a_adh;
+        for iter in 0..MDR_MAX_IT {
+            let radicand = 0.25 * b_sq - a_tmp * a_tmp;
+            if radicand <= 0.0 || a_tmp <= 0.0 {
+                a_tmp = 0.0;
+                break;
+            }
+            let fa_tmp = delta_e - 0.5 * a_shape + a_shape * radicand.sqrt() * b_inv;
+            let fa =
+                fa_tmp + (2.0 * std::f64::consts::PI * a_tmp * surface_energy * e_eff_inv).sqrt();
+            if fa.abs() < MDR_EPSILON1 {
+                break;
+            }
+            let mut dfda = -a_tmp * a_shape / (b_shape * radicand.sqrt());
+            dfda += surface_energy * SQRTHALFPI / (a_tmp * surface_energy * e_eff).sqrt();
+            let next = a_tmp - fa / dfda;
+            let fa2 =
+                fa_tmp + (2.0 * std::f64::consts::PI * next * surface_energy * e_eff_inv).sqrt();
+            a_tmp = next;
+            if (fa - fa2).abs() < MDR_EPSILON2 {
+                break;
+            }
+            if iter == MDR_MAX_IT - 1 {
+                a_tmp = 0.0;
+            }
+        }
+        active_a_adh = a_tmp;
+    }
+
+    if active_a_adh < a_crit || active_a_adh <= 0.0 {
+        active_a_adh = 0.0;
+        *a_adh = active_a_adh;
+        (0.0, active_a_adh)
+    } else {
+        let mut g_active =
+            0.5 * a_shape - a_shape * b_inv * (0.25 * b_sq - active_a_adh * active_a_adh).sqrt();
+        g_active = mdr_round_up_negative_epsilon(g_active);
+        let f_na = mdr_nonadhesive_force(g_active, a_inv, e_eff, a_shape, b_shape);
+        let f_adhes = 2.0 * e_eff * (delta_e - g_active) * active_a_adh;
+        *a_adh = active_a_adh;
+        (f_na + f_adhes, active_a_adh)
+    }
+}
+
+fn mdr_normal_force(
+    delta: f64,
+    r_i: f64,
+    r_j: f64,
+    e_eff: f64,
+    poisson: f64,
+    yield_stress: f64,
+    surface_energy: f64,
+    damping_prefactor: f64,
+    m_r: f64,
+    v_n: f64,
+    stored: &mut [f64; CONTACT_HISTORY_LEN],
+) -> (f64, f64, f64) {
+    // Mirrors LAMMPS GranSubModNormalMDR's particle-pair rigid-flat normal
+    // force path, but without apparent-radius, bulk/free-surface, or penalty
+    // state from fix GRANULAR/MDR.
+    const MDR_OVERLAP_LIMIT: f64 = 0.95;
+    const TOTAL_DELTAMAX: usize = 8;
+    const SIDE0: usize = 9;
+    const SIDE1: usize = 16;
+    const DELTA_PREV: usize = 0;
+    const DELTA_MAX_MDR: usize = 1;
+    const YFLAG: usize = 2;
+    const DELTA_Y: usize = 3;
+    const C_A: usize = 4;
+    const A_ADH: usize = 5;
+    const DELTAP: usize = 6;
+
+    let prev_delta = stored[TOTAL_DELTAMAX].min(delta);
+    if delta > stored[TOTAL_DELTAMAX] {
+        stored[TOTAL_DELTAMAX] = delta;
+    }
+    let delta_max = stored[TOTAL_DELTAMAX].max(delta);
+
+    let shear_mod = e_eff / (2.0 * (1.0 + poisson));
+    let mut total_force = 0.0;
+    let mut total_a_contact = 0.0;
+
+    for (side, base, radius, other_radius) in [(0, SIDE0, r_i, r_j), (1, SIDE1, r_j, r_i)] {
+        let mut side_delta = 0.0;
+        if delta_max > 0.0 && radius > 0.0 && other_radius > 0.0 {
+            let denom = 2.0 * (delta_max - radius - other_radius);
+            let opt1 = delta_max * (delta_max - 2.0 * other_radius) / denom;
+            let opt2 = delta_max * (delta_max - 2.0 * radius) / denom;
+            let mut delta_geo = if radius < other_radius {
+                opt1.max(opt2)
+            } else {
+                opt1.min(opt2)
+            };
+            let delta_geo_alt = if radius < other_radius {
+                opt1.min(opt2)
+            } else {
+                opt1.max(opt2)
+            };
+            if delta_geo / radius > MDR_OVERLAP_LIMIT {
+                delta_geo = radius * MDR_OVERLAP_LIMIT;
+            } else if delta_geo_alt / other_radius > MDR_OVERLAP_LIMIT {
+                delta_geo = delta_max - other_radius * MDR_OVERLAP_LIMIT;
+            }
+
+            let deltap_sum = stored[SIDE0 + DELTAP] + stored[SIDE1 + DELTAP];
+            side_delta = if (deltap_sum - delta_max).abs() > 1.0e-30 {
+                let deltap_side = if side == 0 {
+                    stored[SIDE0 + DELTAP]
+                } else {
+                    stored[SIDE1 + DELTAP]
+                };
+                delta_geo
+                    + (deltap_side - delta_geo) * (delta - delta_max) / (deltap_sum - delta_max)
+            } else {
+                delta_geo
+            };
+        }
+        side_delta = side_delta.max(0.0);
+
+        stored[base + DELTA_PREV] = side_delta;
+        if side_delta > stored[base + DELTA_MAX_MDR] {
+            stored[base + DELTA_MAX_MDR] = side_delta;
+        }
+        let side_delta_max = stored[base + DELTA_MAX_MDR].max(side_delta);
+        let p_y = yield_stress.max(0.0) * (1.75 * (-4.4 * side_delta_max / radius).exp() + 1.0);
+
+        if stored[base + YFLAG] == 0.0 && yield_stress > 0.0 && side_delta > 0.0 {
+            let p_hertz =
+                4.0 * e_eff * side_delta.sqrt() / (3.0 * std::f64::consts::PI * radius.sqrt());
+            if p_hertz > p_y {
+                stored[base + YFLAG] = 1.0;
+                stored[base + DELTA_Y] = side_delta;
+                stored[base + C_A] =
+                    std::f64::consts::PI * (side_delta * side_delta - side_delta * radius);
+            }
+        }
+
+        let (a_shape, b_shape, delta_e) = if stored[base + YFLAG] == 0.0 {
+            (4.0 * radius, 2.0 * radius, side_delta)
+        } else {
+            let c_a = stored[base + C_A];
+            let a_max_sq = (2.0 * side_delta_max * radius - side_delta_max * side_delta_max
+                + c_a / std::f64::consts::PI)
+                .max(1.0e-30);
+            let a_max = a_max_sq.sqrt();
+            let a_shape = (4.0 * p_y / e_eff * a_max).max(1.0e-30);
+            let b_shape = (2.0 * a_max).max(1.0e-30);
+            let delta_e_max = 0.5 * a_shape;
+            // Match LAMMPS gran_sub_mod_normal.cpp lines 755-756 exactly:
+            // only the acos term is multiplied by E*A*B/4 before subtracting
+            // the second term.
+            let x = delta_e_max / a_shape;
+            let f_max = e_eff * (a_shape * b_shape * 0.25) * (1.0 - 2.0 * x).acos()
+                - (2.0 - 4.0 * x) * (x - x * x).max(0.0).sqrt();
+            let z_r = radius - (side_delta_max - delta_e_max);
+            let delta_r = (2.0 * a_max_sq * (poisson - 1.0)
+                - (2.0 * poisson - 1.0) * z_r * (-z_r + (a_max_sq + z_r * z_r).sqrt()))
+                * f_max
+                / (2.0
+                    * std::f64::consts::PI
+                    * a_max_sq
+                    * shear_mod
+                    * (a_max_sq + z_r * z_r).sqrt());
+            let delta_e = (side_delta - side_delta_max + delta_e_max + delta_r)
+                / (1.0 + delta_r / delta_e_max);
+            stored[base + DELTAP] = side_delta_max - (delta_e_max + delta_r);
+            (a_shape, b_shape, delta_e)
+        };
+
+        let a_inv = 1.0 / a_shape;
+        let a_contact = if delta_e > 0.0 {
+            b_shape * (a_shape - delta_e).max(0.0).sqrt() * delta_e.sqrt() * a_inv
+        } else {
+            0.0
+        };
+
+        let force = if surface_energy > 0.0 {
+            let at_max_delta = (side_delta - side_delta_max).abs() <= 1.0e-14;
+            let (force, a_adh) = mdr_adhesive_force(
+                delta_e,
+                a_shape,
+                a_inv,
+                e_eff,
+                surface_energy,
+                b_shape,
+                a_contact,
+                &mut stored[base + A_ADH],
+                at_max_delta,
+            );
+            if a_adh > a_contact {
+                total_a_contact += a_adh;
+            } else {
+                total_a_contact += a_contact;
+            }
+            force
+        } else {
+            stored[base + A_ADH] = a_contact;
+            total_a_contact += a_contact;
+            mdr_nonadhesive_force(delta_e, a_inv, e_eff, a_shape, b_shape)
+        };
+
+        total_force += force;
+    }
+
+    let mut force = 0.5 * total_force;
+    let a_contact = 0.5 * total_a_contact;
+    let k_mdr = 2.0 * e_eff * a_contact.max(1.0e-30);
+    if damping_prefactor > 0.0 && delta > 0.0 && (delta >= prev_delta || force > 0.0) {
+        force -= damping_prefactor * (m_r * k_mdr).sqrt() * v_n;
+    }
+    let k_t = 8.0 * shear_mod * a_contact;
+    (force, k_mdr, k_t)
 }
 
 /// Standard system: compute the full Hertz-Mindlin contact force in one pass.
@@ -378,6 +676,7 @@ pub fn contact_force_core(
         let mu_r = material_table.rolling_friction_ij[mat_i][mat_j];
         let mu_tw = material_table.twisting_friction_ij[mat_i][mat_j];
         let cohesion_energy = material_table.cohesion_energy_ij[mat_i][mat_j];
+        let use_mdr = material_table.contact_model == "mdr";
 
         // JKR adhesion-only regime: gap exists but within pull-off distance
         // DMT has no adhesion-only regime (no force beyond contact)
@@ -427,30 +726,56 @@ pub fn contact_force_core(
 
         let v_n = vr_x * nx + vr_y * ny + vr_z * nz;
 
+        let tag_i = atoms.tag[i];
+        let tag_j = atoms.tag[j];
+        let sign: f64 = if tag_i < tag_j { 1.0 } else { -1.0 };
+
+        // Look up existing spring/history (single search, reused for write-back).
+        let entry_idx = history.contacts[i].iter().position(|(t, _, _)| *t == tag_j);
+        let mut stored = match entry_idx {
+            Some(idx) => history.contacts[i][idx].1,
+            None => zero_contact_history(),
+        };
+
         // ── Normal force ─────────────────────────────────────────────────
         // F_n > 0 → repulsive (along contact normal from i to j)
         // F_n < 0 → attractive (adhesion/cohesion pulls particles together)
-        let f_n_mag = if surface_energy > 0.0 && use_dmt {
+        let (f_n_mag, k_t) = if use_mdr {
+            let (f, _k_mdr, kt_mdr) = mdr_normal_force(
+                delta.max(0.0),
+                r1,
+                r2,
+                e_eff,
+                0.5 * (material_table.poisson_ratio[mat_i] + material_table.poisson_ratio[mat_j]),
+                material_table.mdr_yield_stress_ij[mat_i][mat_j],
+                surface_energy,
+                material_table.mdr_damping_ij[mat_i][mat_j],
+                m_r,
+                v_n,
+                &mut stored,
+            );
+            (f, kt_mdr)
+        } else if surface_energy > 0.0 && use_dmt {
             // DMT: Hertz contact + constant adhesive force F_dmt = 2π γ R*
             let f_dmt = 2.0 * std::f64::consts::PI * surface_energy * r_eff;
             let f_diss_n = 2.0 * beta * SQRT_5_6 * (s_n * m_r).sqrt() * v_n;
-            k_n * delta - f_diss_n - f_dmt
+            (k_n * delta - f_diss_n - f_dmt, k_t)
         } else if surface_energy > 0.0 {
             // JKR: adhesion force F_adh = 3/2 π γ R* (simplified explicit model)
             let f_adhesion = 1.5 * std::f64::consts::PI * surface_energy * r_eff;
             if jkr_adhesion_only {
                 // Gap regime (δ ≤ 0): pure adhesion, no Hertz contact or damping
-                -f_adhesion
+                (-f_adhesion, k_t)
             } else {
                 // Contact regime (δ > 0): Hertz repulsion + damping − adhesion
                 let f_diss_n = 2.0 * beta * SQRT_5_6 * (s_n * m_r).sqrt() * v_n;
-                k_n * delta - f_diss_n - f_adhesion
+                (k_n * delta - f_diss_n - f_adhesion, k_t)
             }
         } else if cohesion_energy > 0.0 {
             // SJKR: cohesion proportional to contact area A = π δ R*
             let f_diss_n = 2.0 * beta * SQRT_5_6 * (s_n * m_r).sqrt() * v_n;
             let f_cohesion = cohesion_energy * std::f64::consts::PI * delta * r_eff;
-            k_n * delta - f_diss_n - f_cohesion // can go negative (attractive)
+            (k_n * delta - f_diss_n - f_cohesion, k_t) // can go negative (attractive)
         } else {
             // Standard Hertz repulsion + viscoelastic damping. With
             // `limit_damping` (default) the total is clamped to ≥ 0 so damping
@@ -461,9 +786,9 @@ pub fn contact_force_core(
             let f_diss_n = 2.0 * beta * SQRT_5_6 * (s_n * m_r).sqrt() * v_n;
             let f_total = k_n * delta - f_diss_n;
             if material_table.limit_damping {
-                f_total.max(0.0)
+                (f_total.max(0.0), k_t)
             } else {
-                f_total
+                (f_total, k_t)
             }
         };
 
@@ -497,17 +822,6 @@ pub fn contact_force_core(
         let vt_x = vr_x - v_n * nx;
         let vt_y = vr_y - v_n * ny;
         let vt_z = vr_z - v_n * nz;
-
-        let tag_i = atoms.tag[i];
-        let tag_j = atoms.tag[j];
-        let sign: f64 = if tag_i < tag_j { 1.0 } else { -1.0 };
-
-        // Look up existing spring (single search, reused for write-back)
-        let entry_idx = history.contacts[i].iter().position(|(t, _, _)| *t == tag_j);
-        let stored = match entry_idx {
-            Some(idx) => history.contacts[i][idx].1,
-            None => zero_contact_history(),
-        };
 
         // Tangential spring displacement (history model). For the history-free
         // `linear_nohistory` model the spring is identically zero, so the force
@@ -822,16 +1136,15 @@ pub fn contact_force_core(
         }
 
         // Store updated spring back (canonical form) and mark active
-        let new_spring = [
-            sign * sx,
-            sign * sy,
-            sign * sz,
-            sign * roll_disp_x,
-            sign * roll_disp_y,
-            sign * roll_disp_z,
-            sign * twist_disp,
-            contact_radius,
-        ];
+        let mut new_spring = stored;
+        new_spring[0] = sign * sx;
+        new_spring[1] = sign * sy;
+        new_spring[2] = sign * sz;
+        new_spring[3] = sign * roll_disp_x;
+        new_spring[4] = sign * roll_disp_y;
+        new_spring[5] = sign * roll_disp_z;
+        new_spring[6] = sign * twist_disp;
+        new_spring[7] = contact_radius;
         match entry_idx {
             Some(idx) => {
                 history.contacts[i][idx].1 = new_spring;
@@ -1331,16 +1644,15 @@ pub fn hooke_contact_force(
             }
         }
 
-        let new_spring = [
-            sign * sx,
-            sign * sy,
-            sign * sz,
-            sign * roll_disp_x,
-            sign * roll_disp_y,
-            sign * roll_disp_z,
-            sign * twist_disp,
-            contact_radius,
-        ];
+        let mut new_spring = stored;
+        new_spring[0] = sign * sx;
+        new_spring[1] = sign * sy;
+        new_spring[2] = sign * sz;
+        new_spring[3] = sign * roll_disp_x;
+        new_spring[4] = sign * roll_disp_y;
+        new_spring[5] = sign * roll_disp_z;
+        new_spring[6] = sign * twist_disp;
+        new_spring[7] = contact_radius;
         match entry_idx {
             Some(idx) => {
                 history.contacts[i][idx].1 = new_spring;
@@ -1569,7 +1881,7 @@ mod tests {
                 .iter()
                 .find(|(t, _, _)| *t == 1)
                 .map(|(_, s, _)| *s)
-                .unwrap_or([0.0; 8]);
+                .unwrap_or([0.0; CONTACT_HISTORY_LEN]);
             (s[0] * s[0] + s[1] * s[1] + s[2] * s[2]).sqrt()
         };
 
@@ -2287,7 +2599,9 @@ mod tests {
 
             // Pre-load rolling displacement in contact history (canonical: tag 0 < tag 1, sign=+1)
             if preload_y != 0.0 {
-                hist.contacts[0].push((1, [0.0, 0.0, 0.0, 0.0, preload_y, 0.0, 0.0, 0.0], false));
+                let mut preload = [0.0; CONTACT_HISTORY_LEN];
+                preload[4] = preload_y;
+                hist.contacts[0].push((1, preload, false));
             }
 
             let mut neighbor = Neighbor::new();
@@ -2467,7 +2781,9 @@ mod tests {
             atom.natoms = 2;
 
             if preload != 0.0 {
-                hist.contacts[0].push((1, [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, preload, 0.0], false));
+                let mut preload_state = [0.0; CONTACT_HISTORY_LEN];
+                preload_state[6] = preload;
+                hist.contacts[0].push((1, preload_state, false));
             }
 
             let mut neighbor = Neighbor::new();
@@ -2559,7 +2875,9 @@ mod tests {
         atom.natoms = 2;
 
         if preload != 0.0 {
-            hist.contacts[0].push((1, [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, preload, 0.0], false));
+            let mut preload_state = [0.0; CONTACT_HISTORY_LEN];
+            preload_state[6] = preload;
+            hist.contacts[0].push((1, preload_state, false));
         }
 
         let mut neighbor = Neighbor::new();

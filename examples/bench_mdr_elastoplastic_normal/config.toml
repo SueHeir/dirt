@@ -1,0 +1,11 @@
+# Quasi-static two-sphere MDR normal-contact validation.
+radius = 0.005
+density = 2500.0
+youngs_mod = 7.0e7
+poisson_ratio = 0.30
+yield_stress = 1.0e5
+surface_energy = 20.0
+damping = 0.0
+max_overlap = 0.0012
+points_per_leg = 90
+output_csv = "examples/bench_mdr_elastoplastic_normal/data/mdr_trace.csv"

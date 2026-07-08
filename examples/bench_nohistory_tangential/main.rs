@@ -32,7 +32,7 @@
 
 use dirt_core::dirt_atom::{DemAtom, MaterialTable};
 use dirt_core::dirt_granular::contact::{contact_force_core, ForcePass};
-use dirt_core::dirt_granular::tangential::ContactHistoryStore;
+use dirt_core::dirt_granular::tangential::{ContactHistoryStore, CONTACT_HISTORY_LEN};
 use dirt_core::soil_core::{Atom, AtomDataRegistry, Neighbor};
 use serde::Deserialize;
 use std::fs;
@@ -169,7 +169,7 @@ fn run_model(mat: &MaterialCfg, sc: &ScenarioCfg, tangential_model: &str, out: &
                 .iter()
                 .find(|(t, _, _)| *t == 1)
                 .map(|(_, s, _)| *s)
-                .unwrap_or([0.0; 8]);
+                .unwrap_or([0.0; CONTACT_HISTORY_LEN]);
             (s[0] * s[0] + s[1] * s[1] + s[2] * s[2]).sqrt()
         };
 

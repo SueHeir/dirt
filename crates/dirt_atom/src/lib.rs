@@ -20,7 +20,7 @@
 //!
 //! ```toml
 //! [dem]
-//! contact_model = "hertz"  # "hertz" (default) or "hooke"
+//! contact_model = "hertz"  # "hertz" (default), "hooke", or "mdr"
 //!
 //! [[dem.materials]]
 //! name = "glass"
@@ -222,6 +222,20 @@ pub struct MaterialConfig {
     /// Twisting viscous damping coefficient for SDS twisting model.
     #[serde(default)]
     pub twisting_damping: f64,
+    /// Yield stress for the MDR elastic-plastic normal model (Pa).
+    #[serde(default)]
+    pub mdr_yield_stress: f64,
+    /// Critical free-surface ratio for the full LAMMPS MDR bulk branch.
+    ///
+    /// DIRT stores and documents this value for LAMMPS input parity. The current
+    /// pairwise MDR implementation does not update apparent particle radii or
+    /// activate the multi-contact bulk response, so this parameter is not used
+    /// in force evaluation yet.
+    #[serde(default)]
+    pub mdr_psi_b: f64,
+    /// Dimensionless MDR normal damping prefactor.
+    #[serde(default)]
+    pub mdr_damping: f64,
 }
 
 fn default_adhesion_model() -> String {
@@ -250,7 +264,7 @@ fn default_limit_damping() -> bool {
 pub struct DemConfig {
     /// List of material definitions, each corresponding to a `[[dem.materials]]` block.
     pub materials: Option<Vec<MaterialConfig>>,
-    /// Contact model: "hertz" (default) or "hooke".
+    /// Contact model: "hertz" (default), "hooke", or "mdr".
     #[serde(default = "default_contact_model")]
     pub contact_model: String,
     /// Adhesion model when `surface_energy > 0`: "jkr" (default) or "dmt".
@@ -508,6 +522,12 @@ pub struct MaterialTable {
     pub twisting_stiffness: Vec<f64>,
     /// Per-material twisting damping coefficient (SDS model).
     pub twisting_damping: Vec<f64>,
+    /// Per-material MDR yield stress (Pa).
+    pub mdr_yield_stress: Vec<f64>,
+    /// Per-material MDR critical free-surface ratio.
+    pub mdr_psi_b: Vec<f64>,
+    /// Per-material MDR damping prefactor.
+    pub mdr_damping: Vec<f64>,
     /// Per-pair rolling stiffness (harmonic mean).
     pub rolling_stiffness_ij: Vec<Vec<f64>>,
     /// Per-pair rolling damping (geometric mean).
@@ -516,6 +536,12 @@ pub struct MaterialTable {
     pub twisting_stiffness_ij: Vec<Vec<f64>>,
     /// Per-pair twisting damping (geometric mean).
     pub twisting_damping_ij: Vec<Vec<f64>>,
+    /// Per-pair MDR yield stress (geometric mean).
+    pub mdr_yield_stress_ij: Vec<Vec<f64>>,
+    /// Per-pair MDR critical free-surface ratio (arithmetic mean).
+    pub mdr_psi_b_ij: Vec<Vec<f64>>,
+    /// Per-pair MDR damping prefactor (geometric mean).
+    pub mdr_damping_ij: Vec<Vec<f64>>,
 }
 
 impl Default for MaterialTable {
@@ -591,10 +617,16 @@ impl MaterialTable {
             rolling_damping: Vec::new(),
             twisting_stiffness: Vec::new(),
             twisting_damping: Vec::new(),
+            mdr_yield_stress: Vec::new(),
+            mdr_psi_b: Vec::new(),
+            mdr_damping: Vec::new(),
             rolling_stiffness_ij: Vec::new(),
             rolling_damping_ij: Vec::new(),
             twisting_stiffness_ij: Vec::new(),
             twisting_damping_ij: Vec::new(),
+            mdr_yield_stress_ij: Vec::new(),
+            mdr_psi_b_ij: Vec::new(),
+            mdr_damping_ij: Vec::new(),
         }
     }
 
@@ -709,6 +741,51 @@ impl MaterialTable {
         twisting_stiffness: f64,
         twisting_damping: f64,
     ) -> u32 {
+        self.add_material_with_mdr(
+            name,
+            youngs_mod,
+            poisson_ratio,
+            restitution,
+            friction,
+            rolling_friction,
+            cohesion_energy,
+            surface_energy,
+            twisting_friction,
+            kn,
+            kt,
+            rolling_stiffness,
+            rolling_damping,
+            twisting_stiffness,
+            twisting_damping,
+            0.0,
+            0.0,
+            0.0,
+        )
+    }
+
+    /// Add a material with all fields including SDS and MDR parameters.
+    #[allow(clippy::too_many_arguments)]
+    pub fn add_material_with_mdr(
+        &mut self,
+        name: &str,
+        youngs_mod: f64,
+        poisson_ratio: f64,
+        restitution: f64,
+        friction: f64,
+        rolling_friction: f64,
+        cohesion_energy: f64,
+        surface_energy: f64,
+        twisting_friction: f64,
+        kn: f64,
+        kt: f64,
+        rolling_stiffness: f64,
+        rolling_damping: f64,
+        twisting_stiffness: f64,
+        twisting_damping: f64,
+        mdr_yield_stress: f64,
+        mdr_psi_b: f64,
+        mdr_damping: f64,
+    ) -> u32 {
         if cohesion_energy > 0.0 && surface_energy > 0.0 {
             eprintln!(
                 "ERROR: material '{}' has both cohesion_energy and surface_energy > 0. Use only one.",
@@ -732,6 +809,9 @@ impl MaterialTable {
         self.rolling_damping.push(rolling_damping);
         self.twisting_stiffness.push(twisting_stiffness);
         self.twisting_damping.push(twisting_damping);
+        self.mdr_yield_stress.push(mdr_yield_stress);
+        self.mdr_psi_b.push(mdr_psi_b);
+        self.mdr_damping.push(mdr_damping);
         idx
     }
 
@@ -760,6 +840,9 @@ impl MaterialTable {
         self.rolling_damping_ij = vec![vec![0.0; n]; n];
         self.twisting_stiffness_ij = vec![vec![0.0; n]; n];
         self.twisting_damping_ij = vec![vec![0.0; n]; n];
+        self.mdr_yield_stress_ij = vec![vec![0.0; n]; n];
+        self.mdr_psi_b_ij = vec![vec![0.0; n]; n];
+        self.mdr_damping_ij = vec![vec![0.0; n]; n];
         // Pad optional fields if old API was used
         while self.surface_energy.len() < n {
             self.surface_energy.push(0.0);
@@ -785,6 +868,15 @@ impl MaterialTable {
         while self.twisting_damping.len() < n {
             self.twisting_damping.push(0.0);
         }
+        while self.mdr_yield_stress.len() < n {
+            self.mdr_yield_stress.push(0.0);
+        }
+        while self.mdr_psi_b.len() < n {
+            self.mdr_psi_b.push(0.0);
+        }
+        while self.mdr_damping.len() < n {
+            self.mdr_damping.push(0.0);
+        }
         for i in 0..n {
             for j in 0..n {
                 // Geometric mean mixing for restitution
@@ -804,10 +896,10 @@ impl MaterialTable {
                 //     cross-check). A previous exact-COR-inversion mapping made
                 //     realized COR = nominal e, but that DISAGREED with LAMMPS's
                 //     Tsuji model by up to 0.067 — the bug this reconciles.
-                self.beta_ij[i][j] = if self.contact_model == "hertz" {
-                    hertz_beta_for_cor(e_ij)
-                } else {
+                self.beta_ij[i][j] = if self.contact_model == "hooke" {
                     -log_e / (PI * PI + log_e * log_e).sqrt()
+                } else {
+                    hertz_beta_for_cor(e_ij)
                 };
 
                 // Geometric mean mixing for friction
@@ -887,6 +979,12 @@ impl MaterialTable {
                 // SDS twisting damping (geometric mean)
                 self.twisting_damping_ij[i][j] =
                     (self.twisting_damping[i].max(0.0) * self.twisting_damping[j].max(0.0)).sqrt();
+
+                self.mdr_yield_stress_ij[i][j] =
+                    (self.mdr_yield_stress[i].max(0.0) * self.mdr_yield_stress[j].max(0.0)).sqrt();
+                self.mdr_psi_b_ij[i][j] = 0.5 * (self.mdr_psi_b[i] + self.mdr_psi_b[j]);
+                self.mdr_damping_ij[i][j] =
+                    (self.mdr_damping[i].max(0.0) * self.mdr_damping[j].max(0.0)).sqrt();
             }
         }
     }
@@ -985,6 +1083,9 @@ friction = 0.4
 # rolling_friction = 0.1      # rolling resistance coefficient (default 0.0 = disabled)
 # cohesion_energy = 0.05       # SJKR cohesion energy density J/m² (default 0.0 = disabled)
 # surface_energy = 0.05        # JKR/DMT surface energy J/m² (default 0.0 = disabled)
+# mdr_yield_stress = 1.0e5     # Pa, for contact_model = "mdr"
+# mdr_psi_b = 0.5              # parsed for LAMMPS MDR parity; bulk branch not yet active
+# mdr_damping = 0.0            # MDR normal damping prefactor
 # adhesion_model = "jkr"       # "jkr" (default) or "dmt" when surface_energy > 0
 
 # Additional materials can be added:
@@ -1024,7 +1125,7 @@ friction = 0.4
 
         if let Some(ref materials) = dem_config.materials {
             for mat in materials {
-                material_table.add_material_with_sds(
+                material_table.add_material_with_mdr(
                     &mat.name,
                     mat.youngs_mod,
                     mat.poisson_ratio,
@@ -1040,6 +1141,9 @@ friction = 0.4
                     mat.rolling_damping,
                     mat.twisting_stiffness,
                     mat.twisting_damping,
+                    mat.mdr_yield_stress,
+                    mat.mdr_psi_b,
+                    mat.mdr_damping,
                 );
             }
             material_table.build_pair_tables();
@@ -1186,6 +1290,9 @@ mod tests {
             rolling_damping: 0.0,
             twisting_stiffness: 0.0,
             twisting_damping: 0.0,
+            mdr_yield_stress: 0.0,
+            mdr_psi_b: 0.0,
+            mdr_damping: 0.0,
         }
     }
 
@@ -1204,18 +1311,36 @@ mod tests {
         let config = cfg("hooke", vec![mat("glass", 0.05)]);
         let msg = hooke_surface_energy_warning(&config)
             .expect("hooke + surface_energy>0 must produce a diagnostic");
-        assert!(msg.contains("surface_energy"), "must name the ignored field: {msg}");
-        assert!(msg.contains("glass"), "must name the offending material: {msg}");
+        assert!(
+            msg.contains("surface_energy"),
+            "must name the ignored field: {msg}"
+        );
+        assert!(
+            msg.contains("glass"),
+            "must name the offending material: {msg}"
+        );
         assert!(msg.contains("hertz"), "must point at the hertz path: {msg}");
-        assert!(msg.contains("hooke"), "must name the offending contact_model: {msg}");
+        assert!(
+            msg.contains("hooke"),
+            "must name the offending contact_model: {msg}"
+        );
     }
 
     #[test]
     fn warns_lists_all_offending_materials() {
-        let config = cfg("hooke", vec![mat("glass", 0.05), mat("dry", 0.0), mat("wet", 0.02)]);
+        let config = cfg(
+            "hooke",
+            vec![mat("glass", 0.05), mat("dry", 0.0), mat("wet", 0.02)],
+        );
         let msg = hooke_surface_energy_warning(&config).expect("diagnostic must fire");
-        assert!(msg.contains("glass") && msg.contains("wet"), "names all offenders: {msg}");
-        assert!(!msg.contains("dry"), "must not name a zero-surface_energy material: {msg}");
+        assert!(
+            msg.contains("glass") && msg.contains("wet"),
+            "names all offenders: {msg}"
+        );
+        assert!(
+            !msg.contains("dry"),
+            "must not name a zero-surface_energy material: {msg}"
+        );
     }
 
     #[test]

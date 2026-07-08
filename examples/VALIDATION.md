@@ -1091,6 +1091,20 @@ Recent benchmark work removed several former gaps from this list:
   contact-rich `2×1×1` / `2×2×1` run reproduces the `1×1×1` trajectory to the FP
   floor with momentum, energy, and atom count conserved.
 
+## `bench_mdr_elastoplastic_normal` — MDR elastic-plastic normal contact
+
+Exercises `contact_model = "mdr"` with a quasi-static two-sphere loading and
+unloading path. The executable drives DIRT's fused contact loop at prescribed
+overlaps and records the normal force. `sweep.py` compares the trace to the
+particle-pair rigid-flat equations in LAMMPS `GranSubModNormalMDR`:
+per-side placement, elastic loading, first yield, plastic unloading with
+`deltaR`, MDR contact-radius stiffness, and the adhesive tensile branch. The
+gate is `2e-10` relative or `1e-8 N` absolute.
+
+![MDR normal force trace](bench_mdr_elastoplastic_normal/plots/mdr_force_trace.png)
+
+Current result: PASS; maximum relative error `3.724e-13`.
+
 (Contact heat conduction was removed from the codebase, so it is no longer a gap; it
 will need a benchmark when re-added.)
 
@@ -1110,6 +1124,7 @@ will need a benchmark when re-added.)
 | twisting_friction | own-model torsional spin-down | analytical (self-consistent) | PASS; constant and SDS twisting spin-down match α=(5/4)μ_tw g/R to round-off; off-axis spin and drift remain zero |
 | jkr_adhesion | JKR pull-off | analytical (self-consistent) | PASS; measures its own constant force |
 | dmt_sjkr_cohesion | DMT pull-off 2πwR* / SJKR area law cπR*δ | analytical (self-consistent) | PASS; adds DMT+SJKR paths & 4/3 model-selection check |
+| mdr_elastoplastic_normal | LAMMPS MDR pair loading/yield/plastic-unloading trace | LAMMPS source equations | PASS; max relative error 3.724e-13; full LAMMPS apparent-radius/free-surface MDR state intentionally not included |
 | fiber_crossover | Coulomb limit μN | analytical (self-consistent) | PASS; ratio circular vs measured N |
 | bond_fiber_tensile | input Young's modulus via `K_n = E A / L` | analytical (self-consistent) | PASS; fitted E = 1.000050 GPa vs input 1.000001 GPa (0.005% error) |
 | bond_cantilever | Euler-Bernoulli uniform-load cantilever tip deflection | analytical | PASS; final tip deflection −9.476884e-07 m vs −9.535320e-07 m (0.61% error, 5% gate), 9/9 bonds present |

@@ -15,7 +15,7 @@
 
 use dirt_core::dirt_atom::{DemAtom, MaterialTable};
 use dirt_core::dirt_granular::contact::{contact_force_core, ForcePass};
-use dirt_core::dirt_granular::tangential::ContactHistoryStore;
+use dirt_core::dirt_granular::tangential::{ContactHistoryStore, CONTACT_HISTORY_LEN};
 use dirt_core::soil_core::{Atom, AtomDataRegistry, Neighbor};
 use serde::Deserialize;
 use std::fs;
@@ -134,7 +134,7 @@ fn run_model(mat: &MaterialCfg, sc: &ScenarioCfg, model: &str, out: &mut fs::Fil
             .iter()
             .find(|(t, _, _)| *t == 1)
             .map(|(_, s, _)| *s)
-            .unwrap_or([0.0; 8]);
+            .unwrap_or([0.0; CONTACT_HISTORY_LEN]);
         let hmag = (h[0] * h[0] + h[1] * h[1] + h[2] * h[2]).sqrt();
         let contact_radius = h[7];
 
