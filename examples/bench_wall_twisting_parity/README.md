@@ -28,3 +28,6 @@ RESULT: PASS (max_rel_err=0.00e+00)
 ```
 
 ![Wall twisting torque parity](plots/wall_twisting_parity.png)
+
+The figure compares measured torque with the plane-wall reference and shows the
+relative-error gate used by the benchmark (`max_rel_err < 1e-12`).

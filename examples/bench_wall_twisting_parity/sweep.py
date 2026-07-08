@@ -47,16 +47,40 @@ def graph():
     labels = [r["geometry"] for r in rows]
     measured = [r["torque_x"] for r in rows]
     expected = [r["expected_tau_x"] for r in rows]
+    rel_err = [r["rel_err"] for r in rows]
+    gate = 1.0e-12
 
-    fig, ax = plt.subplots(figsize=(7, 4))
+    fig, (ax, err_ax) = plt.subplots(
+        2,
+        1,
+        figsize=(7, 5.5),
+        sharex=True,
+        gridspec_kw={"height_ratios": [2.0, 1.15]},
+    )
     xs = range(len(rows))
     ax.bar([x - 0.18 for x in xs], measured, width=0.36, label="DIRT torque")
     ax.bar([x + 0.18 for x in xs], expected, width=0.36, label="plane-law reference")
-    ax.set_xticks(list(xs), labels)
     ax.set_ylabel("twisting torque x (N m)")
     ax.set_title("Wall twisting torque parity")
     ax.legend()
     ax.grid(axis="y", alpha=0.25)
+
+    err_ax.bar(xs, rel_err, width=0.5, color="#4c78a8", label="relative error")
+    err_ax.axhline(gate, color="#c43c39", linestyle="--", linewidth=1.5, label="PASS gate: 1e-12")
+    err_ax.set_xticks(list(xs), labels)
+    err_ax.set_ylabel("relative error")
+    err_ax.set_ylim(0.0, gate * 1.25)
+    err_ax.grid(axis="y", alpha=0.25)
+    err_ax.legend(loc="upper right")
+    err_ax.text(
+        0.01,
+        0.88,
+        f"{'PASS' if passed else 'FAIL'}: max rel. error = {max_err:.2e}",
+        transform=err_ax.transAxes,
+        ha="left",
+        va="top",
+        fontsize=9,
+    )
     fig.tight_layout()
     fig.savefig(os.path.join(PLOT_DIR, "wall_twisting_parity.png"), dpi=160)
 
