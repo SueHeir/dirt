@@ -140,7 +140,10 @@ pub fn main() {
 // Activated only for runs whose output dir contains "bending_plastic_guo" —
 // every other config gets a no-op.
 
-const F_PEAK: f64 = -0.6; // N, downward. Anchor moment F·L = 0.024 N·m, middle moment F·L/2 = 0.012 N·m vs M_p = 0.010 N·m — first ~half of the chain yields, tip deflection stays manageable.
+// Guo et al. 2018 Sec. 3.2 use F_t^0 = E_b I / (2 L_c^2).  For the
+// declarative bending_plastic_guo.toml geometry (E_b = 1 GPa, r_b = 1 mm,
+// L_c = 40 mm), that is 0.2454369 N downward.
+const F_PEAK: f64 = -0.2454369261;
 const T_RAMP: f64 = 5.0e-3; // ms-scale ramp so the load varies slowly compared to T_bend ≈ 5.5 ms.
 const T_HOLD_END: f64 = 15.0e-3; // 10 ms hold — ~2 bending periods, enough to reach static deflection.
 const T_UNLOAD_END: f64 = 20.0e-3; // 5 ms unload ramp.

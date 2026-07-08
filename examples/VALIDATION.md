@@ -1024,11 +1024,19 @@ interval on each bar is the relevant PASS band (0.5 % axial elastic, 5 % bending
 and axial plastic checks, 1 % bending-plastic cap). Latest regenerated run: PASS
 for all plotted checks.*
 
+![Guo/Curtis permanent bending profile](fiber_bond/plots/bending_plastic_permanent_profile.png)
+
+*Final unloaded profile after the three Guo/Curtis load steps. The shaded tail
+starts at the independent beam/FEM reference transition
+`x/L = 1 - M_p/(F_t^0 L) = 0.593`; the gate requires nonzero permanent set and
+tail curvature below 10% of the fixed-end peak. Latest regenerated run: PASS,
+tail curvature 3.82%.*
+
 **Honest read:** this is a deterministic mechanics validation for a short
 bonded-particle chain, not an experimental fiber-calibration study. The plastic
 axial case checks the configured piecewise envelope, while the bending-plastic
-case checks Guo's trilinear cap and kinematic-hardening trajectory for this
-single loading schedule.
+case checks Guo's trilinear yield law, kinematic-hardening trajectory, and
+permanent-deformation profile for this single loading schedule.
 
 ## `peri_dem_interop` — same-substrate peri-to-DEM handoff
 

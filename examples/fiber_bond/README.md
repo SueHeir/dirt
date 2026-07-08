@@ -31,7 +31,7 @@ python3 examples/fiber_bond/validate.py \
 | `cantilever_bending.toml`      | Cantilever bending  | `y(x) = F·x²·(3L−x)/(6·E_b·I)` (Guo Sec. 2.1) | PASS, ~0.6% error |
 | `bending_vibration.toml`       | Free bending vibration | `T = 1.787·L²·√(ρ_l/EI)` (Guo Eq. 18, discrete-mass form) | PASS, ~4.7% error |
 | `axial_plastic_piecewise.toml` | Axial plastic loading | Piecewise-linear hardening envelope (this code's config) | PASS, < 0.1% error |
-| `bending_plastic_guo.toml`     | Guo three-step bending plasticity (trilinear) | `|M_bend| ≤ M_p = (4/3)·σ_0·r_b³` (Guo Eq. 31); envelope follows Eqs. 27, 29, 32, 33, 35 | PASS, M traces all three trilinear regimes |
+| `bending_plastic_guo.toml`     | Guo three-step bending plasticity (trilinear) | `F_t^0 = E_b I/(2L_c²)` loading; permanent curvature confined before the Guo/FEM elastic tail (`x/L ≈ 0.593`) | PASS, tail curvature 3.82% of peak |
 
 ![fiber_bond measured-vs-reference summary](plots/fiber_bond_measured_vs_reference.png)
 
@@ -39,6 +39,14 @@ python3 examples/fiber_bond/validate.py \
 black interval on each bar is that scenario's PASS band. Latest regenerated run:
 PASS for axial elastic, cantilever bending, bending vibration, axial plastic, and
 bending plastic.*
+
+![Guo/Curtis permanent bending profile](plots/bending_plastic_permanent_profile.png)
+
+*Permanent unloaded deformation after the three Guo/Curtis load steps. The
+orange region is the independent beam/FEM reference tail from
+`x/L = 1 - M_p/(F_t^0 L)`, where Guo et al. report no permanent bending
+curvature; latest run PASS with tail curvature 3.82% of the fixed-end peak
+(limit 10%).*
 
 ## Breakage scenarios — see [`../fiber_bond_breakage`](../fiber_bond_breakage)
 
@@ -137,10 +145,12 @@ the generic `Piecewise` runtime variant. The same Piecewise return-map
 runs at every step.
 
 The `M(θ_bend)` hysteresis plot shows the DEM trajectory tracing the
-full trilinear envelope on the first monotonic loading: elastic slope,
-the elasto-plastic K_ep segment, then the perfectly-plastic plateau at
-M_p. On unloading the DEM returns along the elastic slope K_e —
-kinematic-hardening behaviour matching Guo Fig. 9 Path V.
+Guo trilinear envelope on the first monotonic loading: elastic slope followed
+by the elasto-plastic K_ep segment for the recorded middle bond. On unloading
+the DEM returns along the elastic slope K_e — kinematic-hardening behaviour
+matching Guo Fig. 9 Path III. The fixed-end portion carries the permanent set
+and the validator checks the unloaded profile against the Guo/FEM elastic-tail
+criterion from Figs. 11-12.
 
 Under repeated loading at the *same* peak force, plastic flow at any
 given bond happens only on cycle 1 — kinematic hardening leaves the

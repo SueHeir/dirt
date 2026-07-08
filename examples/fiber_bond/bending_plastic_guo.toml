@@ -15,10 +15,11 @@
 #     each cycle's unload — Guo's "permanent bending" (Fig. 11).
 #
 # Parameters:
-#   σ_0 = 7.5 MPa  →  M^p = (4/3)·7.5e6·(1e-3)³ = 1.0e-2 N·m
-#   F_peak = -0.5 N (set in `main.rs::F_PEAK`)
-#   M at middle bond on first elastic-trial load ≈ F·L_c/2 = 1.0e-2 N·m
-#   → just at yield, so the cycle drives the middle bond modestly past M^p.
+#   σ_0 = 3 MPa  →  M^p = (4/3)·3e6·(1e-3)³ = 4.0e-3 N·m
+#   F_peak = -E_b·I/(2·L_c²) = -0.2454369 N (Guo Sec. 3.2)
+#   M at the anchor on first elastic-trial load ≈ |F|·L_c = 9.82e-3 N·m,
+#   so the fixed-end bonds enter the fully plastic bending regime while the
+#   free-end portion remains elastic, matching Guo Fig. 12's qualitative split.
 #
 # The load schedule lives in the Rust binary
 # (`fiber_bond/main.rs::three_step_force_at`) and is gated by the output dir
