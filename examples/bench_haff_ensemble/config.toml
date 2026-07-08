@@ -1,0 +1,14 @@
+# Haff ensemble validation driver.
+# This is declarative metadata for the Python sweep; simulation inputs remain in
+# the three existing Haff example config.toml files.
+
+[ensemble]
+seeds = [0, 101]
+
+[theory_band]
+# Haff/Enskog theory for smooth monodisperse spheres is a sharper reference for
+# the sphere case. Rough multisphere bodies add rotational modes and an
+# approximate collision diameter, so their accepted band is intentionally wider.
+sphere = [0.5, 2.0]
+clump = [0.2, 5.0]
+rod = [0.2, 5.0]
