@@ -1,23 +1,108 @@
-[specimen]
-nx = 9
-ny = 18
-radius_m = 0.00036
-height_m = 0.1268
-width_m = 0.0634
-axial_strain_final = 0.0040
-steps = 240
+# Potyondy-Cundall-style BPM compression: reduced 3D bonded lattice.
+#
+# The example binary reads [potyondy_specimen], writes the particle CSV below,
+# then starts the normal DIRT app stack. Loading, bonding, breakage, and output
+# are all handled by DIRT plugins and the recorder in main.rs.
+
+[comm]
+processors_x = 1
+processors_y = 1
+processors_z = 1
+
+[domain]
+x_low = -0.010
+x_high = 0.010
+y_low = -0.017
+y_high = 0.017
+z_low = -0.004
+z_high = 0.004
+boundary_x = "fixed"
+boundary_y = "fixed"
+boundary_z = "fixed"
+
+[neighbor]
+skin_fraction = 1.2
+bin_size = 0.004
+every = 1
+sort_every = 0
+
+[dem]
+contact_model = "hertz"
+
+[[dem.materials]]
+name = "rock_bpm"
+youngs_mod = 70.9e9
 poisson_ratio = 0.237
+restitution = 0.40
+friction = 0.60
 
-[material]
-youngs_modulus_pa = 70.9e9
-macro_peak_strength_pa = 199.1e6
-target_failure_strain = 0.00281
-tensile_strength_pa = 172.0e6
-shear_strength_pa = 120.0e6
+[[particles.insert]]
+source = "file"
+file = "examples/bench_potyondy_cundall_bpm/data/specimen_particles.csv"
+format = "csv"
+material = "rock_bpm"
+radius = 0.001
+density = 2700.0
+columns = { x = 0, y = 1, z = 2 }
+
+[bonds]
+auto_bond = true
+bond_tolerance = 1.13
 bond_radius_ratio = 0.55
-
-[damage]
+youngs_modulus = 70.9e9
+shear_modulus = 28.7e9
+beta_normal = 0.65
+beta_shear = 0.65
+beta_twist = 0.65
+beta_bending = 0.65
 seed = 2004
-heterogeneity = 0.18
-bending_amplification = 0.15
-neighbor_softening = 0.10
+
+[bonds.breakage]
+kind = "combined_stress"
+tensile = { kind = "constant", value = 1.0e8 }
+
+[[group]]
+name = "bottom_platen"
+region = { type = "block", min = [-0.02, -0.0136, -0.01], max = [0.02, -0.0124, 0.01] }
+dynamic = false
+
+[[group]]
+name = "top_platen"
+region = { type = "block", min = [-0.02, 0.0124, -0.01], max = [0.02, 0.0136, 0.01] }
+dynamic = false
+
+[[freeze]]
+group = "bottom_platen"
+
+[[move_linear]]
+group = "top_platen"
+vx = 0.0
+vy = -0.10
+vz = 0.0
+
+[[viscous]]
+group = "all"
+gamma = 0.02
+
+[output]
+dir = "examples/bench_potyondy_cundall_bpm"
+
+[run]
+steps = 60000
+thermo = 5000
+dt = 2.0e-8
+
+[potyondy_specimen]
+nx = 7
+ny = 14
+spacing_m = 0.002
+radius_m = 0.001
+height_m = 0.026
+width_m = 0.014
+# Effective quasi-2D thickness. The reduced lattice has one particle layer in z;
+# this value normalizes its intact force/strain slope to Potyondy & Cundall
+# Table 2's PFC2D Young's modulus (70.9 GPa).
+thickness_m = 0.00052
+imperfection_m = 0.0
+compression_rate_m_s = 0.10
+record_every = 20

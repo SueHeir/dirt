@@ -1,275 +1,318 @@
 //! Potyondy-Cundall-style bonded-particle compression benchmark.
 //!
-//! This example keeps the specimen generator and reduced quasi-static loading
-//! model local to `examples/`.  The failure decision itself calls DIRT's
-//! `CombinedStress` breakage criterion each load increment, so the run exercises
-//! the Potyondy-Cundall extreme-fibre stress path outside of unit tests.
+//! The example runs a real DIRT bonded-particle specimen: particles are inserted
+//! from a generated lattice file, `DemBondPlugin` creates and breaks
+//! `CombinedStress` bonds, and this recorder derives axial stress and crack
+//! progression from the live bonded network.
 
-use dirt_core::dirt_bond::breakage::{
-    BondGeom, BondKinematics, BondLoads, BondThresholds, BreakMode, BreakageCriterion,
-    CombinedStress, ThresholdDistribution,
-};
+use dirt_core::dirt_atom::DemAtom;
+use dirt_core::dirt_bond::{BondConfig, BondMetrics};
+use dirt_core::dirt_fixes::FixesPlugin;
+use dirt_core::prelude::*;
+use dirt_core::soil_core::BondStore;
 use serde::Deserialize;
-use std::collections::HashSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::f64::consts::PI;
 use std::fs::{self, File};
-use std::io::Write as IoWrite;
+use std::io::{BufWriter, Write as IoWrite};
 
-#[derive(Deserialize)]
-struct Config {
-    specimen: Specimen,
-    material: Material,
-    damage: Damage,
-}
-
-#[derive(Deserialize)]
-struct Specimen {
+#[derive(Clone, Deserialize)]
+struct BenchSpec {
     nx: usize,
     ny: usize,
+    spacing_m: f64,
     radius_m: f64,
     height_m: f64,
     width_m: f64,
-    axial_strain_final: f64,
-    steps: usize,
-    poisson_ratio: f64,
+    thickness_m: f64,
+    imperfection_m: f64,
+    compression_rate_m_s: f64,
+    record_every: usize,
 }
 
-#[derive(Deserialize)]
-struct Material {
-    youngs_modulus_pa: f64,
-    macro_peak_strength_pa: f64,
-    target_failure_strain: f64,
-    tensile_strength_pa: f64,
-    shear_strength_pa: f64,
-    bond_radius_ratio: f64,
+impl BenchSpec {
+    fn from_argv() -> Self {
+        let args: Vec<String> = std::env::args().collect();
+        let cfg_path = args
+            .get(1)
+            .map(String::as_str)
+            .unwrap_or("examples/bench_potyondy_cundall_bpm/config.toml");
+        let text = fs::read_to_string(cfg_path).expect("read config");
+        let value: toml::Value = text.parse().expect("parse config");
+        let table = value
+            .get("potyondy_specimen")
+            .unwrap_or_else(|| panic!("{cfg_path} must contain [potyondy_specimen]"));
+        table.clone().try_into().expect("parse [potyondy_specimen]")
+    }
 }
 
-#[derive(Deserialize)]
-struct Damage {
-    seed: u64,
-    heterogeneity: f64,
-    bending_amplification: f64,
-    neighbor_softening: f64,
+struct Recorder {
+    spec: BenchSpec,
+    curve: Option<BufWriter<File>>,
+    cracks: Option<BufWriter<File>>,
+    initial_pos: BTreeMap<u32, [f64; 3]>,
+    top_tags: BTreeSet<u32>,
+    bottom_tags: BTreeSet<u32>,
+    live_bonds_last: BTreeSet<(u32, u32)>,
+    initialized: bool,
 }
 
-#[derive(Clone)]
-struct Particle {
-    x: f64,
-    y: f64,
-}
-
-struct Bond {
-    a: usize,
-    b: usize,
-    l0: f64,
-    nx: f64,
-    ny: f64,
-    threshold_scale: f64,
-    alive: bool,
+impl Recorder {
+    fn new(spec: BenchSpec) -> Self {
+        Self {
+            spec,
+            curve: None,
+            cracks: None,
+            initial_pos: BTreeMap::new(),
+            top_tags: BTreeSet::new(),
+            bottom_tags: BTreeSet::new(),
+            live_bonds_last: BTreeSet::new(),
+            initialized: false,
+        }
+    }
 }
 
 fn main() {
-    let args: Vec<String> = std::env::args().collect();
-    let cfg_path = args
-        .get(1)
-        .map(String::as_str)
-        .unwrap_or("examples/bench_potyondy_cundall_bpm/config.toml");
-    let cfg: Config =
-        toml::from_str(&fs::read_to_string(cfg_path).expect("read config")).expect("parse config");
+    let spec = BenchSpec::from_argv();
+    write_specimen_particles(&spec);
 
-    let out_dir = "examples/bench_potyondy_cundall_bpm/data";
-    fs::create_dir_all(out_dir).expect("create data dir");
-    let mut curve = File::create(format!("{out_dir}/dirt_stress_strain.csv")).expect("curve csv");
-    let mut cracks = File::create(format!("{out_dir}/dirt_cracks.csv")).expect("crack csv");
+    let mut app = App::new();
+    app.add_plugins(CorePlugins)
+        .add_plugins(GranularDefaultPlugins)
+        .add_plugins(FixesPlugin)
+        .add_plugins(DemBondPlugin);
+
+    app.add_resource(Recorder::new(spec));
+    app.add_update_system(
+        record_compression_state,
+        ParticleSimScheduleSet::PostFinalIntegration,
+    );
+    app.start();
+}
+
+fn write_specimen_particles(spec: &BenchSpec) {
+    assert!(
+        spec.spacing_m >= 2.0 * spec.radius_m,
+        "specimen spacing must not overlap particles"
+    );
+    let out = "examples/bench_potyondy_cundall_bpm/data/specimen_particles.csv";
+    fs::create_dir_all("examples/bench_potyondy_cundall_bpm/data").expect("create data dir");
+    let mut w = BufWriter::new(File::create(out).expect("create specimen particle csv"));
+    for j in 0..spec.ny {
+        let y = -0.5 * spec.height_m + (j as f64) * spec.spacing_m;
+        let stagger = if j % 2 == 0 {
+            0.0
+        } else {
+            0.5 * spec.spacing_m
+        };
+        for i in 0..spec.nx {
+            let x = -0.5 * spec.width_m + (i as f64) * spec.spacing_m + stagger;
+            let z = spec.imperfection_m * ((i * 17 + j * 31) as f64).sin();
+            writeln!(w, "{x:.9},{y:.9},{z:.9}").expect("write particle");
+        }
+    }
+}
+
+fn init_recorder(
+    atoms: &Atom,
+    registry: &AtomDataRegistry,
+    input: &Input,
+    recorder: &mut Recorder,
+) -> bool {
+    let Some(bonds) = registry.get::<BondStore>() else {
+        return false;
+    };
+    if bonds.bonds.is_empty() {
+        return false;
+    }
+
+    let out_dir = input
+        .output_dir
+        .clone()
+        .unwrap_or_else(|| "examples/bench_potyondy_cundall_bpm".to_string());
+    fs::create_dir_all(format!("{out_dir}/data")).expect("create output data dir");
+    let mut curve = BufWriter::new(
+        File::create(format!("{out_dir}/data/dirt_stress_strain.csv")).expect("curve csv"),
+    );
+    let mut cracks =
+        BufWriter::new(File::create(format!("{out_dir}/data/dirt_cracks.csv")).expect("crack csv"));
     writeln!(
         curve,
-        "step,strain,stress_pa,stress_norm,intact_bonds,broken_bonds"
+        "step,strain,stress_pa,stress_norm,intact_bonds,broken_bonds,crossing_bonds"
     )
     .unwrap();
-    writeln!(cracks, "step,strain,x_m,y_m,mode").unwrap();
+    writeln!(cracks, "step,strain,x_m,y_m,z_m,mode").unwrap();
 
-    let particles = make_specimen(&cfg.specimen);
-    let mut bonds = make_bonds(&particles, &cfg);
-    let initial_bonds = bonds.len();
-    let criterion = CombinedStress {
-        tensile: ThresholdDistribution::Constant {
-            value: cfg.material.tensile_strength_pa,
-        },
-        shear: Some(ThresholdDistribution::Constant {
-            value: cfg.material.shear_strength_pa,
-        }),
+    let nlocal = atoms.nlocal as usize;
+    let mut y_min = f64::INFINITY;
+    let mut y_max = f64::NEG_INFINITY;
+    for i in 0..nlocal {
+        y_min = y_min.min(atoms.pos[i][1] as f64);
+        y_max = y_max.max(atoms.pos[i][1] as f64);
+        recorder.initial_pos.insert(
+            atoms.tag[i],
+            [
+                atoms.pos[i][0] as f64,
+                atoms.pos[i][1] as f64,
+                atoms.pos[i][2] as f64,
+            ],
+        );
+    }
+    let row_tol = 0.51 * recorder.spec.spacing_m;
+    for i in 0..nlocal {
+        let y = atoms.pos[i][1] as f64;
+        if (y - y_min).abs() <= row_tol {
+            recorder.bottom_tags.insert(atoms.tag[i]);
+        }
+        if (y - y_max).abs() <= row_tol {
+            recorder.top_tags.insert(atoms.tag[i]);
+        }
+    }
+    recorder.live_bonds_last = live_bond_set(atoms, &bonds);
+    recorder.curve = Some(curve);
+    recorder.cracks = Some(cracks);
+    recorder.initialized = true;
+    true
+}
+
+fn live_bond_set(atoms: &Atom, bonds: &BondStore) -> BTreeSet<(u32, u32)> {
+    let mut set = BTreeSet::new();
+    let nlocal = atoms.nlocal as usize;
+    for i in 0..nlocal.min(bonds.bonds.len()) {
+        let tag_i = atoms.tag[i];
+        for b in &bonds.bonds[i] {
+            let a = tag_i.min(b.partner_tag);
+            let c = tag_i.max(b.partner_tag);
+            set.insert((a, c));
+        }
+    }
+    set
+}
+
+fn avg_y_for_tags(atoms: &Atom, tags: &BTreeSet<u32>) -> Option<f64> {
+    let nlocal = atoms.nlocal as usize;
+    let mut sum = 0.0;
+    let mut n = 0usize;
+    for i in 0..nlocal {
+        if tags.contains(&atoms.tag[i]) {
+            sum += atoms.pos[i][1] as f64;
+            n += 1;
+        }
+    }
+    (n > 0).then_some(sum / n as f64)
+}
+
+fn tag_index(atoms: &Atom, tag: u32) -> Option<usize> {
+    (0..atoms.nlocal as usize).find(|&i| atoms.tag[i] == tag)
+}
+
+fn record_compression_state(
+    atoms: Res<Atom>,
+    registry: Res<AtomDataRegistry>,
+    bond_config: Res<BondConfig>,
+    bond_metrics: Res<BondMetrics>,
+    run_state: Res<RunState>,
+    input: Res<Input>,
+    mut recorder: ResMut<Recorder>,
+) {
+    if !recorder.initialized && !init_recorder(&atoms, &registry, &input, &mut recorder) {
+        return;
+    }
+
+    let step = run_state.total_cycle;
+    if step % recorder.spec.record_every != 0 {
+        return;
+    }
+
+    let Some(bonds) = registry.get::<BondStore>() else {
+        return;
+    };
+    let Some(dem) = registry.get::<DemAtom>() else {
+        return;
     };
 
-    let mut peak_stress = 0.0;
-    let mut peak_strain = 0.0;
-    let mut first_break_strain = None;
-    let mut broken_total = 0usize;
+    let y_bottom =
+        avg_y_for_tags(&atoms, &recorder.bottom_tags).unwrap_or(-0.5 * recorder.spec.height_m);
+    let y_top = avg_y_for_tags(&atoms, &recorder.top_tags).unwrap_or(0.5 * recorder.spec.height_m);
+    let strain = (step as f64 * atoms.dt * recorder.spec.compression_rate_m_s
+        / recorder.spec.height_m)
+        .max(0.0);
+    let section_area = recorder.spec.width_m * recorder.spec.thickness_m;
+    let mid_y = 0.5 * (y_top + y_bottom);
+    let mut axial_force = 0.0;
+    let mut crossing_bonds = 0usize;
 
-    for step in 0..=cfg.specimen.steps {
-        let strain = cfg.specimen.axial_strain_final * (step as f64) / (cfg.specimen.steps as f64);
-        let mut broken_this_step: Vec<(f64, f64, BreakMode)> = Vec::new();
-        let broken_neighborhood = broken_neighbor_counts(&bonds);
-
-        for idx in 0..bonds.len() {
-            if !bonds[idx].alive {
+    let nlocal = atoms.nlocal as usize;
+    for i in 0..nlocal.min(bonds.bonds.len()) {
+        let yi = atoms.pos[i][1] as f64;
+        for b in &bonds.bonds[i] {
+            if atoms.tag[i] > b.partner_tag {
                 continue;
             }
-            let softening = 1.0
-                - cfg.damage.neighbor_softening
-                    * (broken_neighborhood[idx] as f64 / 4.0).clamp(0.0, 1.0);
-            let axial_strain = strain * bonds[idx].ny * bonds[idx].ny
-                - cfg.specimen.poisson_ratio * strain * bonds[idx].nx * bonds[idx].nx;
-            let tensile_strain = axial_strain.max(0.0);
-            let area = PI * (cfg.material.bond_radius_ratio * cfg.specimen.radius_m).powi(2);
-            let iben = PI * (cfg.material.bond_radius_ratio * cfg.specimen.radius_m).powi(4) / 4.0;
-            let r_b = cfg.material.bond_radius_ratio * cfg.specimen.radius_m;
-            let bending_stress =
-                cfg.damage.bending_amplification * cfg.material.macro_peak_strength_pa * strain
-                    / cfg.material.target_failure_strain
-                    * (1.0 - bonds[idx].ny.abs())
-                    * (1.0 + broken_neighborhood[idx] as f64);
-            let geom = BondGeom {
-                r_b,
-                area,
-                iben,
-                jpol: 2.0 * iben,
-                l0: bonds[idx].l0,
+            let Some(j) = tag_index(&atoms, b.partner_tag) else {
+                continue;
             };
-            let loads = BondLoads {
-                f_n: cfg.material.youngs_modulus_pa * tensile_strain * area,
-                f_t_mag: 0.15
-                    * cfg.material.youngs_modulus_pa
-                    * strain
-                    * area
-                    * bonds[idx].nx.abs(),
-                m_bend_mag: bending_stress * iben / r_b,
-                m_tor_mag: 0.0,
-            };
-            let kin = BondKinematics {
-                eps_axial: tensile_strain,
-                gamma_shear: strain * bonds[idx].nx.abs() * bonds[idx].ny.abs(),
-                kappa_bend: 0.0,
-                kappa_tor: 0.0,
-            };
-            let thr = BondThresholds {
-                t: [
-                    cfg.material.tensile_strength_pa * bonds[idx].threshold_scale * softening,
-                    cfg.material.shear_strength_pa * bonds[idx].threshold_scale * softening,
-                    0.0,
-                    0.0,
-                ],
-            };
-            if let Some(mode) = criterion.check(&geom, &loads, &kin, &thr) {
-                bonds[idx].alive = false;
-                let a = &particles[bonds[idx].a];
-                let b = &particles[bonds[idx].b];
-                broken_this_step.push(((a.x + b.x) * 0.5, (a.y + b.y) * 0.5, mode));
+            let yj = atoms.pos[j][1] as f64;
+            if (yi - mid_y) * (yj - mid_y) > 0.0 {
+                continue;
             }
-        }
-
-        if first_break_strain.is_none() && !broken_this_step.is_empty() {
-            first_break_strain = Some(strain);
-        }
-        broken_total += broken_this_step.len();
-        for (x, y, mode) in broken_this_step {
-            let mode = match mode {
-                BreakMode::Tensile => "tensile",
-                BreakMode::Shear => "shear",
-                BreakMode::Interaction => "interaction",
+            let dx = atoms.pos[j][0] as f64 - atoms.pos[i][0] as f64;
+            let dy = atoms.pos[j][1] as f64 - atoms.pos[i][1] as f64;
+            let dz = atoms.pos[j][2] as f64 - atoms.pos[i][2] as f64;
+            let dist = (dx * dx + dy * dy + dz * dz).sqrt().max(f64::MIN_POSITIVE);
+            let r_i = dem.radius[i];
+            let r_j = dem.radius[j];
+            let r_b = bond_config.bond_radius_ratio * r_i.min(r_j);
+            let area = PI * r_b * r_b;
+            let k_n = match bond_config.youngs_modulus {
+                Some(e) => e * area / b.r0,
+                None => bond_config.normal_stiffness,
             };
-            writeln!(cracks, "{step},{strain:.9},{x:.9},{y:.9},{mode}").unwrap();
+            let f_n = k_n * (dist - b.r0);
+            axial_force += (f_n * dy / dist).abs();
+            crossing_bonds += 1;
         }
+    }
 
-        let damage = broken_total as f64 / initial_bonds as f64;
-        let elastic = cfg.material.youngs_modulus_pa * strain;
-        let softening = (1.0 - damage).powf(1.35);
-        let stress = elastic.min(cfg.material.macro_peak_strength_pa) * softening;
-        if stress > peak_stress {
-            peak_stress = stress;
-            peak_strain = strain;
+    let stress = if crossing_bonds > 0 {
+        axial_force / section_area
+    } else {
+        0.0
+    };
+    let live_now = live_bond_set(&atoms, &bonds);
+    let broken_bonds = bond_metrics.total_bonds_broken;
+
+    let newly_broken: Vec<(u32, u32)> = recorder
+        .live_bonds_last
+        .difference(&live_now)
+        .copied()
+        .collect();
+    for (a, b) in newly_broken {
+        let pa = recorder.initial_pos.get(&a).copied().unwrap_or([0.0; 3]);
+        let pb = recorder.initial_pos.get(&b).copied().unwrap_or([0.0; 3]);
+        if let Some(ref mut w) = recorder.cracks {
+            writeln!(
+                w,
+                "{step},{strain:.9},{:.9},{:.9},{:.9},combined_stress",
+                0.5 * (pa[0] + pb[0]),
+                0.5 * (pa[1] + pb[1]),
+                0.5 * (pa[2] + pb[2])
+            )
+            .ok();
         }
+    }
+    recorder.live_bonds_last = live_now;
+
+    let live_bond_count = recorder.live_bonds_last.len();
+    if let Some(ref mut w) = recorder.curve {
         writeln!(
-            curve,
-            "{step},{strain:.9},{stress:.6},{:.9},{},{}",
-            stress / cfg.material.macro_peak_strength_pa,
-            initial_bonds - broken_total,
-            broken_total
+            w,
+            "{step},{strain:.9},{stress:.6},{:.9},{},{},{}",
+            stress / 199.1e6,
+            live_bond_count,
+            broken_bonds,
+            crossing_bonds
         )
-        .unwrap();
+        .ok();
     }
-
-    println!(
-        "bench_potyondy_cundall_bpm: particles={} bonds={} peak={:.3} MPa strain={:.5} first_break={:.5} broken={}",
-        particles.len(),
-        initial_bonds,
-        peak_stress / 1.0e6,
-        peak_strain,
-        first_break_strain.unwrap_or(0.0),
-        broken_total
-    );
-}
-
-fn make_specimen(s: &Specimen) -> Vec<Particle> {
-    let mut particles = Vec::new();
-    for j in 0..s.ny {
-        for i in 0..s.nx {
-            let stagger = if j % 2 == 0 { 0.0 } else { 0.5 };
-            let x = ((i as f64 + stagger) / (s.nx as f64 - 0.5) - 0.5) * s.width_m;
-            let y = (j as f64 / (s.ny as f64 - 1.0) - 0.5) * s.height_m;
-            particles.push(Particle { x, y });
-        }
-    }
-    particles
-}
-
-fn make_bonds(particles: &[Particle], cfg: &Config) -> Vec<Bond> {
-    let mut bonds = Vec::new();
-    let cutoff = 1.25
-        * ((cfg.specimen.width_m / (cfg.specimen.nx as f64))
-            .hypot(cfg.specimen.height_m / (cfg.specimen.ny as f64)));
-    for a in 0..particles.len() {
-        for b in (a + 1)..particles.len() {
-            let dx = particles[b].x - particles[a].x;
-            let dy = particles[b].y - particles[a].y;
-            let l0 = dx.hypot(dy);
-            if l0 <= cutoff {
-                let u = hash01(cfg.damage.seed ^ ((a as u64) << 32) ^ b as u64);
-                let scale = 1.0 + cfg.damage.heterogeneity * (2.0 * u - 1.0);
-                bonds.push(Bond {
-                    a,
-                    b,
-                    l0,
-                    nx: dx / l0,
-                    ny: dy / l0,
-                    threshold_scale: scale,
-                    alive: true,
-                });
-            }
-        }
-    }
-    bonds
-}
-
-fn broken_neighbor_counts(bonds: &[Bond]) -> Vec<usize> {
-    let mut broken_at_particle = HashSet::new();
-    for b in bonds {
-        if !b.alive {
-            broken_at_particle.insert(b.a);
-            broken_at_particle.insert(b.b);
-        }
-    }
-    bonds
-        .iter()
-        .map(|b| {
-            usize::from(broken_at_particle.contains(&b.a))
-                + usize::from(broken_at_particle.contains(&b.b))
-        })
-        .collect()
-}
-
-fn hash01(mut x: u64) -> f64 {
-    x = x.wrapping_add(0x9E37_79B9_7F4A_7C15);
-    x = (x ^ (x >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
-    x = (x ^ (x >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
-    ((x ^ (x >> 31)) as f64) / (u64::MAX as f64)
 }

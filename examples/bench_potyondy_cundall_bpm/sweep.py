@@ -78,7 +78,7 @@ def validate_and_plot():
         [r["strain"] / TARGET_FAILURE_STRAIN for r in rows],
         [r["stress_norm"] for r in rows],
         lw=2.2,
-        label="DIRT reduced BPM specimen",
+        label="DIRT live BPM compression",
     )
     ax0.plot(
         [r["strain_norm"] for r in target],
