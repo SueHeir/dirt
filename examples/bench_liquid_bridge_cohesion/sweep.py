@@ -113,6 +113,43 @@ def start_dry_identity():
         ])
 
 
+def start_invalid_model_rejected():
+    case_root = os.path.join(SWEEP_DIR, "invalid_model")
+    os.makedirs(case_root, exist_ok=True)
+    base = open(os.path.join(SCRIPT_DIR, "config.toml")).read()
+    bad = base.replace('liquid_bridge_model = "willett2000"', 'liquid_bridge_model = "willet2000"')
+    bad = bad.replace(
+        'dir = "examples/bench_liquid_bridge_cohesion"',
+        f'dir = "{case_root}"',
+    )
+    path = os.path.join(case_root, "config.toml")
+    with open(path, "w") as f:
+        f.write(bad)
+    cmd = [
+        "cargo",
+        "run",
+        "--release",
+        "--example",
+        "bench_liquid_bridge_cohesion",
+        "--no-default-features",
+        "--features",
+        "precision-double",
+        "--",
+        path,
+    ]
+    print("+", " ".join(cmd), flush=True)
+    result = subprocess.run(cmd, cwd=REPO_ROOT, text=True, capture_output=True)
+    combined = result.stdout + result.stderr
+    if result.returncode == 0:
+        raise SystemExit("invalid liquid_bridge_model typo unexpectedly exited 0")
+    if "liquid_bridge_model" not in combined or "willet2000" not in combined:
+        raise SystemExit(
+            "invalid liquid_bridge_model error must name the field and bad value; "
+            f"got returncode={result.returncode}, output:\n{combined}"
+        )
+    print("invalid_model: rejected bad liquid_bridge_model -> PASS")
+
+
 REPOSE_TEMPLATE = """\
 [comm]
 processors_x = 1
@@ -372,6 +409,7 @@ def main():
     if cmd in ("all", "start"):
         start_bridge()
         start_dry_identity()
+        start_invalid_model_rejected()
         start_repose()
     if cmd in ("all", "graph"):
         graph()

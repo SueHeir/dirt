@@ -406,6 +406,17 @@ pub fn hooke_surface_energy_warning(config: &DemConfig) -> Option<String> {
     ))
 }
 
+fn liquid_bridge_model_error(config: &DemConfig) -> Option<String> {
+    match config.liquid_bridge_model.as_str() {
+        "off" | "willett2000" => None,
+        other => Some(format!(
+            "ERROR: invalid [dem].liquid_bridge_model = {:?}. Supported values are \
+             \"off\" and \"willett2000\".",
+            other
+        )),
+    }
+}
+
 // ── MaterialTable — per-material and per-pair precomputed properties ────────
 
 /// Per-material properties and precomputed per-pair mixing tables for contact force evaluation.
@@ -1285,6 +1296,10 @@ friction = 0.4
         if let Some(msg) = hooke_surface_energy_warning(&dem_config) {
             eprintln!("{}", msg);
         }
+        if let Some(msg) = liquid_bridge_model_error(&dem_config) {
+            eprintln!("{}", msg);
+            std::process::exit(1);
+        }
 
         // Build MaterialTable from config at plugin build time
         let mut material_table = MaterialTable::new();
@@ -1576,6 +1591,45 @@ mod tests {
         assert!(
             hooke_surface_energy_warning(&config).is_none(),
             "hooke with no materials must NOT warn"
+        );
+    }
+
+    #[test]
+    fn accepts_supported_liquid_bridge_model_selectors() {
+        let mut config = DemConfig::default();
+        for model in ["off", "willett2000"] {
+            config.liquid_bridge_model = model.to_string();
+            assert!(
+                liquid_bridge_model_error(&config).is_none(),
+                "{model} must be accepted"
+            );
+        }
+    }
+
+    #[test]
+    fn rejects_invalid_liquid_bridge_model_selector() {
+        let mut config = DemConfig {
+            liquid_bridge_model: "willet2000".to_string(),
+            ..DemConfig::default()
+        };
+        let msg = liquid_bridge_model_error(&config).expect("typo must be rejected");
+        assert!(
+            msg.contains("liquid_bridge_model"),
+            "must name the bad selector field: {msg}"
+        );
+        assert!(
+            msg.contains("willet2000"),
+            "must echo the invalid value: {msg}"
+        );
+        assert!(
+            msg.contains("willett2000") && msg.contains("off"),
+            "must list supported values: {msg}"
+        );
+
+        config.liquid_bridge_model = "Willett2000".to_string();
+        assert!(
+            liquid_bridge_model_error(&config).is_some(),
+            "case-mismatched selectors must not silently disable bridge physics"
         );
     }
 }
