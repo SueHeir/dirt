@@ -676,6 +676,15 @@ inelastic collisions. Because DIRT's restitution is velocity-independent (consta
 late-time decay, not the `t⁻⁵ᐟ³` viscoelastic law. The strongest statement is that
 `1/√T` is linear in `t` (the linearized law), with **R² ≈ 0.9997–0.9999**.
 
+`bench_haff_ensemble` strengthens this from a curve-shape check to a statistical
+cooling-time check: each of the three Haff cases is rerun at two deterministic
+insertion seeds, fitted for `tc`, and gated against the Enskog/Haff kinetic estimate
+`tc = 2/(ω₀√T₀)`, `ω₀ = (4/3)n d² g₀√π(1-e²)`, with Carnahan-Starling `g₀`. All
+three cases use the same `[0.5, 2.0]` band on fitted/theory `tc`. For clumps and
+rods the reference uses a bounding collision diameter; because the rate scales as
+`d²`, the factor-two band leaves room for that proxy while rejecting an
+order-of-magnitude cooling-time error.
+
 ![Sphere Haff cooling](bench_sphere_haff_cooling/plots/haff_cooling.png)
 
 *Spheres. Left: normalized temperature vs time (log–log), DIRT and LAMMPS on the Haff
@@ -701,7 +710,14 @@ sample estimate stays within the 5% inertia tolerance.*
 linearized Haff cooling law and the late-time slope, with the optional LAMMPS overlay
 when the local binary has the required rigid-molecule packages.*
 
-**Honest read:** the cooling *form* is well supported (`1/√T` linear, **R² ≈ 0.9994–0.9999**
+![Haff ensemble cooling-time distribution](bench_haff_ensemble/plots/haff_ensemble.png)
+
+*Seeded Haff ensemble. Left column: DIRT seeded realizations and the optional LAMMPS
+comparison where the local binary can run the matched case. Middle: residuals of the
+linearized Haff fit. Right: fitted `tc` divided by the kinetic-theory estimate; the
+orange band is the PASS interval. Latest run: PASS for all 39 checks.*
+
+**Honest read:** the cooling *form* is well supported (`1/√T` linear, **R² ≈ 0.9987–0.9999**
 on every run of all three benches), but the **−2 asymptote is only approached over finite
 time** — these dilute gases cool to a finite `t/tc`, where the *local* log-log slope is
 still short of −2. Spheres and clumps cool far enough (`t/tc ≈ 5` and `≈ 11`, slopes ≈
@@ -710,9 +726,11 @@ The rod bench now uses a longer 1.6M-step run and reaches a deeper tail:
 the current run passes 6/6 with **R² = 0.9999** and slope **−1.841 at `t/tc = 12.9`**
 against the unchanged gate. If automation reports a rod slope near **−1.59** at
 only `t/tc ≈ 5.6`, it is running a stale 700k-step checkout, not the current
-benchmark configuration. `tc` is only an order-of-magnitude match to kinetic theory
-(a printed diagnostic). Single realizations; a many-body gas is chaotic, so only
-curve-level agreement is meaningful. For clumps/rods the LAMMPS cross-check is
+benchmark configuration. The ensemble gate now checks that the median fitted
+`tc/theory` is finite and inside the declared kinetic-theory band: spheres pass at
+median **0.51** (range 0.50–0.51), clumps at **0.57** (0.52–0.61), and rods at
+**1.54** (1.35–1.73). A many-body gas is chaotic, so only
+curve-level and distribution-level agreement is meaningful. For clumps/rods the LAMMPS cross-check is
 **calibrated** (the rigid velocity projection otherwise starts LAMMPS ~4× hotter)
 and compared **past the rotational transient**; different rigid integrators leave a
 small residual. The claim is "same cooling law," not identical dynamics.
@@ -1290,8 +1308,8 @@ will need a benchmark when re-added.)
 | bond_fiber_tensile | input Young's modulus via `K_n = E A / L` | analytical (self-consistent) | PASS; fitted E = 1.000050 GPa vs input 1.000001 GPa (0.005% error) |
 | bond_cantilever | Euler-Bernoulli uniform-load cantilever tip deflection | analytical | PASS; final tip deflection −9.476884e-07 m vs −9.535320e-07 m (0.61% error, 5% gate), 9/9 bonds present |
 | curtis_cantilever | Guo/Curtis flexible-fiber cantilever load curve and profiles | analytical | PASS; tip curve max error 2.988%, deflection profile 2.828%, bending-moment profile 1.791%, 0 broken bonds |
-| sphere/clump haff | Haff law + LAMMPS | law (cross-code) | PASS; R²≈0.9999, slope −1.88 / −1.79 at t/tc≈5 / 11; −2 not fully reached; tc unvalidated; clump cross-check calibrated |
-| rod haff | Haff law + optional LAMMPS | law (cross-code when available) | PASS; current 1.6M-step run gives R²=0.9999 and slope −1.841 at t/tc=12.9 against the unchanged −2.3<slope<−1.6 gate; stale 700k-step harness checkouts still fail around slope −1.59 at t/tc≈5.6 |
+| sphere/clump haff | Haff law + LAMMPS + kinetic tc ensemble | law (cross-code) + kinetic theory band | PASS; ensemble median tc/theory = 0.51 (sphere) and 0.57 (clump), R² min 0.9987, existing slope gates unchanged |
+| rod haff | Haff law + optional LAMMPS + kinetic tc ensemble | law (cross-code when available) + kinetic theory band | PASS; ensemble median tc/theory = 1.54, R² min 0.9998, current 1.6M-step run gives slope −1.841 at t/tc=12.9 against the unchanged −2.3<slope<−1.6 gate |
 | SPH glass column collapse | Lube/Lajeunesse (empirical) + LAMMPS overlay | empirical macro gate | FAIL (remaining macro limitation); uses canonical `mu_r=0.10` because 03_angle_of_repose has no transferable closure; linear exponent 1.407 vs 1.0 outside ±0.25, power exponent 0.885 inside gate; exits 1 |
 | clump_insertion_determinism | own repeated config run | reproducibility | PASS; same-seed config path byte-identical, changed seed diverges |
 | angle_of_repose | empirical (none exact) | qualitative | PASS; trends only; default bounded smoke gate PASSes 4/4 with committed pass-criterion graph; full sweep stands on real frictional wall |

@@ -1,0 +1,15 @@
+# Haff ensemble validation driver.
+# This is declarative metadata for the Python sweep; simulation inputs remain in
+# the three existing Haff example config.toml files.
+
+[ensemble]
+seeds = [0, 101]
+
+[theory_band]
+# All cases use the same factor-two kinetic-theory envelope. This is deliberately
+# tighter than an order-of-magnitude smoke bound: the clump and rod estimates
+# still use a bounding collision diameter and share the same Enskog/Haff rate,
+# so they must stay close enough to reject a badly wrong cooling time.
+sphere = [0.5, 2.0]
+clump = [0.5, 2.0]
+rod = [0.5, 2.0]
