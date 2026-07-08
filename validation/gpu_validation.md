@@ -5,11 +5,16 @@
 > contain a `dirt_gpu` crate, `soil_gpu::GpuState`, or the dirt GPU schedule/
 > resident plugins referenced below. Treat the results as historical evidence for
 > that branch, not as a claim that main currently ships GPU support.
+>
+> **Provenance:** historical GPU branch `origin/gpu`, with the initial validation
+> recorded in dirt commits `1fb91f7` and `4e8a36d`. Main removed the experimental
+> GPU crate and examples in `c631d97` ("Remove GPU from main; repoint all deps to
+> Gitea (primary)"), so no command on this page is runnable from current `main`.
 
 **Adapter:** Apple M5 Pro (Metal 4), via wgpu. f32-only (no f64), so the GPU is
 effectively **single** precision (f32 storage + f32 accumulation).
 
-**Verdict: PASS.** The GPU contact-force kernels reproduce dirt's real CPU force
+**Historical verdict on `origin/gpu`: PASS.** The GPU contact-force kernels reproduce dirt's real CPU force
 code to ~1e-6 relative — far inside the 5e-3 tolerance, and even tighter than the
 ~1e-3 normally expected for f32-vs-f64. The previously-"not tested" code runs
 correctly with no NaNs, errors, or kernel bugs.
@@ -75,11 +80,12 @@ straightforward enough to include here.
 
 ## Tier 2 — GPU full-trajectory vs CPU-single baseline
 
-End-to-end GPU sims (resident `GpuState` + `WallForce`/`GranularForce` hooks) run
+End-to-end GPU sims (resident `GpuState` + `WallForce`/`GranularForce` hooks) ran
 on the actual baseline scenarios; measured metrics diffed against CPU-single
 (the right reference — GPU is f32). Historical runner:
 `crates/dirt_gpu/examples/validate_trajectory.rs`
-(`cargo run --release -p dirt_gpu --example validate_trajectory --no-default-features --features precision-double`).
+(`cargo run --release -p dirt_gpu --example validate_trajectory --no-default-features --features precision-double`
+on `origin/gpu`; not runnable on current `main`).
 Effective params come from dirt's own `MaterialTable`, so the only difference is f32-vs-f64.
 
 | scenario | metric | GPU (f32) | CPU-single | relΔ | verdict |

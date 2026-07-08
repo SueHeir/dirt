@@ -4,6 +4,11 @@
 > note. Current `main` has no `dirt_gpu` crate, `soil_gpu::GpuState`, or
 > `GpuGranularResidentPlugin`. The reproduction path and follow-up plugin names
 > below refer to that branch's artifacts.
+>
+> **Provenance:** historical GPU branch `origin/gpu`, with the original blocker
+> note in dirt commit `0b3f192` and the later gate-closed update in `33117a3`.
+> Main removed `crates/dirt_gpu` and its examples in `c631d97`; paths and commands
+> in this note are archival only.
 
 **Outcome: I did NOT land a working `GpuGranularResidentPlugin`. I found why one
 can't be correct yet:** windowing the resident GPU stepper corrupts the

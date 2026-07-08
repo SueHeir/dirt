@@ -5,6 +5,10 @@ Current `main` (2026-07-06) does **not** contain `gpu_coherence`, the resident G
 bridge, `GpuGranularResidentPlugin`, `GpuGranularResidentMpiPlugin`, or
 `crates/dirt_granular/src/gpu_resident*.rs`. This note preserves the branch plan
 and validation provenance; it is not a statement of current main-branch features.
+Provenance: historical GPU/coherence branch `origin/gpu`; plan/implementation
+commits include `5baf9a6`, `d59b9f8`, `077f748`, and merge `03fcc61`. Main
+removed the GPU/coherence artifacts in `c631d97`, so the feature names and paths
+below are not current `main` APIs.
 
 ## Problem
 

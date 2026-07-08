@@ -1,5 +1,10 @@
 # Roadmap step 4 — interior/boundary compute–comm overlap
 
+> **Current main-branch status (2026-07-08):** this document matches current CPU
+> MPI code. It does not depend on the removed `dirt_gpu` crate or GPU resident
+> plugins; the only GPU-related wording is future motivation for performance on
+> multi-GPU hardware.
+
 **Goal.** Compute interior contact forces *while the ghost halo is in flight*, then
 finish the boundary forces once it lands — hiding MPI communication latency behind
 useful compute. The split must be exact: the overlapped force has to reproduce the

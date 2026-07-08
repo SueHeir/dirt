@@ -4,6 +4,10 @@
 > validation note. Current `main` does not contain `GpuGranularResidentPlugin`,
 > `crates/dirt_granular/src/gpu_resident.rs`, or the `dirt_gpu` crate. The
 > measurements below describe the branch where that plugin existed.
+>
+> **Provenance:** historical GPU branch `origin/gpu`, recorded in dirt commit
+> `420207d`. Main removed the GPU crate/plugins in `c631d97`; the example and
+> plugin names below are not current `main` runnable validation.
 
 The device-resident counterpart to milestone 1's host-authoritative GPU force
 plugin. Instead of a host↔device round-trip every step, it keeps pos/vel/force/
@@ -24,7 +28,7 @@ GPU for a **window of K steps per schedule tick** via soil's `run_steps` /
 - Walls are passed as a `Boundary` (planar) and gravity as a constant vector, so
   there's no dependency on host `WallPlugin`/`GravityPlugin`.
 
-## Verification (`examples/resident_plugin_validate.rs`, Apple M5 Pro)
+## Historical verification (`examples/resident_plugin_validate.rs` on `origin/gpu`, Apple M5 Pro)
 Wall+gravity drop, n=512, 4000 steps:
 
 | run | wall-clock |
