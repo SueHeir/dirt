@@ -29,6 +29,9 @@ If this benchmark reports a slope near -1.60 at only `t/tc ≈ 5`, it is running
 the older 700k-step setup. That run length is too short for the rod case's
 finite-window slope gate even though the linear Haff fit is already good; the
 current benchmark uses 1.6M steps so the same unchanged gate is reached honestly.
+For scheduled harness failures, also check that the harness checkout is actually
+on current `origin/main`; a stale detached checkout can still run the old 700k-step
+constants after the benchmark fix has merged.
 
 ## Setup
 
