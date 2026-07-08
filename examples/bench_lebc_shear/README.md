@@ -49,9 +49,13 @@ The full 14-case sweep shears each case to strain 70 (~3.5M steps per case at
 validated nothing. `sweep.py` with **no argument** now runs a **bounded gate**: 3
 frictional (production) cases (Φ = 0.2, 0.3, 0.4) sheared to strain 10, asserting
 that each reaches a **steady, physical shear-stress ratio** `μ = |σ_xy|/P`
-(0.15 ≤ μ ≤ 0.90, pressure `P > 0`, window drift < 15%). It completes in ~9 min
-and prints `ALL CHECKS PASSED`/`CHECKS FAILED`. The full production+KT sweep and
-its kinetic-theory tolerances (in `graph()`) are **unchanged** and still run via
+(0.30 ≤ μ ≤ 0.70, pressure `P > 0`, window drift < 15%). It also checks the
+Walton & Braun (1986) homogeneous-shear trends for pressure, shear ratio,
+granular-temperature proxy, and normal-stress anisotropy, and writes
+`plots/walton_1986_overlay.png` with the same bands enforced by the PASS gate.
+It completes in ~9 min and prints
+`ALL CHECKS PASSED`/`CHECKS FAILED`. The full production+KT sweep and its
+kinetic-theory tolerances (in `graph()`) are **unchanged** and still run via
 `sweep.py full`.
 
 Each case is prepared by inserting a **loose** pack (random insertion saturates
@@ -94,6 +98,18 @@ near random-close-packing, is reachable. The sweep runs two families:
    constants written to `data/calibration.yaml` for
    `sph_constitutive::MaterialParams`. Those fitted constants are material
    outputs, not universal pass/fail targets.
+4. **Walton & Braun (1986) homogeneous-shear trends** (`plots/walton_1986_overlay.png`).
+   Digitized curves from the inelastic-disk study (Journal of Rheology 30, 949)
+   provide an external rapid-shear assembly reference for the observables DIRT
+   records directly: pressure, shear stress ratio, granular-temperature proxy,
+   and normal-stress anisotropy. Because Walton is two-dimensional disks and
+   DIRT is three-dimensional spheres, this is a dimensionless trend gate rather
+   than a pointwise material calibration: Bagnold-normalized pressure and the
+   fluctuation-velocity proxy are normalized by their mid-density value and must
+   stay within the plotted ±50% Walton shape band at the measured solid
+   fractions; `|σ_xy|/σ_yy` and `σ_xx/σ_yy` must stay within the plotted ±40%
+   Walton stress-ratio bands. `N1/P` and `N2/P` are retained as bounded
+   diagnostics.
 
 ![Kinetic-theory validation](plots/kt_validation.png)
 
@@ -118,11 +134,20 @@ compaction side of the μ(I) / Φ(I) calibration.*
 *Frictionless KT cases: stress and granular temperature versus strain with the
 averaging window shaded. PASS requires the printed window drift to stay below 15%.*
 
+![Walton 1986 overlay](plots/walton_1986_overlay.png)
+
+*Frictional LEBC shear: DIRT pressure, shear ratio, granular-temperature proxy,
+and normal-stress ratios over solid fraction against digitized Walton & Braun
+(1986) homogeneous-shear trends. PASS requires DIRT to stay inside the same
+Walton tolerance bands drawn on the figure while preserving the existing KT and
+GDR gates.*
+
 ## Outputs
 
 | Path | Tracked? | Contents |
 |---|---|---|
-| `plots/mu_of_I.png`, `phi_of_I.png`, `kt_validation.png`, `convergence.png` | yes | final figures |
+| `plots/mu_of_I.png`, `phi_of_I.png`, `kt_validation.png`, `convergence.png`, `walton_1986_overlay.png` | yes | final figures |
+| `data/walton_1986_digitized.csv` | yes | source record for the digitized Walton & Braun (1986) trend curves mirrored in `sweep.py` |
 | `data/<case>/lebc_shear_results.csv` | no (gitignored) | per-case time series |
 | `data/calibration.yaml` | no | fitted μ(I) closure → dev_soil_sph |
 | `sweep/<case>/config.toml` | no | generated per-case configs |
@@ -144,4 +169,6 @@ averaging window shaded. PASS requires the printed window drift to stay below 15
 
 - GDR MiDi, *Eur. Phys. J. E* **14** (2004); da Cruz et al., *PRE* **72** (2005) — μ(I) from DEM simple shear.
 - Lun, Savage, Jeffrey & Chepurniy, *JFM* **140** (1984) — kinetic-theory transport coefficients.
+- Walton & Braun, *Journal of Rheology* **30** (1986), 949-980 — viscosity,
+  granular-temperature, and stress calculations for shearing inelastic disks.
 - Companion specs: `SPH_temp/docs/dem-lebc-kt-spec.md`, `dem-campaign-dirt.md`.

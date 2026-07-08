@@ -278,9 +278,11 @@ def steady_average(csv_path, frac=0.5):
         if p1 != 0:
             drift = abs(p2 - p1) / abs(p1)
     return dict(
-        gdot=avg("gdot", rows), p=avg("p", rows), sxy=avg("sxy", rows),
-        syy=avg("syy", rows), tau=avg("tau", rows), T=avg("T", rows),
-        phi=avg("phi", rows), drift=drift,
+        gdot=avg("gdot", rows), p=avg("p", rows),
+        sxx=avg("sxx", rows), syy=avg("syy", rows), szz=avg("szz", rows),
+        sxy=avg("sxy", rows), tau=avg("tau", rows),
+        N1=avg("N1", rows), N2=avg("N2", rows),
+        T=avg("T", rows), phi=avg("phi", rows), drift=drift,
     )
 
 
@@ -435,6 +437,206 @@ def fit_mu_of_I(points):
     return best[1], best[2], best[3]
 
 
+# Walton & Braun (1986), Journal of Rheology 30, 949, digitized from Figs. 8,
+# 9, 12, and 13 for the mu=0.5, e=0.8, edot=10 disk simulations. DIRT uses 3-D
+# spheres, so these are trend/band gates rather than one-to-one calibration
+# constants. They are still valuable because Walton reports the same measured
+# observables: pressure, shear stress ratio, granular-temperature proxy, and
+# normal-stress anisotropy under Lees-Edwards-like homogeneous shear.
+WALTON_REF = {
+    "velocity_rms": [
+        (0.025, 18.0), (0.05, 8.0), (0.10, 4.4), (0.25, 1.9),
+        (0.50, 1.25), (0.60, 1.15), (0.70, 1.15), (0.76, 1.45),
+        (0.82, 1.45),
+    ],
+    "pressure_total": [
+        (0.025, 500.0), (0.07, 145.0), (0.25, 95.0), (0.50, 170.0),
+        (0.60, 300.0), (0.67, 800.0), (0.72, 2000.0), (0.76, 3800.0),
+        (0.80, 1800.0),
+    ],
+    "dynamic_friction": [
+        (0.025, 0.73), (0.10, 0.69), (0.25, 0.64), (0.50, 0.59),
+        (0.60, 0.55), (0.70, 0.49), (0.75, 0.40), (0.80, 0.28),
+    ],
+    "stress_ratio_xx_yy": [
+        (0.025, 2.08), (0.10, 1.85), (0.25, 1.50), (0.50, 1.18),
+        (0.60, 1.08), (0.70, 1.02), (0.75, 0.90), (0.80, 0.45),
+    ],
+}
+
+
+def normalize_to_ref(xs, ys, ref, ref_phi=0.30):
+    """Normalize a positive trend by the point nearest ref_phi for shape-only overlays."""
+    if not xs or not ys:
+        return []
+    i = min(range(len(xs)), key=lambda k: abs(xs[k] - ref_phi))
+    scale = ys[i] if abs(ys[i]) > 0.0 else 1.0
+    return [y / scale for y in ys]
+
+
+WALTON_SHAPE_TOL = 0.50
+WALTON_STRESS_RATIO_TOL = 0.40
+
+
+def interp_ref(ref, x):
+    """Linear interpolation over the digitized Walton reference curve."""
+    pts = sorted(ref)
+    if x <= pts[0][0]:
+        return pts[0][1]
+    if x >= pts[-1][0]:
+        return pts[-1][1]
+    for (x0, y0), (x1, y1) in zip(pts, pts[1:]):
+        if x0 <= x <= x1:
+            t = (x - x0) / (x1 - x0)
+            return y0 + t * (y1 - y0)
+    return pts[-1][1]
+
+
+def in_relative_band(value, reference, tol):
+    if not (math.isfinite(value) and math.isfinite(reference)) or reference == 0.0:
+        return False
+    return (1.0 - tol) * reference <= value <= (1.0 + tol) * reference
+
+
+def walton_shape_ratios(phi, values, key, ref_phi=0.30):
+    """Return (phi, normalized DIRT, normalized interpolated Walton) tuples."""
+    if not phi or not values:
+        return []
+    ref_values = [interp_ref(WALTON_REF[key], x) for x in phi]
+    dirt_norm = normalize_to_ref(phi, values, WALTON_REF[key], ref_phi=ref_phi)
+    ref_norm = normalize_to_ref(phi, ref_values, WALTON_REF[key], ref_phi=ref_phi)
+    return list(zip(phi, dirt_norm, ref_norm))
+
+
+def walton_trend_checks(points):
+    """Trend gates against digitized Walton 1986 homogeneous-shear signatures.
+
+    Walton is a 2-D disk calculation and this DIRT case is 3-D spheres, so the
+    pressure and fluctuation-velocity gates compare normalized shapes instead of
+    raw magnitudes. Dimensionless stress ratios are compared directly with a
+    wider cross-geometry band, and the same bands are drawn in the overlay plot.
+    """
+    prod = sorted([p for p in points if p["sweep"] == "production"], key=lambda d: d["phi"])
+    if len(prod) < 3:
+        return [(False, f"Walton trend cases: {len(prod)} production points (need >=3)")]
+    checks = []
+    phi = [p["phi"] for p in prod]
+    pbag = [p["p"] / (DENSITY * D_MEAN**2 * p["gdot"]**2) for p in prod]
+    tstar = [p["T"] / (p["gdot"] * D_MEAN) ** 2 for p in prod]
+    vrms = [math.sqrt(3.0 * max(v, 0.0)) for v in tstar]
+    dyn_mu = [abs(p["sxy"]) / abs(p["syy"]) if p["syy"] else float("nan") for p in prod]
+    sxx_syy = [p["sxx"] / p["syy"] if p["syy"] else float("nan") for p in prod]
+    n1_over_p = [p["N1"] / p["p"] if p["p"] else float("nan") for p in prod]
+    n2_over_p = [p["N2"] / p["p"] if p["p"] else float("nan") for p in prod]
+
+    pressure_pairs = walton_shape_ratios(phi, pbag, "pressure_total")
+    velocity_pairs = walton_shape_ratios(phi, vrms, "velocity_rms")
+    pressure_ok = all(in_relative_band(dirt, ref, WALTON_SHAPE_TOL)
+                      for _, dirt, ref in pressure_pairs)
+    velocity_ok = all(in_relative_band(dirt, ref, WALTON_SHAPE_TOL)
+                      for _, dirt, ref in velocity_pairs)
+    dyn_pairs = [(x, y, interp_ref(WALTON_REF["dynamic_friction"], x)) for x, y in zip(phi, dyn_mu)]
+    normal_pairs = [(x, y, interp_ref(WALTON_REF["stress_ratio_xx_yy"], x)) for x, y in zip(phi, sxx_syy)]
+    dyn_ok = all(in_relative_band(dirt, ref, WALTON_STRESS_RATIO_TOL)
+                 for _, dirt, ref in dyn_pairs)
+    normal_ok = all(in_relative_band(dirt, ref, WALTON_STRESS_RATIO_TOL)
+                    for _, dirt, ref in normal_pairs)
+
+    checks.append((pressure_ok,
+                   f"Walton pressure shape: normalized DIRT within ±{int(WALTON_SHAPE_TOL*100)}% "
+                   "of digitized Fig. 9 at measured Phi"))
+    checks.append((velocity_ok,
+                   f"Walton fluctuation-velocity shape: normalized DIRT within ±{int(WALTON_SHAPE_TOL*100)}% "
+                   "of digitized Fig. 8 at measured Phi"))
+    checks.append((dyn_ok,
+                   f"Walton shear-ratio gate: |sigma_xy|/sigma_yy within ±{int(WALTON_STRESS_RATIO_TOL*100)}% "
+                   "of digitized Fig. 12 at measured Phi"))
+    checks.append((normal_ok,
+                   f"Walton normal-stress gate: sigma_xx/sigma_yy within ±{int(WALTON_STRESS_RATIO_TOL*100)}% "
+                   "of digitized Fig. 13 at measured Phi"))
+    checks.append((all(abs(x) < 2.0 for x in n1_over_p) and all(abs(x) < 2.0 for x in n2_over_p),
+                   "DIRT normal-stress differences: |N1|/P and |N2|/P remain bounded"))
+    return checks
+
+
+def plot_walton_overlay(points, plt):
+    """Plot DIRT production points against digitized Walton 1986 trend curves."""
+    prod = sorted([p for p in points if p["sweep"] == "production"], key=lambda d: d["phi"])
+    if not prod:
+        return
+
+    phi = [p["phi"] for p in prod]
+    pbag = [p["p"] / (DENSITY * D_MEAN**2 * p["gdot"]**2) for p in prod]
+    tstar = [p["T"] / (p["gdot"] * D_MEAN) ** 2 for p in prod]
+    vrms = [math.sqrt(3.0 * max(v, 0.0)) for v in tstar]
+    dyn_mu = [abs(p["sxy"]) / abs(p["syy"]) if p["syy"] else float("nan") for p in prod]
+    sxx_syy = [p["sxx"] / p["syy"] if p["syy"] else float("nan") for p in prod]
+    n1_over_p = [p["N1"] / p["p"] if p["p"] else float("nan") for p in prod]
+    n2_over_p = [p["N2"] / p["p"] if p["p"] else float("nan") for p in prod]
+
+    fig, axs = plt.subplots(2, 2, figsize=(11, 8.2))
+    ax = axs[0][0]
+    wx, wy = zip(*WALTON_REF["pressure_total"])
+    w_norm = normalize_to_ref(list(wx), list(wy), WALTON_REF["pressure_total"])
+    ax.fill_between(wx, [(1.0 - WALTON_SHAPE_TOL) * y for y in w_norm],
+                    [(1.0 + WALTON_SHAPE_TOL) * y for y in w_norm],
+                    color="tab:orange", alpha=0.14,
+                    label=f"Walton gate band +/-{int(WALTON_SHAPE_TOL*100)}%")
+    ax.plot(wx, w_norm, "k--",
+            label="Walton 1986 Fig. 9 (shape)")
+    ax.plot(phi, normalize_to_ref(phi, pbag, WALTON_REF["pressure_total"]), "o-", label="DIRT")
+    ax.set_ylabel("normalized pressure trend")
+    ax.set_title("Pressure")
+
+    ax = axs[0][1]
+    wx, wy = zip(*WALTON_REF["velocity_rms"])
+    w_norm = normalize_to_ref(list(wx), list(wy), WALTON_REF["velocity_rms"])
+    ax.fill_between(wx, [(1.0 - WALTON_SHAPE_TOL) * y for y in w_norm],
+                    [(1.0 + WALTON_SHAPE_TOL) * y for y in w_norm],
+                    color="tab:orange", alpha=0.14,
+                    label=f"Walton gate band +/-{int(WALTON_SHAPE_TOL*100)}%")
+    ax.plot(wx, w_norm, "k--",
+            label="Walton 1986 Fig. 8 (shape)")
+    ax.plot(phi, normalize_to_ref(phi, vrms, WALTON_REF["velocity_rms"]), "o-", label="DIRT")
+    ax.set_ylabel("normalized rms fluctuation")
+    ax.set_title("Granular temperature proxy")
+
+    ax = axs[1][0]
+    wx, wy = zip(*WALTON_REF["dynamic_friction"])
+    ax.fill_between(wx, [(1.0 - WALTON_STRESS_RATIO_TOL) * y for y in wy],
+                    [(1.0 + WALTON_STRESS_RATIO_TOL) * y for y in wy],
+                    color="tab:orange", alpha=0.14,
+                    label=f"Walton gate band +/-{int(WALTON_STRESS_RATIO_TOL*100)}%")
+    ax.plot(wx, wy, "k--", label="Walton 1986 Fig. 12")
+    ax.plot(phi, dyn_mu, "o-", label="DIRT")
+    ax.set_ylabel(r"$|\sigma_{xy}|/\sigma_{yy}$")
+    ax.set_title("Shear stress ratio")
+
+    ax = axs[1][1]
+    wx, wy = zip(*WALTON_REF["stress_ratio_xx_yy"])
+    ax.fill_between(wx, [(1.0 - WALTON_STRESS_RATIO_TOL) * y for y in wy],
+                    [(1.0 + WALTON_STRESS_RATIO_TOL) * y for y in wy],
+                    color="tab:blue", alpha=0.12,
+                    label=f"Walton gate band +/-{int(WALTON_STRESS_RATIO_TOL*100)}%")
+    ax.plot(wx, wy, "k--", label="Walton 1986 Fig. 13")
+    ax.plot(phi, sxx_syy, "o-", label=r"DIRT $\sigma_{xx}/\sigma_{yy}$")
+    ax.plot(phi, n1_over_p, "s:", label=r"DIRT $N_1/P$")
+    ax.plot(phi, n2_over_p, "^:", label=r"DIRT $N_2/P$")
+    ax.axhline(0.0, color="0.75", lw=0.8)
+    ax.set_ylabel("normal-stress ratios")
+    ax.set_title("Normal stresses")
+
+    for ax in axs.flat:
+        ax.set_xlabel("solid fraction Phi")
+        ax.set_xlim(0.0, 0.85)
+        ax.grid(True, alpha=0.3)
+        ax.legend(fontsize=8)
+    fig.suptitle("DIRT Lees-Edwards shear vs Walton & Braun (1986) homogeneous-shear trends")
+    fig.tight_layout()
+    fig.savefig(os.path.join(PLOT_DIR, "walton_1986_overlay.png"), dpi=130)
+    plt.close(fig)
+
+
 def graph():
     try:
         import matplotlib
@@ -541,6 +743,11 @@ def graph():
     else:
         mu_s = mu2 = I0 = None
         print("\n(need ≥4 production points for a μ(I) fit)")
+
+    print("\n=== Walton & Braun 1986 shear-assembly trend check ===")
+    walton_checks = walton_trend_checks(pts)
+    for ok, msg in walton_checks:
+        print(f"  [{'PASS' if ok else 'FAIL'}] {msg}")
 
     if plt is None:
         return
@@ -674,6 +881,8 @@ def graph():
         fig.tight_layout(); fig.savefig(os.path.join(PLOT_DIR, "convergence.png"), dpi=130)
     plt.close(fig)
 
+    plot_walton_overlay(pts, plt)
+
     print(f"\nplots written to {PLOT_DIR}")
 
 
@@ -753,10 +962,22 @@ def smoke():
     checks.append((mu_env_ok == len(pts) and len(pts) > 0,
                    f"GDR / da Cruz mu(I) envelope: {mu_env_ok}/{len(pts)} within "
                    f"[{SMOKE_MU_LO:.2f}, {SMOKE_MU_HI:.2f}]"))
+    checks.extend(walton_trend_checks(pts))
     npass = sum(1 for ok, _ in checks if ok)
     for ok, msg in checks:
         print(f"  [{'PASS' if ok else 'FAIL'}] {msg}")
     ok = all(ok for ok, _ in checks)
+
+    try:
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+        os.makedirs(PLOT_DIR, exist_ok=True)
+        plot_walton_overlay(pts, plt)
+        print(f"  wrote {os.path.join(PLOT_DIR, 'walton_1986_overlay.png')}")
+    except ImportError:
+        print("  matplotlib not available; skipped Walton overlay plot")
+
     print(f"\n{npass}/{len(checks)} checks passed")
     print("ALL CHECKS PASSED" if ok else "CHECKS FAILED")
     sys.exit(0 if ok else 1)

@@ -994,6 +994,9 @@ extended kinetic theory and independent LAMMPS / Fortran / LIGGGHTS reference
 points over solid fraction, while the **frictional production sweep** fits the
 GDR MiDi / da Cruz μ(I) and Φ(I) closure used by downstream continuum calibration
 and gates the measured stress ratios against the published dense-flow envelope.
+The same frictional sweep now overlays Walton & Braun's 1986 homogeneous-shear
+inelastic-disk trends for pressure, shear stress ratio, granular-temperature
+proxy, and normal-stress anisotropy.
 
 The validation has two gates, deliberately kept separate:
 
@@ -1011,6 +1014,16 @@ The validation has two gates, deliberately kept separate:
   Every frictional production point must remain inside the plotted GDR MiDi /
   da Cruz dense-flow envelope `0.30 <= μ <= 0.70`; the fitted μ(I) curve remains
   a calibration curve, not a universal-constant pass/fail claim.
+- **Walton 1986 trend gate (`sweep.py` default and `graph`): PASS on the committed
+  plot.** DIRT pressure, shear ratio, granular-temperature proxy, and
+  `σ_xx/σ_yy` are compared with digitized Walton & Braun (1986) homogeneous
+  shear trends at the measured solid fractions. This is a dimensionless
+  cross-geometry check because Walton used 2-D disks and DIRT uses 3-D spheres:
+  Bagnold-normalized pressure and fluctuation velocity are normalized by their
+  mid-density value and gated inside the plotted ±50% Walton shape bands, while
+  `|σ_xy|/σ_yy` and `σ_xx/σ_yy` are gated inside the plotted ±40% Walton
+  stress-ratio bands. `N1/P` and `N2/P` remain bounded diagnostics. The Walton
+  gate does not replace the KT or GDR gates.
 
 ![Kinetic-theory validation](bench_lebc_shear/plots/kt_validation.png)
 
@@ -1027,13 +1040,23 @@ PASS gate (`0.30 <= μ <= 0.70`); the black curve is the calibration fit.*
 
 *Measured frictional Φ(I), paired with the μ(I) fit for closure calibration.*
 
+![Walton 1986 overlay](bench_lebc_shear/plots/walton_1986_overlay.png)
+
+*DIRT frictional pressure, shear ratio, granular-temperature proxy, and
+normal-stress ratios against digitized Walton & Braun (1986) homogeneous-shear
+trends. The shaded bands are the printed PASS/FAIL gates: ±50% on normalized
+shape trends and ±40% on stress ratios, with the existing kinetic-theory and GDR
+checks still intact.*
+
 **Honest read:** the strongest physics check is the frictionless stress collapse
 against kinetic theory and cross-code data; it is expected to deviate near jamming,
 where enduring contacts leave the collisional KT regime. The frictional μ(I) gate
 checks the measured stress ratios against the published dense-flow envelope, while
-the fitted μ(I) / Φ(I) constants are material/calibration outputs rather than
-independent universal numbers. The fast smoke gate exists only to catch breakage on
-hourly runs; no rheology tolerance is relaxed by keeping that gate bounded.
+the Walton overlay is a cross-geometry trend check, not a claim that 3-D spheres
+should reproduce every 2-D disk ordinate. The fitted μ(I) / Φ(I) constants are
+material/calibration outputs rather than independent universal numbers. The fast
+smoke gate exists only to catch breakage on hourly runs; no rheology tolerance is
+relaxed by keeping that gate bounded.
 
 ## `bench_rod_shear_aspect_ratio` — glued-sphere rods in Lees-Edwards shear
 
