@@ -871,21 +871,26 @@ wall time; it does not validate hopper discharge against theory or experiment.
 ## `bench_plate_sinkage` — pressure–sinkage
 
 A plate is pushed into a settled bed; pressure vs sinkage is fit against the **Bekker**
-terramechanics relation `p = (k_c/b + k_φ)·zⁿ`.
+terramechanics relation `p = (k_c/b + k_φ)·zⁿ`. This benchmark is summarized in
+the top section because it now includes the published-parameter gate added after
+the original qualitative Bekker-form check.
 
 ![Pressure vs sinkage (log–log)](bench_plate_sinkage/plots/pressure_sinkage.png)
 
-*Pressure vs sinkage (log–log) per case with the fitted power law; exponents land in the
-broad 0.4–1.6 band (R² ≈ 0.89–0.93).*
+*Pressure vs sinkage (log-log) per case with the fitted power law. Latest run:
+PASS; all cases keep the monotonic, fit-quality, broad-exponent, and width-load
+trend checks active.*
 
 ![Pressure vs sinkage (linear)](bench_plate_sinkage/plots/pressure_sinkage_linear.png)
 
 *Same data, linear axes — monotone pressure rise with depth and plate width.*
 
-**Honest read:** empirical/qualitative — Bekker is a soil-fit correlation, not a contact
-law; only the power-law *form* and a very wide exponent band are checked (not the
-constants, nor any real soil). Grains are softened, gravity enhanced 5×, geometry a thin
-periodic slice; absolute pressures are not physical.
+**Honest read:** empirical/qualitative — Bekker is a soil-fit correlation, not a
+contact law. The current gate checks the representative narrow-plate fitted
+exponent against the cited NASA/TM-20250006958 sandy/loam range, but it does not
+claim that DIRT's absolute pressure curve reproduces LETE Sand or any specific
+soil. Grains are softened, gravity enhanced 5x, geometry a thin periodic slice;
+absolute pressures remain diagnostic rather than physical.
 
 ---
 
@@ -1156,7 +1161,7 @@ will need a benchmark when re-added.)
 | lebc_shear | Lun / extended kinetic theory + LAMMPS / Fortran / LIGGGHTS; GDR MiDi / da Cruz μ(I) form | kinetic theory + calibration | PASS/diagnostic; KT gate requires ≥60% of points within 15% normal-stress and 20% shear-stress bands; dense/jamming deviations expected |
 | hopper_beverloo | Beverloo (empirical) | empirical correlation | PASS; exponent 1.36 vs 1.5; prefactor untested |
 | hopper_quiescence | unoptimized baseline run | optimization fidelity | PASS; short matched run preserves discharge within ±1% and fill height within 0.34 mm of baseline; phase wall time speedup 1.15x |
-| plate_sinkage | Bekker (empirical) | empirical / qualitative | PASS; form only; loose bands; softened grains |
+| plate_sinkage | Bekker (empirical) + NASA/TM-20250006958 Table 1 fitted `n` range | empirical / qualitative | PASS; monotone/power-law/width checks plus representative `b020_mu05` fitted `n=1.074` inside published sandy/loam range 0.66..1.10; softened grains, absolute pressures diagnostic |
 | convergence | finest-dt / large-N / large-box limit (+ Hertz anchor) | numerical (self-convergence) | PASS; dt, N, and box-size convergence; observed order p≈2; box-size error 3.80→2.27→1.64→0% |
 | mpi_decomposition | own 1×1×1 trajectory | parallel-correctness (decomposition-invariance) | PASS; 2×1×1 & 2×2×1 reproduce serial to FP floor (pos ~6e-17, vel ~8e-14); momentum/energy/atom-count conserved |
 | bond_mpi_drift | expected BPM bond metrics | parallel-correctness (bond migration) | PASS; 2-rank migration keeps `bond_count` = 2 and `bond_missing` = 0 over 200 samples |
