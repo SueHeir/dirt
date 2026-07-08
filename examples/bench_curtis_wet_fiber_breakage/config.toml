@@ -1,0 +1,91 @@
+# Declarative template for the Yang/Curtis wet fiber agglomerate impact bench.
+# sweep.py writes per-velocity copies that change only initial velocity and
+# output directory.
+
+[comm]
+processors_x = 1
+processors_y = 1
+processors_z = 1
+
+[domain]
+x_low = -0.006
+x_high = 0.012
+y_low = -0.006
+y_high = 0.006
+z_low = -0.001
+z_high = 0.012
+boundary_x = "fixed"
+boundary_y = "fixed"
+boundary_z = "fixed"
+
+[neighbor]
+skin_fraction = 1.1
+bin_size = 0.002
+every = 1
+
+[gravity]
+gz = -9.81
+
+[dem]
+contact_model = "hertz"
+liquid_bridge_model = "willett2000"
+rolling_model = "sds"
+
+[[dem.materials]]
+name = "fiber"
+youngs_mod = 8.7e7
+poisson_ratio = 0.3
+restitution = 0.35
+friction = 0.5
+rolling_friction = 0.03
+rolling_stiffness = 1.0e-5
+rolling_damping = 1.0e-7
+liquid_bridge_volume = 1.4e-12
+liquid_surface_tension = 0.072
+liquid_contact_angle = 0.0
+liquid_rupture_distance = 4.0e-4
+
+[[wall]]
+type = "plane"
+point_x = 0.0
+point_y = 0.0
+point_z = 0.0
+normal_x = 0.0
+normal_y = 0.0
+normal_z = 1.0
+material = "fiber"
+
+[[particles.insert]]
+source = "file"
+file = "examples/bench_curtis_wet_fiber_breakage/data/agglomerate.csv"
+format = "csv"
+material = "fiber"
+radius = 5.0e-4
+density = 1700.0
+velocity_z = -1.0
+columns = { x = 0, y = 1, z = 2, vz = 3 }
+
+[bonds]
+auto_bond = true
+bond_tolerance = 1.02
+bond_radius_ratio = 0.55
+youngs_modulus = 2.6e6
+shear_modulus = 1.0e6
+beta_normal = 0.05
+beta_shear = 0.05
+beta_twist = 0.05
+beta_bending = 0.05
+seed = 2019
+
+[bonds.breakage]
+kind = "combined_stress"
+tensile = { kind = "constant", value = 1.2e2 }
+shear = { kind = "constant", value = 8.0e1 }
+
+[output]
+dir = "examples/bench_curtis_wet_fiber_breakage/sweep/template"
+
+[run]
+steps = 4500
+thermo = 2250
+dt = 1.6e-7
