@@ -1026,11 +1026,12 @@ for all plotted checks.*
 
 ![Guo/Curtis permanent bending profile](fiber_bond/plots/bending_plastic_permanent_profile.png)
 
-*Final unloaded profile after the three Guo/Curtis load steps. The shaded tail
-starts at the independent beam/FEM reference transition
-`x/L = 1 - M_p/(F_t^0 L) = 0.593`; the gate requires nonzero permanent set and
-tail curvature below 10% of the fixed-end peak. Latest regenerated run: PASS,
-tail curvature 3.82%.*
+*Final unloaded profile after the three Guo/Curtis load steps, compared with a
+digitized Guo et al. Fig. 14(b) FEM step-3 profile at `α = 1.885 s^-1`. The
+shaded band is the validator's max-error limit (`±0.075 L`); the vertical marker
+is the plastic-zone estimate `x/L = 1 - M_p/(F_t^0 L) = 0.593`. Latest
+regenerated run: PASS, RMS `|Δ(y/L)| = 0.0271`, max `0.0556`, free-end error
+25.9% (limit 35%), and tail curvature 3.82% (limit 10%).*
 
 **Honest read:** this is a deterministic mechanics validation for a short
 bonded-particle chain, not an experimental fiber-calibration study. The plastic

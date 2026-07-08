@@ -1,0 +1,13 @@
+# Digitized reference from Guo, Wassgren, Curtis & Xu, Chemical Engineering
+# Science 175 (2018) Fig. 14(b): step 3 FEM permanent deflection profile,
+# alpha = 1.885 s^-1, AR_f = 23.5. Values are approximate digitization from
+# the published plot and are used only as an external profile reference.
+x_over_L,y_over_L
+0.00,0.000
+0.10,-0.006
+0.20,-0.025
+0.30,-0.055
+0.45,-0.105
+0.65,-0.145
+0.85,-0.185
+1.00,-0.215

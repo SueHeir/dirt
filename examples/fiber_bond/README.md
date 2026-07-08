@@ -31,7 +31,7 @@ python3 examples/fiber_bond/validate.py \
 | `cantilever_bending.toml`      | Cantilever bending  | `y(x) = F·x²·(3L−x)/(6·E_b·I)` (Guo Sec. 2.1) | PASS, ~0.6% error |
 | `bending_vibration.toml`       | Free bending vibration | `T = 1.787·L²·√(ρ_l/EI)` (Guo Eq. 18, discrete-mass form) | PASS, ~4.7% error |
 | `axial_plastic_piecewise.toml` | Axial plastic loading | Piecewise-linear hardening envelope (this code's config) | PASS, < 0.1% error |
-| `bending_plastic_guo.toml`     | Guo three-step bending plasticity (trilinear) | `F_t^0 = E_b I/(2L_c²)` loading; permanent curvature confined before the Guo/FEM elastic tail (`x/L ≈ 0.593`) | PASS, tail curvature 3.82% of peak |
+| `bending_plastic_guo.toml`     | Guo three-step bending plasticity (trilinear) | `F_t^0 = E_b I/(2L_c²)` loading; permanent profile vs digitized Guo Fig. 14(b) FEM curve | PASS, RMS `|Δ(y/L)| = 0.0271` |
 
 ![fiber_bond measured-vs-reference summary](plots/fiber_bond_measured_vs_reference.png)
 
@@ -43,9 +43,10 @@ bending plastic.*
 ![Guo/Curtis permanent bending profile](plots/bending_plastic_permanent_profile.png)
 
 *Permanent unloaded deformation after the three Guo/Curtis load steps. The
-orange region is the independent beam/FEM reference tail from
-`x/L = 1 - M_p/(F_t^0 L)`, where Guo et al. report no permanent bending
-curvature; latest run PASS with tail curvature 3.82% of the fixed-end peak
+orange curve is a digitized FEM reference from Guo et al. Fig. 14(b), step 3
+at `α = 1.885 s^-1`; the shaded band is the validator's `±0.075 L` max-error
+limit. Latest run PASS with RMS `|Δ(y/L)| = 0.0271`, max `0.0556`, free-end
+error `25.9%` (limit 35%), and tail curvature 3.82% of the fixed-end peak
 (limit 10%).*
 
 ## Breakage scenarios — see [`../fiber_bond_breakage`](../fiber_bond_breakage)
@@ -149,8 +150,12 @@ Guo trilinear envelope on the first monotonic loading: elastic slope followed
 by the elasto-plastic K_ep segment for the recorded middle bond. On unloading
 the DEM returns along the elastic slope K_e — kinematic-hardening behaviour
 matching Guo Fig. 9 Path III. The fixed-end portion carries the permanent set
-and the validator checks the unloaded profile against the Guo/FEM elastic-tail
-criterion from Figs. 11-12.
+and the validator checks the unloaded profile against digitized Guo Fig. 14(b)
+FEM reference points stored in `data/guo2018_fig14b_step3_fem_alpha1885.csv`.
+Because Guo Fig. 15 reports about 30% free-end DEM/FEM difference for the
+coarsest published fiber (`N_e = 20`), this intentionally short 11-particle
+validation case gates RMS and max profile error plus a 35% free-end coarse-grid
+band rather than claiming mesh-converged FEM agreement.
 
 Under repeated loading at the *same* peak force, plastic flow at any
 given bond happens only on cycle 1 — kinematic hardening leaves the
