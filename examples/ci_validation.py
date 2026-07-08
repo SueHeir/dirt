@@ -51,6 +51,7 @@ FULL_SWEEPS: list[Sweep] = [
     ("examples/bench_convergence/sweep.py", ()),
     ("examples/bench_cundall_damping/sweep.py", ()),
     ("examples/bench_curtis_cantilever/sweep.py", ()),
+    ("examples/bench_curtis_wet_fiber_breakage/sweep.py", ()),
     ("examples/bench_dmt_sjkr_cohesion/sweep.py", ()),
     ("examples/bench_fiber_crossover/sweep.py", ()),
     ("examples/bench_granular_conductivity/sweep.py", ()),
