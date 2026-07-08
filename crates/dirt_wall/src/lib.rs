@@ -1374,8 +1374,6 @@ pub fn wall_contact_force(
             let v_rel_z = atoms.vel[i][2] as f64 - wall.velocity[2];
             let v_n = v_rel_x * wall.normal_x + v_rel_y * wall.normal_y + v_rel_z * wall.normal_z;
 
-            let beta = material_table.beta_ij[mat_i][wall_mat];
-
             let f_net = if jkr_adhesion_only {
                 let f_adhesion = 1.5 * std::f64::consts::PI * surface_energy * radius;
                 -f_adhesion
@@ -1415,6 +1413,7 @@ pub fn wall_contact_force(
             // Tangential (Mindlin) sliding friction.
             let mu = material_table.friction_ij[mat_i][wall_mat];
             if mu > 0.0 && delta > 0.0 {
+                let beta = material_table.beta_ij[mat_i][wall_mat];
                 let g_eff = material_table.g_eff_ij[mat_i][wall_mat];
                 let n = [wall.normal_x, wall.normal_y, wall.normal_z];
                 let v_rel = [v_rel_x, v_rel_y, v_rel_z];
@@ -1557,7 +1556,6 @@ pub fn wall_contact_force(
             let v_n = atoms.vel[i][0] as f64 * nx
                 + atoms.vel[i][1] as f64 * ny
                 + atoms.vel[i][2] as f64 * nz;
-            let beta = material_table.beta_ij[mat_i][wall_mat];
             let f_net = wall_normal_force(
                 &material_table,
                 mat_i,
@@ -1576,7 +1574,7 @@ pub fn wall_contact_force(
             // Twisting friction torque (cylinder wall is static).
             let mu_tw = material_table.twisting_friction_ij[mat_i][wall_mat];
             if mu_tw > 0.0 {
-                let tt = wall_twisting_torque([nx, ny, nz], dem.omega[i], r_eff, f_net, mu_tw);
+                let tt = wall_twisting_torque([nx, ny, nz], dem.omega[i], radius, f_net, mu_tw);
                 dem.torque[i][0] += tt[0];
                 dem.torque[i][1] += tt[1];
                 dem.torque[i][2] += tt[2];
@@ -1585,6 +1583,7 @@ pub fn wall_contact_force(
             // Tangential (Mindlin) sliding friction (cylinder wall is static).
             let mu = material_table.friction_ij[mat_i][wall_mat];
             if mu > 0.0 {
+                let beta = material_table.beta_ij[mat_i][wall_mat];
                 let g_eff = material_table.g_eff_ij[mat_i][wall_mat];
                 let key = (1u8, cyl_idx, atoms.tag[i]);
                 let old = old_springs.get(&key).copied().unwrap_or([0.0; 3]);
@@ -1697,7 +1696,6 @@ pub fn wall_contact_force(
             let v_n = atoms.vel[i][0] as f64 * nx
                 + atoms.vel[i][1] as f64 * ny
                 + atoms.vel[i][2] as f64 * nz;
-            let beta = material_table.beta_ij[mat_i][wall_mat];
             let f_net = wall_normal_force(
                 &material_table,
                 mat_i,
@@ -1716,7 +1714,7 @@ pub fn wall_contact_force(
             // Twisting friction torque (sphere wall is static).
             let mu_tw = material_table.twisting_friction_ij[mat_i][wall_mat];
             if mu_tw > 0.0 {
-                let tt = wall_twisting_torque([nx, ny, nz], dem.omega[i], r_eff, f_net, mu_tw);
+                let tt = wall_twisting_torque([nx, ny, nz], dem.omega[i], radius, f_net, mu_tw);
                 dem.torque[i][0] += tt[0];
                 dem.torque[i][1] += tt[1];
                 dem.torque[i][2] += tt[2];
@@ -1725,6 +1723,7 @@ pub fn wall_contact_force(
             // Tangential (Mindlin) sliding friction (sphere wall is static).
             let mu = material_table.friction_ij[mat_i][wall_mat];
             if mu > 0.0 {
+                let beta = material_table.beta_ij[mat_i][wall_mat];
                 let g_eff = material_table.g_eff_ij[mat_i][wall_mat];
                 let key = (2u8, sph_idx, atoms.tag[i]);
                 let old = old_springs.get(&key).copied().unwrap_or([0.0; 3]);
@@ -1842,7 +1841,6 @@ pub fn wall_contact_force(
             let v_n = atoms.vel[i][0] as f64 * nx
                 + atoms.vel[i][1] as f64 * ny
                 + atoms.vel[i][2] as f64 * nz;
-            let beta = material_table.beta_ij[mat_i][wall_mat];
             let f_net = wall_normal_force(
                 &material_table,
                 mat_i,
@@ -1861,7 +1859,7 @@ pub fn wall_contact_force(
             // Twisting friction torque (region wall is static).
             let mu_tw = material_table.twisting_friction_ij[mat_i][wall_mat];
             if mu_tw > 0.0 {
-                let tt = wall_twisting_torque([nx, ny, nz], dem.omega[i], r_eff, f_net, mu_tw);
+                let tt = wall_twisting_torque([nx, ny, nz], dem.omega[i], radius, f_net, mu_tw);
                 dem.torque[i][0] += tt[0];
                 dem.torque[i][1] += tt[1];
                 dem.torque[i][2] += tt[2];
@@ -1870,6 +1868,7 @@ pub fn wall_contact_force(
             // Tangential (Mindlin) sliding friction (region wall is static).
             let mu = material_table.friction_ij[mat_i][wall_mat];
             if mu > 0.0 {
+                let beta = material_table.beta_ij[mat_i][wall_mat];
                 let g_eff = material_table.g_eff_ij[mat_i][wall_mat];
                 let key = (3u8, reg_idx, atoms.tag[i]);
                 let old = old_springs.get(&key).copied().unwrap_or([0.0; 3]);
