@@ -10,8 +10,10 @@
 //!
 //! 1. Rotate previous spring into current tangent plane (remove normal component)
 //! 2. Integrate: `s += v_t · dt`
-//! 3. Cap spring at Coulomb limit: `|k_t s| ≤ μ |F_n|`
-//! 4. Tangential force: `F_t = k_t s - γ_t v_t`, capped at `μ |F_n|`
+//! 3. Optionally rescale the history on normal unloading for the
+//!    `mindlin_rescale` variants
+//! 4. Cap spring at Coulomb limit: `|k_t s| ≤ μ |F_n|`
+//! 5. Tangential force: `F_t = k_t s - γ_t v_t`, capped at `μ |F_n|`
 //!
 //! where `k_t = 8 G* √(R* δ)` is the tangential stiffness, `G*` is the effective
 //! shear modulus, and `γ_t = 2 β √(5/6) √(k_t m_r)` is the tangential damping.
@@ -26,6 +28,9 @@ use soil_core::AtomData;
 
 // ── ContactHistoryStore ─────────────────────────────────────────────────────
 
+/// Fixed-width per-contact history payload; see [`ContactHistoryStore`] for slot meanings.
+pub type ContactHistory = [f64; 8];
+
 /// Per-contact spring displacement history for tangential, rolling, and twisting models.
 ///
 /// Each contact entry is stored in **canonical form** — from the perspective of the
@@ -35,13 +40,14 @@ use soil_core::AtomData;
 ///
 /// # Storage layout
 ///
-/// Each contact stores 7 `f64` displacement values:
+/// Each contact stores 8 `f64` displacement values:
 ///
 /// | Indices | Model              | Description                             |
 /// |---------|--------------------|-----------------------------------------|
-/// | `[0..3]`| Mindlin tangential | Tangential spring displacement vector   |
+/// | `[0..3]`| Mindlin tangential | Tangential displacement, or elastic force for `/force` variants |
 /// | `[3..6]`| SDS rolling        | Rolling spring displacement vector      |
 /// | `[6]`  | SDS twisting       | Twisting spring displacement (scalar)   |
+/// | `[7]`  | Mindlin rescale    | Previous contact radius `a = sqrt(R* delta)` |
 ///
 /// Rolling and twisting slots are zero when the constant-torque model is used.
 pub struct ContactHistoryStore {
@@ -50,7 +56,7 @@ pub struct ContactHistoryStore {
     /// `active_flag` is reset to `false` before each pair loop and set to `true`
     /// when a contact is touched. Stale entries (broken contacts) are pruned after
     /// the loop completes.
-    pub contacts: Vec<Vec<(u32, [f64; 7], bool)>>,
+    pub contacts: Vec<Vec<(u32, ContactHistory, bool)>>,
 }
 
 impl ContactHistoryStore {
@@ -83,7 +89,7 @@ impl AtomData for ContactHistoryStore {
     }
 
     fn apply_permutation(&mut self, perm: &[usize], n: usize) {
-        let new_contacts: Vec<Vec<(u32, [f64; 7], bool)>> =
+        let new_contacts: Vec<Vec<(u32, ContactHistory, bool)>> =
             perm.iter().map(|&p| self.contacts[p].clone()).collect();
         self.contacts[..n].clone_from_slice(&new_contacts);
     }
@@ -101,6 +107,7 @@ impl AtomData for ContactHistoryStore {
                 buf.push(s[4]);
                 buf.push(s[5]);
                 buf.push(s[6]);
+                buf.push(s[7]);
             }
         } else {
             buf.push(0.0); // no contacts
@@ -111,19 +118,34 @@ impl AtomData for ContactHistoryStore {
         let count = buf[0] as usize;
         let mut list = Vec::with_capacity(count);
         let mut pos = 1;
+        let old_seven_slot_format = buf.len() == 1 + count * 8;
         for _ in 0..count {
             let tag = buf[pos] as u32;
-            let s = [
-                buf[pos + 1],
-                buf[pos + 2],
-                buf[pos + 3],
-                buf[pos + 4],
-                buf[pos + 5],
-                buf[pos + 6],
-                buf[pos + 7],
-            ];
+            let s = if old_seven_slot_format {
+                [
+                    buf[pos + 1],
+                    buf[pos + 2],
+                    buf[pos + 3],
+                    buf[pos + 4],
+                    buf[pos + 5],
+                    buf[pos + 6],
+                    buf[pos + 7],
+                    0.0,
+                ]
+            } else {
+                [
+                    buf[pos + 1],
+                    buf[pos + 2],
+                    buf[pos + 3],
+                    buf[pos + 4],
+                    buf[pos + 5],
+                    buf[pos + 6],
+                    buf[pos + 7],
+                    buf[pos + 8],
+                ]
+            };
             list.push((tag, s, false));
-            pos += 8;
+            pos += if old_seven_slot_format { 8 } else { 9 };
         }
         self.contacts.push(list);
         pos

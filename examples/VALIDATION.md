@@ -243,6 +243,25 @@ integrated collision validation. It strongly pins the history-free force express
 and Coulomb cap, but the tangential damping coefficient is identified from the
 sub-cap branch before checking the full documented `min()` shape.
 
+## `bench_mindlin_rescale_tangential` — Mindlin unloading rescale
+
+Two identical spheres are held at prescribed overlaps: first tangentially loaded
+at fixed peak overlap, then normally unloaded with zero tangential velocity. The
+benchmark checks `history`, `mindlin_rescale`, `mindlin_rescale/force`, and
+`linear_nohistory` against the documented LAMMPS recurrences for the unloading
+gate `history <- history * a/a_prev`.
+
+![Mindlin unloading rescale](bench_mindlin_rescale_tangential/plots/mindlin_rescale_unload.png)
+
+*DIRT unloading forces against the documented recurrence. The pass gate verifies
+that `mindlin_rescale` drops quadratically relative to displacement-history
+Mindlin during unload, `mindlin_rescale/force` scales its elastic-force history,
+and `linear_nohistory` remains zero when `v_t = 0`.*
+
+**Honest read:** this is an isolated force-law benchmark, not a free collision.
+That is intentional: prescribed positions remove integrator noise and expose the
+load-unload history update directly.
+
 ## `bench_kharaz_oblique` — replicate Kharaz, Gorham & Salman (2001)
 
 Reproduces Kharaz et al.'s (2001) elastic-rebound *experimental protocol* — a 5 mm
@@ -1043,6 +1062,7 @@ will need a benchmark when re-added.)
 | hertz_rebound | Hertz + LAMMPS | analytical (strong) | PASS; damped vs elastic only; damping mapping calibrated |
 | hooke_rebound | linear damped-oscillator collision (COR=e, t_c=π/ω_d, δ_max) | analytical (strong, exact) | PASS; exact closed form (not just elastic), COR/t_c/overlap ≤0.05%; velocity-independence confirmed |
 | oblique_impact | Maw 1976 + LAMMPS | analytical + cross-code (strong) | PASS; full S-curve; vs theory not raw experiment |
+| mindlin_rescale_tangential | LAMMPS documented unloading recurrence | analytical / documented law | PASS; isolates load-unload gate; prescribed path, not free dynamics |
 | kharaz_oblique | Kharaz 2001 protocol: rigid-body kinematics + Maw, anchored to measured eₙ, μ | analytical + experiment-anchored (strong) | PASS; eₙ=0.980 flat, sliding branch exact; raw glass-anvil points paywalled |
 | sliding_friction | rigid-body slip-to-roll | analytical | PASS; (5/7)v₀ model-independent; a=μg partly self-consistent |
 | wall_activate_by_name | active/inactive named wall control | API behavior | PASS; inactive force zero within 1e-14 N, reactivated mean force recovers initial active force within 1e-12 relative |
