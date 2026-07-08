@@ -240,6 +240,10 @@ name = "bench_nohistory_tangential"
 path = "examples/bench_nohistory_tangential/main.rs"
 
 [[example]]
+name = "bench_mindlin_rescale_tangential"
+path = "examples/bench_mindlin_rescale_tangential/main.rs"
+
+[[example]]
 name = "bench_wall_activate_by_name"
 path = "examples/bench_wall_activate_by_name/main.rs"
 

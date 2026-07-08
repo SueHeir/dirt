@@ -169,7 +169,7 @@ fn run_model(mat: &MaterialCfg, sc: &ScenarioCfg, tangential_model: &str, out: &
                 .iter()
                 .find(|(t, _, _)| *t == 1)
                 .map(|(_, s, _)| *s)
-                .unwrap_or([0.0; 7]);
+                .unwrap_or([0.0; 8]);
             (s[0] * s[0] + s[1] * s[1] + s[2] * s[2]).sqrt()
         };
 

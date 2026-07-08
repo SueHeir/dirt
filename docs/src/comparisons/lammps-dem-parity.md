@@ -82,9 +82,9 @@ calibrated from restitution.
 | `linear_history` (spring on accumulated ξ) | ✅ `pair_granular.rst:550`; `.h:71` | ✅ Hooke-path linear `k_t` + Coulomb cap — `crates/dirt_granular/src/contact.rs:722` (tangential block) |
 | **Mindlin** (adds contact-radius `a`, `k_t=8G*`) | ✅ `pair_granular.rst:613`; `.h:98` | ✅ incremental spring-history + Coulomb cap `μ|F_n|`, damping `γ_t=2β√(5/6)√(k_t m_r)` — `crates/dirt_granular/src/contact.rs:432` (`k_t` ~348, damping 484) |
 | `mindlin/force` (history stored as elastic force) | ✅ `pair_granular.rst:645`; `.h:112` | ❌ — DIRT stores tangential *displacement* history (`crates/dirt_granular/src/tangential.rs:49` `ContactHistoryStore`), not the force form |
-| `mindlin_rescale` / `mindlin_rescale/force` (rescale ξ on unloading) | ✅ `pair_granular.rst:675, 700`; `.h:119, 126` | ❌ — no unloading-rescale variant found |
+| `mindlin_rescale` / `mindlin_rescale/force` (rescale history on unloading) | ✅ `pair_granular.rst:675, 700`; `.h:119, 126` | ✅ selectable `tangential_model = "mindlin_rescale"` or `"mindlin_rescale/force"` (`"mindlin_rescale_force"` alias); scales tangential history by `a/a_prev` on unloading — `crates/dirt_granular/src/contact.rs`; validated by `examples/bench_mindlin_rescale_tangential` |
 | `linear_history_classic`, `mindlin_classic` (legacy, source-only) | ✅ `gran_sub_mod_tangential.h:83, 91` (undocumented) | ❌ (n/a) |
-| Per-contact tangential history store | ✅ implicit in sub-models | ✅ canonical-frame store, 7 f64/contact — `crates/dirt_granular/src/tangential.rs:49` |
+| Per-contact tangential history store | ✅ implicit in sub-models | ✅ canonical-frame store, 8 f64/contact (tangential/rolling/twist plus previous contact radius for rescale) — `crates/dirt_granular/src/tangential.rs:49` |
 
 ## Rolling resistance
 
@@ -204,8 +204,9 @@ Rough parity on rigid clumps.
    velocity-fluctuation diagnostic. **Largest gap.**
 2. **MDR elastic-plastic normal model** (`gran_sub_mod_normal.cpp:540` +
    `fix_granular_mdr.cpp`) — DIRT has no plastic normal contact.
-3. **Mindlin `force`-form history and `mindlin_rescale` unloading variants**
-   (`pair_granular.rst:645, 675`) — DIRT stores displacement history only.
+3. **Mindlin `force`-form history without unloading rescale** (`mindlin/force`,
+   `pair_granular.rst:645`) — DIRT now has the unloading-rescale displacement and
+   force-history variants, but not the standalone `mindlin/force` keyword.
 4. ~~**Marshall twisting** (coeffs derived from the tangential model,
    `pair_granular.rst:818`)~~ — ✅ **CLOSED**: `twisting_model="marshall"`
    (`crates/dirt_granular/src/contact.rs:614`) derives `k_twist=½k_t a²`,

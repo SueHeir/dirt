@@ -1,0 +1,27 @@
+# Mindlin unloading-rescale tangential benchmark.
+#
+# Two identical spheres are kept in contact by prescribed positions. A tangential
+# spring is loaded at fixed peak overlap, then the normal overlap is reduced with
+# zero tangential velocity. This isolates the LAMMPS `mindlin_rescale` unloading
+# gate: during unloading, `xi <- xi * a/a_prev` where a = sqrt(R* delta).
+#
+# The sweep checks DIRT against the documented recurrence from
+# LAMMPS doc/src/pair_granular.rst ("mindlin_rescale" and
+# "mindlin_rescale/force"). This config is declarative; main.rs only records the
+# force-law response to this load/unload path.
+
+[material]
+name = "glass"
+youngs_mod = 1.0e8
+poisson_ratio = 0.25
+restitution = 1.0
+friction = 100.0
+
+[scenario]
+radius = 0.005
+peak_overlap = 1.0e-4
+final_overlap = 2.5e-5
+dt = 1.0e-6
+load_steps = 80
+unload_steps = 80
+tangential_velocity = 1.0e-3
