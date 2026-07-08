@@ -2193,6 +2193,10 @@ mod tests {
                 "warning must name the wall geometry: {msg}"
             );
             assert!(
+                msg.contains(&format!("{geometry}-guard")),
+                "warning must name the configured wall when available: {msg}"
+            );
+            assert!(
                 msg.contains("sticky") && msg.contains("surface_energy"),
                 "warning must name the material and ignored field: {msg}"
             );

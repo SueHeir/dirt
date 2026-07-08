@@ -11,7 +11,7 @@ Parses `[[wall]]` entries from the TOML config, resolves each wall's material ag
 Wall contacts reuse the same per-pair `MaterialTable` tables as particle–particle contacts (`friction_ij`, `rolling_friction_ij`, `twisting_friction_ij`, `e_eff_ij`, `g_eff_ij`, `beta_ij`), with `R* = particle_radius`.
 
 - **Tangential (Mindlin sliding) friction** and **rolling resistance** (`constant` or `sds`) are applied by **all** wall types. Frictionless walls (`friction = 0`) are byte-for-byte identical to a pure-normal contact.
-- **Twisting friction** is applied by **plane walls only**.
+- **Twisting friction** is applied by **all** wall types.
 - **Adhesion is asymmetric by geometry:** plane walls support JKR/DMT (`surface_energy`) *and* SJKR cohesion (`cohesion_energy`); cylinder/sphere/region walls support **SJKR cohesion only**. If their material sets `surface_energy > 0`, setup warns that JKR/DMT `surface_energy` is plane-wall-only.
 - The optional **`temperature`** field is *stored but never read* by this crate — it is a hook for an external heat-transfer system.
 
