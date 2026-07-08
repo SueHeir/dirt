@@ -512,6 +512,36 @@ paths and a concrete, non-trivial **model-selection** check (the `4/3` ratio and
 qualitatively different area-law, which unlike JKR/DMT vanishes at separation). It does
 not validate emergent contact-area mechanics (no Maugis neck or adhesive stiffness).
 
+## `bench_liquid_bridge_cohesion` — pendular liquid-bridge force and wet heap trend
+
+Adds the opt-in `liquid_bridge_model = "willett2000"` capillary bridge force for
+near-contact particle pairs. The single-contact arm separates two spheres and
+checks the tensile normal force against Willett et al.'s closed-form expression
+with an explicit rupture distance; the latest maximum relative error is
+`4.24e-13` against a `1e-9` gate. A dry identity arm also compares the default dry
+configuration to `liquid_bridge_model = "off"` with nonzero liquid parameters and
+requires byte-identical traces.
+
+![Pendular liquid-bridge force](bench_liquid_bridge_cohesion/plots/bridge_force.png)
+
+*DIRT liquid-bridge force versus the Willett et al. (2000) closed form, including
+the configured rupture cutoff. Latest run: PASS.*
+
+The macro arm reuses the lifted-cylinder angle-of-repose protocol at small scale
+and checks the established wet-granular trend: adding pendular liquid bridges
+increases the static angle of repose (Hornbaker et al. 1997; Tegzes et al. 1999).
+The latest high-liquid case is `2.71 deg` above dry, exceeding the `2.00 deg` gate.
+
+![Wet angle-of-repose trend](bench_liquid_bridge_cohesion/plots/wet_repose_trend.png)
+
+*Static heap angle versus liquid bridge volume per contact. Latest run: PASS; the
+reference is a qualitative trend rather than a universal quantitative angle.*
+
+**Honest read:** the single-contact force is a direct closed-form implementation
+check, not an independent wetting experiment. The heap check validates that the
+new force changes a bulk observable in the physically expected direction, but the
+absolute angle is setup-dependent and intentionally gated only as a trend.
+
 ## `bench_fiber_crossover` — friction at a bonded-fiber crossover
 
 Two perpendicular bonded-sphere fibers cross at one contact; the upper is dragged
@@ -1139,6 +1169,7 @@ will need a benchmark when re-added.)
 | twisting_friction | own-model torsional spin-down | analytical (self-consistent) | PASS; constant and SDS twisting spin-down match α=(5/4)μ_tw g/R to round-off; off-axis spin and drift remain zero |
 | jkr_adhesion | JKR pull-off | analytical (self-consistent) | PASS; measures its own constant force |
 | dmt_sjkr_cohesion | DMT pull-off 2πwR* / SJKR area law cπR*δ | analytical (self-consistent) | PASS; adds DMT+SJKR paths & 4/3 model-selection check |
+| liquid_bridge_cohesion | Willett 2000 pendular bridge + wet AoR trend | analytical + qualitative macro trend | PASS; force max relative error 4.24e-13, dry-off trace byte-identical, wet heap +2.71 deg over dry |
 | mdr_elastoplastic_normal | LAMMPS MDR pair loading/yield/plastic-unloading trace | LAMMPS source equations | PASS; max relative error 3.724e-13; full LAMMPS apparent-radius/free-surface MDR state intentionally not included |
 | fiber_crossover | Coulomb limit μN | analytical (self-consistent) | PASS; ratio circular vs measured N |
 | bond_fiber_tensile | input Young's modulus via `K_n = E A / L` | analytical (self-consistent) | PASS; fitted E = 1.000050 GPa vs input 1.000001 GPa (0.005% error) |

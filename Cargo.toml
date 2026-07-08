@@ -169,6 +169,10 @@ path = "examples/bench_granular_conductivity/main.rs"
 name = "contact_analysis_demo"
 path = "examples/contact_analysis_demo/main.rs"
 
+[[example]]
+name = "bench_liquid_bridge_cohesion"
+path = "examples/bench_liquid_bridge_cohesion/main.rs"
+
 # ── SPH glass-sphere calibration suite (one example per DEM closure) ──
 [[example]]
 name = "sphcal_shear_rheology"
