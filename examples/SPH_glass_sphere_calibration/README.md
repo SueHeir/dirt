@@ -66,9 +66,9 @@ single rank) is:
 
 | # | default command | wall time | verdict |
 |---|---|---:|---|
-| 1 | `sweep.py smoke` | 496 s | `2/2 checks passed`, `ALL CHECKS PASSED` |
-| 4 | `sweep.py smoke` | 1072 s | `3/3 checks passed`, `ALL CHECKS PASSED` |
-| 6 | `sweep.py smoke` | 147 s | `3/3 checks passed`, `ALL CHECKS PASSED` |
+| 1 | `sweep.py smoke` | 489 s | `2/2 checks passed`, `ALL CHECKS PASSED` |
+| 4 | `sweep.py smoke` | 1087 s | `3/3 checks passed`, `ALL CHECKS PASSED` |
+| 6 | `sweep.py smoke` | 121 s | `3/3 checks passed`, `ALL CHECKS PASSED` |
 
 ![bounded smoke gates](plots/smoke_gates.png)
 
