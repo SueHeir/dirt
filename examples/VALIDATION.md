@@ -820,18 +820,28 @@ A 2D slot hopper discharges under gravity; the mass flow rate is fit against
 ![Beverloo scaling](bench_hopper_beverloo/plots/beverloo_W_vs_D.png)
 
 *Discharge rate vs effective orifice width (log–log) with the power-law fit and the 3/2
-reference; fitted exponent ≈ 1.36 (R² ≈ 1.00).*
+reference; fitted exponent ≈ 1.53 (R² ≈ 0.9995).*
 
 ![Discharge curves](bench_hopper_beverloo/plots/discharge_curves.png)
 
 *Cumulative discharged mass vs time per orifice width; the constant-slope region is the
 steady rate W.*
 
+![Published orifice comparison](bench_hopper_beverloo/plots/published_orifice_comparison.png)
+
+*Normalized DIRT orifice-width scaling against Choi, Kudrolli & Bazant's 2005
+quasi-2D silo fit `v* = 0.63 (W/d - 1)^1.48`. Latest run: PASS; DIRT keeps the
+unchanged full-run exponent gate and compares as a slot exponent, not an absolute
+prefactor.*
+
 **Honest read:** the reference is itself an **empirical** fit (k ≈ 1.4 and the prefactor
 are fitted), so this validates a correlation, not first principles — and only its
-exponent/form. The measured 1.36 is below the textbook 3/2 (finite hopper, wedge feed,
-modest width range); the ±0.25 tolerance is wide. 2D slot only (the 3D `5/2` form is
-untested).
+exponent/form. The latest measured 1.53 is close to the textbook 3/2; finite hopper,
+wedge-feed, and modest-width effects remain the main limitations. Choi et al. provide
+a closer published quasi-2D slot comparison with exponent 1.48, but their flat-bottom
+silo, depth, and velocity-based flow-rate measure mean this is still a normalized
+exponent comparison, not a prefactor match. 2D slot only (the 3D `5/2` form is untested
+and not directly comparable to this geometry).
 
 ## `hopper_quiescence` — region-coherence optimization fidelity
 
@@ -1138,7 +1148,7 @@ will need a benchmark when re-added.)
 | angle_of_repose | empirical (none exact) | qualitative | PASS; trends only; default bounded smoke gate PASSes 4/4 with committed pass-criterion graph; full sweep stands on real frictional wall |
 | column_collapse | Lube/Lajeunesse (empirical) + LAMMPS cross-check | empirical scaling + cross-code | FAIL (genuine finite-size limit, not fit noise); linear exponent 1.54 vs 1.0 outside ±0.25 after seed-averaging + 11-pt sweep + sub-diameter metric; LAMMPS misses identically (1.27); exits 1 |
 | lebc_shear | Lun / extended kinetic theory + LAMMPS / Fortran / LIGGGHTS; GDR MiDi / da Cruz μ(I) form | kinetic theory + calibration | PASS/diagnostic; KT gate requires ≥60% of points within 15% normal-stress and 20% shear-stress bands; dense/jamming deviations expected |
-| hopper_beverloo | Beverloo (empirical) | empirical correlation | PASS; exponent 1.36 vs 1.5; prefactor untested |
+| hopper_beverloo | Beverloo (empirical) + Choi/Kudrolli/Bazant quasi-2D experiment | empirical correlation / published slot exponent | PASS; exponent 1.53 vs 1.5 and published 1.48; prefactor untested |
 | hopper_quiescence | unoptimized baseline run | optimization fidelity | PASS; short matched run preserves discharge within ±1% and fill height within 0.34 mm of baseline; phase wall time speedup 1.15x |
 | plate_sinkage | Bekker (empirical) | empirical / qualitative | PASS; form only; loose bands; softened grains |
 | convergence | finest-dt / large-N / large-box limit (+ Hertz anchor) | numerical (self-convergence) | PASS; dt, N, and box-size convergence; observed order p≈2; box-size error 3.80→2.27→1.64→0% |

@@ -1,0 +1,8 @@
+source,geometry,particle_d_mm,slot_depth_d,reported_relation,effective_width_over_d,normalized_flow
+Choi et al. 2005 J. Phys.: Condens. Matter 17 S2533-S2548,quasi-2D flat-bottom silo,3.0,8.3,v*=0.63*(W/d - 1)^1.48,2.0,2.789487
+Choi et al. 2005 J. Phys.: Condens. Matter 17 S2533-S2548,quasi-2D flat-bottom silo,3.0,8.3,v*=0.63*(W/d - 1)^1.48,3.0,5.083226
+Choi et al. 2005 J. Phys.: Condens. Matter 17 S2533-S2548,quasi-2D flat-bottom silo,3.0,8.3,v*=0.63*(W/d - 1)^1.48,4.0,7.781240
+Choi et al. 2005 J. Phys.: Condens. Matter 17 S2533-S2548,quasi-2D flat-bottom silo,3.0,8.3,v*=0.63*(W/d - 1)^1.48,5.0,10.826189
+Choi et al. 2005 J. Phys.: Condens. Matter 17 S2533-S2548,quasi-2D flat-bottom silo,3.0,8.3,v*=0.63*(W/d - 1)^1.48,6.0,14.179596
+Choi et al. 2005 J. Phys.: Condens. Matter 17 S2533-S2548,quasi-2D flat-bottom silo,3.0,8.3,v*=0.63*(W/d - 1)^1.48,7.0,17.813329
+Choi et al. 2005 J. Phys.: Condens. Matter 17 S2533-S2548,quasi-2D flat-bottom silo,3.0,8.3,v*=0.63*(W/d - 1)^1.48,8.0,21.705669

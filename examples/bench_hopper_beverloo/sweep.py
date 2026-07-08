@@ -44,6 +44,8 @@ Outputs:
     sweep/lammps_D<...>/in.lammps  LAMMPS inputs                      (gitignored)
     data/sweep.csv                 per-D fitted W (DIRT)              (gitignored)
     data/lammps_results.csv        per-D fitted W (LAMMPS)           (gitignored)
+    data/choi2005_quasi2d_orifice.csv
+                                    published quasi-2D slot reference  (tracked)
     data/curve_D<...>.csv          per-D cumulative-discharge curves  (gitignored)
     plots/*.png                    final figures                      (tracked)
 
@@ -51,6 +53,9 @@ Reference:
     W. A. Beverloo, H. A. Leniger, J. van de Velde, "The flow of granular solids
     through orifices", Chem. Eng. Sci. 15 (1961) 260-269.
     For a long slot of width D the per-unit-length flow scales as (D - k d)^(3/2).
+    J. Choi, A. Kudrolli, M. Z. Bazant, "Velocity profile of granular flows inside
+    silos and hoppers", J. Phys.: Condens. Matter 17 (2005) S2533-S2548.
+    Their quasi-2D silo experiments report v* = 0.63 (W/d - 1)^1.48.
 """
 
 import os
@@ -69,6 +74,7 @@ DATA_DIR = os.path.join(SCRIPT_DIR, "data")
 PLOT_DIR = os.path.join(SCRIPT_DIR, "plots")
 SWEEP_CSV = os.path.join(DATA_DIR, "sweep.csv")              # fitted W vs D (DIRT)
 LAMMPS_CSV = os.path.join(DATA_DIR, "lammps_results.csv")    # fitted W vs D (LAMMPS, optional)
+CHOI_REF_CSV = os.path.join(DATA_DIR, "choi2005_quasi2d_orifice.csv")
 
 # LAMMPS binary candidates, in preference order. LAMMPS is optional: if none is
 # found, the LAMMPS leg is skipped and only DIRT is run/plotted/validated.
@@ -98,6 +104,7 @@ G = abs(GZ)
 # Beverloo constants (theory targets; C is order-1, validate the exponent & k).
 K_BEVERLOO = 1.4
 EXPONENT_2D = 1.5    # slot (per unit width)
+CHOI_EXPONENT = 1.48
 
 # ── Sweep over slot opening D [m] (all > a few grain diameters) ──────────────
 # k·d = 1.4·0.004 = 0.0056 m, so the smallest D≈0.016 gives (D-kd)≈0.0104 (>2.5 d).
@@ -596,6 +603,27 @@ def _load_lammps():
         return [{k: float(v) for k, v in r.items()} for r in csv.DictReader(f)]
 
 
+def _load_choi_reference():
+    """Load Choi et al.'s published quasi-2D orifice-width fit samples.
+
+    The CSV stores dimensionless samples from the paper's reported fit,
+        v* = 0.63 (W/d - 1)^1.48,
+    after dropping the arbitrary 0.63 prefactor. We compare the dimensionless slope
+    only; the DIRT prefactor is not comparable because the slot depth, particle size,
+    bin, funnel, and W measurement differ.
+    """
+    if not os.path.isfile(CHOI_REF_CSV):
+        return []
+    rows = []
+    with open(CHOI_REF_CSV) as f:
+        for r in csv.DictReader(f):
+            rows.append({
+                "x_eff_over_d": float(r["effective_width_over_d"]),
+                "q_norm": float(r["normalized_flow"]),
+            })
+    return rows
+
+
 def _load_curve(D, prefix="curve_"):
     path = os.path.join(DATA_DIR, f"{prefix}{case_tag(D)}.csv")
     if not os.path.isfile(path):
@@ -742,7 +770,46 @@ def plot(rows, lammps_rows=None):
     fig.savefig(os.path.join(PLOT_DIR, "discharge_curves.png"))
     plt.close(fig)
 
-    print(f"\nFigures -> {PLOT_DIR}/beverloo_W_vs_D.png, discharge_curves.png")
+    # ── normalized DIRT-vs-published quasi-2D orifice-width comparison ──
+    # Choi et al. used a flat-bottom quasi-2D silo and reported only an indirect
+    # velocity-based flow-rate fit, so this plot compares slopes after normalizing
+    # each data source at the central DIRT point. It is a literature validity check,
+    # not an absolute prefactor calibration.
+    ref = _load_choi_reference()
+    if ref:
+        fig, ax = plt.subplots(figsize=(6.8, 4.8))
+        dirt_x = [r["D_eff"] / D_GRAIN for r in rows]
+        mid_i = len(rows) // 2
+        dirt_x0 = dirt_x[mid_i]
+        dirt_y0 = ys[mid_i]
+        dirt_y = [y / dirt_y0 for y in ys]
+        ax.loglog(dirt_x, dirt_y, "o", ms=8, color="#1f77b4",
+                  label=fr"DIRT slot fit: $n={exponent:.2f}$")
+        ax.loglog(dirt_x, [(x / dirt_x0) ** exponent for x in dirt_x],
+                  "-", color="#1f77b4", lw=1.4)
+
+        ref_x = [r["x_eff_over_d"] for r in ref]
+        ref_y_raw = [r["q_norm"] for r in ref]
+        ref_y0 = dirt_x0 ** CHOI_EXPONENT
+        ref_y = [y / ref_y0 for y in ref_y_raw]
+        ax.loglog(ref_x, ref_y, "s", ms=7, mfc="none", mec="#2ca02c",
+                  label=fr"Choi et al. 2005: $n={CHOI_EXPONENT:.2f}$")
+        xmin = min(dirt_x + ref_x) * 0.9
+        xmax = max(dirt_x + ref_x) * 1.1
+        xline = [xmin, xmax]
+        ax.loglog(xline, [(x / dirt_x0) ** EXPONENT_2D for x in xline],
+                  ":", color="gray", label=r"Beverloo $3/2$ slope")
+        ax.set_xlabel(r"effective slot width / grain diameter")
+        ax.set_ylabel("normalized flow rate")
+        ax.set_title("Quasi-2D orifice-width scaling: DIRT vs published experiment")
+        ax.legend(fontsize=9)
+        ax.grid(True, which="both", ls=":", alpha=0.4)
+        fig.tight_layout()
+        fig.savefig(os.path.join(PLOT_DIR, "published_orifice_comparison.png"))
+        plt.close(fig)
+
+    print(f"\nFigures -> {PLOT_DIR}/beverloo_W_vs_D.png, discharge_curves.png, "
+          "published_orifice_comparison.png")
 
 
 def compare_codes(dirt_rows, lammps_rows):
