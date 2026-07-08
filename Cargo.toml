@@ -134,6 +134,10 @@ name = "fiber_bond"
 path = "examples/fiber_bond/main.rs"
 
 [[example]]
+name = "bench_curtis_cantilever"
+path = "examples/bench_curtis_cantilever/main.rs"
+
+[[example]]
 name = "bench_fiber_crossover"
 path = "examples/bench_fiber_crossover/main.rs"
 

@@ -567,6 +567,33 @@ bonded chain's static scale and the frozen-anchor failure mode. The reference us
 the committed 10-sphere chain mass spread over the 18 mm span, so it is not a
 continuum calibration sweep or a direct experiment.
 
+## `bench_curtis_cantilever` — Guo/Curtis flexible-fiber cantilever
+
+A 10-sphere bonded fiber is fixed at one end and loaded by a static transverse
+point force at the free-end sphere. The sweep follows Guo, Wassgren, Hancock,
+Ketterhagen, and Curtis (2013), Fig. 3-4: it compares normalized free-end
+deflection vs normalized load to Euler-Bernoulli thin-beam theory, then checks
+the along-fiber deflection and bending-moment distributions at
+`|y0|/(L-rs) ~= 0.15`.
+
+![Guo/Curtis cantilever load curve](bench_curtis_cantilever/plots/tip_deflection_vs_load.png)
+
+*Normalized free-end deflection vs `F (L-rs)^2 / EI`. The shaded band is the
+/-3 % PASS criterion; latest run: PASS, max relative error 2.988 %, with all 9
+bonds intact.*
+
+![Guo/Curtis cantilever profiles](bench_curtis_cantilever/plots/moment_deflection_profiles.png)
+
+*Deflection and bending-moment profiles at normalized load 0.45. Latest run:
+PASS, max absolute profile errors are 2.828 % for deflection and 1.791 % for
+bending moment.*
+
+**Honest read:** this is an analytical elastic-beam validation of the bonded-sphere
+fiber response, not a fit to copied paper data. The highest load sits at the edge
+of the small-deflection beam-theory regime by design, matching the paper's
+distribution check; larger-deflection cases would need the large-deformation
+reference rather than this straight Euler-Bernoulli line.
+
 ---
 
 # Tier 2 — Free cooling (Haff's law)
@@ -1143,6 +1170,7 @@ will need a benchmark when re-added.)
 | fiber_crossover | Coulomb limit μN | analytical (self-consistent) | PASS; ratio circular vs measured N |
 | bond_fiber_tensile | input Young's modulus via `K_n = E A / L` | analytical (self-consistent) | PASS; fitted E = 1.000050 GPa vs input 1.000001 GPa (0.005% error) |
 | bond_cantilever | Euler-Bernoulli uniform-load cantilever tip deflection | analytical | PASS; final tip deflection −9.476884e-07 m vs −9.535320e-07 m (0.61% error, 5% gate), 9/9 bonds present |
+| curtis_cantilever | Guo/Curtis flexible-fiber cantilever load curve and profiles | analytical | PASS; tip curve max error 2.988%, deflection profile 2.828%, bending-moment profile 1.791%, 0 broken bonds |
 | sphere/clump haff | Haff law + LAMMPS | law (cross-code) | PASS; R²≈0.9999, slope −1.88 / −1.79 at t/tc≈5 / 11; −2 not fully reached; tc unvalidated; clump cross-check calibrated |
 | rod haff | Haff law + optional LAMMPS | law (cross-code when available) | PASS; current 1.6M-step run gives R²=0.9999 and slope −1.841 at t/tc=12.9 against the unchanged −2.3<slope<−1.6 gate; stale 700k-step harness checkouts still fail around slope −1.59 at t/tc≈5.6 |
 | SPH glass column collapse | Lube/Lajeunesse (empirical) + LAMMPS overlay | empirical macro gate | FAIL (remaining macro limitation); uses canonical `mu_r=0.10` because 03_angle_of_repose has no transferable closure; linear exponent 1.407 vs 1.0 outside ±0.25, power exponent 0.885 inside gate; exits 1 |

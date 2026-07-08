@@ -103,7 +103,7 @@ impl Recorder {
     }
 }
 
-fn main() {
+pub fn main() {
     let mut app = App::new();
     app.add_plugins(CorePlugins)
         .add_plugins(GranularDefaultPlugins)
@@ -652,6 +652,82 @@ fn record_fiber_state(
                 atoms.mass[i],
             )
             .ok();
+        }
+    }
+
+    // Bond-profile snapshot: used by the Guo/Curtis cantilever benchmark to
+    // compare the along-fiber bending-moment distribution with beam theory.
+    let bond_profile_path = format!("{}/data/bond_profile.csv", rec.out_dir);
+    if let Ok(f) = File::create(&bond_profile_path) {
+        let mut bw = BufWriter::new(f);
+        writeln!(
+            bw,
+            "tag_a,tag_b,x0_center,x_center,r0,dth_bend_y,theta_p_bend_y,m_bend"
+        )
+        .ok();
+        let bonds = match registry.get::<BondStore>() {
+            Some(b) => b,
+            None => return,
+        };
+        let hist = registry.expect::<BondHistoryStore>("bond_profile");
+        let nlocal = atoms.nlocal as usize;
+        for i in 0..nlocal.min(bonds.bonds.len()).min(hist.history.len()) {
+            let tag_a = atoms.tag[i];
+            for b in &bonds.bonds[i] {
+                if tag_a >= b.partner_tag {
+                    continue;
+                }
+                let j = match (0..nlocal).find(|&k| atoms.tag[k] == b.partner_tag) {
+                    Some(j) => j,
+                    None => continue,
+                };
+                let h = match hist.history[i]
+                    .iter()
+                    .find(|entry| entry.partner_tag == b.partner_tag)
+                {
+                    Some(h) => h,
+                    None => continue,
+                };
+                let dx = atoms.pos[j][0] as f64 - atoms.pos[i][0] as f64;
+                let dy = atoms.pos[j][1] as f64 - atoms.pos[i][1] as f64;
+                let dz = atoms.pos[j][2] as f64 - atoms.pos[i][2] as f64;
+                let len = (dx * dx + dy * dy + dz * dz).sqrt();
+                if len <= 0.0 {
+                    continue;
+                }
+                let nhat = [dx / len, dy / len, dz / len];
+                let dn = h.delta_theta[0] * nhat[0]
+                    + h.delta_theta[1] * nhat[1]
+                    + h.delta_theta[2] * nhat[2];
+                let dth_bend_y = h.delta_theta[1] - dn * nhat[1];
+                let theta_p_bend_y = h.theta_p_bend[1];
+                let m_bend = rec.k_bend * (dth_bend_y - theta_p_bend_y);
+                let p0_a = rec.initial_pos.get(tag_a as usize).copied().unwrap_or([
+                    atoms.pos[i][0] as f64,
+                    0.0,
+                    0.0,
+                ]);
+                let p0_b = rec
+                    .initial_pos
+                    .get(b.partner_tag as usize)
+                    .copied()
+                    .unwrap_or([atoms.pos[j][0] as f64, 0.0, 0.0]);
+                let x0_center = 0.5 * (p0_a[0] + p0_b[0]);
+                let x_center = 0.5 * (atoms.pos[i][0] as f64 + atoms.pos[j][0] as f64);
+                writeln!(
+                    bw,
+                    "{},{},{:.8e},{:.8e},{:.8e},{:.8e},{:.8e},{:.8e}",
+                    tag_a,
+                    b.partner_tag,
+                    x0_center,
+                    x_center,
+                    b.r0,
+                    dth_bend_y,
+                    theta_p_bend_y,
+                    m_bend
+                )
+                .ok();
+            }
         }
     }
 }
