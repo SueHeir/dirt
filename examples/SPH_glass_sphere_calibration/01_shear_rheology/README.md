@@ -110,6 +110,11 @@ the same physically-motivated bounds the reviewer-approved `bench_lebc_shear` ga
 uses on the identical canonical glass material. The full μ(I)/Φ(I) fit and its
 closure-ordering checks are **unchanged** and still run via `sweep.py full`.
 
+![bounded smoke gate summary](../plots/smoke_gates.png)
+
+*Panel 01 shows the shear-rheology smoke measurements against the macroscopic
+friction PASS band. Latest independent revision run: PASS, 2/2 checks.*
+
 ## Expected Plots
 
 | Path | Contents |

@@ -82,12 +82,18 @@ argument** now runs a **bounded gate** on the shallower
 [`config.smoke.toml`](config.smoke.toml) (800 grains, 30 mm column, 800k steps at
 dt=2e-7 ≈ 0.16 s): it reaches a steady fluidized state and asserts the measured
 Fourier-law conductivity `κ*(Φ)` is positive, finite, and within order-unity of
-kinetic theory (median `κ*_EB/κ*_KT` ∈ [0.4, 6.0]). It completes in ~50 s and
+kinetic theory (median `κ*_EB/κ*_KT` ∈ [0.4, 6.0]). It completes in ~2 min and
 prints `ALL CHECKS PASSED` / `CHECKS FAILED` (exit 0/1). A representative validated
 pass: median `κ*_EB/κ*_KT = 1.87` over Φ ≈ 0.28–0.35. The full κ*(Φ)-vs-KT
 scientific run (`config.toml`) is **unchanged** and still run via `sweep.py full`.
 These are the same bounds and κ math as the reviewer-approved
 `bench_granular_conductivity` gate, which runs the identical experiment.
+
+![bounded smoke gate summary](../plots/smoke_gates.png)
+
+*Panel 06 shows the conductivity smoke measurement against the median
+`kappa*_EB/kappa*_KT` PASS band. Latest independent revision run: PASS, 3/3
+checks.*
 
 The recorder streams horizontal-slab profiles to `data/conductivity_profiles.csv`:
 per y-bin Φ(y), the granular temperature `T(y) = ⅓⟨|v − v̄_bin|²⟩` (per-bin

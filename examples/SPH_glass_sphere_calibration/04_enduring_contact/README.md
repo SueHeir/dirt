@@ -103,11 +103,17 @@ enduring-contact decomposition σ_contact = p_DEM − p_KT(Φ,T) is self-consist
 and physical per case — `p_DEM > 0`, residual fraction σ_contact/p_DEM ∈
 [−0.25, 1.0], steady window (drift < 20%) — **and** that the branch opens with Φ
 (densest σ_contact exceeds the dilute floor). It prints `ALL CHECKS PASSED` /
-`CHECKS FAILED` (exit 0/1) and completes in ~14 min, under the cap. A representative
+`CHECKS FAILED` (exit 0/1) and completes in ~18 min, under the cap. A representative
 validated pass: σ_contact/p_DEM = 0.05 → 0.15 → 0.39 across Φ ≈ 0.29 → 0.43 → 0.52
 (the branch opening, exactly the deliverable's physics). The full σ_contact(Φ)
 branch-opening validation and plots are **unchanged** and still run via
 `sweep.py full`.
+
+![bounded smoke gate summary](../plots/smoke_gates.png)
+
+*Panel 04 shows the enduring-contact smoke measurements against the residual
+fraction PASS band and branch-opening criterion. Latest independent revision run:
+PASS, 3/3 checks.*
 
 ## Expected Plots
 

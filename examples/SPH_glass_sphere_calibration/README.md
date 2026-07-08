@@ -61,6 +61,21 @@ PASS/FAIL, and the full calibration is preserved behind an explicit `full` comma
 | 6 | conductivity | bounded gate | `sweep.py full` | Fourier-law κ*(Φ) > 0, finite, order-unity vs KT |
 | 8 | cooperativity length | **excluded** | `sweep.py --run` | no fixed target for `A` or `g∝√T` is justified yet |
 
+Current smoke-gate evidence on the automation branch (2026-07-08, release build,
+single rank) is:
+
+| # | default command | wall time | verdict |
+|---|---|---:|---|
+| 1 | `sweep.py smoke` | 489 s | `2/2 checks passed`, `ALL CHECKS PASSED` |
+| 4 | `sweep.py smoke` | 1087 s | `3/3 checks passed`, `ALL CHECKS PASSED` |
+| 6 | `sweep.py smoke` | 121 s | `3/3 checks passed`, `ALL CHECKS PASSED` |
+
+![bounded smoke gates](plots/smoke_gates.png)
+
+*Bounded smoke-gate measurements for deliverables 1/4/6 against their explicit
+PASS criteria. Latest independent revision run: all three gates PASS (2/2, 3/3,
+3/3 checks respectively).*
+
 The full runs (config.toml sweeps, fits, and plots) are **unchanged** and remain
 the scientific calibration; the gates are additive fast breakage checks, never a
 substitute for them. Deliverables 2 and 5 already complete inside the cap and gate

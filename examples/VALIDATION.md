@@ -79,6 +79,18 @@ fit lies inside the published sandy/loam range.*
 *DIRT pressure-sinkage curves and power-law fits for all plate widths; the broad
 Bekker-form checks remain active in addition to the published-parameter gate.*
 
+**SPH glass calibration bounded smoke gates.** The SPH glass-sphere calibration
+deliverables 1, 4, and 6 are long-form calibration sweeps, so their harness default
+is now a bounded smoke gate rather than the full sweep. The summary figure in
+[`SPH_glass_sphere_calibration`](SPH_glass_sphere_calibration/README.md) shows the
+actual measured 01 shear-rheology, 04 enduring-contact, and 06 conductivity checks
+against their pass bands/criteria.
+
+![SPH glass bounded smoke gates](SPH_glass_sphere_calibration/plots/smoke_gates.png)
+
+*Latest independent revision run: 01 shear rheology PASS (2/2), 04 enduring contact
+PASS (3/3), and 06 conductivity PASS (3/3).*
+
 ---
 
 # Tier 1 — Single-contact and single-particle mechanics
