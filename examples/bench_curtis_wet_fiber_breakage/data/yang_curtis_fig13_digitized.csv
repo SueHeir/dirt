@@ -1,0 +1,10 @@
+modified_weber,breakage_ratio,min_largest_fragment_mass_ratio,source
+0,-0.10,1.00,"Yang et al. 2019 AIChE J. Fig. 13 master curve, digitized from author PDF"
+100,0.12,0.92,"Yang et al. 2019 AIChE J. Fig. 13 master curve, digitized from author PDF"
+200,0.40,0.66,"Yang et al. 2019 AIChE J. Fig. 13 master curve, digitized from author PDF"
+300,0.56,0.28,"Yang et al. 2019 AIChE J. Fig. 13 master curve, digitized from author PDF"
+500,0.74,0.16,"Yang et al. 2019 AIChE J. Fig. 13 master curve, digitized from author PDF"
+800,0.86,0.10,"Yang et al. 2019 AIChE J. Fig. 13 master curve, digitized from author PDF"
+1200,0.95,0.05,"Yang et al. 2019 AIChE J. Fig. 13 master curve, digitized from author PDF"
+1600,0.99,0.02,"Yang et al. 2019 AIChE J. Fig. 13 master curve, digitized from author PDF"
+2100,1.00,0.00,"Yang et al. 2019 AIChE J. Fig. 13 master curve, digitized from author PDF"

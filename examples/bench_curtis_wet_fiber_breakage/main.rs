@@ -7,6 +7,7 @@
 use dirt_core::dirt_atom::DemAtom;
 use dirt_core::dirt_bond::{BondMetrics, DemBondPlugin};
 use dirt_core::dirt_fixes::FixesPlugin;
+use dirt_core::dirt_granular::contact::willett2000_liquid_bridge_force;
 use dirt_core::prelude::*;
 use dirt_core::soil_core::BondStore;
 use std::collections::HashSet;
@@ -14,7 +15,6 @@ use std::fs::{self, File};
 use std::io::{BufWriter, Write as IoWrite};
 
 const BEADS_PER_FIBER: u32 = 5;
-const BRIDGE_RUPTURE: f64 = 4.0e-4;
 
 struct ImpactRecorder {
     writer: Option<BufWriter<File>>,
@@ -77,6 +77,8 @@ fn record_breakage(
     atoms: Res<Atom>,
     registry: Res<AtomDataRegistry>,
     bond_metrics: Res<BondMetrics>,
+    material_table: Res<MaterialTable>,
+    neighbor: Res<Neighbor>,
     run_state: Res<RunState>,
     input: Res<Input>,
     mut rec: ResMut<ImpactRecorder>,
@@ -110,29 +112,58 @@ fn record_breakage(
     }
     let mut parent: Vec<usize> = (0..nlocal).collect();
     let mut bridge_contacts = 0usize;
-    let mut seen_bridge_pairs: HashSet<(u32, u32)> = HashSet::new();
+    let mut seen_bridge_pairs: HashSet<(usize, usize)> = HashSet::new();
 
     let dem = registry.expect::<DemAtom>("wet_fiber_breakage_recorder");
-    for i in 0..nlocal {
-        for j in (i + 1)..nlocal {
-            let fi = fiber_id(atoms.tag[i]);
-            let fj = fiber_id(atoms.tag[j]);
-            if fi == fj {
-                continue;
+    for (i, j) in neighbor.pairs(nlocal) {
+        if j >= nlocal {
+            continue;
+        }
+        let fi = fiber_id(atoms.tag[i]);
+        let fj = fiber_id(atoms.tag[j]);
+        if fi == fj {
+            continue;
+        }
+
+        let mat_i = atoms.atom_type[i] as usize;
+        let mat_j = atoms.atom_type[j] as usize;
+        if material_table.liquid_bridge_model != "willett2000"
+            || mat_i >= material_table.liquid_bridge_volume_ij.len()
+            || mat_j >= material_table.liquid_bridge_volume_ij[mat_i].len()
+        {
+            continue;
+        }
+        let volume = material_table.liquid_bridge_volume_ij[mat_i][mat_j];
+        let gamma = material_table.liquid_surface_tension_ij[mat_i][mat_j];
+        if volume <= 0.0 || gamma <= 0.0 {
+            continue;
+        }
+
+        let dx = atoms.pos[j][0] as f64 - atoms.pos[i][0] as f64;
+        let dy = atoms.pos[j][1] as f64 - atoms.pos[i][1] as f64;
+        let dz = atoms.pos[j][2] as f64 - atoms.pos[i][2] as f64;
+        let dist = (dx * dx + dy * dy + dz * dz).sqrt();
+        if dist == 0.0 {
+            continue;
+        }
+        let sum_r = dem.radius[i] + dem.radius[j];
+        let r_eff = (dem.radius[i] * dem.radius[j]) / sum_r;
+        let separation = (dist - sum_r).max(0.0);
+        let f_bridge = willett2000_liquid_bridge_force(
+            separation,
+            r_eff,
+            volume,
+            gamma,
+            material_table.liquid_contact_angle_ij[mat_i][mat_j],
+            material_table.liquid_rupture_distance_ij[mat_i][mat_j],
+        );
+        if f_bridge > 0.0 {
+            let a = fi.min(fj);
+            let b = fi.max(fj);
+            if seen_bridge_pairs.insert((a, b)) {
+                bridge_contacts += 1;
             }
-            let dx = atoms.pos[j][0] as f64 - atoms.pos[i][0] as f64;
-            let dy = atoms.pos[j][1] as f64 - atoms.pos[i][1] as f64;
-            let dz = atoms.pos[j][2] as f64 - atoms.pos[i][2] as f64;
-            let dist = (dx * dx + dy * dy + dz * dz).sqrt();
-            let cutoff = dem.radius[i] + dem.radius[j] + BRIDGE_RUPTURE;
-            if dist <= cutoff {
-                let a = atoms.tag[i].min(atoms.tag[j]);
-                let b = atoms.tag[i].max(atoms.tag[j]);
-                if seen_bridge_pairs.insert((a, b)) {
-                    bridge_contacts += 1;
-                }
-                union(&mut parent, i, j);
-            }
+            union(&mut parent, i, j);
         }
     }
 

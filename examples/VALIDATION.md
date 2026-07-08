@@ -95,22 +95,28 @@ PASS (3/3), and 06 conductivity PASS (3/3).*
 
 A small wet BPM fiber agglomerate impacts a plane with Willett pendular
 liquid-bridge cohesion enabled between fibers and bond breakage enabled inside
-the flexible fibers. The benchmark follows Yang et al. (2019): breakage ratio
-must increase with impact velocity / modified Weber number, and the minimum
-largest-fragment mass ratio must decrease. The gate compares every DIRT point to
-a coarse external Yang/Curtis Fig. 13 modified-Weber reference band committed as
-`data/yang_curtis_reference_bands.csv`.
+the flexible fibers. The recorder counts fiber-fiber contacts from the active
+DIRT Willett liquid-bridge force on neighbor pairs, then forms fragments from
+those active contacts plus intact intra-fiber BPM bonds. The benchmark follows
+Yang et al. (2019): breakage ratio must increase with impact velocity / modified
+Weber number, and the minimum largest-fragment mass ratio must decrease. The
+gate compares every DIRT point to the digitized Yang/Curtis Fig. 13
+modified-Weber master curve committed as
+`data/yang_curtis_fig13_digitized.csv`; the tolerance bands shown in the plot
+are `0.30` absolute breakage ratio and `0.40` absolute largest-fragment mass
+ratio. This is a small regression-scale agglomerate, not the full Table 2
+`Np = 664` prepared-agglomerate run.
 
 ![Wet fiber breakage velocity trend](bench_curtis_wet_fiber_breakage/plots/breakage_vs_impact_velocity.png)
 
 *Breakage ratio and largest-fragment mass ratio across the DIRT velocity sweep.
-Latest run: PASS against the Yang/Curtis Fig. 13 low/high modified-Weber
-reference bands.*
+Latest run: PASS, 4/4 points inside the digitized Yang/Curtis Fig. 13
+modified-Weber tolerance bands.*
 
 ![Wet fiber modified Weber trend](bench_curtis_wet_fiber_breakage/plots/weber_trend.png)
 
 *Same measurements against modified Weber number with the Yang/Curtis reference
-bands shaded. Latest run: PASS.*
+curve and tolerance bands shaded. Latest run: PASS.*
 
 ---
 
