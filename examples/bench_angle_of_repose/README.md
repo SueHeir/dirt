@@ -200,8 +200,10 @@ on the **same material, geometry and physics**: a coarse 3-point μ grid
 the same θ_r(μ) the full run measures and asserts the robust qualitative laws —
 the frictionless collapse is nearly flat (θ_r(0) ≤ 8°), every frictional case
 holds a real slope in the sensible band [10°, 40°], and θ_r rises across the μ
-range (coarse monotone trend). It completes in **~3.5 min** (~13 s/step-poll ×
-3 cases) and prints `ALL CHECKS PASSED`/`CHECKS FAILED` (exit 0/1). Measured:
+range (coarse monotone trend). The bounded gate is declared in `smoke.toml`; the
+full-scale sweep and tolerances remain in `sweep.py full`. It completes in
+**~4.25 min** on the automation host and prints
+`ALL CHECKS PASSED`/`CHECKS FAILED` (exit 0/1). Measured:
 
 ```
   mu   theta_r(deg)   N
@@ -209,6 +211,12 @@ range (coarse monotone trend). It completes in **~3.5 min** (~13 s/step-poll ×
   0.30    11.40     1200     holds a slope, in band
   0.50    13.48     1200     steeper, in band
 ```
+
+![Bounded smoke gate](plots/smoke_gate.png)
+
+*Bounded harness smoke gate: the actual μ = 0, 0.3, 0.5 measurements are plotted
+against the flat-frictionless limit, the [10°, 40°] frictional pass band, and the
+coarse increasing-trend criterion. Latest run: PASS, 4/4 checks passed.*
 
 This is an **additive breakage gate**, not a replacement for the full validation:
 it deliberately does **not** assert the fine, μ-resolved monotonicity between

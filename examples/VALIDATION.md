@@ -691,6 +691,12 @@ angle, so the benchmark checks only that the angle rises with friction, is near-
 shaded. The angle increases monotonically with μ — the qualitative law a correct model
 must obey — though absolute values run low.*
 
+![Bounded angle-of-repose smoke gate](bench_angle_of_repose/plots/smoke_gate.png)
+
+*Default harness smoke gate: the actual bounded μ = 0, 0.3, 0.5 check is plotted
+against the flat-frictionless limit, the [10°, 40°] frictional pass band, and the
+coarse increasing-trend criterion. Latest run: PASS, 4/4 checks passed.*
+
 ![Heap profiles](bench_angle_of_repose/plots/heap_profile.png)
 
 *Settled surface height vs radius for each μ; flanks steepen with friction.*
@@ -1129,7 +1135,7 @@ will need a benchmark when re-added.)
 | rod haff | Haff law + optional LAMMPS | law (cross-code when available) | PASS; current 1.6M-step run gives R²=0.9999 and slope −1.841 at t/tc=12.9 against the unchanged −2.3<slope<−1.6 gate; stale 700k-step harness checkouts still fail around slope −1.59 at t/tc≈5.6 |
 | SPH glass column collapse | Lube/Lajeunesse (empirical) + LAMMPS overlay | empirical macro gate | FAIL (remaining macro limitation); uses canonical `mu_r=0.10` because 03_angle_of_repose has no transferable closure; linear exponent 1.407 vs 1.0 outside ±0.25, power exponent 0.885 inside gate; exits 1 |
 | clump_insertion_determinism | own repeated config run | reproducibility | PASS; same-seed config path byte-identical, changed seed diverges |
-| angle_of_repose | empirical (none exact) | qualitative | PASS; trends only; frozen-bed |
+| angle_of_repose | empirical (none exact) | qualitative | PASS; trends only; default bounded smoke gate PASSes 4/4 with committed pass-criterion graph; full sweep stands on real frictional wall |
 | column_collapse | Lube/Lajeunesse (empirical) + LAMMPS cross-check | empirical scaling + cross-code | FAIL (genuine finite-size limit, not fit noise); linear exponent 1.54 vs 1.0 outside ±0.25 after seed-averaging + 11-pt sweep + sub-diameter metric; LAMMPS misses identically (1.27); exits 1 |
 | lebc_shear | Lun / extended kinetic theory + LAMMPS / Fortran / LIGGGHTS; GDR MiDi / da Cruz μ(I) form | kinetic theory + calibration | PASS/diagnostic; KT gate requires ≥60% of points within 15% normal-stress and 20% shear-stress bands; dense/jamming deviations expected |
 | hopper_beverloo | Beverloo (empirical) | empirical correlation | PASS; exponent 1.36 vs 1.5; prefactor untested |

@@ -74,6 +74,7 @@ import csv
 import math
 import shutil
 import subprocess
+import tomllib
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.abspath(os.path.join(SCRIPT_DIR, "..", ".."))
@@ -821,6 +822,70 @@ def plot(rows, lammps_rows):
     print(f"\nFigures -> {PLOT_DIR}/theta_vs_mu.png, heap_profile.png")
 
 
+def plot_smoke(rows, checks):
+    """Plot the bounded harness gate: actual three-point smoke measurements plus
+    the pass criteria that decide PASS/FAIL."""
+    if not rows:
+        print("\nSmoke plot skipped (no smoke rows recorded)")
+        return
+    os.makedirs(PLOT_DIR, exist_ok=True)
+    try:
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+    except ImportError as exc:
+        print(f"\nSmoke plot skipped (matplotlib unavailable: {exc})")
+        return
+
+    plt.rcParams.update({"figure.dpi": 150, "savefig.dpi": 150, "font.size": 11})
+    rows = sorted(rows, key=lambda r: r["mu"])
+    mus = [r["mu"] for r in rows]
+    thetas = [r["theta_deg"] for r in rows]
+
+    fig, ax = plt.subplots(figsize=(6.5, 4.5))
+    ax.axhspan(ANGLE_LO_DEG, ANGLE_HI_DEG, color="#2ca02c", alpha=0.10,
+               label=f"frictional pass band [{ANGLE_LO_DEG:.0f},{ANGLE_HI_DEG:.0f}] deg")
+    ax.axhspan(0.0, LOWMU_MAX_DEG, color="#1f77b4", alpha=0.08,
+               label=f"mu=0 flat pass <= {LOWMU_MAX_DEG:.0f} deg")
+    ax.plot(mus, thetas, "o-", color="#111111", lw=2.0,
+            label="bounded smoke measurement")
+
+    for r in rows:
+        mu = r["mu"]
+        theta = r["theta_deg"]
+        if mu == 0.0:
+            passed = theta <= LOWMU_MAX_DEG
+            label = "flat PASS" if passed else "flat FAIL"
+        else:
+            passed = ANGLE_LO_DEG <= theta <= ANGLE_HI_DEG
+            label = "band PASS" if passed else "band FAIL"
+        ax.annotate(f"{theta:.2f} deg\n{label}", (mu, theta),
+                    xytext=(0, 10), textcoords="offset points",
+                    ha="center", va="bottom", fontsize=9)
+
+    if len(mus) >= 2:
+        ax.annotate("coarse trend PASS" if all(ok for ok, msg in checks if "theta_r rises" in msg)
+                    else "coarse trend FAIL",
+                    xy=(mus[-1], thetas[-1]), xytext=(-84, -34),
+                    textcoords="offset points",
+                    arrowprops={"arrowstyle": "->", "lw": 1.0},
+                    fontsize=9)
+
+    verdict = "PASS" if all(ok for ok, _ in checks) else "FAIL"
+    ax.set_title(f"Angle-of-repose bounded smoke gate: {verdict}")
+    ax.set_xlabel(r"sliding friction $\mu$")
+    ax.set_ylabel(r"angle of repose $\theta_r$ (deg)")
+    ax.set_xlim(min(mus) - 0.05, max(mus) + 0.05)
+    ax.set_ylim(0.0, max(ANGLE_HI_DEG + 5.0, max(thetas) + 8.0))
+    ax.grid(True, alpha=0.25)
+    ax.legend(loc="upper left", fontsize=8)
+    fig.tight_layout()
+    out = os.path.join(PLOT_DIR, "smoke_gate.png")
+    fig.savefig(out)
+    plt.close(fig)
+    print(f"\nSmoke figure -> {out}")
+
+
 def graph():
     rows = _load_sweep()
     if not rows:
@@ -857,8 +922,20 @@ def graph():
 # (validate(), unchanged, still run via `sweep.py full`). It reuses the SAME
 # physical bounds as validate() (ANGLE_LO_DEG/ANGLE_HI_DEG/LOWMU_MAX_DEG/
 # MONOTONIC_SLACK_DEG) — nothing is loosened.
-SMOKE_MU_LIST = [0.0, 0.3, 0.5]   # coarse span: frictionless -> mid -> high friction
-SMOKE_SEED = 12345                # deterministic pack for a reproducible gate
+SMOKE_CONFIG = os.path.join(SCRIPT_DIR, "smoke.toml")
+
+
+def _load_smoke_config():
+    with open(SMOKE_CONFIG, "rb") as f:
+        cfg = tomllib.load(f).get("smoke", {})
+    mu_list = [float(v) for v in cfg["mu_list"]]
+    reps = int(cfg.get("reps", 1))
+    seed = int(cfg["seed"])
+    if reps != 1:
+        raise ValueError("smoke.toml must keep reps = 1 for the bounded harness gate")
+    if not mu_list or mu_list[0] != 0.0 or len(mu_list) < 3:
+        raise ValueError("smoke.toml must span mu=0 through at least two frictional cases")
+    return mu_list, reps, seed
 
 
 def smoke():
@@ -866,9 +943,7 @@ def smoke():
     (one deterministic rep each) and assert the robust theta_r(mu) laws. Prints
     'ALL CHECKS PASSED' / 'CHECKS FAILED' and exits 0/1."""
     global MU_LIST, REPS, INSERT_SEED, SWEEP_DIR, DATA_DIR, SWEEP_CSV
-    MU_LIST = SMOKE_MU_LIST
-    REPS = 1                       # deterministic pack -> a single rep is exact
-    INSERT_SEED = SMOKE_SEED
+    MU_LIST, REPS, INSERT_SEED = _load_smoke_config()
     # Keep smoke artifacts out of the full run's dirs (both are gitignored).
     SWEEP_DIR = os.path.join(SCRIPT_DIR, "sweep", "smoke")
     DATA_DIR = os.path.join(SCRIPT_DIR, "data", "smoke")
@@ -894,6 +969,12 @@ def smoke():
         theta, r_toe = fit_angle(r_c, h_s, base, diam)
         rows.append({"mu": mu, "theta_deg": theta, "r_toe": r_toe, "n": len(xs)})
         print(f"theta_r = {theta:5.2f} deg  (r_toe={r_toe*1e3:.1f} mm, N={len(xs)})")
+
+    with open(SWEEP_CSV, "w", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=["mu", "theta_deg", "r_toe", "n"])
+        w.writeheader()
+        for r in rows:
+            w.writerow(r)
 
     print("\n=== Angle-of-repose smoke gate (coarse theta_r(mu) trend) ===")
     print(f"  material: E={YOUNGS_MOD:.1e} Pa  nu={POISSON}  e={RESTITUTION}  "
@@ -938,6 +1019,7 @@ def smoke():
     ok = all(ok for ok, _ in checks)
     print(f"\n{npass}/{len(checks)} checks passed")
     print("ALL CHECKS PASSED" if ok else "CHECKS FAILED")
+    plot_smoke(rows, checks)
     sys.exit(0 if ok else 1)
 
 
