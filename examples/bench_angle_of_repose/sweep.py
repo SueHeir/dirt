@@ -822,6 +822,70 @@ def plot(rows, lammps_rows):
     print(f"\nFigures -> {PLOT_DIR}/theta_vs_mu.png, heap_profile.png")
 
 
+def plot_smoke(rows, checks):
+    """Plot the bounded harness gate: actual three-point smoke measurements plus
+    the pass criteria that decide PASS/FAIL."""
+    if not rows:
+        print("\nSmoke plot skipped (no smoke rows recorded)")
+        return
+    os.makedirs(PLOT_DIR, exist_ok=True)
+    try:
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+    except ImportError as exc:
+        print(f"\nSmoke plot skipped (matplotlib unavailable: {exc})")
+        return
+
+    plt.rcParams.update({"figure.dpi": 150, "savefig.dpi": 150, "font.size": 11})
+    rows = sorted(rows, key=lambda r: r["mu"])
+    mus = [r["mu"] for r in rows]
+    thetas = [r["theta_deg"] for r in rows]
+
+    fig, ax = plt.subplots(figsize=(6.5, 4.5))
+    ax.axhspan(ANGLE_LO_DEG, ANGLE_HI_DEG, color="#2ca02c", alpha=0.10,
+               label=f"frictional pass band [{ANGLE_LO_DEG:.0f},{ANGLE_HI_DEG:.0f}] deg")
+    ax.axhspan(0.0, LOWMU_MAX_DEG, color="#1f77b4", alpha=0.08,
+               label=f"mu=0 flat pass <= {LOWMU_MAX_DEG:.0f} deg")
+    ax.plot(mus, thetas, "o-", color="#111111", lw=2.0,
+            label="bounded smoke measurement")
+
+    for r in rows:
+        mu = r["mu"]
+        theta = r["theta_deg"]
+        if mu == 0.0:
+            passed = theta <= LOWMU_MAX_DEG
+            label = "flat PASS" if passed else "flat FAIL"
+        else:
+            passed = ANGLE_LO_DEG <= theta <= ANGLE_HI_DEG
+            label = "band PASS" if passed else "band FAIL"
+        ax.annotate(f"{theta:.2f} deg\n{label}", (mu, theta),
+                    xytext=(0, 10), textcoords="offset points",
+                    ha="center", va="bottom", fontsize=9)
+
+    if len(mus) >= 2:
+        ax.annotate("coarse trend PASS" if all(ok for ok, msg in checks if "theta_r rises" in msg)
+                    else "coarse trend FAIL",
+                    xy=(mus[-1], thetas[-1]), xytext=(-84, -34),
+                    textcoords="offset points",
+                    arrowprops={"arrowstyle": "->", "lw": 1.0},
+                    fontsize=9)
+
+    verdict = "PASS" if all(ok for ok, _ in checks) else "FAIL"
+    ax.set_title(f"Angle-of-repose bounded smoke gate: {verdict}")
+    ax.set_xlabel(r"sliding friction $\mu$")
+    ax.set_ylabel(r"angle of repose $\theta_r$ (deg)")
+    ax.set_xlim(min(mus) - 0.05, max(mus) + 0.05)
+    ax.set_ylim(0.0, max(ANGLE_HI_DEG + 5.0, max(thetas) + 8.0))
+    ax.grid(True, alpha=0.25)
+    ax.legend(loc="upper left", fontsize=8)
+    fig.tight_layout()
+    out = os.path.join(PLOT_DIR, "smoke_gate.png")
+    fig.savefig(out)
+    plt.close(fig)
+    print(f"\nSmoke figure -> {out}")
+
+
 def graph():
     rows = _load_sweep()
     if not rows:
@@ -906,6 +970,12 @@ def smoke():
         rows.append({"mu": mu, "theta_deg": theta, "r_toe": r_toe, "n": len(xs)})
         print(f"theta_r = {theta:5.2f} deg  (r_toe={r_toe*1e3:.1f} mm, N={len(xs)})")
 
+    with open(SWEEP_CSV, "w", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=["mu", "theta_deg", "r_toe", "n"])
+        w.writeheader()
+        for r in rows:
+            w.writerow(r)
+
     print("\n=== Angle-of-repose smoke gate (coarse theta_r(mu) trend) ===")
     print(f"  material: E={YOUNGS_MOD:.1e} Pa  nu={POISSON}  e={RESTITUTION}  "
           f"rolling(sds): k_roll={ROLLING_STIFFNESS:g} mu_roll={ROLLING_FRICTION:g}")
@@ -949,6 +1019,7 @@ def smoke():
     ok = all(ok for ok, _ in checks)
     print(f"\n{npass}/{len(checks)} checks passed")
     print("ALL CHECKS PASSED" if ok else "CHECKS FAILED")
+    plot_smoke(rows, checks)
     sys.exit(0 if ok else 1)
 
 

@@ -212,6 +212,12 @@ full-scale sweep and tolerances remain in `sweep.py full`. It completes in
   0.50    13.48     1200     steeper, in band
 ```
 
+![Bounded smoke gate](plots/smoke_gate.png)
+
+*Bounded harness smoke gate: the actual μ = 0, 0.3, 0.5 measurements are plotted
+against the flat-frictionless limit, the [10°, 40°] frictional pass band, and the
+coarse increasing-trend criterion. Latest run: PASS, 4/4 checks passed.*
+
 This is an **additive breakage gate**, not a replacement for the full validation:
 it deliberately does **not** assert the fine, μ-resolved monotonicity between
 adjacent close friction values, nor the reproducibility spread — those, with
