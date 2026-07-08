@@ -11,9 +11,10 @@ tc = 2 / (omega0 sqrt(T0)),    omega0 = (4/3) n d^2 g0 sqrt(pi) (1 - e^2)
 ```
 
 with Carnahan-Starling `g0 = (1 - phi/2)/(1 - phi)^3`. For the clump and rod
-cases, `d` is the bounding collision diameter. That makes the non-spherical cases
-an order estimate, so their acceptance band is wider than the single-sphere band;
-the fitted `tc` distribution must still land inside that declared band.
+cases, `d` is the bounding collision diameter. Because the rate scales as `d^2`,
+that proxy is the dominant geometric uncertainty for non-spherical particles; the
+gate still uses the same factor-two envelope for every case so a cooling time
+that is only order-of-magnitude correct fails.
 
 ## How to Run
 
@@ -36,7 +37,7 @@ the first seed when a compatible LAMMPS binary is available.
 | No energy growth | `max(T) < 1.5 T_initial` |
 | Haff's law holds | `1/sqrt(T)` linear in `t`, `R^2 > 0.99` |
 | Late-time decay | existing per-bench slope gate remains satisfied |
-| Kinetic `tc` | ensemble median fitted `tc` lies inside the declared theory band |
+| Kinetic `tc` | ensemble median fitted `tc` lies within `[0.5, 2.0]` of the Enskog/Haff estimate |
 
 ## Expected Plot
 

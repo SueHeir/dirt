@@ -625,11 +625,11 @@ late-time decay, not the `t⁻⁵ᐟ³` viscoelastic law. The strongest statemen
 `bench_haff_ensemble` strengthens this from a curve-shape check to a statistical
 cooling-time check: each of the three Haff cases is rerun at two deterministic
 insertion seeds, fitted for `tc`, and gated against the Enskog/Haff kinetic estimate
-`tc = 2/(ω₀√T₀)`, `ω₀ = (4/3)n d² g₀√π(1-e²)`, with Carnahan-Starling `g₀`. The
-sphere case uses the sharper smooth-sphere band `[0.5, 2.0]` on fitted/theory `tc`;
-clumps and rods use `[0.2, 5.0]` because the reference uses a bounding collision
-diameter while rotational modes and non-spherical contacts change the effective
-cooling rate.
+`tc = 2/(ω₀√T₀)`, `ω₀ = (4/3)n d² g₀√π(1-e²)`, with Carnahan-Starling `g₀`. All
+three cases use the same `[0.5, 2.0]` band on fitted/theory `tc`. For clumps and
+rods the reference uses a bounding collision diameter; because the rate scales as
+`d²`, the factor-two band leaves room for that proxy while rejecting an
+order-of-magnitude cooling-time error.
 
 ![Sphere Haff cooling](bench_sphere_haff_cooling/plots/haff_cooling.png)
 
