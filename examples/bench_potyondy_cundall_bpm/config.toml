@@ -1,0 +1,23 @@
+[specimen]
+nx = 9
+ny = 18
+radius_m = 0.00036
+height_m = 0.1268
+width_m = 0.0634
+axial_strain_final = 0.0040
+steps = 240
+poisson_ratio = 0.237
+
+[material]
+youngs_modulus_pa = 70.9e9
+macro_peak_strength_pa = 199.1e6
+target_failure_strain = 0.00281
+tensile_strength_pa = 172.0e6
+shear_strength_pa = 120.0e6
+bond_radius_ratio = 0.55
+
+[damage]
+seed = 2004
+heterogeneity = 0.18
+bending_amplification = 0.15
+neighbor_softening = 0.10

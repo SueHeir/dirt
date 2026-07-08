@@ -259,6 +259,10 @@ name = "bench_wall_activate_by_name"
 path = "examples/bench_wall_activate_by_name/main.rs"
 
 [[example]]
+name = "bench_potyondy_cundall_bpm"
+path = "examples/bench_potyondy_cundall_bpm/main.rs"
+
+[[example]]
 name = "bench_wall_twisting_parity"
 path = "examples/bench_wall_twisting_parity/main.rs"
 

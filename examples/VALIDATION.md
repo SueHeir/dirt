@@ -1332,6 +1332,28 @@ CDF with a Kolmogorov-Smirnov gate.
 weakest-link Weibull CDF. Latest regenerated run: PASS, max per-seed error 3.8%
 and KS `D = 0.075` below the 0.18 gate.*
 
+## `bench_potyondy_cundall_bpm` — Potyondy-Cundall BPM rock compression
+
+This benchmark runs a reduced bonded-particle compression specimen and calls the
+DIRT `CombinedStress` breakage criterion for each surviving bond at every load
+increment. The comparison target is Potyondy & Cundall (2004), Table 2 and Fig.
+8(a): the stress-strain curve is normalized by the PFC2D Lac du Bonnet granite
+macroproperties `q_u = 199.1 MPa` and `q_u/E = 0.00281`. The target curve in
+`data/potyondy_cundall_2004_fig8a_digitized.csv` is an approximate hand
+digitization of Fig. 8(a)'s low-confinement response.
+
+The quantitative gates are deliberately normalized: peak strength must be within
+12% of the Table 2 PFC2D `q_u`, peak/failure strain must be within 18% of
+`q_u/E`, and the run must produce at least 20 bond breaks so the plotted crack
+progression is not only a scalar strength check. Latest run: PASS, peak strength
+183.19 MPa (`0.920 q_u`), peak strain 0.00260 (`0.925 q_u/E`), 289 broken bonds.
+
+![Potyondy-Cundall BPM compression](bench_potyondy_cundall_bpm/plots/stress_strain_and_cracks.png)
+
+*DIRT reduced BPM stress-strain response against the digitized
+Potyondy-Cundall Fig. 8(a) target, with the spatial sequence of CombinedStress
+bond breaks. Latest run: PASS.*
+
 ---
 
 ## `SPH_glass_sphere_calibration/07_column_collapse` — SPH glass macro gate
