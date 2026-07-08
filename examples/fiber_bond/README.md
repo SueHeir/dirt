@@ -173,4 +173,6 @@ Possible Phase-3 follow-ups (not on the active list):
 * Multi-criterion breakage scenarios (`CombinedStrain`, `InteractionLinear*`).
 * Statistical Weibull-CDF validation across many seeded runs (Phase-2
   parameter sweep over `[bonds].seed`).
-* Coupled bending-plastic + breakage on the same fiber.
+* Coupled bending-plastic + breakage on the same fiber; the axial
+  plasticity-plus-breakage coupling is covered in
+  [`../fiber_bond_breakage`](../fiber_bond_breakage).

@@ -164,6 +164,23 @@ gates each geometry against that plane-law reference to round-off tolerance.
 against the local plane-wall reference. Latest run: PASS, max relative error below
 1e-12.*
 
+## `fiber_bond_breakage` — coupled axial plasticity and breakage
+
+The `axial_plastic_stress_constant` scenario pulls a bonded-particle fiber
+through the axial piecewise plastic envelope while `AxialStress` breakage is
+active. The tensile threshold is in the post-yield hardening branch:
+`sigma_break = 14 MPa` gives `eps_break = 0.018` from the analytical
+elastic-plastic envelope, whereas an elastic-only calculation would break at
+`eps = 0.014`. The validator reconstructs the coupled normal force from the
+recorded plastic anchor and checks both the pre-break envelope and the
+first-break strain.
+
+![Coupled plasticity and breakage](fiber_bond_breakage/plots/plastic_breakage_coupled_validation.png)
+
+*Measured axial force after plastic return-map versus the analytical
+elastic-plastic envelope, with the active breakage threshold and ±5% first-break
+strain gate shown. Latest run: PASS.*
+
 ## `bench_hooke_rebound` — linear-spring normal rebound (exact damped closed form)
 
 Exercises the **Hooke** normal contact (`contact_model = "hooke"`, per-material
