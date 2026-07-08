@@ -57,6 +57,28 @@ for legitimate reasons: `rolling_decay` needs a curved surface to define `r_eff`
 and `oblique_impact` uses a sphere–sphere contact to exercise the *particle–particle*
 tangential model directly.
 
+## `bench_plate_sinkage` — plate pressure-sinkage against Bekker and published parameters
+
+A flat plate is driven into a settled granular bed and the wall reaction force is
+fit to the Bekker pressure-sinkage form `p = A z^n`. The sweep keeps its existing
+checks that every case is monotone, has a good power-law fit, has a sensible
+granular exponent, and carries more total load as plate width increases. It now
+adds a cited fitted-parameter gate: the representative narrow plate `b020_mu05`
+must fall inside the sandy/loam Bekker exponent range `0.66 <= n <= 1.10` from
+NASA/TM-20250006958 Table 1, which includes LETE Sand (`n=0.79`, `kc=102
+kN/m^(n+1)`, `k_phi=5301 kN/m^(n+2)`).
+
+![Published Bekker reference](bench_plate_sinkage/plots/published_bekker_reference.png)
+
+*Normalized DIRT pressure-sinkage overlaid with the published LETE Sand Bekker
+curve, and the fitted `n` range gate. Latest run: PASS, the representative DIRT
+fit lies inside the published sandy/loam range.*
+
+![Plate pressure-sinkage](bench_plate_sinkage/plots/pressure_sinkage.png)
+
+*DIRT pressure-sinkage curves and power-law fits for all plate widths; the broad
+Bekker-form checks remain active in addition to the published-parameter gate.*
+
 ---
 
 # Tier 1 — Single-contact and single-particle mechanics

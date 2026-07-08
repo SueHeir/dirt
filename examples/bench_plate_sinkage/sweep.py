@@ -14,8 +14,9 @@ validation checks the *form*: p(z) monotone and well fit by a power law with a
 physically sensible exponent (n ≈ 0.5–1.3 for granular soils), plus sane
 width/depth trends (a wider plate carries more load at the same sinkage).
 
-This is an EMPIRICAL reference — we validate the qualitative law and exponent,
-not specific k_c / k_phi values (those are soil-fit constants).
+This is an EMPIRICAL reference. In addition to the qualitative Bekker form checks,
+the narrow-plate DIRT fit is compared against a cited published range of fitted
+Bekker exponents for sandy/loam terrains from NASA/TM-20250006958 Table 1.
 
 Commands (from anywhere):
     python3 examples/bench_plate_sinkage/sweep.py generate   # write per-case configs
@@ -37,6 +38,8 @@ against the Bekker power-law form.
 
 Reference: M. G. Bekker, "Theory of Land Locomotion" (1956); "Introduction to
 Terrain-Vehicle Systems" (1969). J. Y. Wong, "Theory of Ground Vehicles".
+NASA/TM-20250006958, Table 1, "Typical Bekker values for various terrain types
+and moisture content."
 """
 
 import os
@@ -55,6 +58,7 @@ DATA_DIR = os.path.join(SCRIPT_DIR, "data")
 PLOT_DIR = os.path.join(SCRIPT_DIR, "plots")
 SWEEP_CSV = os.path.join(DATA_DIR, "sweep.csv")            # DIRT: one fitted row per case
 LAMMPS_CSV = os.path.join(DATA_DIR, "lammps_results.csv")  # LAMMPS: one fitted row per case
+PUBLISHED_BEKKER_CSV = os.path.join(DATA_DIR, "published_bekker_parameters.csv")
 
 # LAMMPS binary candidates, in preference order. LAMMPS is an OPTIONAL overlay:
 # if none is found, only DIRT is run/validated/plotted.
@@ -585,9 +589,40 @@ def _load_summaries():
 # Validation tolerances.
 N_MIN, N_MAX = 0.4, 1.6     # sensible Bekker exponent band for granular soils
 R2_MIN = 0.85               # power-law fit quality (granular force is intrinsically noisy)
+PUBLISHED_RANGE_TERRAINS = {
+    "LETE Sand",
+    "Upland Sandy Loam",
+    "Rubicon Sandy Loam",
+    "North Gower Clayey Loam",
+    "Grenville Loam",
+}
+PUBLISHED_RANGE_CASE = "b020_mu05"
+
+
+def _load_published_bekker():
+    """Load cited Bekker parameter rows committed with this example."""
+    rows = []
+    with open(PUBLISHED_BEKKER_CSV) as f:
+        for r in csv.DictReader(f):
+            rows.append({
+                "terrain": r["terrain"],
+                "moisture_percent": r["moisture_percent"],
+                "n": float(r["n"]),
+                "kc": float(r["kc_kN_per_m_n_plus_1"]) * 1000.0,
+                "kphi": float(r["kphi_kN_per_m_n_plus_2"]) * 1000.0,
+                "reference": r["reference"],
+            })
+    return rows
+
+
+def _published_n_range(rows):
+    sel = [r["n"] for r in rows if r["terrain"] in PUBLISHED_RANGE_TERRAINS]
+    return min(sel), max(sel)
 
 
 def validate(rows):
+    published = _load_published_bekker()
+    pub_n_min, pub_n_max = _published_n_range(published)
     print("\n=== Plate pressure–sinkage validation (Bekker form) ===")
     print(f"  fit window: 0 < z <= {Z_MAX_FIT*1e3:.0f} mm,  exponent band: "
           f"[{N_MIN}, {N_MAX}],  R^2 >= {R2_MIN}")
@@ -617,6 +652,24 @@ def validate(rows):
               f"{[f'{l:.3e}' for l in loads]}  -> "
               f"{'monotone-ish (OK)' if sane else 'NON-MONOTONE LOAD (FAIL)'}")
         if not sane:
+            ok = False
+
+    # Published fitted-parameter gate. Use the narrow strip because it is the
+    # closest DIRT case to a small bevameter plate and has the least side-wall
+    # interaction. The bounds are not tuned from DIRT: they are the min/max n
+    # values in the committed NASA Table 1 sandy/loam parameter subset.
+    rep = next((r for r in rows if r["tag"] == PUBLISHED_RANGE_CASE), None)
+    if rep is None:
+        print(f"\n  Published Bekker n range check: missing {PUBLISHED_RANGE_CASE} (FAIL)")
+        ok = False
+    else:
+        in_range = pub_n_min <= rep["n"] <= pub_n_max
+        lete = next(r for r in published if r["terrain"] == "LETE Sand")
+        print(f"\n  Published fitted n range (NASA/TM-20250006958 Table 1 sandy/loam "
+              f"terrains): [{pub_n_min:.2f}, {pub_n_max:.2f}]")
+        print(f"  Representative DIRT {PUBLISHED_RANGE_CASE}: n={rep['n']:.3f}; "
+              f"LETE Sand n={lete['n']:.2f} -> {'OK' if in_range else 'OUT-OF-RANGE (FAIL)'}")
+        if not in_range:
             ok = False
 
     print("RESULT:", "PASS" if ok else "FAIL")
@@ -731,7 +784,53 @@ def plot(rows, lammps_rows=None):
     fig.savefig(os.path.join(PLOT_DIR, "pressure_sinkage_linear.png"))
     plt.close(fig)
 
-    print(f"\nFigures -> {PLOT_DIR}/pressure_sinkage.png, pressure_sinkage_linear.png")
+    # ── Published Bekker parameter comparison ───────────────────────────────
+    # The absolute pressure curve from the published LETE Sand parameters is a
+    # material reference, not a calibrated target for this softened-sphere DEM
+    # bed. Plot normalized p(z) to compare curve shape and separately plot the
+    # gated fitted exponent against the cited published n range.
+    published = _load_published_bekker()
+    pub_n_min, pub_n_max = _published_n_range(published)
+    lete = next(r for r in published if r["terrain"] == "LETE Sand")
+    rep = next((r for r in rows if r["tag"] == PUBLISHED_RANGE_CASE), None)
+    fig, (ax_curve, ax_n) = plt.subplots(1, 2, figsize=(10.0, 4.2))
+    if rep:
+        zs, ps = _load_curve(rep["tag"])
+        if zs and ps:
+            p_norm = [p / ps[-1] for p in ps]
+            ax_curve.plot([z * 1e3 for z in zs], p_norm, "o-", ms=4,
+                          label=f"DIRT {rep['tag']} (n={rep['n']:.2f})")
+            p_ref = [(lete["kc"] / rep["b"] + lete["kphi"]) * z ** lete["n"] for z in zs]
+            p_ref_norm = [p / p_ref[-1] for p in p_ref]
+            ax_curve.plot([z * 1e3 for z in zs], p_ref_norm, "--",
+                          label=f"LETE Sand Bekker (n={lete['n']:.2f})")
+    ax_curve.set_xlabel("sinkage z (mm)")
+    ax_curve.set_ylabel("normalized pressure p / p(z_max)")
+    ax_curve.set_title("Published pressure-sinkage shape")
+    ax_curve.grid(True, ls=":", alpha=0.4)
+    ax_curve.legend(fontsize=8)
+
+    names = [r["terrain"] for r in published]
+    ns = [r["n"] for r in published]
+    y = list(range(len(names)))
+    ax_n.axvspan(pub_n_min, pub_n_max, color="#d8f0d2", alpha=0.8,
+                 label="published sandy/loam n gate")
+    ax_n.plot(ns, y, "o", color="#555555", label="NASA Table 1")
+    if rep:
+        ax_n.axvline(rep["n"], color="#1f77b4", lw=2,
+                     label=f"DIRT {rep['tag']} n={rep['n']:.2f}")
+    ax_n.set_yticks(y)
+    ax_n.set_yticklabels(names, fontsize=8)
+    ax_n.set_xlabel("Bekker exponent n")
+    ax_n.set_title("Fitted exponent gate")
+    ax_n.grid(True, axis="x", ls=":", alpha=0.4)
+    ax_n.legend(fontsize=8, loc="lower right")
+    fig.tight_layout()
+    fig.savefig(os.path.join(PLOT_DIR, "published_bekker_reference.png"))
+    plt.close(fig)
+
+    print(f"\nFigures -> {PLOT_DIR}/pressure_sinkage.png, pressure_sinkage_linear.png, "
+          "published_bekker_reference.png")
 
 
 def graph():
