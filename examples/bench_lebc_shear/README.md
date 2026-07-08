@@ -86,10 +86,14 @@ near random-close-packing, is reachable. The sweep runs two families:
    runs heat up during compression and relax over many strain units, so shear
    duration is set by total strain (`TARGET_STRAIN`), and the low-γ̇ (low-I) cases
    are the long ones. The γ̇-collapse in (1) is also the Bagnold (σ ∝ γ̇²) check.
-3. **μ(I) / Φ(I) fit** (frictional sweep). Fits `μ(I) = μ_s + (μ₂−μ_s)/(I₀/I + 1)`
-   and extracts `μ_s, μ₂, I₀, Φ_max, ρ_c = Φ_max·ρ_s`, written to
-   `data/calibration.yaml` for `sph_constitutive::MaterialParams`. Glass-bead
-   anchors: `μ_s ≈ 0.38`, `μ₂ ≈ 0.64`, `I₀ ≈ 0.28` (possibly lower for spheres).
+3. **μ(I) / Φ(I) gate and fit** (frictional sweep). Each measured frictional
+   point must land inside the GDR MiDi / da Cruz dense-flow envelope
+   `0.30 <= μ = |σ_xy|/P <= 0.70`; the plotted band and printed count are the
+   PASS/FAIL gate. The same points are then fit to
+   `μ(I) = μ_s + (μ₂−μ_s)/(I₀/I + 1)` and `Φ(I)` to extract the calibration
+   constants written to `data/calibration.yaml` for
+   `sph_constitutive::MaterialParams`. Those fitted constants are material
+   outputs, not universal pass/fail targets.
 
 ![Kinetic-theory validation](plots/kt_validation.png)
 
@@ -100,8 +104,9 @@ unchanged PASS gate: at least 60% of KT points within 15% for normal stress and
 
 ![mu(I) fit](plots/mu_of_I.png)
 
-*Frictional production sweep: measured μ = |σ_xy|/P over inertial number I with the
-fitted GDR MiDi / da Cruz μ(I) curve used by the downstream closure.*
+*Frictional production sweep: measured μ = |σ_xy|/P over inertial number I. The
+orange band is the GDR MiDi / da Cruz dense-flow PASS gate (`0.30 <= μ <= 0.70`);
+the black curve is the fitted μ(I) calibration consumed downstream.*
 
 ![Phi(I) trend](plots/phi_of_I.png)
 

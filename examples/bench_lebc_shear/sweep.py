@@ -84,6 +84,12 @@ SWEEPS = {
     "kt":         dict(friction=0.0, e=0.95),
 }
 
+# GDR MiDi (2004) / da Cruz et al. (2005) dense-flow reference envelope for
+# frictional simple shear. The fitted μ(I) constants remain material/calibration
+# outputs; this gate asks the measured DEM points to live in the published
+# frictional dense-flow band rather than only in a loose "non-absurd" range.
+GDR_MU_LO, GDR_MU_HI = 0.30, 0.70
+
 
 def count_for_phi(phi):
     """Particle count to reach target Φ in the final (sheared) box."""
@@ -514,6 +520,11 @@ def graph():
         print("\n=== μ(I) / Φ(I) fit (frictional production sweep) ===")
         print(f"  μ_s = {mu_s:.3f}   μ_2 = {mu2:.3f}   I_0 = {I0:.3f}")
         print(f"  Φ_max = {phi_max:.3f}   ρ_c = Φ_max·ρ_s = {rho_c:.1f} kg/m³")
+        mu_env_ok = sum(1 for p in prod if GDR_MU_LO <= p["mu"] <= GDR_MU_HI)
+        mu_env_pass = mu_env_ok == len(prod)
+        print(f"  GDR / da Cruz μ(I) envelope: {mu_env_ok}/{len(prod)} within "
+              f"[{GDR_MU_LO:.2f}, {GDR_MU_HI:.2f}]  → "
+              f"{'PASS' if mu_env_pass else 'FAIL'}")
 
         os.makedirs(DATA_DIR, exist_ok=True)
         with open(os.path.join(DATA_DIR, "calibration.yaml"), "w") as f:
@@ -536,11 +547,18 @@ def graph():
 
     # μ(I)
     fig, ax = plt.subplots(figsize=(6, 4.2))
+    ax.axhspan(GDR_MU_LO, GDR_MU_HI, color="tab:orange", alpha=0.14,
+               label=f"GDR/da Cruz PASS band: {GDR_MU_LO:.2f}≤μ≤{GDR_MU_HI:.2f}")
     ax.scatter([p["I"] for p in prod], [p["mu"] for p in prod], c="tab:blue", label="DEM (frictional)")
     if mu_s is not None:
         xs = [10 ** (-4 + 0.05 * k) for k in range(80)]
         ax.plot(xs, [mu_s + (mu2 - mu_s) / (I0 / x + 1.0) for x in xs], "k-",
                 label=f"fit: μ_s={mu_s:.2f}, μ_2={mu2:.2f}, I_0={I0:.2f}")
+    if prod:
+        mu_env_ok = sum(1 for p in prod if GDR_MU_LO <= p["mu"] <= GDR_MU_HI)
+        ax.text(0.98, 0.04, f"Gate: {mu_env_ok}/{len(prod)} in band",
+                transform=ax.transAxes, ha="right", va="bottom", fontsize=8,
+                bbox=dict(facecolor="white", edgecolor="0.7", alpha=0.85, pad=3))
     ax.set_xscale("log"); ax.set_xlabel("inertial number I"); ax.set_ylabel("μ = |σ_xy| / P")
     ax.set_title("Lees–Edwards rheometer: μ(I)"); ax.legend(); ax.grid(True, alpha=0.3)
     fig.tight_layout(); fig.savefig(os.path.join(PLOT_DIR, "mu_of_I.png"), dpi=130); plt.close(fig)
@@ -674,10 +692,10 @@ SMOKE = dict(
     COMPRESS_STEPS=30_000,              # full: 60_000
 )
 # Smoke bounds on the steady shear-stress ratio μ = |σ_xy|/P for frictional
-# (μ_p = 0.16) glass beads in dense inertial shear: a physical macroscopic
-# friction, non-trivial and non-absurd, from a plateaued averaging window. This is
-# an ADDITIVE breakage gate; the KT-vs-theory tolerances live in the full run.
-SMOKE_MU_LO, SMOKE_MU_HI = 0.15, 0.90
+# (μ_p = 0.16) glass beads in dense inertial shear. This is the same external
+# GDR MiDi / da Cruz dense-flow envelope drawn on the full μ(I) plot; the
+# KT-vs-theory tolerances live in the full run.
+SMOKE_MU_LO, SMOKE_MU_HI = GDR_MU_LO, GDR_MU_HI
 SMOKE_DRIFT_MAX = 0.15   # |Δp| across the averaging window ⇒ steady (matches full-run criterion)
 
 
@@ -728,8 +746,13 @@ def smoke():
     checks = []
     checks.append((len(pts) >= 3, f"cases with steady data: {len(pts)} (need >=3)"))
     checks.append((bool(per_case_ok) and all(per_case_ok),
-                   f"every case: {SMOKE_MU_LO} <= mu <= {SMOKE_MU_HI}, P>0, "
+                   f"every case: GDR / da Cruz mu(I) envelope "
+                   f"{SMOKE_MU_LO} <= mu <= {SMOKE_MU_HI}, P>0, "
                    f"drift < {int(SMOKE_DRIFT_MAX*100)}%"))
+    mu_env_ok = sum(1 for p in pts if SMOKE_MU_LO <= p["mu"] <= SMOKE_MU_HI)
+    checks.append((mu_env_ok == len(pts) and len(pts) > 0,
+                   f"GDR / da Cruz mu(I) envelope: {mu_env_ok}/{len(pts)} within "
+                   f"[{SMOKE_MU_LO:.2f}, {SMOKE_MU_HI:.2f}]"))
     npass = sum(1 for ok, _ in checks if ok)
     for ok, msg in checks:
         print(f"  [{'PASS' if ok else 'FAIL'}] {msg}")
