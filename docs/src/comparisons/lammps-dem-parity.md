@@ -47,14 +47,16 @@ verified by exhaustive grep and are annotated with what was searched.
 | **DMT** cohesion (Hertz − `4πγR`) | ✅ `dmt` — `pair_granular.rst:141`; `GranSubModNormalDMT` `gran_sub_mod_normal.cpp:288` | ⚠️ `adhesion_model="dmt"`, **Hertz path only** — `crates/dirt_granular/src/contact.rs:254, 392` (limitation `crates/dirt_granular/src/lib.rs:35`) |
 | **JKR** adhesion (contact-radius solve, tensile to pull-off) | ✅ `jkr` — `pair_granular.rst:149`; `GranSubModNormalJKR` `gran_sub_mod_normal.cpp:389` | ⚠️ `adhesion_model="jkr"`, **simplified explicit** `F_adh≈³⁄₂πγR*`, **Hertz path only** — `crates/dirt_granular/src/contact.rs:397` (pull-off range 263–272) |
 | **SJKR** (area-proportional cohesion) | ❌ — not a `pair granular` model | ✅ both Hertz + Hooke paths — `crates/dirt_granular/src/contact.rs:408` (Hertz), `845` (Hooke) |
-| **MDR** elastic-plastic adhesive (Zunker & Kamrin) | ✅ `mdr` — `pair_granular.rst:186`; `GranSubModNormalMDR` `gran_sub_mod_normal.cpp:540` (+ companion `fix_granular_mdr.cpp`) | ❌ — searched `crates/` for `mdr`; not found |
+| **MDR** elastic-plastic adhesive (Zunker & Kamrin) | ✅ `mdr` — `pair_granular.rst:186`; `GranSubModNormalMDR` `gran_sub_mod_normal.cpp:540` (+ companion `fix_granular_mdr.cpp`) | ⚠️ `contact_model="mdr"` — DIRT implements the one-dimensional MDR loading/yield/plastic-unloading transform, MDR stiffness damping, and an adhesive tensile branch in `crates/dirt_granular/src/contact.rs`; validated by `examples/bench_mdr_elastoplastic_normal`. Deliberate differences: no apparent-radius update, no multi-contact free-surface/bulk response, no topological contact-penalty screen, and no MDR wall path yet. |
 | `none` (null normal) | ✅ `gran_sub_mod_normal.cpp:133` | — (n/a) |
 
 **Notes.** DIRT's JKR is a *simplified* explicit pull-off force with an extended
 interaction range, not LAMMPS's full contact-radius root-solve; treat as
 approximate. DMT/JKR `surface_energy` is **silently ignored on the Hooke path**
 in DIRT (documented, `crates/dirt_granular/src/lib.rs:35`). DIRT has **SJKR**
-that LAMMPS `pair granular` lacks; LAMMPS has **MDR** that DIRT lacks.
+that LAMMPS `pair granular` lacks. DIRT's MDR branch is intentionally a pairwise
+normal-force subset of LAMMPS MDR, not the full apparent-radius/free-surface
+particle model.
 
 ## Normal damping
 
@@ -202,8 +204,10 @@ Rough parity on rigid clumps.
    (`pair_granular.rst:879, 892`) + per-atom heat-flow integration
    (`fix_heat_flow.cpp`). DIRT has only a wall-temperature *stub* and a
    velocity-fluctuation diagnostic. **Largest gap.**
-2. **MDR elastic-plastic normal model** (`gran_sub_mod_normal.cpp:540` +
-   `fix_granular_mdr.cpp`) — DIRT has no plastic normal contact.
+2. **Full LAMMPS MDR particle-state parity** (`gran_sub_mod_normal.cpp:540` +
+   `fix_granular_mdr.cpp`) — DIRT now has a pairwise MDR normal-force subset,
+   but not apparent-radius updates, bulk/free-surface state, contact penalties,
+   or MDR walls.
 3. **Mindlin `force`-form history and `mindlin_rescale` unloading variants**
    (`pair_granular.rst:645, 675`) — DIRT stores displacement history only.
 4. ~~**Marshall twisting** (coeffs derived from the tangential model,

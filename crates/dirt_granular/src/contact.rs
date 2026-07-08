@@ -9,7 +9,7 @@
 //!
 //! | Component   | Models                                    |
 //! |-------------|-------------------------------------------|
-//! | Normal      | Hertz (nonlinear), Hooke (linear)         |
+//! | Normal      | Hertz (nonlinear), Hooke (linear), MDR (elastic-plastic) |
 //! | Tangential  | Mindlin incremental spring + Coulomb cap  |
 //! | Rolling     | Constant torque, SDS (spring-dashpot-slider) |
 //! | Twisting    | Constant torque, SDS (spring-dashpot-slider), Marshall (derived from tangential) |
@@ -28,7 +28,7 @@
 //!
 //! ```toml
 //! [materials]
-//! contact_model = "hertz"  # or "hooke"
+//! contact_model = "hertz"  # or "hooke" / "mdr"
 //! ```
 //!
 //! See the [crate-level documentation](crate) for the full material parameter list.
@@ -44,7 +44,7 @@ use soil_core::{
     VirialStressPlugin,
 };
 
-use crate::tangential::ContactHistoryStore;
+use crate::tangential::{ContactHistoryStore, CONTACT_HISTORY_LEN};
 use crate::{LARGE_OVERLAP_WARN_THRESHOLD, MAX_OVERLAP_WARNINGS, SQRT_5_6, TANGENTIAL_EPSILON};
 
 /// Fused Hertz normal + Mindlin tangential contact force plugin.
@@ -131,6 +131,90 @@ pub enum ForcePass {
     Interior,
     /// Boundary pairs only (does NOT reset, prunes at the end).
     Boundary,
+}
+
+fn mdr_nonadhesive_force(delta: f64, a_inv: f64, e_eff: f64, a: f64, b: f64) -> f64 {
+    if delta <= 0.0 || a <= 0.0 || b <= 0.0 {
+        return 0.0;
+    }
+    let x = (delta * a_inv).clamp(0.0, 1.0);
+    let root = (x - x * x).max(0.0).sqrt();
+    0.25 * e_eff * a * b * ((1.0 - 2.0 * x).acos() - (2.0 - 4.0 * x) * root)
+}
+
+fn mdr_normal_force(
+    delta: f64,
+    r_eff: f64,
+    e_eff: f64,
+    g_eff: f64,
+    yield_stress: f64,
+    surface_energy: f64,
+    damping_prefactor: f64,
+    m_r: f64,
+    v_n: f64,
+    stored: &mut [f64; CONTACT_HISTORY_LEN],
+) -> (f64, f64, f64) {
+    let prev_delta = stored[7];
+    stored[7] = delta;
+    if delta > stored[8] {
+        stored[8] = delta;
+    }
+    let delta_max = stored[8].max(delta);
+
+    let mut yielded = stored[9] > 0.5;
+    if !yielded && yield_stress > 0.0 && delta > 0.0 {
+        let p_hertz = 4.0 * e_eff * delta.sqrt() / (3.0 * std::f64::consts::PI * r_eff.sqrt());
+        let p_y = yield_stress * (1.75 * (-4.4 * delta_max / r_eff).exp() + 1.0);
+        if p_hertz > p_y {
+            yielded = true;
+            stored[9] = 1.0;
+            stored[10] = delta;
+        }
+    }
+
+    let (a_shape, b_shape, delta_e) = if yielded {
+        let delta_y = stored[10].max(0.0);
+        let c_a = std::f64::consts::PI * (delta_y * delta_y - delta_y * r_eff);
+        let a_max_sq = (2.0 * delta_max * r_eff - delta_max * delta_max
+            + c_a / std::f64::consts::PI)
+            .max(1.0e-30);
+        let a_max = a_max_sq.sqrt();
+        let p_y = yield_stress.max(0.0) * (1.75 * (-4.4 * delta_max / r_eff).exp() + 1.0);
+        let a_shape = (4.0 * p_y / e_eff * a_max).max(1.0e-30);
+        let b_shape = (2.0 * a_max).max(1.0e-30);
+        let delta_e_max = 0.5 * a_shape;
+        let plastic_offset = (delta_max - delta_e_max).max(0.0);
+        (
+            a_shape,
+            b_shape,
+            (delta - plastic_offset).max(0.0).min(delta_e_max),
+        )
+    } else {
+        (4.0 * r_eff, 2.0 * r_eff, delta)
+    };
+
+    let a_inv = 1.0 / a_shape;
+    let mut force = mdr_nonadhesive_force(delta_e, a_inv, e_eff, a_shape, b_shape);
+    let a_contact = if delta_e > 0.0 {
+        b_shape * (a_shape - delta_e).max(0.0).sqrt() * delta_e.sqrt() * a_inv
+    } else {
+        0.0
+    };
+
+    if surface_energy > 0.0 {
+        if delta >= delta_max || a_contact >= stored[11] {
+            stored[11] = 0.99 * a_contact;
+        } else if stored[11] > 0.0 {
+            force -= 2.0 * std::f64::consts::PI * surface_energy * stored[11];
+        }
+    }
+
+    let k_mdr = 2.0 * e_eff * a_contact.max(1.0e-30);
+    if damping_prefactor > 0.0 && delta > 0.0 && (delta >= prev_delta || force > 0.0) {
+        force -= damping_prefactor * (m_r * k_mdr).sqrt() * v_n;
+    }
+    let k_t = 8.0 * g_eff * a_contact;
+    (force, k_mdr, k_t)
 }
 
 /// Standard system: compute the full Hertz-Mindlin contact force in one pass.
@@ -363,6 +447,7 @@ pub fn contact_force_core(
         let mu_r = material_table.rolling_friction_ij[mat_i][mat_j];
         let mu_tw = material_table.twisting_friction_ij[mat_i][mat_j];
         let cohesion_energy = material_table.cohesion_energy_ij[mat_i][mat_j];
+        let use_mdr = material_table.contact_model == "mdr";
 
         // JKR adhesion-only regime: gap exists but within pull-off distance
         // DMT has no adhesion-only regime (no force beyond contact)
@@ -412,30 +497,55 @@ pub fn contact_force_core(
 
         let v_n = vr_x * nx + vr_y * ny + vr_z * nz;
 
+        let tag_i = atoms.tag[i];
+        let tag_j = atoms.tag[j];
+        let sign: f64 = if tag_i < tag_j { 1.0 } else { -1.0 };
+
+        // Look up existing spring/history (single search, reused for write-back).
+        let entry_idx = history.contacts[i].iter().position(|(t, _, _)| *t == tag_j);
+        let mut stored = match entry_idx {
+            Some(idx) => history.contacts[i][idx].1,
+            None => [0.0; CONTACT_HISTORY_LEN],
+        };
+
         // ── Normal force ─────────────────────────────────────────────────
         // F_n > 0 → repulsive (along contact normal from i to j)
         // F_n < 0 → attractive (adhesion/cohesion pulls particles together)
-        let f_n_mag = if surface_energy > 0.0 && use_dmt {
+        let (f_n_mag, k_t) = if use_mdr {
+            let (f, _k_mdr, kt_mdr) = mdr_normal_force(
+                delta.max(0.0),
+                r_eff,
+                e_eff,
+                g_eff,
+                material_table.mdr_yield_stress_ij[mat_i][mat_j],
+                surface_energy,
+                material_table.mdr_damping_ij[mat_i][mat_j],
+                m_r,
+                v_n,
+                &mut stored,
+            );
+            (f, kt_mdr)
+        } else if surface_energy > 0.0 && use_dmt {
             // DMT: Hertz contact + constant adhesive force F_dmt = 2π γ R*
             let f_dmt = 2.0 * std::f64::consts::PI * surface_energy * r_eff;
             let f_diss_n = 2.0 * beta * SQRT_5_6 * (s_n * m_r).sqrt() * v_n;
-            k_n * delta - f_diss_n - f_dmt
+            (k_n * delta - f_diss_n - f_dmt, k_t)
         } else if surface_energy > 0.0 {
             // JKR: adhesion force F_adh = 3/2 π γ R* (simplified explicit model)
             let f_adhesion = 1.5 * std::f64::consts::PI * surface_energy * r_eff;
             if jkr_adhesion_only {
                 // Gap regime (δ ≤ 0): pure adhesion, no Hertz contact or damping
-                -f_adhesion
+                (-f_adhesion, k_t)
             } else {
                 // Contact regime (δ > 0): Hertz repulsion + damping − adhesion
                 let f_diss_n = 2.0 * beta * SQRT_5_6 * (s_n * m_r).sqrt() * v_n;
-                k_n * delta - f_diss_n - f_adhesion
+                (k_n * delta - f_diss_n - f_adhesion, k_t)
             }
         } else if cohesion_energy > 0.0 {
             // SJKR: cohesion proportional to contact area A = π δ R*
             let f_diss_n = 2.0 * beta * SQRT_5_6 * (s_n * m_r).sqrt() * v_n;
             let f_cohesion = cohesion_energy * std::f64::consts::PI * delta * r_eff;
-            k_n * delta - f_diss_n - f_cohesion // can go negative (attractive)
+            (k_n * delta - f_diss_n - f_cohesion, k_t) // can go negative (attractive)
         } else {
             // Standard Hertz repulsion + viscoelastic damping. With
             // `limit_damping` (default) the total is clamped to ≥ 0 so damping
@@ -446,9 +556,9 @@ pub fn contact_force_core(
             let f_diss_n = 2.0 * beta * SQRT_5_6 * (s_n * m_r).sqrt() * v_n;
             let f_total = k_n * delta - f_diss_n;
             if material_table.limit_damping {
-                f_total.max(0.0)
+                (f_total.max(0.0), k_t)
             } else {
-                f_total
+                (f_total, k_t)
             }
         };
 
@@ -482,17 +592,6 @@ pub fn contact_force_core(
         let vt_x = vr_x - v_n * nx;
         let vt_y = vr_y - v_n * ny;
         let vt_z = vr_z - v_n * nz;
-
-        let tag_i = atoms.tag[i];
-        let tag_j = atoms.tag[j];
-        let sign: f64 = if tag_i < tag_j { 1.0 } else { -1.0 };
-
-        // Look up existing spring (single search, reused for write-back)
-        let entry_idx = history.contacts[i].iter().position(|(t, _, _)| *t == tag_j);
-        let stored = match entry_idx {
-            Some(idx) => history.contacts[i][idx].1,
-            None => [0.0; 7],
-        };
 
         // Tangential spring displacement (history model). For the history-free
         // `linear_nohistory` model the spring is identically zero, so the force
@@ -764,15 +863,14 @@ pub fn contact_force_core(
         }
 
         // Store updated spring back (canonical form) and mark active
-        let new_spring = [
-            sign * sx,
-            sign * sy,
-            sign * sz,
-            sign * roll_disp_x,
-            sign * roll_disp_y,
-            sign * roll_disp_z,
-            sign * twist_disp,
-        ];
+        let mut new_spring = stored;
+        new_spring[0] = sign * sx;
+        new_spring[1] = sign * sy;
+        new_spring[2] = sign * sz;
+        new_spring[3] = sign * roll_disp_x;
+        new_spring[4] = sign * roll_disp_y;
+        new_spring[5] = sign * roll_disp_z;
+        new_spring[6] = sign * twist_disp;
         match entry_idx {
             Some(idx) => {
                 history.contacts[i][idx].1 = new_spring;
@@ -994,7 +1092,7 @@ pub fn hooke_contact_force(
         let entry_idx = history.contacts[i].iter().position(|(t, _, _)| *t == tag_j);
         let stored = match entry_idx {
             Some(idx) => history.contacts[i][idx].1,
-            None => [0.0; 7],
+            None => [0.0; CONTACT_HISTORY_LEN],
         };
 
         // History-free `linear_nohistory` tangential model → zero spring (see the
@@ -1231,15 +1329,14 @@ pub fn hooke_contact_force(
             }
         }
 
-        let new_spring = [
-            sign * sx,
-            sign * sy,
-            sign * sz,
-            sign * roll_disp_x,
-            sign * roll_disp_y,
-            sign * roll_disp_z,
-            sign * twist_disp,
-        ];
+        let mut new_spring = stored;
+        new_spring[0] = sign * sx;
+        new_spring[1] = sign * sy;
+        new_spring[2] = sign * sz;
+        new_spring[3] = sign * roll_disp_x;
+        new_spring[4] = sign * roll_disp_y;
+        new_spring[5] = sign * roll_disp_z;
+        new_spring[6] = sign * twist_disp;
         match entry_idx {
             Some(idx) => {
                 history.contacts[i][idx].1 = new_spring;
@@ -1468,7 +1565,7 @@ mod tests {
                 .iter()
                 .find(|(t, _, _)| *t == 1)
                 .map(|(_, s, _)| *s)
-                .unwrap_or([0.0; 7]);
+                .unwrap_or([0.0; CONTACT_HISTORY_LEN]);
             (s[0] * s[0] + s[1] * s[1] + s[2] * s[2]).sqrt()
         };
 
@@ -2186,7 +2283,9 @@ mod tests {
 
             // Pre-load rolling displacement in contact history (canonical: tag 0 < tag 1, sign=+1)
             if preload_y != 0.0 {
-                hist.contacts[0].push((1, [0.0, 0.0, 0.0, 0.0, preload_y, 0.0, 0.0], false));
+                let mut preload = [0.0; CONTACT_HISTORY_LEN];
+                preload[4] = preload_y;
+                hist.contacts[0].push((1, preload, false));
             }
 
             let mut neighbor = Neighbor::new();
@@ -2366,7 +2465,9 @@ mod tests {
             atom.natoms = 2;
 
             if preload != 0.0 {
-                hist.contacts[0].push((1, [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, preload], false));
+                let mut preload_state = [0.0; CONTACT_HISTORY_LEN];
+                preload_state[6] = preload;
+                hist.contacts[0].push((1, preload_state, false));
             }
 
             let mut neighbor = Neighbor::new();
@@ -2458,7 +2559,9 @@ mod tests {
         atom.natoms = 2;
 
         if preload != 0.0 {
-            hist.contacts[0].push((1, [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, preload], false));
+            let mut preload_state = [0.0; CONTACT_HISTORY_LEN];
+            preload_state[6] = preload;
+            hist.contacts[0].push((1, preload_state, false));
         }
 
         let mut neighbor = Neighbor::new();

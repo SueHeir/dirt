@@ -10,6 +10,8 @@
 //! - **Hertz** (default) — nonlinear elastic contact: `F_n = 4/3 E* √(R* δ) · δ`
 //!   with viscoelastic damping proportional to `β √(S_n m_r)`
 //! - **Hooke** — linear spring contact: `F_n = k_n δ` with linear damping `γ_n v_n`
+//! - **MDR** — adhesive elastic-plastic normal contact following the
+//!   Zunker/Kamrin one-dimensional MDR transform for loading/yield/unloading.
 //!
 //! ## Tangential contact
 //! - **Mindlin** — incremental spring-history model with Coulomb friction cap `μ |F_n|`.
@@ -58,7 +60,7 @@
 //!
 //! ```toml
 //! [dem]
-//! contact_model = "hertz"     # "hertz" (default) or "hooke"
+//! contact_model = "hertz"     # "hertz" (default), "hooke", or "mdr"
 //! adhesion_model = "jkr"      # "jkr" (default) or "dmt" (only when surface_energy > 0)
 //! rolling_model = "constant"  # "constant" (default) or "sds"
 //! twisting_model = "constant" # "constant" (default), "sds", or "marshall" (coeffs derived from tangential)
@@ -74,6 +76,7 @@
 //! |---|---|
 //! | Hertz normal | `e_eff_ij` (E*), `beta_ij` (from `restitution`) |
 //! | Hooke normal | `kn_ij` (harmonic mean of per-material `kn`), `beta_ij` |
+//! | MDR normal | `e_eff_ij`, `g_eff_ij`, `surface_energy_ij`, `mdr_yield_stress_ij`, `mdr_damping_ij` |
 //! | Mindlin tangential | `g_eff_ij` (G*), `friction_ij` (μ), `beta_ij` |
 //! | Hooke tangential | `kt_ij`, `friction_ij` |
 //! | Rolling (constant / SDS) | `rolling_friction_ij`, `rolling_stiffness_ij`, `rolling_damping_ij` |
