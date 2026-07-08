@@ -994,6 +994,9 @@ extended kinetic theory and independent LAMMPS / Fortran / LIGGGHTS reference
 points over solid fraction, while the **frictional production sweep** fits the
 GDR MiDi / da Cruz μ(I) and Φ(I) closure used by downstream continuum calibration
 and gates the measured stress ratios against the published dense-flow envelope.
+The same frictional sweep now overlays Walton & Braun's 1986 homogeneous-shear
+inelastic-disk trends for pressure, shear stress ratio, granular-temperature
+proxy, and normal-stress anisotropy.
 
 The validation has two gates, deliberately kept separate:
 
@@ -1011,6 +1014,11 @@ The validation has two gates, deliberately kept separate:
   Every frictional production point must remain inside the plotted GDR MiDi /
   da Cruz dense-flow envelope `0.30 <= μ <= 0.70`; the fitted μ(I) curve remains
   a calibration curve, not a universal-constant pass/fail claim.
+- **Walton 1986 trend gate (`sweep.py` default and `graph`): PASS on the committed
+  plot.** DIRT pressure, shear ratio, granular-temperature proxy, `N1/P`, `N2/P`,
+  and `σ_xx/σ_yy` are compared with digitized Walton & Braun (1986) homogeneous
+  shear trends. This is a dimensionless trend check because Walton used 2-D disks
+  and DIRT uses 3-D spheres; it does not replace the KT or GDR gates.
 
 ![Kinetic-theory validation](bench_lebc_shear/plots/kt_validation.png)
 
@@ -1027,13 +1035,22 @@ PASS gate (`0.30 <= μ <= 0.70`); the black curve is the calibration fit.*
 
 *Measured frictional Φ(I), paired with the μ(I) fit for closure calibration.*
 
+![Walton 1986 overlay](bench_lebc_shear/plots/walton_1986_overlay.png)
+
+*DIRT frictional pressure, shear ratio, granular-temperature proxy, and
+normal-stress ratios against digitized Walton & Braun (1986) homogeneous-shear
+trends. The printed PASS/FAIL checks gate the dimensionless trends while the
+existing kinetic-theory and GDR checks remain intact.*
+
 **Honest read:** the strongest physics check is the frictionless stress collapse
 against kinetic theory and cross-code data; it is expected to deviate near jamming,
 where enduring contacts leave the collisional KT regime. The frictional μ(I) gate
 checks the measured stress ratios against the published dense-flow envelope, while
-the fitted μ(I) / Φ(I) constants are material/calibration outputs rather than
-independent universal numbers. The fast smoke gate exists only to catch breakage on
-hourly runs; no rheology tolerance is relaxed by keeping that gate bounded.
+the Walton overlay is a cross-geometry trend check, not a claim that 3-D spheres
+should reproduce every 2-D disk ordinate. The fitted μ(I) / Φ(I) constants are
+material/calibration outputs rather than independent universal numbers. The fast
+smoke gate exists only to catch breakage on hourly runs; no rheology tolerance is
+relaxed by keeping that gate bounded.
 
 ## `bench_hopper_beverloo` — silo discharge rate
 
