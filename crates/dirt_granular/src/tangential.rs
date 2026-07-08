@@ -42,15 +42,11 @@ use soil_core::AtomData;
 /// | `[0..3]`| Mindlin tangential | Tangential spring displacement vector   |
 /// | `[3..6]`| SDS rolling        | Rolling spring displacement vector      |
 /// | `[6]`  | SDS twisting       | Twisting spring displacement (scalar)   |
-/// | `[7]`  | MDR normal         | Previous apparent overlap               |
-/// | `[8]`  | MDR normal         | Maximum experienced apparent overlap    |
-/// | `[9]`  | MDR normal         | Yield flag (0 = elastic, 1 = plastic)   |
-/// | `[10]` | MDR normal         | Apparent overlap at first yield         |
-/// | `[11]` | MDR normal         | Adhesive/tensile contact radius memory  |
+/// | `[7..]`| MDR normal         | LAMMPS-style per-side rigid-flat history |
 ///
 /// Rolling and twisting slots are zero when the constant-torque model is used.
 /// Number of scalar history values stored for each active contact.
-pub const CONTACT_HISTORY_LEN: usize = 12;
+pub const CONTACT_HISTORY_LEN: usize = 24;
 
 /// Per-contact spring and MDR normal history store.
 pub struct ContactHistoryStore {

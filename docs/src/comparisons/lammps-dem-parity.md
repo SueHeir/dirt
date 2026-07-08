@@ -47,16 +47,16 @@ verified by exhaustive grep and are annotated with what was searched.
 | **DMT** cohesion (Hertz − `4πγR`) | ✅ `dmt` — `pair_granular.rst:141`; `GranSubModNormalDMT` `gran_sub_mod_normal.cpp:288` | ⚠️ `adhesion_model="dmt"`, **Hertz path only** — `crates/dirt_granular/src/contact.rs:254, 392` (limitation `crates/dirt_granular/src/lib.rs:35`) |
 | **JKR** adhesion (contact-radius solve, tensile to pull-off) | ✅ `jkr` — `pair_granular.rst:149`; `GranSubModNormalJKR` `gran_sub_mod_normal.cpp:389` | ⚠️ `adhesion_model="jkr"`, **simplified explicit** `F_adh≈³⁄₂πγR*`, **Hertz path only** — `crates/dirt_granular/src/contact.rs:397` (pull-off range 263–272) |
 | **SJKR** (area-proportional cohesion) | ❌ — not a `pair granular` model | ✅ both Hertz + Hooke paths — `crates/dirt_granular/src/contact.rs:408` (Hertz), `845` (Hooke) |
-| **MDR** elastic-plastic adhesive (Zunker & Kamrin) | ✅ `mdr` — `pair_granular.rst:186`; `GranSubModNormalMDR` `gran_sub_mod_normal.cpp:540` (+ companion `fix_granular_mdr.cpp`) | ⚠️ `contact_model="mdr"` — DIRT implements the one-dimensional MDR loading/yield/plastic-unloading transform, MDR stiffness damping, and an adhesive tensile branch in `crates/dirt_granular/src/contact.rs`; validated by `examples/bench_mdr_elastoplastic_normal`. Deliberate differences: no apparent-radius update, no multi-contact free-surface/bulk response, no topological contact-penalty screen, and no MDR wall path yet. |
+| **MDR** elastic-plastic adhesive (Zunker & Kamrin) | ✅ `mdr` — `pair_granular.rst:186`; `GranSubModNormalMDR` `gran_sub_mod_normal.cpp:540` (+ companion `fix_granular_mdr.cpp`) | ⚠️ `contact_model="mdr"` — DIRT implements the LAMMPS particle-pair normal-force path: per-side rigid-flat placement, loading/yield, plastic unloading with `deltaR`, MDR stiffness damping, and an adhesive tensile branch in `crates/dirt_granular/src/contact.rs`; validated by `examples/bench_mdr_elastoplastic_normal` against the LAMMPS source equations. Deliberate differences: no apparent-radius update, no multi-contact free-surface/bulk response, no topological contact-penalty screen, and no MDR wall path yet. |
 | `none` (null normal) | ✅ `gran_sub_mod_normal.cpp:133` | — (n/a) |
 
 **Notes.** DIRT's JKR is a *simplified* explicit pull-off force with an extended
 interaction range, not LAMMPS's full contact-radius root-solve; treat as
 approximate. DMT/JKR `surface_energy` is **silently ignored on the Hooke path**
 in DIRT (documented, `crates/dirt_granular/src/lib.rs:35`). DIRT has **SJKR**
-that LAMMPS `pair granular` lacks. DIRT's MDR branch is intentionally a pairwise
-normal-force subset of LAMMPS MDR, not the full apparent-radius/free-surface
-particle model.
+that LAMMPS `pair granular` lacks. DIRT's MDR branch is intentionally a
+particle-pair normal-force subset of LAMMPS MDR, not the full
+apparent-radius/free-surface particle model.
 
 ## Normal damping
 
@@ -72,7 +72,7 @@ calibrated from restitution.
 | `viscoelastic` (`η=η₀ a m_eff`) | ✅ `pair_granular.rst:368`; `.h:72` | ✅ Hertz viscoelastic `β√(S_n m_r)` — `crates/dirt_granular/src/contact.rs:345` |
 | `tsuji` (restitution-calibrated) | ✅ `pair_granular.rst:381`; `.h:80` | ✅ DIRT's Hertz damping is restitution-calibrated (β from COR) — `crates/dirt_granular/src/contact.rs:345` |
 | `coeff_restitution` | ✅ `pair_granular.rst:406`; `.h:89` | ⚠️ same intent (COR→β) but not a separate selectable keyword |
-| `mdr` damping | ✅ `pair_granular.rst:431`; `.h:97` | ❌ (no MDR) |
+| `mdr` damping | ✅ `pair_granular.rst:431`; `.h:97` | ✅ inside `contact_model="mdr"` via `mdr_damping` — `crates/dirt_granular/src/contact.rs` |
 | **Cundall non-viscous** global damping (`γ_l, γ_a`) | ✅ `fix_damping_cundall.cpp` — `doc/src/fix_damping_cundall.rst` | ❌ — searched `crates/dirt_fixes`; not found (DIRT has *viscous* velocity damping instead, below) |
 | **Viscous velocity damping** fix (`F=−γv`) | ✅ via `fix viscous` (MISC) | ✅ `crates/dirt_fixes/src/lib.rs:186` (`ViscousDef`, `apply_viscous` 533) |
 
@@ -205,9 +205,9 @@ Rough parity on rigid clumps.
    (`fix_heat_flow.cpp`). DIRT has only a wall-temperature *stub* and a
    velocity-fluctuation diagnostic. **Largest gap.**
 2. **Full LAMMPS MDR particle-state parity** (`gran_sub_mod_normal.cpp:540` +
-   `fix_granular_mdr.cpp`) — DIRT now has a pairwise MDR normal-force subset,
-   but not apparent-radius updates, bulk/free-surface state, contact penalties,
-   or MDR walls.
+   `fix_granular_mdr.cpp`) — DIRT now has the particle-pair MDR normal-force
+   path, but not apparent-radius updates, bulk/free-surface state, contact
+   penalties, or MDR walls.
 3. **Mindlin `force`-form history and `mindlin_rescale` unloading variants**
    (`pair_granular.rst:645, 675`) — DIRT stores displacement history only.
 4. ~~**Marshall twisting** (coeffs derived from the tangential model,

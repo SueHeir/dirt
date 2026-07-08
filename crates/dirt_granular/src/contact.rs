@@ -144,9 +144,10 @@ fn mdr_nonadhesive_force(delta: f64, a_inv: f64, e_eff: f64, a: f64, b: f64) -> 
 
 fn mdr_normal_force(
     delta: f64,
-    r_eff: f64,
+    r_i: f64,
+    r_j: f64,
     e_eff: f64,
-    g_eff: f64,
+    poisson: f64,
     yield_stress: f64,
     surface_energy: f64,
     damping_prefactor: f64,
@@ -154,66 +155,140 @@ fn mdr_normal_force(
     v_n: f64,
     stored: &mut [f64; CONTACT_HISTORY_LEN],
 ) -> (f64, f64, f64) {
-    let prev_delta = stored[7];
-    stored[7] = delta;
-    if delta > stored[8] {
-        stored[8] = delta;
-    }
-    let delta_max = stored[8].max(delta);
+    // Mirrors LAMMPS GranSubModNormalMDR's particle-pair rigid-flat normal
+    // force path, but without apparent-radius, bulk/free-surface, or penalty
+    // state from fix GRANULAR/MDR.
+    const MDR_OVERLAP_LIMIT: f64 = 0.95;
+    const TOTAL_DELTAMAX: usize = 7;
+    const SIDE0: usize = 8;
+    const SIDE1: usize = 16;
+    const DELTA_PREV: usize = 0;
+    const DELTA_MAX_MDR: usize = 1;
+    const YFLAG: usize = 2;
+    const DELTA_Y: usize = 3;
+    const C_A: usize = 4;
+    const A_ADH: usize = 5;
+    const DELTAP: usize = 6;
 
-    let mut yielded = stored[9] > 0.5;
-    if !yielded && yield_stress > 0.0 && delta > 0.0 {
-        let p_hertz = 4.0 * e_eff * delta.sqrt() / (3.0 * std::f64::consts::PI * r_eff.sqrt());
-        let p_y = yield_stress * (1.75 * (-4.4 * delta_max / r_eff).exp() + 1.0);
-        if p_hertz > p_y {
-            yielded = true;
-            stored[9] = 1.0;
-            stored[10] = delta;
+    let prev_delta = stored[TOTAL_DELTAMAX].min(delta);
+    if delta > stored[TOTAL_DELTAMAX] {
+        stored[TOTAL_DELTAMAX] = delta;
+    }
+    let delta_max = stored[TOTAL_DELTAMAX].max(delta);
+
+    let shear_mod = e_eff / (2.0 * (1.0 + poisson));
+    let mut total_force = 0.0;
+    let mut total_a_contact = 0.0;
+
+    for (side, base, radius, other_radius) in [(0, SIDE0, r_i, r_j), (1, SIDE1, r_j, r_i)] {
+        let mut side_delta = 0.0;
+        if delta_max > 0.0 && radius > 0.0 && other_radius > 0.0 {
+            let denom = 2.0 * (delta_max - radius - other_radius);
+            let opt1 = delta_max * (delta_max - 2.0 * other_radius) / denom;
+            let opt2 = delta_max * (delta_max - 2.0 * radius) / denom;
+            let mut delta_geo = if radius < other_radius {
+                opt1.max(opt2)
+            } else {
+                opt1.min(opt2)
+            };
+            let delta_geo_alt = if radius < other_radius {
+                opt1.min(opt2)
+            } else {
+                opt1.max(opt2)
+            };
+            if delta_geo / radius > MDR_OVERLAP_LIMIT {
+                delta_geo = radius * MDR_OVERLAP_LIMIT;
+            } else if delta_geo_alt / other_radius > MDR_OVERLAP_LIMIT {
+                delta_geo = delta_max - other_radius * MDR_OVERLAP_LIMIT;
+            }
+
+            let deltap_sum = stored[SIDE0 + DELTAP] + stored[SIDE1 + DELTAP];
+            side_delta = if (deltap_sum - delta_max).abs() > 1.0e-30 {
+                let deltap_side = if side == 0 {
+                    stored[SIDE0 + DELTAP]
+                } else {
+                    stored[SIDE1 + DELTAP]
+                };
+                delta_geo
+                    + (deltap_side - delta_geo) * (delta - delta_max) / (deltap_sum - delta_max)
+            } else {
+                delta_geo
+            };
         }
-    }
+        side_delta = side_delta.max(0.0);
 
-    let (a_shape, b_shape, delta_e) = if yielded {
-        let delta_y = stored[10].max(0.0);
-        let c_a = std::f64::consts::PI * (delta_y * delta_y - delta_y * r_eff);
-        let a_max_sq = (2.0 * delta_max * r_eff - delta_max * delta_max
-            + c_a / std::f64::consts::PI)
-            .max(1.0e-30);
-        let a_max = a_max_sq.sqrt();
-        let p_y = yield_stress.max(0.0) * (1.75 * (-4.4 * delta_max / r_eff).exp() + 1.0);
-        let a_shape = (4.0 * p_y / e_eff * a_max).max(1.0e-30);
-        let b_shape = (2.0 * a_max).max(1.0e-30);
-        let delta_e_max = 0.5 * a_shape;
-        let plastic_offset = (delta_max - delta_e_max).max(0.0);
-        (
-            a_shape,
-            b_shape,
-            (delta - plastic_offset).max(0.0).min(delta_e_max),
-        )
-    } else {
-        (4.0 * r_eff, 2.0 * r_eff, delta)
-    };
-
-    let a_inv = 1.0 / a_shape;
-    let mut force = mdr_nonadhesive_force(delta_e, a_inv, e_eff, a_shape, b_shape);
-    let a_contact = if delta_e > 0.0 {
-        b_shape * (a_shape - delta_e).max(0.0).sqrt() * delta_e.sqrt() * a_inv
-    } else {
-        0.0
-    };
-
-    if surface_energy > 0.0 {
-        if delta >= delta_max || a_contact >= stored[11] {
-            stored[11] = 0.99 * a_contact;
-        } else if stored[11] > 0.0 {
-            force -= 2.0 * std::f64::consts::PI * surface_energy * stored[11];
+        stored[base + DELTA_PREV] = side_delta;
+        if side_delta > stored[base + DELTA_MAX_MDR] {
+            stored[base + DELTA_MAX_MDR] = side_delta;
         }
+        let side_delta_max = stored[base + DELTA_MAX_MDR].max(side_delta);
+        let p_y = yield_stress.max(0.0) * (1.75 * (-4.4 * side_delta_max / radius).exp() + 1.0);
+
+        if stored[base + YFLAG] == 0.0 && yield_stress > 0.0 && side_delta > 0.0 {
+            let p_hertz =
+                4.0 * e_eff * side_delta.sqrt() / (3.0 * std::f64::consts::PI * radius.sqrt());
+            if p_hertz > p_y {
+                stored[base + YFLAG] = 1.0;
+                stored[base + DELTA_Y] = side_delta;
+                stored[base + C_A] =
+                    std::f64::consts::PI * (side_delta * side_delta - side_delta * radius);
+            }
+        }
+
+        let (a_shape, b_shape, delta_e) = if stored[base + YFLAG] == 0.0 {
+            (4.0 * radius, 2.0 * radius, side_delta)
+        } else {
+            let c_a = stored[base + C_A];
+            let a_max_sq = (2.0 * side_delta_max * radius - side_delta_max * side_delta_max
+                + c_a / std::f64::consts::PI)
+                .max(1.0e-30);
+            let a_max = a_max_sq.sqrt();
+            let a_shape = (4.0 * p_y / e_eff * a_max).max(1.0e-30);
+            let b_shape = (2.0 * a_max).max(1.0e-30);
+            let delta_e_max = 0.5 * a_shape;
+            let f_max = 0.25 * std::f64::consts::PI * e_eff * a_shape * b_shape;
+            let z_r = radius - (side_delta_max - delta_e_max);
+            let delta_r = (2.0 * a_max_sq * (poisson - 1.0)
+                - (2.0 * poisson - 1.0) * z_r * (-z_r + (a_max_sq + z_r * z_r).sqrt()))
+                * f_max
+                / (2.0
+                    * std::f64::consts::PI
+                    * a_max_sq
+                    * shear_mod
+                    * (a_max_sq + z_r * z_r).sqrt());
+            let delta_e = (side_delta - side_delta_max + delta_e_max + delta_r)
+                / (1.0 + delta_r / delta_e_max);
+            stored[base + DELTAP] = side_delta_max - (delta_e_max + delta_r);
+            (a_shape, b_shape, delta_e.max(0.0).min(delta_e_max))
+        };
+
+        let a_inv = 1.0 / a_shape;
+        let mut force = mdr_nonadhesive_force(delta_e, a_inv, e_eff, a_shape, b_shape);
+        let a_contact = if delta_e > 0.0 {
+            b_shape * (a_shape - delta_e).max(0.0).sqrt() * delta_e.sqrt() * a_inv
+        } else {
+            0.0
+        };
+
+        if surface_energy > 0.0 {
+            if (side_delta - side_delta_max).abs() <= 1.0e-14 || a_contact >= stored[base + A_ADH] {
+                stored[base + A_ADH] = 0.99 * a_contact;
+            } else if stored[base + A_ADH] > 0.0 {
+                force -= 2.0 * std::f64::consts::PI * surface_energy * stored[base + A_ADH];
+            }
+        }
+
+        total_force += force;
+        total_a_contact += a_contact;
     }
 
+    let mut force = 0.5 * total_force;
+    let a_contact = 0.5 * total_a_contact;
     let k_mdr = 2.0 * e_eff * a_contact.max(1.0e-30);
     if damping_prefactor > 0.0 && delta > 0.0 && (delta >= prev_delta || force > 0.0) {
         force -= damping_prefactor * (m_r * k_mdr).sqrt() * v_n;
     }
-    let k_t = 8.0 * g_eff * a_contact;
+    let k_t = 8.0 * shear_mod * a_contact;
     (force, k_mdr, k_t)
 }
 
@@ -514,9 +589,10 @@ pub fn contact_force_core(
         let (f_n_mag, k_t) = if use_mdr {
             let (f, _k_mdr, kt_mdr) = mdr_normal_force(
                 delta.max(0.0),
-                r_eff,
+                r1,
+                r2,
                 e_eff,
-                g_eff,
+                0.5 * (material_table.poisson_ratio[mat_i] + material_table.poisson_ratio[mat_j]),
                 material_table.mdr_yield_stress_ij[mat_i][mat_j],
                 surface_energy,
                 material_table.mdr_damping_ij[mat_i][mat_j],

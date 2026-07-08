@@ -11,7 +11,8 @@
 //!   with viscoelastic damping proportional to `β √(S_n m_r)`
 //! - **Hooke** — linear spring contact: `F_n = k_n δ` with linear damping `γ_n v_n`
 //! - **MDR** — adhesive elastic-plastic normal contact following the
-//!   Zunker/Kamrin one-dimensional MDR transform for loading/yield/unloading.
+//!   LAMMPS/Zunker-Kamrin particle-pair rigid-flat transform for
+//!   loading/yield/unloading.
 //!
 //! ## Tangential contact
 //! - **Mindlin** — incremental spring-history model with Coulomb friction cap `μ |F_n|`.
