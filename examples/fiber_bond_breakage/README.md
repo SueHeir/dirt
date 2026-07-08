@@ -25,6 +25,7 @@ python3 examples/fiber_bond_breakage/validate.py \
 | `axial_stress_constant.toml`       | `AxialStress + Constant`              | touching fiber, axial pull          | `ε = σ_max / E`                    | PASS, **0.0%** |
 | `axial_strain_constant.toml`       | `AxialStrain + Constant`              | touching fiber, axial pull          | `ε = ε_max`                        | PASS, **0.0%** |
 | `axial_stress_weibull.toml`        | `AxialStress + Weibull` (per-bond)    | touching fiber, axial pull          | weakest-bond Weibull sample        | PASS, 0.4% |
+| `axial_plastic_stress_constant.toml` | axial piecewise plasticity + `AxialStress` | touching fiber, axial pull through yield | plastic envelope reaches `σ_max` at `ε = 0.018` | PASS, coupled gate |
 | `combined_stress.toml`             | `CombinedStress` (Guo Eq. 16, P-C)    | spaced fiber, kinematic tip-bend    | `y_tip = σ_max·L_c²/(3·E·r_b)`     | PASS, 30%  |
 | `combined_strain.toml`             | `CombinedStrain` (migration Eq. 1.7-1) | spaced fiber, kinematic tip-bend   | `y_tip = ε_max·L_c²/(3·r_b)`       | PASS, 30%  |
 | `interaction_linear_stress.toml`   | `InteractionLinearStress` (Clemmer)   | spaced fiber, kinematic tip-bend, bending-only channel | same as CombinedStress              | PASS, 16%  |
@@ -35,6 +36,13 @@ python3 examples/fiber_bond_breakage/validate.py \
 against the analytical or weakest-bond Weibull prediction. Dashed bands show the
 validator gates: ±5% for axial criteria and ±35% for cantilever criteria. Latest
 run: PASS for all six criteria.*
+
+![coupled axial plasticity and breakage validation](plots/plastic_breakage_coupled_validation.png)
+
+*Measured axial force after the plastic return-map against the analytical
+piecewise elastic-plastic envelope, with the active `AxialStress` break point
+inside the post-yield branch. Latest run: PASS; the envelope gate is 2% before
+breakage and the first-break strain gate is ±5%.*
 
 ## Notes on the prediction quality
 
@@ -109,9 +117,28 @@ The statistical weakest-link distribution is covered by
 checks, and gates the empirical first-break strain CDF against the analytical
 minimum-Weibull CDF.
 
+## Coupled axial plasticity + breakage
+
+`axial_plastic_stress_constant.toml` deliberately places the tensile break
+threshold above first yield and below the plastic plateau. With the configured
+piecewise axial envelope,
+
+```
+sigma(eps) = E eps                         for eps <= 0.010
+           = 10 MPa + 0.5 E (eps - 0.010) for eps <= 0.020
+           = 15 MPa + 0.1 E (eps - 0.020) for eps <= 0.030
+           = 16 MPa                        afterward
+```
+
+the `sigma_break = 14 MPa` threshold predicts `eps_break = 0.018`, while an
+elastic-only calculation would predict `eps = 0.014`. The validator reconstructs
+the actual mid-bond normal stress from the recorded plastic anchor,
+`F_n = K_n (delta - eps_p L_0)`, checks that it traces the analytical
+elastic-plastic envelope before the first break, then checks that bond removal
+occurs at the plastic-envelope break strain.
+
 ## Carryover
 
 * Multi-channel interaction with genuine bend + shear coupling — needs
   a quasi-static pull (`v_pull · T_bend / L_c ≪ 1`) or reduced bond-
   channel damping.
-* Coupled plastic + breakage on the same fiber.

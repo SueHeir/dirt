@@ -92,6 +92,19 @@ def _common_axial_setup(rows):
     }
 
 
+def _piecewise_envelope(eps_mag, e_mod, breakpoints, multipliers):
+    sigma = 0.0
+    eps_prev = 0.0
+    slope = e_mod
+    for bp, mult in zip(breakpoints, multipliers):
+        if eps_mag <= bp:
+            return sigma + slope * (eps_mag - eps_prev)
+        sigma += slope * (bp - eps_prev)
+        eps_prev = bp
+        slope = e_mod * mult
+    return sigma + slope * (eps_mag - eps_prev)
+
+
 # ── Axial-stress + Constant threshold ────────────────────────────────────────
 
 def validate_axial_stress_constant(rows, out_dir):
@@ -206,6 +219,121 @@ def validate_axial_stress_weibull(rows, out_dir):
     return ok
 
 
+# ── Axial plasticity + AxialStress threshold ────────────────────────────────
+
+def validate_axial_plastic_stress_constant(rows, out_dir):
+    """Coupled axial piecewise plasticity and stress breakage.
+
+    The reference is the analytical stress-strain envelope from the configured
+    axial plastic return-map. The break threshold is deliberately in the
+    post-yield hardening branch, so the predicted break strain depends on the
+    plastic envelope:
+
+        sigma = 10 MPa + 0.5 E (eps - 0.010) = 14 MPa
+        eps_break = 0.018
+
+    This exercises the coupling because an elastic-only prediction would break
+    at eps = 0.014 instead.
+    """
+    s = _common_axial_setup(rows)
+    sigma_break = float(os.environ.get("FIBER_BOND_SIGMA_BREAK", "14.0e6"))
+    breakpoints = [0.01, 0.02, 0.03]
+    multipliers = [0.5, 0.1, 0.0]
+    e_mod = s["E"]
+    area = s["area"]
+    bond_len = s["bond_len"]
+    k_n = s["k_n"]
+    length0 = s["length0"]
+    vx = s["vx"]
+
+    eps_y = breakpoints[0]
+    sigma_y = e_mod * eps_y
+    # The canonical threshold is between first yield and the second
+    # breakpoint. Keep the generic scan below as a guard if env overrides it.
+    eps_pred = None
+    eps_prev = 0.0
+    sigma_prev = 0.0
+    slope = e_mod
+    for bp, mult in zip(breakpoints + [0.10], multipliers + [multipliers[-1]]):
+        sigma_next = sigma_prev + slope * (bp - eps_prev)
+        if sigma_break <= sigma_next or slope == 0.0:
+            if slope <= 0.0:
+                eps_pred = eps_prev if abs(sigma_break - sigma_prev) < 1e-9 else float("inf")
+            else:
+                eps_pred = eps_prev + (sigma_break - sigma_prev) / slope
+            break
+        sigma_prev = sigma_next
+        eps_prev = bp
+        slope = e_mod * mult
+    if eps_pred is None:
+        eps_pred = float("inf")
+    t_pred = eps_pred * length0 / vx if math.isfinite(eps_pred) else float("inf")
+
+    eps = [(r["length_global"] - length0) / length0 for r in rows]
+    eps_mid = [r["strain_axial_mid"] for r in rows]
+    # The recorder exposes the plastic anchor, so the measured load is the
+    # actual coupled normal force after the return-map.
+    stress = [
+        k_n * (r["delta_mid"] - r["eps_p_axial_mid"] * bond_len) / area
+        for r in rows
+    ]
+    eps_p = [r["eps_p_axial_mid"] for r in rows]
+    ev = first_break_event(rows)
+
+    # Envelope agreement up to the first break event. Use the mid-bond strain
+    # for the force envelope itself; global strain is only for the first-break
+    # event, matching the older axial breakage gates. Skip the tiny initial
+    # transient by checking representative strains across elastic and plastic
+    # branches rather than taking a max over near-zero stress.
+    end = len(rows)
+    if ev is not None:
+        for i, r in enumerate(rows):
+            if int(r["bond_count"]) < int(rows[0]["bond_count"]):
+                end = max(1, i)
+                break
+    max_err = 0.0
+    sample_eps = [0.005, 0.010, 0.014, 0.0175]
+    for e_target in sample_eps:
+        if e_target >= eps_pred:
+            continue
+        idx = min(range(end), key=lambda i: abs(eps_mid[i] - e_target))
+        sig_i = stress[idx]
+        sig_ref = _piecewise_envelope(e_target, e_mod, breakpoints, multipliers)
+        if sig_ref > 1e-9:
+            max_err = max(max_err, abs(sig_i - sig_ref) / sig_ref)
+
+    print("=== Axial plastic + AxialStress breakage — coupled validation ===")
+    print(f"  E (config)                    : {e_mod:.4e} Pa")
+    print(f"  plastic breakpoints           : {breakpoints}")
+    print(f"  plastic slope multipliers     : {multipliers}")
+    print(f"  first-yield stress            : {sigma_y:.4e} Pa at eps = {eps_y:.4f}")
+    print(f"  tensile break threshold       : {sigma_break:.4e} Pa")
+    print(f"  predicted eps_break           : {eps_pred:.6f}")
+    print(f"  elastic-only eps would be     : {sigma_break / e_mod:.6f}")
+    print(f"  predicted t_break             : {t_pred*1e3:.4f} ms")
+    print(f"  max envelope error pre-break  : {max_err:.3%}")
+    if ev is None:
+        print("  measured break event          : NONE")
+        print("  status                        : FAIL")
+        return False
+    t_meas, eps_meas = ev
+    err_eps = abs(eps_meas - eps_pred) / eps_pred
+    err_t = abs(t_meas - t_pred) / t_pred
+    had_plasticity = max(abs(p) for p in eps_p[:end]) > 1e-5
+    print(f"  measured t / eps at break     : {t_meas*1e3:.4f} ms / eps = {eps_meas:.6f}")
+    print(f"  relative error (eps)          : {err_eps:.3%}")
+    print(f"  relative error (t)            : {err_t:.3%}")
+    print(f"  plastic strain active?        : {had_plasticity}")
+    ok = (max_err < 0.02) and (err_eps < 0.05) and had_plasticity
+    print(f"  status                        : {'PASS' if ok else 'FAIL'}  "
+          "(envelope 2%, break 5%)")
+    _plot_axial_plastic_breakage(
+        rows, out_dir, eps, stress, eps_p, breakpoints, multipliers,
+        e_mod, sigma_break, eps_pred, t_pred, ok,
+    )
+    return ok
+
+
 # ── Plot helpers ─────────────────────────────────────────────────────────────
 
 def _plot_axial_break_event(rows, out_dir, eps_pred, t_pred, title, mode_label, filename):
@@ -282,6 +410,68 @@ def _plot_weibull_break(rows, thrs, out_dir, eps_pred, t_pred, e_mod):
     out = Path(out_dir) / "axial_stress_weibull.png"
     fig.savefig(out, dpi=150, bbox_inches="tight")
     print(f"  plot saved               : {out}")
+
+
+def _plot_axial_plastic_breakage(rows, out_dir, eps, stress, eps_p, breakpoints,
+                                 multipliers, e_mod, sigma_break, eps_pred,
+                                 t_pred, ok):
+    plt = try_import_matplotlib()
+    if plt is None:
+        return
+    initial_n = int(rows[0]["bond_count"])
+    nbonds = [r["bond_count"] for r in rows]
+    eps_max = max(max(eps), eps_pred) * 1.08
+    eps_th = [eps_max * i / 500.0 for i in range(501)]
+    area = rows[-1]["area"]
+    force = [s * area for s in stress]
+    f_th = [_piecewise_envelope(e, e_mod, breakpoints, multipliers) * area for e in eps_th]
+    f_break = sigma_break * area
+
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(8.5, 6.5), sharex=True)
+    ax1.plot([e * 100 for e in eps_th], f_th,
+             "-", lw=1.9, c="C1",
+             label="Analytical elastic-plastic envelope")
+    ax1.plot([e * 100 for e in eps], force,
+             "o", ms=3, mfc="white", mec="C0", mew=0.8,
+             label="DEM mid-bond axial force after plastic return")
+    ax1.axhline(f_break, ls="--", lw=1.2, c="0.25",
+                label=f"Break threshold = {f_break:.2f} N")
+    ax1.axvline(eps_pred * 100, ls=":", lw=1.4, c="C3",
+                label=f"Predicted break strain = {eps_pred*100:.2f}%")
+    ax1.axvspan(eps_pred * 0.95 * 100, eps_pred * 1.05 * 100,
+                color="C3", alpha=0.10, label="PASS band (break strain ±5%)")
+    for bp in breakpoints:
+        ax1.axvline(bp * 100, ls=":", c="0.7", lw=0.7)
+    ax1.set_ylabel("axial force  F_n  (N)")
+    verdict = "PASS" if ok else "FAIL"
+    ax1.set_title(f"Coupled axial plasticity + breakage force-strain validation ({verdict})")
+    ax1.legend(loc="lower right", framealpha=0.95)
+
+    ax2.plot([e * 100 for e in eps], [p * 100 for p in eps_p],
+             "-", lw=1.3, c="C2", label="DEM plastic strain anchor")
+    ax2b = ax2.twinx()
+    ax2b.step([e * 100 for e in eps], nbonds, where="post",
+              lw=1.4, c="C4", label="DEM bond_count")
+    ax2.axvline(eps_pred * 100, ls=":", lw=1.4, c="C3")
+    ax2.set_xlabel("global axial strain  eps  (%)")
+    ax2.set_ylabel("plastic axial strain  eps_p  (%)", color="C2")
+    ax2b.set_ylabel("bonds remaining", color="C4")
+    ax2b.set_ylim(-0.5, initial_n + 0.5)
+    ax2.legend(loc="upper left", framealpha=0.95)
+    ax2b.legend(loc="center right", framealpha=0.95)
+    fig.tight_layout()
+
+    out = Path(out_dir) / "axial_plastic_stress_constant.png"
+    fig.savefig(out, dpi=150, bbox_inches="tight")
+    print(f"  plot saved                  : {out}")
+
+    # Also write the committed summary plot beside the other Gitea-rendered
+    # validation figures.
+    repo_plot_dir = Path(__file__).resolve().parent / "plots"
+    repo_plot_dir.mkdir(parents=True, exist_ok=True)
+    out2 = repo_plot_dir / "plastic_breakage_coupled_validation.png"
+    fig.savefig(out2, dpi=150, bbox_inches="tight")
+    print(f"  plot saved                  : {out2}")
 
 
 # ── Cantilever-bend break event extraction ─────────────────────────────────
@@ -469,6 +659,7 @@ VALIDATORS = {
     "axial_stress_constant":      validate_axial_stress_constant,
     "axial_strain_constant":      validate_axial_strain_constant,
     "axial_stress_weibull":       validate_axial_stress_weibull,
+    "axial_plastic_stress_constant": validate_axial_plastic_stress_constant,
     "combined_stress":            validate_combined_stress,
     "combined_strain":            validate_combined_strain,
     "interaction_linear_stress":  validate_interaction_linear_stress,

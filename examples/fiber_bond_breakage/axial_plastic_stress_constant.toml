@@ -1,0 +1,112 @@
+# -- Fiber bond breakage: axial plasticity + AxialStress threshold -----------
+# Same monotonic axial pull as `../fiber_bond/axial_plastic_piecewise.toml`,
+# but with an active stress breakage criterion. This checks that the axial
+# plastic return-map feeds the breakage criterion through the reduced normal
+# force, not through the raw elastic trial stress.
+#
+# Plastic envelope, in stress form:
+#   sigma(eps) = E eps                                      eps <= 0.010
+#              = 10 MPa + 0.5 E (eps - 0.010)              eps <= 0.020
+#              = 15 MPa + 0.1 E (eps - 0.020)              eps <= 0.030
+#              = 16 MPa                                    eps >  0.030
+#
+# With sigma_break = 14 MPa, the analytical first break is in the plastic
+# hardening branch:
+#   eps_break = 0.010 + (14e6 - 10e6)/(0.5e9) = 0.018
+#   t_break   = eps_break * L0 / vx = 0.018 * 0.020 / 0.1 = 3.6 ms
+#
+# The threshold is above first yield and below the plateau, so the run cannot
+# pass by exercising elastic breakage alone.
+#
+# Run:
+#   cargo run --release --example fiber_bond --no-default-features --features precision-double -- \
+#       examples/fiber_bond_breakage/axial_plastic_stress_constant.toml
+#
+# Validate:
+#   python3 examples/fiber_bond_breakage/validate.py \
+#       examples/fiber_bond_breakage/axial_plastic_stress_constant/data/fiber_bond.csv
+
+[comm]
+processors_x = 1
+processors_y = 1
+processors_z = 1
+
+[domain]
+x_low  = -0.005
+x_high =  0.025
+y_low  = -0.005
+y_high =  0.005
+z_low  = -0.005
+z_high =  0.005
+boundary_x = "fixed"
+boundary_y = "fixed"
+boundary_z = "fixed"
+
+[neighbor]
+skin_fraction = 1.1
+bin_size = 0.005
+every = 1
+
+[dem]
+contact_model = "hertz"
+
+[[dem.materials]]
+name = "bpm"
+youngs_mod = 1.0e9
+poisson_ratio = 0.25
+restitution = 0.9
+friction = 0.0
+
+[[particles.insert]]
+source = "file"
+file = "examples/fiber_bond_breakage/fiber_11.csv"
+format = "csv"
+material = "bpm"
+radius = 0.001
+density = 2500.0
+columns = { x = 0, y = 1, z = 2 }
+
+[bonds]
+auto_bond = true
+bond_tolerance = 1.001
+bond_radius_ratio = 1.0
+youngs_modulus = 1.0e9
+shear_modulus  = 4.0e8
+beta_normal  = 1.0
+beta_shear   = 1.0
+beta_twist   = 1.0
+beta_bending = 1.0
+
+[bonds.plasticity.axial]
+kind                = "piecewise"
+breakpoint_strains  = [0.01, 0.02, 0.03]
+slope_multipliers   = [0.5, 0.1, 0.0]
+
+[bonds.breakage]
+kind    = "axial_stress"
+tensile = { kind = "constant", value = 14.0e6 }
+
+[[group]]
+name = "left_end"
+region = { type = "block", min = [-5e-4, -5e-4, -5e-4], max = [5e-4, 5e-4, 5e-4] }
+dynamic = false
+
+[[group]]
+name = "right_end"
+region = { type = "block", min = [0.0195, -5e-4, -5e-4], max = [0.0205, 5e-4, 5e-4] }
+dynamic = false
+
+[[freeze]]
+group = "left_end"
+
+[[move_linear]]
+group = "right_end"
+vx = 0.1
+
+[output]
+dir = "examples/fiber_bond_breakage/axial_plastic_stress_constant"
+
+[run]
+steps = 50000
+thermo = 2500
+dt = 1e-7
