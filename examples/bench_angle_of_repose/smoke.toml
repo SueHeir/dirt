@@ -1,0 +1,15 @@
+# Declarative bounded automation gate for bench_angle_of_repose.
+#
+# The full validation remains in sweep.py full: 6 friction values x 3 packs,
+# optional LAMMPS overlay, reproducibility checks, and committed plots. The
+# automation harness invokes sweep.py with no argument, which reads this file and
+# runs a fast deterministic trend gate under the harness wall-clock cap.
+
+[smoke]
+# Coarse span: frictionless collapse -> mid friction -> high friction.
+mu_list = [0.0, 0.3, 0.5]
+
+# A single deterministic pack is intentional for the bounded gate. The full run
+# keeps the 3-pack spread/reproducibility tolerance.
+reps = 1
+seed = 12345

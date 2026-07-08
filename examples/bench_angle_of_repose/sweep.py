@@ -74,6 +74,7 @@ import csv
 import math
 import shutil
 import subprocess
+import tomllib
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.abspath(os.path.join(SCRIPT_DIR, "..", ".."))
@@ -857,8 +858,20 @@ def graph():
 # (validate(), unchanged, still run via `sweep.py full`). It reuses the SAME
 # physical bounds as validate() (ANGLE_LO_DEG/ANGLE_HI_DEG/LOWMU_MAX_DEG/
 # MONOTONIC_SLACK_DEG) — nothing is loosened.
-SMOKE_MU_LIST = [0.0, 0.3, 0.5]   # coarse span: frictionless -> mid -> high friction
-SMOKE_SEED = 12345                # deterministic pack for a reproducible gate
+SMOKE_CONFIG = os.path.join(SCRIPT_DIR, "smoke.toml")
+
+
+def _load_smoke_config():
+    with open(SMOKE_CONFIG, "rb") as f:
+        cfg = tomllib.load(f).get("smoke", {})
+    mu_list = [float(v) for v in cfg["mu_list"]]
+    reps = int(cfg.get("reps", 1))
+    seed = int(cfg["seed"])
+    if reps != 1:
+        raise ValueError("smoke.toml must keep reps = 1 for the bounded harness gate")
+    if not mu_list or mu_list[0] != 0.0 or len(mu_list) < 3:
+        raise ValueError("smoke.toml must span mu=0 through at least two frictional cases")
+    return mu_list, reps, seed
 
 
 def smoke():
@@ -866,9 +879,7 @@ def smoke():
     (one deterministic rep each) and assert the robust theta_r(mu) laws. Prints
     'ALL CHECKS PASSED' / 'CHECKS FAILED' and exits 0/1."""
     global MU_LIST, REPS, INSERT_SEED, SWEEP_DIR, DATA_DIR, SWEEP_CSV
-    MU_LIST = SMOKE_MU_LIST
-    REPS = 1                       # deterministic pack -> a single rep is exact
-    INSERT_SEED = SMOKE_SEED
+    MU_LIST, REPS, INSERT_SEED = _load_smoke_config()
     # Keep smoke artifacts out of the full run's dirs (both are gitignored).
     SWEEP_DIR = os.path.join(SCRIPT_DIR, "sweep", "smoke")
     DATA_DIR = os.path.join(SCRIPT_DIR, "data", "smoke")
