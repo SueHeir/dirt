@@ -1041,11 +1041,20 @@ interval on each bar is the relevant PASS band (0.5 % axial elastic, 5 % bending
 and axial plastic checks, 1 % bending-plastic cap). Latest regenerated run: PASS
 for all plotted checks.*
 
+![Guo/Curtis permanent bending profile](fiber_bond/plots/bending_plastic_permanent_profile.png)
+
+*Final unloaded profile after the three Guo/Curtis load steps, compared with a
+digitized Guo et al. Fig. 14(b) FEM step-3 profile at `α = 1.885 s^-1`. The
+shaded band is the validator's max-error limit (`±0.075 L`); the vertical marker
+is the plastic-zone estimate `x/L = 1 - M_p/(F_t^0 L) = 0.593`. Latest
+regenerated run: PASS, RMS `|Δ(y/L)| = 0.0271`, max `0.0556`, free-end error
+25.9% (limit 35%), and tail curvature 3.82% (limit 10%).*
+
 **Honest read:** this is a deterministic mechanics validation for a short
 bonded-particle chain, not an experimental fiber-calibration study. The plastic
 axial case checks the configured piecewise envelope, while the bending-plastic
-case checks Guo's trilinear cap and kinematic-hardening trajectory for this
-single loading schedule.
+case checks Guo's trilinear yield law, kinematic-hardening trajectory, and
+permanent-deformation profile for this single loading schedule.
 
 ## `peri_dem_interop` — same-substrate peri-to-DEM handoff
 

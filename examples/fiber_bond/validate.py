@@ -54,10 +54,35 @@ def load_profile(path):
     return sorted(rows, key=lambda r: r["x0"])
 
 
+def load_xy_reference(path):
+    rows = []
+    with open(path, newline="") as f:
+        lines = [line for line in f if not line.lstrip().startswith("#")]
+    reader = csv.DictReader(lines)
+    for row in reader:
+        rows.append((float(row["x_over_L"]), float(row["y_over_L"])))
+    return rows
+
+
 def linear_fit_through_origin(x, y):
     sxx = sum(xi * xi for xi in x)
     sxy = sum(xi * yi for xi, yi in zip(x, y))
     return sxy / sxx if sxx else 0.0
+
+
+def interp_linear(xs, ys, x):
+    if not xs:
+        return float("nan")
+    if x <= xs[0]:
+        return ys[0]
+    if x >= xs[-1]:
+        return ys[-1]
+    for i in range(len(xs) - 1):
+        if xs[i] <= x <= xs[i + 1]:
+            span = xs[i + 1] - xs[i]
+            t = (x - xs[i]) / span if span else 0.0
+            return ys[i] * (1.0 - t) + ys[i + 1] * t
+    return ys[-1]
 
 
 # ── Plot helpers ─────────────────────────────────────────────────────────────
@@ -548,6 +573,7 @@ def validate_bending_plastic_guo(rows, profile, out_dir):
     th_e     = [b - p for b, p in zip(th_bend, th_p)]
     m_bend   = [k_bend * e for e in th_e]
     tip_z    = [r["right_z"] for r in rows]
+    f_peak   = abs(float(os.environ.get("FIBER_BOND_F_PEAK", "0.2454369261")))
 
     peak_m = max(abs(m) for m in m_bend)
     peak_th_p = max(abs(p) for p in th_p)
@@ -585,7 +611,82 @@ def validate_bending_plastic_guo(rows, profile, out_dir):
 
     cap_ok = peak_m <= 1.01 * m_p    # 1 % slop on the envelope cap
     accum_ok = peak_th_p > 0.0 and monotone
-    ok = cap_ok and accum_ok
+
+    # Permanent-profile reference, following Guo Sec. 3.2 / Figs. 11-12:
+    # the independent FEM comparison shows permanent curvature concentrated
+    # near the fixed end, with no permanent bending deformation beyond the
+    # elastic-tail transition.  For the Guo load F_t^0 = E_b I/(2 L_c^2), the
+    # fully-plastic-to-nonplastic transition estimate is
+    # x/L = 1 - M_p/(F_t^0 L).  We gate the final DEM profile by measuring
+    # discrete curvature in that tail; deflection itself continues there as a
+    # straight-line extension of the fixed-end permanent rotation.
+    profile_ok = False
+    tail_curv_ratio = float("inf")
+    fem_profile_ok = False
+    fem_rms_err = float("inf")
+    fem_max_err = float("inf")
+    fem_tip_rel_err = float("inf")
+    tip_set_ratio = 0.0
+    cutoff_x_over_l = float("nan")
+    profile_rows = profile or []
+    if len(profile_rows) >= 4:
+        xs0 = [p["x0"] for p in profile_rows]
+        zs = [p["z"] for p in profile_rows]
+        length = xs0[-1] - xs0[0]
+        z_tip = zs[-1]
+        tip_set_ratio = abs(z_tip) / length if length > 0 else 0.0
+        cutoff_x_over_l = 1.0 - m_p / (f_peak * length) if f_peak * length > 0 else 0.0
+        cutoff_x_over_l = max(0.0, min(1.0, cutoff_x_over_l))
+        curv = []
+        curv_x = []
+        for i in range(1, len(profile_rows) - 1):
+            dx_l = xs0[i] - xs0[i - 1]
+            dx_r = xs0[i + 1] - xs0[i]
+            if dx_l <= 0.0 or dx_r <= 0.0:
+                continue
+            slope_l = (zs[i] - zs[i - 1]) / dx_l
+            slope_r = (zs[i + 1] - zs[i]) / dx_r
+            kappa = 2.0 * (slope_r - slope_l) / (dx_l + dx_r)
+            curv.append(abs(kappa))
+            curv_x.append((xs0[i] - xs0[0]) / length)
+        max_curv = max(curv) if curv else 0.0
+        tail_curv = [c for s, c in zip(curv_x, curv) if s >= cutoff_x_over_l]
+        tail_curv_ratio = (max(tail_curv) / max_curv) if max_curv > 0 and tail_curv else 0.0
+        reference_path = Path(__file__).resolve().parent / "data" / "guo2018_fig14b_step3_fem_alpha1885.csv"
+        fem_ref = load_xy_reference(reference_path)
+        sx = [(x - xs0[0]) / length for x in xs0]
+        y_over_l = [z / length for z in zs]
+        fem_errs = []
+        for x_ref, y_ref in fem_ref:
+            y_dem = interp_linear(sx, y_over_l, x_ref)
+            fem_errs.append(y_dem - y_ref)
+        fem_rms_err = math.sqrt(sum(e * e for e in fem_errs) / len(fem_errs)) if fem_errs else float("inf")
+        fem_max_err = max(abs(e) for e in fem_errs) if fem_errs else float("inf")
+        fem_tip = fem_ref[-1][1] if fem_ref else float("nan")
+        dem_tip = interp_linear(sx, y_over_l, 1.0)
+        fem_tip_rel_err = abs(dem_tip - fem_tip) / abs(fem_tip) if abs(fem_tip) > 1e-30 else float("inf")
+        # The reference is a digitized FEM curve for a 20/40/60 sphero-cylinder
+        # study. The paper reports the coarsest DEM fiber still differs from FEM
+        # by about 30% at the free end (Fig. 15); this 11-sphere validation case
+        # is intentionally smaller, so the gate keeps that published coarse-grid
+        # envelope visible instead of pretending to be mesh-converged.
+        fem_profile_ok = (
+            fem_rms_err <= 0.05
+            and fem_max_err <= 0.075
+            and fem_tip_rel_err <= 0.35
+        )
+        profile_ok = tip_set_ratio > 0.02 and tail_curv_ratio <= 0.10 and fem_profile_ok
+
+    ok = cap_ok and accum_ok and profile_ok
+    print(f"  Guo load F_t^0 used            : {f_peak:.6e} N")
+    print(f"  predicted elastic-tail start   : x/L = {cutoff_x_over_l:.3f}  (1 - M_p/(F_t^0 L))")
+    print(f"  final tip permanent set / L    : {tip_set_ratio:.3%}")
+    print(f"  tail curvature / peak curvature: {tail_curv_ratio:.3%}")
+    print(f"  FEM profile RMS |Δ(y/L)|       : {fem_rms_err:.4f}  (limit 0.050)")
+    print(f"  FEM profile max |Δ(y/L)|       : {fem_max_err:.4f}  (limit 0.075)")
+    print(f"  FEM free-end relative error    : {fem_tip_rel_err:.3%}  (limit 35%)")
+    print(f"  permanent profile gate?        : {profile_ok}  "
+          "(set/L > 2%, tail curvature <= 10%, FEM profile within coarse-grid band)")
     print(f"  cap respected?                 : {cap_ok}")
     print(f"  status                         : {'PASS' if ok else 'FAIL'}")
 
@@ -653,6 +754,60 @@ def validate_bending_plastic_guo(rows, profile, out_dir):
     out = Path(out_dir) / "bending_plastic_timeline.png"
     fig.savefig(out, dpi=150, bbox_inches="tight")
     print(f"  plot saved                     : {out}")
+
+    # ── Figure 3: permanent deformation profile vs Guo/FEM reference gate ─
+    if profile_rows:
+        xs0 = [p["x0"] for p in profile_rows]
+        zs = [p["z"] for p in profile_rows]
+        length = xs0[-1] - xs0[0]
+        sx = [(x - xs0[0]) / length for x in xs0]
+        y_over_l = [z / length for z in zs]
+        reference_path = Path(__file__).resolve().parent / "data" / "guo2018_fig14b_step3_fem_alpha1885.csv"
+        fem_ref = load_xy_reference(reference_path)
+        fem_x = [x for x, _ in fem_ref]
+        fem_y = [y for _, y in fem_ref]
+        band = 0.075
+
+        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(8, 6), sharex=True)
+        ax1.fill_between(fem_x, [y - band for y in fem_y], [y + band for y in fem_y],
+                         color="C1", alpha=0.14, label="PASS band: digitized FEM ±0.075 L")
+        ax1.plot(fem_x, fem_y, "s-", ms=4, mfc="white", mec="C1", mew=1.1,
+                 color="C1", label="Guo 2018 Fig. 14(b) FEM step 3 (digitized)")
+        ax1.plot(sx, y_over_l, "o-", ms=5, mfc="white", mec="C0", mew=1.1,
+                 label="DIRT final unloaded profile")
+        ax1.axvline(cutoff_x_over_l, ls="--", c="0.5", lw=0.9,
+                    label=f"Guo plastic-zone cutoff x/L = {cutoff_x_over_l:.2f}")
+        ax1.set_ylabel("permanent deflection  y / L")
+        ax1.set_title("Bending plastic — DIRT permanent profile vs. Guo/Curtis FEM")
+        ax1.legend(loc="upper left", framealpha=0.95)
+
+        curv_signed = []
+        curv_x = []
+        for i in range(1, len(profile_rows) - 1):
+            dx_l = xs0[i] - xs0[i - 1]
+            dx_r = xs0[i + 1] - xs0[i]
+            slope_l = (zs[i] - zs[i - 1]) / dx_l
+            slope_r = (zs[i + 1] - zs[i]) / dx_r
+            curv_signed.append(2.0 * (slope_r - slope_l) / (dx_l + dx_r))
+            curv_x.append((xs0[i] - xs0[0]) / length)
+        scale = max(abs(c) for c in curv_signed) if curv_signed else 1.0
+        ax2.plot(curv_x, [c / scale for c in curv_signed],
+                 "s-", ms=4, mfc="white", mec="C2", mew=1.0,
+                 label=f"DIRT discrete curvature; tail/peak = {tail_curv_ratio:.1%}")
+        ax2.axvline(cutoff_x_over_l, ls="--", c="C1", lw=1.2,
+                    label=f"reference cutoff x/L = {cutoff_x_over_l:.2f}")
+        ax2.axhline(0.0, ls=":", c="0.4", lw=0.8)
+        ax2.set_xlabel("scaled position along fiber  x / L")
+        ax2.set_ylabel("normalised residual curvature")
+        ax2.legend(loc="upper right", framealpha=0.95)
+        out = Path(out_dir) / "bending_plastic_permanent_profile.png"
+        fig.savefig(out, dpi=150, bbox_inches="tight")
+        print(f"  plot saved                     : {out}")
+        plots_dir = Path(out_dir).parents[1] / "plots"
+        plots_dir.mkdir(exist_ok=True)
+        out2 = plots_dir / "bending_plastic_permanent_profile.png"
+        fig.savefig(out2, dpi=150, bbox_inches="tight")
+        print(f"  committed plot saved           : {out2}")
     return ok
 
 
