@@ -1,0 +1,58 @@
+# Representative Hooke wall rebound case.
+
+[comm]
+processors_x = 1
+processors_y = 1
+processors_z = 1
+
+[domain]
+x_low = -0.01
+x_high = 0.01
+y_low = -0.01
+y_high = 0.01
+z_low = 0.0
+z_high = 0.04
+boundary_x = "fixed"
+boundary_y = "fixed"
+boundary_z = "fixed"
+
+[neighbor]
+skin_fraction = 1.1
+bin_size = 0.015
+every = 1
+
+[dem]
+contact_model = "hooke"
+limit_damping = false
+
+[[dem.materials]]
+name = "grain"
+youngs_mod = 7.0e10
+poisson_ratio = 0.30
+restitution = 0.7
+friction = 0.0
+kn = 1.0e5
+kt = 2.857142857142857e4
+
+[[particles.insert]]
+material = "grain"
+count = 1
+radius = 0.005
+density = 2500.0
+velocity_z = -1.0
+region = { type = "block", min = [-1.0e-6, -1.0e-6, 0.012], max = [1.0e-6, 1.0e-6, 0.012002] }
+
+[[wall]]
+type = "plane"
+point_z = 0.0
+normal_z = 1.0
+material = "grain"
+name = "floor"
+
+[output]
+dir = "examples/bench_hooke_wall_rebound"
+
+[run]
+steps = 90000
+dt = 1.016e-7
+thermo = 100000

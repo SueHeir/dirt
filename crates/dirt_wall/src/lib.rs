@@ -1,6 +1,6 @@
-//! Wall contact forces for DEM simulations using Hertz normal contact with
-//! viscous damping, tangential/rolling/twisting friction, and optional adhesion
-//! (JKR, DMT, SJKR cohesion).
+//! Wall contact forces for DEM simulations using Hertz or Hooke normal contact
+//! with viscous damping, tangential/rolling/twisting friction, and optional
+//! adhesion (JKR, DMT, SJKR cohesion).
 //!
 //! # Contact mechanics
 //!
@@ -12,7 +12,7 @@
 //! particle radius** (`R* = particle_radius`) and the reduced mass is the
 //! particle mass.
 //!
-//! Beyond the normal Hertz force + damping, walls apply:
+//! Beyond the normal force + damping, walls apply:
 //!
 //! - **Tangential (Mindlin sliding) friction** — incremental spring-history
 //!   model with a per-contact tangential spring, Coulomb-capped at `μ |F_n|`.
@@ -150,7 +150,7 @@
 //! |--------|----------|---------|
 //! | [`wall_move`] | `PreInitialIntegration` | Updates wall positions from motion modes |
 //! | [`wall_zero_force_accumulators`] | `PreForce` | Zeros per-wall force accumulators |
-//! | [`wall_contact_force`] | `Force` | Computes Hertz contact + damping + adhesion |
+//! | [`wall_contact_force`] | `Force` | Computes normal contact + damping + adhesion |
 
 // Public API documentation-completeness gate: every public item in this crate
 // must carry a doc comment. Enforced on both `cargo build` (rustc) and
@@ -1172,6 +1172,71 @@ fn wall_rolling_torque(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
+fn wall_normal_force(
+    material_table: &MaterialTable,
+    mat_i: usize,
+    wall_mat: usize,
+    radius: f64,
+    delta: f64,
+    v_n: f64,
+    m_r: f64,
+    allow_plane_surface_energy: bool,
+) -> f64 {
+    let beta = material_table.beta_ij[mat_i][wall_mat];
+    let cohesion_energy = material_table.cohesion_energy_ij[mat_i][wall_mat];
+
+    if material_table.contact_model == "hooke" {
+        let kn = material_table.kn_ij[mat_i][wall_mat];
+        let gamma_n = 2.0 * beta * (kn * m_r).sqrt();
+        let f_total = if cohesion_energy > 0.0 {
+            let f_cohesion = cohesion_energy * std::f64::consts::PI * delta * radius;
+            kn * delta - gamma_n * v_n - f_cohesion
+        } else {
+            kn * delta - gamma_n * v_n
+        };
+        if material_table.limit_damping && cohesion_energy <= 0.0 {
+            f_total.max(0.0)
+        } else {
+            f_total
+        }
+    } else {
+        let r_eff = radius;
+        let e_eff = material_table.e_eff_ij[mat_i][wall_mat];
+        let sdr = (delta * r_eff).sqrt();
+        let k_n = 4.0 / 3.0 * e_eff * sdr;
+        let s_n = 2.0 * e_eff * sdr;
+        let surface_energy = if allow_plane_surface_energy {
+            material_table.surface_energy_ij[mat_i][wall_mat]
+        } else {
+            0.0
+        };
+        let use_dmt = material_table.adhesion_model == "dmt";
+
+        if surface_energy > 0.0 && use_dmt {
+            let f_dmt = 2.0 * std::f64::consts::PI * surface_energy * r_eff;
+            let f_diss = 2.0 * beta * SQRT_5_6 * (s_n * m_r).sqrt() * v_n;
+            k_n * delta - f_diss - f_dmt
+        } else if surface_energy > 0.0 {
+            let f_adhesion = 1.5 * std::f64::consts::PI * surface_energy * r_eff;
+            let f_diss = 2.0 * beta * SQRT_5_6 * (s_n * m_r).sqrt() * v_n;
+            k_n * delta - f_diss - f_adhesion
+        } else if cohesion_energy > 0.0 {
+            let f_diss = 2.0 * beta * SQRT_5_6 * (s_n * m_r).sqrt() * v_n;
+            let f_cohesion = cohesion_energy * std::f64::consts::PI * delta * r_eff;
+            k_n * delta - f_diss - f_cohesion
+        } else {
+            let f_diss = 2.0 * beta * SQRT_5_6 * (s_n * m_r).sqrt() * v_n;
+            let f_total = k_n * delta - f_diss;
+            if material_table.limit_damping {
+                f_total.max(0.0)
+            } else {
+                f_total
+            }
+        }
+    }
+}
+
 /// System that applies wall–particle contact forces for every registered wall.
 ///
 /// For each local atom in contact with a wall it evaluates the Hertzian normal
@@ -1238,16 +1303,15 @@ pub fn wall_contact_force(
             let radius = dem.radius[i];
             let mat_i = atoms.atom_type[i] as usize;
 
-            // Wall has infinite radius → r_eff = r_particle
-            let r_eff = radius;
-            let e_eff = material_table.e_eff_ij[mat_i][wall_mat];
             let surface_energy = material_table.surface_energy_ij[mat_i][wall_mat];
-
+            let use_hertz = material_table.contact_model != "hooke";
             let use_dmt = material_table.adhesion_model == "dmt";
 
             // JKR pull-off distance for extended interaction range
             // DMT: no extended range (particles separate at delta = 0)
-            let delta_pulloff = if surface_energy > 0.0 && !use_dmt {
+            let delta_pulloff = if use_hertz && surface_energy > 0.0 && !use_dmt {
+                let r_eff = radius;
+                let e_eff = material_table.e_eff_ij[mat_i][wall_mat];
                 let gamma = surface_energy;
                 (std::f64::consts::PI * std::f64::consts::PI * gamma * gamma * r_eff
                     / (4.0 * e_eff * e_eff))
@@ -1259,7 +1323,7 @@ pub fn wall_contact_force(
             let delta = (radius - distance).min(0.5 * radius);
 
             // Skip if no contact and no JKR adhesion range
-            if delta <= 0.0 && surface_energy <= 0.0 {
+            if delta <= 0.0 && (!use_hertz || surface_energy <= 0.0) {
                 continue;
             }
             if delta < -delta_pulloff {
@@ -1267,15 +1331,7 @@ pub fn wall_contact_force(
             }
 
             // JKR adhesion-only regime; DMT has no adhesion-only regime
-            let jkr_adhesion_only = surface_energy > 0.0 && !use_dmt && delta <= 0.0;
-
-            // Hertz stiffness (only when delta > 0)
-            let (s_n, k_n) = if delta > 0.0 {
-                let sdr = (delta * r_eff).sqrt();
-                (2.0 * e_eff * sdr, 4.0 / 3.0 * e_eff * sdr)
-            } else {
-                (0.0, 0.0)
-            };
+            let jkr_adhesion_only = use_hertz && surface_energy > 0.0 && !use_dmt && delta <= 0.0;
 
             // Wall has infinite mass → m_reduced = m_particle
             let m_r = atoms.mass[i] as f64;
@@ -1287,37 +1343,21 @@ pub fn wall_contact_force(
             let v_n = v_rel_x * wall.normal_x + v_rel_y * wall.normal_y + v_rel_z * wall.normal_z;
 
             let beta = material_table.beta_ij[mat_i][wall_mat];
-            let cohesion_energy = material_table.cohesion_energy_ij[mat_i][wall_mat];
 
-            let f_net = if surface_energy > 0.0 && use_dmt {
-                // DMT model: pure Hertz contact + constant attractive force
-                let f_dmt = 2.0 * std::f64::consts::PI * surface_energy * r_eff;
-                let f_diss = 2.0 * beta * SQRT_5_6 * (s_n * m_r).sqrt() * v_n;
-                k_n * delta - f_diss - f_dmt
-            } else if surface_energy > 0.0 {
-                // JKR simplified explicit model
-                let f_adhesion = 1.5 * std::f64::consts::PI * surface_energy * r_eff;
-                if jkr_adhesion_only {
-                    -f_adhesion
-                } else {
-                    let f_diss = 2.0 * beta * SQRT_5_6 * (s_n * m_r).sqrt() * v_n;
-                    k_n * delta - f_diss - f_adhesion
-                }
-            } else if cohesion_energy > 0.0 {
-                let f_diss = 2.0 * beta * SQRT_5_6 * (s_n * m_r).sqrt() * v_n;
-                let f_cohesion = cohesion_energy * std::f64::consts::PI * delta * r_eff;
-                k_n * delta - f_diss - f_cohesion
+            let f_net = if jkr_adhesion_only {
+                let f_adhesion = 1.5 * std::f64::consts::PI * surface_energy * radius;
+                -f_adhesion
             } else {
-                let f_diss = 2.0 * beta * SQRT_5_6 * (s_n * m_r).sqrt() * v_n;
-                // `limit_damping` (default) clamps to repulsive-only; disabling it
-                // lets the damping go net-attractive near separation, matching
-                // LAMMPS `fix wall/gran` default (no tensile cutoff).
-                let f_total = k_n * delta - f_diss;
-                if material_table.limit_damping {
-                    f_total.max(0.0)
-                } else {
-                    f_total
-                }
+                wall_normal_force(
+                    &material_table,
+                    mat_i,
+                    wall_mat,
+                    radius,
+                    delta,
+                    v_n,
+                    m_r,
+                    true,
+                )
             };
 
             // Force direction: along wall normal (pushes atom away from wall)
@@ -1333,7 +1373,7 @@ pub fn wall_contact_force(
                         + dem.omega[i][1] * wall.normal_y
                         + dem.omega[i][2] * wall.normal_z;
                     if twist.abs() > 1e-30 {
-                        let tau = mu_tw * f_net.abs() * r_eff;
+                        let tau = mu_tw * f_net.abs() * radius;
                         let sign_tw = if twist > 0.0 { -1.0 } else { 1.0 };
                         dem.torque[i][0] += sign_tw * tau * wall.normal_x;
                         dem.torque[i][1] += sign_tw * tau * wall.normal_y;
@@ -1483,34 +1523,21 @@ pub fn wall_contact_force(
             }
             let delta = delta.min(0.5 * radius);
 
-            let r_eff = radius;
-            let e_eff = material_table.e_eff_ij[mat_i][wall_mat];
-            let sdr = (delta * r_eff).sqrt();
-            let k_n = 4.0 / 3.0 * e_eff * sdr;
-            let s_n = 2.0 * e_eff * sdr;
             let m_r = atoms.mass[i] as f64;
             let v_n = atoms.vel[i][0] as f64 * nx
                 + atoms.vel[i][1] as f64 * ny
                 + atoms.vel[i][2] as f64 * nz;
             let beta = material_table.beta_ij[mat_i][wall_mat];
-            let cohesion_energy = material_table.cohesion_energy_ij[mat_i][wall_mat];
-
-            let f_net = if cohesion_energy > 0.0 {
-                let f_diss = 2.0 * beta * SQRT_5_6 * (s_n * m_r).sqrt() * v_n;
-                let f_cohesion = cohesion_energy * std::f64::consts::PI * delta * r_eff;
-                k_n * delta - f_diss - f_cohesion
-            } else {
-                let f_diss = 2.0 * beta * SQRT_5_6 * (s_n * m_r).sqrt() * v_n;
-                // `limit_damping` (default) clamps to repulsive-only; disabling it
-                // lets the damping go net-attractive near separation, matching
-                // LAMMPS `fix wall/gran` default (no tensile cutoff).
-                let f_total = k_n * delta - f_diss;
-                if material_table.limit_damping {
-                    f_total.max(0.0)
-                } else {
-                    f_total
-                }
-            };
+            let f_net = wall_normal_force(
+                &material_table,
+                mat_i,
+                wall_mat,
+                radius,
+                delta,
+                v_n,
+                m_r,
+                false,
+            );
 
             atoms.force[i][0] += (f_net * nx) as Accum;
             atoms.force[i][1] += (f_net * ny) as Accum;
@@ -1627,34 +1654,21 @@ pub fn wall_contact_force(
             }
             let delta = delta.min(0.5 * radius);
 
-            let r_eff = radius;
-            let e_eff = material_table.e_eff_ij[mat_i][wall_mat];
-            let sdr = (delta * r_eff).sqrt();
-            let k_n = 4.0 / 3.0 * e_eff * sdr;
-            let s_n = 2.0 * e_eff * sdr;
             let m_r = atoms.mass[i] as f64;
             let v_n = atoms.vel[i][0] as f64 * nx
                 + atoms.vel[i][1] as f64 * ny
                 + atoms.vel[i][2] as f64 * nz;
             let beta = material_table.beta_ij[mat_i][wall_mat];
-            let cohesion_energy = material_table.cohesion_energy_ij[mat_i][wall_mat];
-
-            let f_net = if cohesion_energy > 0.0 {
-                let f_diss = 2.0 * beta * SQRT_5_6 * (s_n * m_r).sqrt() * v_n;
-                let f_cohesion = cohesion_energy * std::f64::consts::PI * delta * r_eff;
-                k_n * delta - f_diss - f_cohesion
-            } else {
-                let f_diss = 2.0 * beta * SQRT_5_6 * (s_n * m_r).sqrt() * v_n;
-                // `limit_damping` (default) clamps to repulsive-only; disabling it
-                // lets the damping go net-attractive near separation, matching
-                // LAMMPS `fix wall/gran` default (no tensile cutoff).
-                let f_total = k_n * delta - f_diss;
-                if material_table.limit_damping {
-                    f_total.max(0.0)
-                } else {
-                    f_total
-                }
-            };
+            let f_net = wall_normal_force(
+                &material_table,
+                mat_i,
+                wall_mat,
+                radius,
+                delta,
+                v_n,
+                m_r,
+                false,
+            );
 
             atoms.force[i][0] += (f_net * nx) as Accum;
             atoms.force[i][1] += (f_net * ny) as Accum;
@@ -1776,34 +1790,21 @@ pub fn wall_contact_force(
                 (sr.normal[0], sr.normal[1], sr.normal[2])
             };
 
-            let r_eff = radius;
-            let e_eff = material_table.e_eff_ij[mat_i][wall_mat];
-            let sdr = (delta * r_eff).sqrt();
-            let k_n = 4.0 / 3.0 * e_eff * sdr;
-            let s_n = 2.0 * e_eff * sdr;
             let m_r = atoms.mass[i] as f64;
             let v_n = atoms.vel[i][0] as f64 * nx
                 + atoms.vel[i][1] as f64 * ny
                 + atoms.vel[i][2] as f64 * nz;
             let beta = material_table.beta_ij[mat_i][wall_mat];
-            let cohesion_energy = material_table.cohesion_energy_ij[mat_i][wall_mat];
-
-            let f_net = if cohesion_energy > 0.0 {
-                let f_diss = 2.0 * beta * SQRT_5_6 * (s_n * m_r).sqrt() * v_n;
-                let f_cohesion = cohesion_energy * std::f64::consts::PI * delta * r_eff;
-                k_n * delta - f_diss - f_cohesion
-            } else {
-                let f_diss = 2.0 * beta * SQRT_5_6 * (s_n * m_r).sqrt() * v_n;
-                // `limit_damping` (default) clamps to repulsive-only; disabling it
-                // lets the damping go net-attractive near separation, matching
-                // LAMMPS `fix wall/gran` default (no tensile cutoff).
-                let f_total = k_n * delta - f_diss;
-                if material_table.limit_damping {
-                    f_total.max(0.0)
-                } else {
-                    f_total
-                }
-            };
+            let f_net = wall_normal_force(
+                &material_table,
+                mat_i,
+                wall_mat,
+                radius,
+                delta,
+                v_n,
+                m_r,
+                false,
+            );
 
             atoms.force[i][0] += (f_net * nx) as Accum;
             atoms.force[i][1] += (f_net * ny) as Accum;
@@ -1976,6 +1977,29 @@ mod tests {
         mt.add_material_full("sticky", 8.7e9, 0.3, 0.95, 0.4, 0.0, 0.0, 0.25);
         mt.add_material("sjkr", 8.7e9, 0.3, 0.95, 0.4, 0.0, 1.0);
         mt
+    }
+
+    #[test]
+    fn hooke_wall_normal_uses_kn_and_beta_tables() {
+        let mut mt = MaterialTable::new();
+        mt.contact_model = "hooke".to_string();
+        mt.limit_damping = false;
+        mt.add_material_extended(
+            "grain", 8.7e9, 0.3, 0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0e5, 0.0,
+        );
+        mt.build_pair_tables();
+
+        let delta = 2.5e-5;
+        let m_r = 0.002;
+        let v_n = -0.2;
+        let beta = mt.beta_ij[0][0];
+        let expected = 1.0e5 * delta - 2.0 * beta * (1.0e5_f64 * m_r).sqrt() * v_n;
+
+        let force = wall_normal_force(&mt, 0, 0, 0.005, delta, v_n, m_r, false);
+        assert!(
+            (force - expected).abs() / expected.abs() < 1.0e-12,
+            "Hooke wall force should use kn_ij and beta_ij: got {force}, expected {expected}"
+        );
     }
 
     #[test]
