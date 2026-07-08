@@ -52,7 +52,8 @@ that each reaches a **steady, physical shear-stress ratio** `μ = |σ_xy|/P`
 (0.30 ≤ μ ≤ 0.70, pressure `P > 0`, window drift < 15%). It also checks the
 Walton & Braun (1986) homogeneous-shear trends for pressure, shear ratio,
 granular-temperature proxy, and normal-stress anisotropy, and writes
-`plots/walton_1986_overlay.png`. It completes in ~9 min and prints
+`plots/walton_1986_overlay.png` with the same bands enforced by the PASS gate.
+It completes in ~9 min and prints
 `ALL CHECKS PASSED`/`CHECKS FAILED`. The full production+KT sweep and its
 kinetic-theory tolerances (in `graph()`) are **unchanged** and still run via
 `sweep.py full`.
@@ -103,10 +104,12 @@ near random-close-packing, is reachable. The sweep runs two families:
    records directly: pressure, shear stress ratio, granular-temperature proxy,
    and normal-stress anisotropy. Because Walton is two-dimensional disks and
    DIRT is three-dimensional spheres, this is a dimensionless trend gate rather
-   than a pointwise material calibration: pressure must vary with packing, the
-   fluctuation velocity must fall from loose to denser flow, `|σ_xy|/σ_yy` must
-   remain in the rapid-shear range, and `N1/P`, `N2/P`, and `σ_xx/σ_yy` must stay
-   finite and physical.
+   than a pointwise material calibration: Bagnold-normalized pressure and the
+   fluctuation-velocity proxy are normalized by their mid-density value and must
+   stay within the plotted ±50% Walton shape band at the measured solid
+   fractions; `|σ_xy|/σ_yy` and `σ_xx/σ_yy` must stay within the plotted ±40%
+   Walton stress-ratio bands. `N1/P` and `N2/P` are retained as bounded
+   diagnostics.
 
 ![Kinetic-theory validation](plots/kt_validation.png)
 
@@ -135,8 +138,9 @@ averaging window shaded. PASS requires the printed window drift to stay below 15
 
 *Frictional LEBC shear: DIRT pressure, shear ratio, granular-temperature proxy,
 and normal-stress ratios over solid fraction against digitized Walton & Braun
-(1986) homogeneous-shear trends. PASS requires the printed dimensionless trend
-checks to stay physical while preserving the existing KT and GDR gates.*
+(1986) homogeneous-shear trends. PASS requires DIRT to stay inside the same
+Walton tolerance bands drawn on the figure while preserving the existing KT and
+GDR gates.*
 
 ## Outputs
 

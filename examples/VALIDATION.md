@@ -1015,10 +1015,15 @@ The validation has two gates, deliberately kept separate:
   da Cruz dense-flow envelope `0.30 <= μ <= 0.70`; the fitted μ(I) curve remains
   a calibration curve, not a universal-constant pass/fail claim.
 - **Walton 1986 trend gate (`sweep.py` default and `graph`): PASS on the committed
-  plot.** DIRT pressure, shear ratio, granular-temperature proxy, `N1/P`, `N2/P`,
-  and `σ_xx/σ_yy` are compared with digitized Walton & Braun (1986) homogeneous
-  shear trends. This is a dimensionless trend check because Walton used 2-D disks
-  and DIRT uses 3-D spheres; it does not replace the KT or GDR gates.
+  plot.** DIRT pressure, shear ratio, granular-temperature proxy, and
+  `σ_xx/σ_yy` are compared with digitized Walton & Braun (1986) homogeneous
+  shear trends at the measured solid fractions. This is a dimensionless
+  cross-geometry check because Walton used 2-D disks and DIRT uses 3-D spheres:
+  Bagnold-normalized pressure and fluctuation velocity are normalized by their
+  mid-density value and gated inside the plotted ±50% Walton shape bands, while
+  `|σ_xy|/σ_yy` and `σ_xx/σ_yy` are gated inside the plotted ±40% Walton
+  stress-ratio bands. `N1/P` and `N2/P` remain bounded diagnostics. The Walton
+  gate does not replace the KT or GDR gates.
 
 ![Kinetic-theory validation](bench_lebc_shear/plots/kt_validation.png)
 
@@ -1039,8 +1044,9 @@ PASS gate (`0.30 <= μ <= 0.70`); the black curve is the calibration fit.*
 
 *DIRT frictional pressure, shear ratio, granular-temperature proxy, and
 normal-stress ratios against digitized Walton & Braun (1986) homogeneous-shear
-trends. The printed PASS/FAIL checks gate the dimensionless trends while the
-existing kinetic-theory and GDR checks remain intact.*
+trends. The shaded bands are the printed PASS/FAIL gates: ±50% on normalized
+shape trends and ±40% on stress ratios, with the existing kinetic-theory and GDR
+checks still intact.*
 
 **Honest read:** the strongest physics check is the frictionless stress collapse
 against kinetic theory and cross-code data; it is expected to deviate near jamming,
