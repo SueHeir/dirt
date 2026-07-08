@@ -1035,6 +1035,29 @@ the fitted μ(I) / Φ(I) constants are material/calibration outputs rather than
 independent universal numbers. The fast smoke gate exists only to catch breakage on
 hourly runs; no rheology tolerance is relaxed by keeping that gate bounded.
 
+## `bench_rod_shear_aspect_ratio` — glued-sphere rods in Lees-Edwards shear
+
+This compact rod/clump benchmark follows the frictionless glued-sphere branch of
+Guo, Wassgren, Ketterhagen, Hancock, James & Curtis (JFM 713, 2012). DIRT keeps
+the equivalent-volume diameter fixed, shears AR = 1, 2, 4, and 6 glued-sphere
+particles in a Lees-Edwards cell, and compares the elongated-rod dilute-regime
+trend against the paper: both Bagnold-normalized pressure
+`p/(rho d_v^2 gamma_dot^2)` and shear stress
+`|sigma_xy|/(rho d_v^2 gamma_dot^2)` must decrease with aspect ratio for
+AR >= 2. The plot also shows the measured long-axis flow alignment and an
+approximate self-digitized Guo Fig. 18 apparent-friction trace for context.
+
+![Rod shear aspect-ratio trends](bench_rod_shear_aspect_ratio/plots/rod_shear_aspect_ratio.png)
+
+*DIRT glued-sphere rods compared with the Guo et al. aspect-ratio trends. Latest
+run: PASS for the two active dimensionless gates: decreasing elongated-rod
+Bagnold-normalized pressure and shear stress with aspect ratio.*
+
+**Honest read:** this is a regression-scale replication of the published dilute
+trend, not a full 26-page reproduction. The absolute apparent-friction values are
+not gated because this small dilute run does not reproduce the paper's dense
+alignment/interlocking regime.
+
 ## `bench_hopper_beverloo` — silo discharge rate
 
 A 2D slot hopper discharges under gravity; the mass flow rate is fit against
@@ -1399,6 +1422,7 @@ will need a benchmark when re-added.)
 | angle_of_repose | empirical (none exact) | qualitative | PASS; trends only; default bounded smoke gate PASSes 4/4 with committed pass-criterion graph; full sweep stands on real frictional wall |
 | column_collapse | Lube/Lajeunesse (empirical) + LAMMPS cross-check | empirical scaling + cross-code | FAIL (genuine finite-size limit, not fit noise); linear exponent 1.54 vs 1.0 outside ±0.25 after seed-averaging + 11-pt sweep + sub-diameter metric; LAMMPS misses identically (1.27); exits 1 |
 | lebc_shear | Lun / extended kinetic theory + LAMMPS / Fortran / LIGGGHTS; GDR MiDi / da Cruz μ(I) form | kinetic theory + calibration | PASS; bounded smoke gate keeps CI fast (`0.15 <= μ <= 0.90`, `P>0`, drift <15%); full KT gate requires ≥60% of points within 15% normal-stress and 20% shear-stress bands; dense/jamming deviations expected |
+| rod_shear_aspect_ratio | Guo/Wassgren/Ketterhagen/Hancock/James/Curtis rod-like shear DEM trends | published DEM trend | PASS; elongated glued-sphere rods show decreasing Bagnold-normalized pressure and shear stress with AR (2→4→6); apparent friction / alignment plotted but not absolute-gated |
 | hopper_beverloo | Beverloo (empirical) + Choi/Kudrolli/Bazant quasi-2D experiment | empirical correlation / published slot exponent | PASS; exponent 1.53 vs 1.5 and published 1.48; prefactor untested |
 | hopper_quiescence | unoptimized baseline run | optimization fidelity | PASS; short matched run preserves discharge within ±1% and fill height within 0.34 mm of baseline; phase wall time speedup 1.15x |
 | plate_sinkage | Bekker (empirical) + NASA/TM-20250006958 Table 1 fitted `n` range | empirical / qualitative | PASS; monotone/power-law/width checks plus representative `b020_mu05` fitted `n=1.074` inside published sandy/loam range 0.66..1.10; softened grains, absolute pressures diagnostic |
