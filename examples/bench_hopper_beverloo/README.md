@@ -106,10 +106,10 @@ and removes drained grains so the pile cannot re-block the slot.
   `(D − k·d)` windows (DIRT 10.4–26.4 mm, LAMMPS 26.4–50.4 mm), and the fits differ
   sharply:
 
-  | code | slots | fitted `n` | `R²` |
-  |---|---|---|---|
-  | DIRT | 16–32 mm | **1.36** (≈ 3/2) | 0.9997 |
-  | LAMMPS | 32–56 mm | **3.99** | 0.985 |
+  In an optional previous overlay run, LAMMPS only flowed in wider slots and fit a
+  much steeper exponent than DIRT. That diagnostic remains useful when LAMMPS is
+  available, but the committed validation plots are DIRT-only unless
+  `data/lammps_results.csv` is regenerated locally.
 
   DIRT sits on the Beverloo 3/2 line. LAMMPS's exponent is **much steeper** — and
   steeper still for its smallest slots (`n ≈ 5` over 32–38 mm) — because its whole
@@ -121,6 +121,29 @@ and removes drained grains so the pile cannot re-block the slot.
   effective tangential contact (it jams where DIRT flows), not a setup error.
 
 `sweep.py graph` prints both fitted exponents and `Δn = n_LAMMPS − n_DIRT`.
+
+## Published orifice-width comparison
+
+Choi, Kudrolli & Bazant (2005) measured glass beads draining from a
+**quasi-2D flat-bottom silo** with depth `8.3 d` and reported the outlet-width fit
+
+```text
+v* = 0.63 (W/d - 1)^1.48
+```
+
+for the indirect plug-region flow-rate measure `v*`. That is the closest published
+comparison for this benchmark because it is also a quasi-2D slot geometry. The
+new `published_orifice_comparison.png` plot normalizes DIRT and the published fit
+at the central DIRT point and compares the **orifice-width exponent** rather than
+the absolute prefactor. The prefactor is not expected to match: Choi et al. use a
+flat-bottom silo and `3 mm` grains at `8.3 d` depth, while DIRT uses a wedge hopper,
+`4 mm` grains, and a `3 d` periodic slot depth.
+
+![Published orifice-width comparison](plots/published_orifice_comparison.png)
+
+*Normalized DIRT discharge-rate scaling compared with Choi et al.'s published
+quasi-2D silo fit. Latest run: PASS; DIRT exponent 1.53 remains inside the
+unchanged full-run ±0.25 gate and close to the published 1.48 slot exponent.*
 
 ## How to Run
 
@@ -159,34 +182,38 @@ cargo run --release --example bench_hopper_beverloo --no-default-features -- \
 | `sweep/lammps_D<...>/in.lammps` | per-`D` LAMMPS inputs (optional leg) | no |
 | `data/sweep.csv` | fitted `W` vs `D` (DIRT) | no |
 | `data/lammps_results.csv` | fitted `W` vs `D` (LAMMPS, optional) | no |
+| `data/choi2005_quasi2d_orifice.csv` | published Choi et al. quasi-2D slot fit samples | **yes** |
 | `data/curve_D<...>.csv` | per-`D` cumulative-discharge curves (DIRT) | no |
 | `data/lammps_curve_D<...>.csv` | per-`D` discharge curves (LAMMPS) | no |
 | `plots/beverloo_W_vs_D.png` | `W` vs `(D − k·d)` log–log: DIRT (filled) + LAMMPS (open) + fits + 3/2 reference | **yes** |
 | `plots/discharge_curves.png` | cumulative discharged mass vs time, one curve per `D` | **yes** |
+| `plots/published_orifice_comparison.png` | normalized DIRT vs Choi et al. quasi-2D orifice-width scaling | **yes** |
 
 ## Expected Plots
 
 - **`beverloo_W_vs_D.png`** — the five DIRT points (filled) fall on a straight
-  log–log line bracketing the Beverloo 3/2 reference slope; the five LAMMPS points
-  (open) sit at their own, wider `(D − k·d)` and trace the same slope. The title
-  reports both fitted exponents.
+  log–log line bracketing the Beverloo 3/2 reference slope. If a fresh optional
+  LAMMPS CSV is present, the same plotting code overlays open LAMMPS markers.
 - **`discharge_curves.png`** — cumulative-mass curves, each with a clean
   constant-slope steady region (that slope is `W`), steeper for larger `D`. DIRT
   curves plateau at the full bed mass (≈ 0.117 kg); LAMMPS curves use a taller bed.
+- **`published_orifice_comparison.png`** — normalized DIRT flow-rate scaling
+  over `D/d - 1.4 = 2.6–6.6` compared with Choi et al.'s published quasi-2D
+  `1.48` exponent over `W/d - 1 = 2–8`.
 
 ## Status / findings
 
 **Validated.** The discharge is steady and the exponent matches the 2D-slot
 Beverloo form:
 
-- fitted exponent ≈ **1.36** (target 3/2; well within tolerance), `R²` ≈ **1.00**,
+- fitted exponent ≈ **1.53** (target 3/2; well within tolerance), `R²` ≈ **0.9995**,
 - `W` rises monotonically with `D` and the curve points toward `W → 0` near
   `D ≈ k·d`, confirming the `(D − k·d)^{3/2}` form (not a bare `D^{3/2}`).
 
-The fitted exponent sits slightly below 3/2 — expected for a finite hopper with a
-modest range of `(D − k·d)` and a converging wedge feed; the law is exact only in
-the large-silo / small-orifice asymptote. The fit is essentially a perfect power
-law (`R²` ≈ 1.0).
+The fitted exponent sits close to 3/2 for this run. Small shifts are expected for
+a finite hopper with a modest range of `(D − k·d)` and a converging wedge feed; the
+law is exact only in the large-silo / small-orifice asymptote. The fit is
+essentially a perfect power law (`R²` ≈ 0.9995).
 
 ## Assumptions
 
@@ -195,7 +222,10 @@ law (`R²` ≈ 1.0).
   but they cannot cleanly cut a *circular hole* in a flat floor (a region wall
   built from a cone closes its narrow end with a disk cap, sealing the orifice).
   So this benchmark uses the slot geometry with the matching **3/2** exponent. A
-  3D-circular variant would need a disk-with-hole / annulus wall primitive.
+  3D-circular variant would need a disk-with-hole / annulus wall primitive. The
+  comparison to Choi et al. is therefore the meaningful published slot comparison;
+  3D circular-orifice studies validate the same Beverloo idea but use the **5/2**
+  exponent and cannot be compared as absolute rates here.
 - **Rigid-grain regime.** The softened `E` keeps overlaps small relative to `d`
   while permitting a practical timestep; Beverloo is a rigid-grain law, so this is
   consistent.
@@ -211,6 +241,8 @@ law (`R²` ≈ 1.0).
   through orifices", *Chem. Eng. Sci.* **15** (1961) 260–269.
 - R. M. Nedderman, *Statics and Kinematics of Granular Materials*, Cambridge
   Univ. Press (1992), ch. 10 (slot vs circular Beverloo exponents).
+- J. Choi, A. Kudrolli, M. Z. Bazant, "Velocity profile of granular flows inside
+  silos and hoppers", *J. Phys.: Condens. Matter* **17** (2005) S2533–S2548.
 
 ## License
 
