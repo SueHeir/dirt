@@ -89,6 +89,12 @@ scientific run (`config.toml`) is **unchanged** and still run via `sweep.py full
 These are the same bounds and κ math as the reviewer-approved
 `bench_granular_conductivity` gate, which runs the identical experiment.
 
+![bounded smoke gate summary](../plots/smoke_gates.png)
+
+*Panel 06 shows the conductivity smoke measurement against the median
+`kappa*_EB/kappa*_KT` PASS band. Latest independent revision run: PASS, 3/3
+checks.*
+
 The recorder streams horizontal-slab profiles to `data/conductivity_profiles.csv`:
 per y-bin Φ(y), the granular temperature `T(y) = ⅓⟨|v − v̄_bin|²⟩` (per-bin
 streaming velocity removed, so the coherent vibration isn't counted), and the

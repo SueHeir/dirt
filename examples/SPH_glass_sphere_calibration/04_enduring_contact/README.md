@@ -109,6 +109,12 @@ validated pass: σ_contact/p_DEM = 0.05 → 0.15 → 0.39 across Φ ≈ 0.29 →
 branch-opening validation and plots are **unchanged** and still run via
 `sweep.py full`.
 
+![bounded smoke gate summary](../plots/smoke_gates.png)
+
+*Panel 04 shows the enduring-contact smoke measurements against the residual
+fraction PASS band and branch-opening criterion. Latest independent revision run:
+PASS, 3/3 checks.*
+
 ## Expected Plots
 
 | Path | Contents |
