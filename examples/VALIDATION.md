@@ -814,11 +814,27 @@ honest, visible FAIL rather than reported green.
 
 ## `bench_lebc_shear` — Lees-Edwards homogeneous shear rheometer
 
-A triperiodic glass-bead box is sheared with native Lees-Edwards deformation. The
-frictionless sub-sweep checks Bagnold-normalized normal and shear stresses against
-Lun / extended kinetic theory and independent LAMMPS / Fortran / LIGGGHTS reference
-points over solid fraction; the frictional production sweep fits the μ(I) and Φ(I)
-closure used by downstream continuum calibration.
+A triperiodic glass-bead box is sheared with native Lees-Edwards deformation. This
+is the bulk rheology ledger entry for the DEM shear campaign: the **frictionless
+full sweep** checks Bagnold-normalized normal and shear stresses against Lun /
+extended kinetic theory and independent LAMMPS / Fortran / LIGGGHTS reference
+points over solid fraction, while the **frictional production sweep** fits the
+GDR MiDi / da Cruz μ(I) and Φ(I) closure used by downstream continuum calibration.
+
+The validation has two gates, deliberately kept separate:
+
+- **Bounded smoke gate (`sweep.py` default / harness): PASS.** Three frictional
+  cases (Φ = 0.2, 0.3, 0.4) must produce positive pressure, a steady averaging
+  window (`p` drift < 15%), and a physical macroscopic stress ratio
+  `0.15 <= μ = |σ_xy|/P <= 0.90`. This keeps CI fast; it does not weaken or replace
+  the full rheology tolerances.
+- **Full-sweep KT gate (`sweep.py full` / `graph`): PASS on the committed plots.**
+  At least 60% of frictionless KT points must fall within the plotted tolerance
+  bands: normal stress `σ_yy/(ρ_s d² γ̇²)` within ±15% of Lun KT and shear stress
+  `σ_xy/(ρ_s d² γ̇²)` within ±20%. The same full sweep overlays independent LAMMPS,
+  Fortran, and LIGGGHTS points and fits the frictional μ(I) curve to the GDR
+  MiDi / da Cruz form; the μ(I) fit is a calibration curve, not a pass/fail theory
+  claim.
 
 ![Kinetic-theory validation](bench_lebc_shear/plots/kt_validation.png)
 
@@ -837,7 +853,10 @@ shaded bands show the unchanged graph gate: at least 60% of points must be withi
 **Honest read:** the strongest physics check is the frictionless stress collapse
 against kinetic theory and cross-code data; it is expected to deviate near jamming,
 where enduring contacts leave the collisional KT regime. The frictional μ(I) / Φ(I)
-fit is a calibration curve, not an independent theory validation.
+fit is compared to the accepted GDR MiDi / da Cruz functional form, but its fitted
+constants are material/calibration outputs rather than independent universal
+numbers. The fast smoke gate exists only to catch breakage on hourly runs; no
+rheology tolerance is relaxed by keeping that gate bounded.
 
 ## `bench_hopper_beverloo` — silo discharge rate
 
@@ -1187,7 +1206,7 @@ will need a benchmark when re-added.)
 | clump_insertion_determinism | own repeated config run | reproducibility | PASS; same-seed config path byte-identical, changed seed diverges |
 | angle_of_repose | empirical (none exact) | qualitative | PASS; trends only; default bounded smoke gate PASSes 4/4 with committed pass-criterion graph; full sweep stands on real frictional wall |
 | column_collapse | Lube/Lajeunesse (empirical) + LAMMPS cross-check | empirical scaling + cross-code | FAIL (genuine finite-size limit, not fit noise); linear exponent 1.54 vs 1.0 outside ±0.25 after seed-averaging + 11-pt sweep + sub-diameter metric; LAMMPS misses identically (1.27); exits 1 |
-| lebc_shear | Lun / extended kinetic theory + LAMMPS / Fortran / LIGGGHTS; GDR MiDi / da Cruz μ(I) form | kinetic theory + calibration | PASS/diagnostic; KT gate requires ≥60% of points within 15% normal-stress and 20% shear-stress bands; dense/jamming deviations expected |
+| lebc_shear | Lun / extended kinetic theory + LAMMPS / Fortran / LIGGGHTS; GDR MiDi / da Cruz μ(I) form | kinetic theory + calibration | PASS; bounded smoke gate keeps CI fast (`0.15 <= μ <= 0.90`, `P>0`, drift <15%); full KT gate requires ≥60% of points within 15% normal-stress and 20% shear-stress bands; dense/jamming deviations expected |
 | hopper_beverloo | Beverloo (empirical) + Choi/Kudrolli/Bazant quasi-2D experiment | empirical correlation / published slot exponent | PASS; exponent 1.53 vs 1.5 and published 1.48; prefactor untested |
 | hopper_quiescence | unoptimized baseline run | optimization fidelity | PASS; short matched run preserves discharge within ±1% and fill height within 0.34 mm of baseline; phase wall time speedup 1.15x |
 | plate_sinkage | Bekker (empirical) | empirical / qualitative | PASS; form only; loose bands; softened grains |

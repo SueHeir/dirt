@@ -43,6 +43,14 @@ tolerance = "COR 1%; contact time 2%; peak overlap 2%; velocity-independence"
 measure_label = "checks"
 measure = '(ALL CHECKS PASSED|CHECKS? FAILED|[0-9]+/[0-9]+ checks passed)'
 
+[bench.bench_hooke_wall_rebound]
+reference = "linear spring-dashpot rigid-wall collision closed form"
+reference_type = "analytical"
+quantity = "wall rebound COR, contact time, peak overlap, and velocity-independence"
+tolerance = "COR 1%; contact time 2%; peak overlap 2%; velocity-independence"
+measure_label = "checks"
+measure = '(ALL CHECKS PASSED|CHECKS? FAILED|[0-9]+/[0-9]+ checks passed)'
+
 [bench.bench_oblique_impact]
 reference = "Maw–Barber–Fawcett (1976) tangential-restitution curve + LAMMPS granular"
 reference_type = "analytical + cross-code"
@@ -58,6 +66,14 @@ quantity = "normal restitution eₙ, rebound angle, non-dim rebound spin vs inci
 tolerance = "eₙ flat at 0.980 across sweep; sliding-branch kinematics to 3 dp"
 measure_label = "eₙ (flat)"
 measure = 'e_n=([0-9.]+)  mu='
+
+[bench.bench_wall_twisting_parity]
+reference = "plane-wall twisting torque law τ=μ_tw |F_n| R*"
+reference_type = "analytical (self-consistent)"
+quantity = "plane, cylinder, sphere, and spherical-region wall twisting torque parity"
+tolerance = "max relative error below 1e-12"
+measure_label = "max relative error"
+measure = 'max relative error (?:below |[=:] )([0-9.eE+-]+)'
 
 [bench.bench_sliding_friction]
 reference = "rigid-body slip-to-roll mechanics (a=μg, t*=2v₀/7μg, v_f=5/7·v₀)"
@@ -93,6 +109,14 @@ reference_type = "analytical (self-consistent)"
 quantity = "DMT pull-off, SJKR cohesion slope, and the 4/3 model-selection ratio"
 tolerance = "≤0.1% on each closed form; linearity R²≈1"
 
+[bench.bench_mdr_elastoplastic_normal]
+reference = "LAMMPS MDR particle-pair rigid-flat equations"
+reference_type = "LAMMPS source equations"
+quantity = "elastic-plastic MDR normal force over prescribed loading/unloading overlap path"
+tolerance = "relative error ≤2e-10 or absolute error ≤1e-8 N"
+measure_label = "max relative error"
+measure = 'maximum relative error `?([0-9.eE+-]+)`?'
+
 [bench.bench_fiber_crossover]
 reference = "Coulomb sliding limit F_slide=μN at a bonded-fiber crossover"
 reference_type = "analytical (self-consistent)"
@@ -108,6 +132,14 @@ quantity = "mixed-pair Hertz overlap/duration, COR mixing, oblique friction impu
 tolerance = "≤0.1% (elastic overlap); ΔCOR ≤0.001; friction ratio ≤5%"
 measure_label = "checks passed"
 measure = 'Overall: ([0-9]+/[0-9]+) checks passed'
+
+[bench.bench_mindlin_rescale_tangential]
+reference = "LAMMPS documented Mindlin unloading history-rescale recurrences"
+reference_type = "analytical + cross-code documentation"
+quantity = "prescribed-overlap unloading forces for history, mindlin_rescale, mindlin_rescale/force, and linear_nohistory"
+tolerance = "documented recurrence branches must match; linear_nohistory remains zero for v_t=0"
+measure_label = "checks"
+measure = '(ALL CHECKS PASSED|CHECKS? FAILED|[0-9]+/[0-9]+ checks passed|RESULT: PASS|RESULT: FAIL)'
 
 [bench.bench_sphere_haff_cooling]
 reference = "Haff's cooling law T_g=T₀/(1+t/tc)² (t⁻² late-time) + LAMMPS"
@@ -163,6 +195,14 @@ tolerance = "fitted exponents within ±0.25 of 1.0 (a≤3) and 2/3 (a≥3)"
 measure_label = "linear-regime exponent (target 1.0)"
 measure = 'Linear regime \(a <= 3.0\): fitted exponent = ([0-9.]+)'
 
+[bench.bench_wall_activate_by_name]
+reference = "same-geometry active/deactivated/reactivated named wall force response"
+reference_type = "API behavior"
+quantity = "inactive wall force zero and reactivated wall force recovery"
+tolerance = "inactive force ≤1e-14 N; reactivated mean force within 1e-12 relative"
+measure_label = "verdict"
+measure = '(ALL CHECKS PASSED|CHECKS? FAILED|RESULT: PASS|RESULT: FAIL)'
+
 [bench.bench_hopper_beverloo]
 reference = "Beverloo empirical correlation W ∝ (D−k·d)^(3/2)"
 reference_type = "empirical (correlation)"
@@ -186,10 +226,10 @@ measure_label = "checks passed"
 measure = '([0-9]+/[0-9]+) checks passed'
 
 [bench.bench_lebc_shear]
-reference = "steady simple-shear rheology (μ(I) law) under Lees–Edwards boundaries"
-reference_type = "analytical (law)"
-quantity = "steady stress ratio μ=|σ_xy|/P and stress-drift stationarity"
-tolerance = "0.15 ≤ μ ≤ 0.9, P>0, steady-state drift <15%"
+reference = "Lun / extended kinetic theory + LAMMPS / Fortran / LIGGGHTS; GDR MiDi / da Cruz μ(I) form"
+reference_type = "kinetic theory + cross-code + calibration"
+quantity = "full-sweep Bagnold-normalized KT stresses and frictional μ(I); harness smoke checks steady μ"
+tolerance = "full KT: ≥60% within ±15% normal stress and ±20% shear stress; smoke: 0.15 ≤ μ ≤ 0.9, P>0, drift <15%"
 measure_label = "checks passed"
 measure = '([0-9]+/[0-9]+) checks passed'
 
@@ -216,6 +256,14 @@ quantity = "crack-band breakage strain and trilinear peak bending moment"
 tolerance = "crack-band rel 8% (abs floor 5e-4); peak moment rel 6%"
 measure_label = "checks"
 measure = 'RESULT: (ALL CHECKS PASSED|[0-9]+/[0-9]+ checks passed|CHECKS? FAILED)'
+
+[bench.bench_curtis_cantilever]
+reference = "Guo, Wassgren, Hancock, Ketterhagen & Curtis (2013) flexible-fiber cantilever beam theory"
+reference_type = "analytical"
+quantity = "normalized tip deflection load curve plus deflection and bending-moment profiles"
+tolerance = "tip curve ≤3%; deflection profile ≤3%; bending-moment profile ≤3%; no broken bonds"
+measure_label = "validation"
+measure = 'VALIDATION: (PASS|FAIL)'
 
 [bench.bench_chung_ooi_impact]
 reference = "Chung & Ooi (2011) elastic-impact benchmark tests 1 & 2 (Hertz closed form)"
