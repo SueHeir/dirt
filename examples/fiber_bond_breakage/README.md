@@ -103,10 +103,15 @@ thresholds. The recorder dumps every bond's sampled thresholds to
 to predict the weakest bond's break — no need to re-implement the
 SplitMix64 / SmallRng / Weibull sampler in Python.
 
+The statistical weakest-link distribution is covered by
+[`../bench_bond_breakage`](../bench_bond_breakage): its seeded Weibull group runs
+60 independent realizations, keeps the per-seed deterministic weakest-bond
+checks, and gates the empirical first-break strain CDF against the analytical
+minimum-Weibull CDF.
+
 ## Carryover
 
 * Multi-channel interaction with genuine bend + shear coupling — needs
   a quasi-static pull (`v_pull · T_bend / L_c ≪ 1`) or reduced bond-
   channel damping.
-* Statistical Weibull-CDF validation across many seeded runs.
 * Coupled plastic + breakage on the same fiber.

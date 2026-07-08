@@ -1,11 +1,8 @@
 # bench_bond_breakage — bond breakage / plasticity sweep benchmark
 
 A regression benchmark (`sweep.py` driver, quantitative PASS/FAIL gate) for the
-`dirt_bond` **breakage** and **plasticity** machinery. It closes the gap noted in
-the goal digest: the breakage criteria (`breakage::BreakageConfig`) and the Guo
-trilinear bending envelope (`plasticity::BendingPlasticityConfig::GuoTrilinear`)
-were exercised only by unit tests and an ad-hoc validation harness — there was
-no automated, theory-gated `sweep.py` bench in the regression suite.
+`dirt_bond` **breakage** and **plasticity** machinery. It covers deterministic
+breakage/plasticity gates and a seeded statistical Weibull weakest-link gate.
 
 The bench reuses the existing **`fiber_bond`** example binary (no new core code,
 no new example binary); `sweep.py` generates the geometry + configs, runs them,
@@ -90,11 +87,39 @@ kinematics as `M = K_bend · (θ_bend − θ_p_bend)`.
 The `sigma_0` values are chosen so `M^p` stays below the moment the fixed tip
 schedule can drive into the middle bond, so every case reaches its cap.
 
+## Group C — seeded Weibull weakest-link CDF
+
+Sixty independently seeded axial-stress Weibull breakage realizations run the
+same 10-bond fiber. The per-bond tensile thresholds are sampled by the solver
+from the configured two-parameter Weibull law (`mean = 5 MPa`, `m = 5`) and
+written to `bond_thresholds.csv`. Each run keeps the deterministic weakest-link
+check: first-break strain must match `min(thr0)/E` within 5%.
+
+The ensemble then checks the measured first-break strains against the analytical
+weakest-link CDF for the minimum of `N_bonds` independent Weibull thresholds:
+
+```
+F_min(eps) = 1 - exp[-N_bonds · (E·eps/lambda)^m]
+lambda = mean / Gamma(1 + 1/m)
+```
+
+**Gate:** all 60 per-seed first breaks match their sampled weakest-link
+prediction within 5%, and the empirical CDF passes a Kolmogorov-Smirnov gate
+`D <= 0.18`. Latest run: max per-seed error 3.8%, KS `D = 0.075`, PASS.
+
+![Weibull CDF and QQ validation](plots/weibull_cdf_qq.png)
+
+*Empirical first-break strain CDF and QQ plot from 60 seeded DIRT realizations
+against the analytical weakest-link Weibull CDF. Latest run: PASS, KS `D =
+0.075` below the 0.18 gate.*
+
 ## Outputs
 
 * `data/crackband.csv`, `data/guo_trilinear.csv` — one row per case.
+* `data/weibull_cdf.csv` — one row per seeded Weibull realization.
 * `plots/crackband_break_strain.png` — break strain vs 1/L_bond, crack-band line.
 * `plots/guo_trilinear_moment.png` — peak moment vs σ₀, M^p line.
+* `plots/weibull_cdf_qq.png` — empirical CDF and QQ plot vs weakest-link Weibull theory.
 
 ## References
 
