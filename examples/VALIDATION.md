@@ -1027,6 +1027,18 @@ Euler-Bernoulli estimate with the documented 35% discrete-chain gate.
 each criterion. Dashed bands are the validator PASS gates. Latest run: all six
 criteria PASS.*
 
+The statistical Weibull weakest-link distribution is gated in
+`bench_bond_breakage`, which runs 60 independently seeded axial-stress Weibull
+realizations. It keeps the per-seed weakest-bond prediction check and compares
+the empirical first-break strain distribution to the analytical minimum-Weibull
+CDF with a Kolmogorov-Smirnov gate.
+
+![Seeded Weibull CDF and QQ validation](bench_bond_breakage/plots/weibull_cdf_qq.png)
+
+*Empirical first-break strain CDF and QQ plot against the analytical
+weakest-link Weibull CDF. Latest regenerated run: PASS, max per-seed error 3.8%
+and KS `D = 0.075` below the 0.18 gate.*
+
 ---
 
 ## `SPH_glass_sphere_calibration/07_column_collapse` — SPH glass macro gate
