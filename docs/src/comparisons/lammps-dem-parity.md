@@ -132,7 +132,7 @@ velocity-fluctuation *diagnostic* (unrelated to real heat transfer).
 | Wall full sub-model set (rolling/twisting/heat via `granular`) | ✅ `fstyle granular` — `fix_wall_gran.rst:113` | ⚠️ partial (see below) |
 | Wall **tangential** (Mindlin sliding), all shapes | ✅ | ✅ `wall_tangential_force` — `crates/dirt_wall/src/lib.rs:926` |
 | Wall **rolling** (constant + SDS), all shapes | ✅ (via `granular`) | ✅ `wall_rolling_torque` — `crates/dirt_wall/src/lib.rs:1004` |
-| Wall **twisting** | ✅ (via `granular`) | ⚠️ **plane walls only** — `crates/dirt_wall/src/lib.rs:1204` (note `:23`) |
+| Wall **twisting** | ✅ (via `granular`) | ✅ constant wall torque on plane, cylinder, sphere, and region walls — `crates/dirt_wall/src/lib.rs:1173,1356,1545,1698,1856` |
 | Wall **JKR/DMT** adhesion | ✅ (via `granular`) | ⚠️ **plane walls only** (SJKR on all) — `crates/dirt_wall/src/lib.rs:1173` (note `:33`) |
 | Wall **heat/temperature** transfer | ✅ `temperature` keyword — `fix_wall_gran.rst:196` | ❌ stub field only (see Thermal) |
 | Wall **motion** | ✅ `wiggle` (oscillate), `shear` (constant tangential) — `fix_wall_gran.rst:165, 186` | ✅ Static / ConstantVelocity / Oscillate / **Servo** (plane only) — `crates/dirt_wall/src/lib.rs:311` (`ServoDef` 206) |
@@ -140,8 +140,8 @@ velocity-fluctuation *diagnostic* (unrelated to real heat transfer).
 
 **Notes.** DIRT walls add **sphere** primitives and a **servo** (force-controlled)
 motion mode LAMMPS lacks; LAMMPS walls support a **Hooke** normal and
-**temperature** boundary DIRT lacks. DIRT's curved/region walls are missing
-twisting and JKR/DMT (plane-only).
+**temperature** boundary DIRT lacks. DIRT's curved/region walls still do not
+support JKR/DMT adhesion (`surface_energy` remains plane-only).
 
 ## Bonded particles (BPM ↔ dirt_bond)
 

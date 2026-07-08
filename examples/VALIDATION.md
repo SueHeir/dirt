@@ -150,6 +150,20 @@ on the line.*
 a viscoelastic damping *mapping* that is calibrated, not derived. Contact-duration
 accuracy is floored at ~1–2 % by timestep quantization.
 
+## `bench_wall_twisting_parity` — wall twisting torque parity
+
+A one-sphere contact check compares plane, cylinder, sphere, and spherical-region
+walls at the same overlap and local contact normal. The sphere is spun purely
+about the normal, so the only wall torque should be the constant twisting couple
+`tau = mu_tw |F_n| R*` inherited from the plane-wall implementation. The benchmark
+gates each geometry against that plane-law reference to round-off tolerance.
+
+![Wall twisting torque parity](bench_wall_twisting_parity/plots/wall_twisting_parity.png)
+
+*Measured wall twisting torque for plane, cylinder, sphere, and region contacts
+against the local plane-wall reference. Latest run: PASS, max relative error below
+1e-12.*
+
 ## `bench_hooke_rebound` — linear-spring normal rebound (exact damped closed form)
 
 Exercises the **Hooke** normal contact (`contact_model = "hooke"`, per-material

@@ -1,0 +1,14 @@
+[material]
+name = "glass"
+youngs_mod = 8.7e9
+poisson_ratio = 0.3
+restitution = 1.0
+twisting_friction = 0.25
+
+[scenario]
+radius = 0.001
+wall_radius = 0.01
+overlap = 0.0005
+omega = -5.0
+dt = 1.0e-6
+out_dir = "examples/bench_wall_twisting_parity"

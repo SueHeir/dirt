@@ -244,6 +244,10 @@ name = "bench_wall_activate_by_name"
 path = "examples/bench_wall_activate_by_name/main.rs"
 
 [[example]]
+name = "bench_wall_twisting_parity"
+path = "examples/bench_wall_twisting_parity/main.rs"
+
+[[example]]
 name = "bench_hooke_rebound"
 path = "examples/bench_hooke_rebound/main.rs"
 
