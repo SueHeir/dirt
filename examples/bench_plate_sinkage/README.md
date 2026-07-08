@@ -7,9 +7,12 @@ landing-pad and wheel/track sinkage on regolith and soil — directly relevant t
 HLS landing-pad bearing capacity.
 
 Because the Bekker relation is *empirical* (its constants are soil-fit, not
-derived from a contact law), this benchmark validates the **form and qualitative
-behavior**, not specific constants: p(z) is monotone, well fit by p ∝ zⁿ with a
-physically sensible exponent, and wider/deeper trends are sane and repeatable.
+derived from a contact law), this benchmark validates both the **form and
+qualitative behavior** and one cited fitted-parameter range: the representative
+narrow-plate DIRT exponent must fall inside the sandy/loam `n` range in
+NASA/TM-20250006958 Table 1. Absolute pressure is shown only as DIRT's own curve;
+the published LETE Sand pressure curve is overlaid in normalized form because its
+constants describe a different calibrated terrain.
 
 ## Physics
 
@@ -77,6 +80,30 @@ For **every** case (PASS requires all):
 Plus a cross-case sanity check: at fixed `μ`, the **total load** `F = p·A` does not
 decrease as the plate width `b` grows (a wider plate supports more load).
 
+The representative narrow-plate case `b020_mu05` is also checked against a
+published fitted-parameter range from NASA/TM-20250006958 Table 1. The committed
+reference table records LETE Sand plus four sandy/loam terrain rows; their Bekker
+exponents span **`0.66 ≤ n ≤ 1.10`**, and `b020_mu05` must stay inside that range.
+This adds a cited fitted-parameter gate without relaxing the existing monotonic,
+fit-quality, exponent-band, or width-trend checks.
+
+![Published Bekker reference](plots/published_bekker_reference.png)
+
+*Normalized DIRT pressure-sinkage for the representative narrow plate compared
+with the published LETE Sand Bekker curve, plus the fitted `n` gate from
+NASA/TM-20250006958 Table 1. Latest run: PASS, `b020_mu05` lies inside the
+published sandy/loam exponent range.*
+
+![Pressure sinkage](plots/pressure_sinkage.png)
+
+*DIRT pressure-sinkage curves and power-law fits for the full sweep. Latest run:
+PASS, all cases retain the existing monotonic and Bekker-form checks.*
+
+![Pressure sinkage linear](plots/pressure_sinkage_linear.png)
+
+*Linear-scale pressure-sinkage curves showing the monotone loading branch used by
+the validation gate.*
+
 ## How to Run
 
 ```bash
@@ -130,8 +157,10 @@ qualitative Bekker power law with sensible exponents over the loading branch.
 | `sweep/<case>/in.lammps`, `lammps_trace.txt` | LAMMPS input + `(plate_z, F_z)` trace (if LAMMPS present) | no |
 | `data/lammps_curve_<case>.csv` | binned LAMMPS `p(z)` per case | no |
 | `data/lammps_results.csv` | fitted LAMMPS `n`, `R²`, `p_max` per case | no |
+| `data/published_bekker_parameters.csv` | cited fitted Bekker parameter rows from NASA/TM-20250006958 Table 1 | **yes** |
 | `plots/pressure_sinkage.png` | `p` vs `z` log-log, DIRT fit per case (+ LAMMPS overlay) | **yes** |
 | `plots/pressure_sinkage_linear.png` | `p` vs `z` linear (monotone view) | **yes** |
+| `plots/published_bekker_reference.png` | normalized DIRT-vs-LETE curve and published `n` range gate | **yes** |
 
 ## Assumptions
 
@@ -153,6 +182,8 @@ qualitative Bekker power law with sensible exponents over the loading branch.
   Press, 1969.
 - J. Y. Wong, *Theory of Ground Vehicles*, 4th ed., Wiley, 2008 (Ch. 2,
   pressure–sinkage).
+- C. M. Creager et al., *Review of Terramechanics Models and Their Applicability
+  to Planetary Surface Mobility*, NASA/TM-20250006958, 2025, Table 1.
 
 ## License
 
