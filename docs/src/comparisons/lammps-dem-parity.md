@@ -128,7 +128,7 @@ velocity-fluctuation *diagnostic* (unrelated to real heat transfer).
 | **Cylinder** wall | ✅ `zcylinder` (Z-axis only) — `fix_wall_gran.rst:158` | ✅ `WallCylinder` X/Y/Z + finite axial bounds, inside/outside — `crates/dirt_wall/src/lib.rs:421` |
 | **Sphere** wall | ❌ — not a `fix wall/gran` primitive | ✅ `WallSphere` — `crates/dirt_wall/src/lib.rs:460` |
 | **Region** wall (arbitrary geometry) | ✅ `fix wall/gran/region` — `fix_wall_gran_region.cpp`; `fix_wall_gran.rst:77` | ✅ `WallRegion` (block/sphere/cylinder/cone/union) — `crates/dirt_wall/src/lib.rs:484` |
-| Wall **normal**: Hooke *and* Hertz | ✅ `hooke`/`hooke/history`/`hertz/history`/`granular` — `fix_wall_gran.rst:91` | ⚠️ **Hertz only** — `crates/dirt_wall/src/lib.rs:1062` (no Hooke wall path) |
+| Wall **normal**: Hooke *and* Hertz | ✅ `hooke`/`hooke/history`/`hertz/history`/`granular` — `fix_wall_gran.rst:91` | ✅ Hertz and Hooke — `crates/dirt_wall/src/lib.rs:1175` (`wall_normal_force`); Hooke wall rebound validated by `examples/bench_hooke_wall_rebound` |
 | Wall full sub-model set (rolling/twisting/heat via `granular`) | ✅ `fstyle granular` — `fix_wall_gran.rst:113` | ⚠️ partial (see below) |
 | Wall **tangential** (Mindlin sliding), all shapes | ✅ | ✅ `wall_tangential_force` — `crates/dirt_wall/src/lib.rs:926` |
 | Wall **rolling** (constant + SDS), all shapes | ✅ (via `granular`) | ✅ `wall_rolling_torque` — `crates/dirt_wall/src/lib.rs:1004` |
@@ -217,7 +217,7 @@ Rough parity on rigid clumps.
    history-based.~~ **Closed:** `tangential_model = "linear_nohistory"` adds the
    history-free velocity-Coulomb law (`examples/bench_nohistory_tangential`).
 6. **Cundall non-viscous global damping** (`fix_damping_cundall.cpp`).
-7. **Hooke-normal walls** and **curved/region-wall twisting + JKR/DMT**
+7. **Curved/region-wall twisting + JKR/DMT**
    (currently plane-only, `crates/dirt_wall/src/lib.rs:1204, 1173`).
 8. **Wall temperature boundary** transfer (stub today,
    `crates/dirt_wall/src/lib.rs:303`).

@@ -195,6 +195,31 @@ validates the linear stiffness, the restitution→damping derivation, and the
 integrator simultaneously. It shares `bench_hertz_rebound`'s ~1–2 % contact-duration
 floor from timestep quantization, but here the resolved error is far below it.
 
+## `bench_hooke_wall_rebound` — linear-spring wall rebound
+
+A single sphere strikes a real `dirt_wall` plane with
+`contact_model = "hooke"`. This closes the wall-side Hooke normal-force check:
+the reduced mass is the particle mass, `kn_ij` is the wall spring stiffness, and
+`beta_ij` gives the exact linear spring-dashpot damping ratio. The sweep checks
+measured COR, contact duration, peak overlap, and velocity-independence against
+the same closed-form damped oscillator used for the particle-particle Hooke
+benchmark, but with the rigid-wall effective mass.
+
+![Measured vs input COR](bench_hooke_wall_rebound/plots/cor_validation.png)
+
+*Measured wall rebound COR vs the exact `COR = e` reference; the gray band is the
+PASS criterion.*
+
+![Contact duration](bench_hooke_wall_rebound/plots/contact_duration.png)
+
+*Measured wall contact duration vs the exact damped half-period; the gray band is
+the PASS criterion.*
+
+![Peak overlap](bench_hooke_wall_rebound/plots/peak_overlap.png)
+
+*Measured peak overlap vs the closed-form wall collision reference; shaded bands
+show the PASS criterion.*
+
 ## `bench_oblique_impact` — tangential contact vs Maw (1976)
 
 A spin-free projectile strikes a frozen sphere obliquely; sweeping the incidence
