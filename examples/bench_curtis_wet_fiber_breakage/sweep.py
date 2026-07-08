@@ -32,10 +32,7 @@ RUPTURE = 4.0e-4
 RHO = 1700.0
 IMPACT_VELOCITIES = [2.0, 3.0, 4.0, 5.0]
 
-TREND_MIN_R2 = 0.75
-BREAKAGE_MIN_SPAN = 0.22
-MASS_MIN_DROP = 0.28
-MAX_OFFTREND = 1
+REFERENCE_BANDS = DATA / "yang_curtis_reference_bands.csv"
 
 
 def run(cmd: list[str]) -> None:
@@ -43,8 +40,9 @@ def run(cmd: list[str]) -> None:
     subprocess.run(cmd, cwd=ROOT, check=True)
 
 
-def generate_geometry(v: float = 1.0) -> None:
-    DATA.mkdir(exist_ok=True)
+def generate_geometry(v: float = 1.0, path: Path | None = None) -> None:
+    path = path or (DATA / "agglomerate.csv")
+    path.parent.mkdir(parents=True, exist_ok=True)
     rows: list[tuple[float, float, float, float]] = []
     offsets = [
         (0.0, 0.0, 0.0),
@@ -59,19 +57,24 @@ def generate_geometry(v: float = 1.0) -> None:
         for b in range(BEADS):
             x = (b - 0.5 * (BEADS - 1)) * BEAD_SPACING
             rows.append((ox + c * x, oy + s * x, base_z + oz, -v))
-    with open(DATA / "agglomerate.csv", "w") as fh:
+    with open(path, "w") as fh:
         fh.write("# x,y,z,vz\n")
         for x, y, z, vz in rows:
             fh.write(f"{x:.10e},{y:.10e},{z:.10e},{vz:.10e}\n")
 
 
 def write_config(v: float) -> Path:
-    generate_geometry(v)
     text = (HERE / "config.toml").read_text()
     out = SWEEP / f"v{v:.1f}"
+    geometry = out / "agglomerate.csv"
+    generate_geometry(v, geometry)
     cfg = out / "config.toml"
     out.mkdir(parents=True, exist_ok=True)
     text = text.replace("velocity_z = -1.0", f"velocity_z = -{v:.6f}")
+    text = text.replace(
+        'file = "examples/bench_curtis_wet_fiber_breakage/data/agglomerate.csv"',
+        f'file = "examples/bench_curtis_wet_fiber_breakage/sweep/v{v:.1f}/agglomerate.csv"',
+    )
     text = text.replace(
         'dir = "examples/bench_curtis_wet_fiber_breakage/sweep/template"',
         f'dir = "examples/bench_curtis_wet_fiber_breakage/sweep/v{v:.1f}"',
@@ -137,6 +140,40 @@ def summarize_case(v: float) -> dict[str, float]:
     }
 
 
+def load_reference_bands() -> list[dict[str, float | str]]:
+    bands: list[dict[str, float | str]] = []
+    with open(REFERENCE_BANDS) as fh:
+        for row in csv.DictReader(fh):
+            bands.append({
+                "modified_weber_min": float(row["modified_weber_min"]),
+                "modified_weber_max": float(row["modified_weber_max"]),
+                "breakage_min": float(row["breakage_min"]),
+                "breakage_max": float(row["breakage_max"]),
+                "mass_min": float(row["mass_min"]),
+                "mass_max": float(row["mass_max"]),
+                "source": row["source"],
+            })
+    if not bands:
+        raise RuntimeError(f"no reference bands in {REFERENCE_BANDS}")
+    return bands
+
+
+def matching_band(modified_weber: float, bands: list[dict[str, float | str]]) -> dict[str, float | str]:
+    for band in bands:
+        if band["modified_weber_min"] <= modified_weber <= band["modified_weber_max"]:
+            return band
+    raise RuntimeError(
+        f"We*={modified_weber:.1f} is outside the committed Yang/Curtis reference bands"
+    )
+
+
+def within_reference(row: dict[str, float], band: dict[str, float | str]) -> bool:
+    return (
+        band["breakage_min"] <= row["breakage_ratio"] <= band["breakage_max"]
+        and band["mass_min"] <= row["min_largest_fragment_mass_ratio"] <= band["mass_max"]
+    )
+
+
 def monotone_violations(values: list[float], increasing: bool) -> int:
     bad = 0
     for a, b in zip(values, values[1:]):
@@ -164,14 +201,25 @@ def graph() -> None:
     rows = [summarize_case(v) for v in IMPACT_VELOCITIES]
     with open(DATA / "velocity_sweep.csv", "w") as fh:
         fields = list(rows[0].keys())
-        writer = csv.DictWriter(fh, fieldnames=fields)
+        writer = csv.DictWriter(fh, fieldnames=fields, lineterminator="\n")
         writer.writeheader()
         writer.writerows(rows)
 
-    import matplotlib
+    try:
+        import matplotlib
+    except ModuleNotFoundError as exc:
+        raise SystemExit(
+            "matplotlib is required for graphing; run with the repo bench Python, "
+            "for example: source ~/projects/.build-env && "
+            "$BENCH_PYTHON examples/bench_curtis_wet_fiber_breakage/sweep.py"
+        ) from exc
 
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
+
+    bands = load_reference_bands()
+    for row in rows:
+        row["reference_pass"] = 1.0 if within_reference(row, matching_band(row["modified_weber"], bands)) else 0.0
 
     v = [r["velocity"] for r in rows]
     we = [r["modified_weber"] for r in rows]
@@ -181,34 +229,48 @@ def graph() -> None:
 
     br_r2 = linreg_r2(we, br)
     mr_r2 = linreg_r2(we, mr)
-    br_span = max(br) - min(br)
-    mr_drop = max(mr) - min(mr)
     br_bad = monotone_violations(br, True)
     mr_bad = monotone_violations(mr, False)
     bonds_active = max(bonds) > 0
-    pass_gate = (
-        br_r2 >= TREND_MIN_R2
-        and mr_r2 >= TREND_MIN_R2
-        and br_span >= BREAKAGE_MIN_SPAN
-        and mr_drop >= MASS_MIN_DROP
-        and br_bad <= MAX_OFFTREND
-        and mr_bad <= MAX_OFFTREND
-        and bonds_active
-    )
+    reference_passes = int(sum(r["reference_pass"] for r in rows))
+    pass_gate = reference_passes == len(rows) and bonds_active and br_bad == 0 and mr_bad == 0
+
+    def velocity_from_modified_weber(westar: float) -> float:
+        hstar = RUPTURE / RADIUS
+        return math.sqrt(max(westar, 0.0) * SURFACE_TENSION * hstar / (RHO * RADIUS))
 
     fig, axes = plt.subplots(1, 2, figsize=(9.5, 4.0))
+    for band in bands:
+        xmin = velocity_from_modified_weber(band["modified_weber_min"])
+        xmax = velocity_from_modified_weber(band["modified_weber_max"])
+        axes[0].fill_between(
+            [xmin, xmax],
+            [band["breakage_min"], band["breakage_min"]],
+            [band["breakage_max"], band["breakage_max"]],
+            color="tab:blue",
+            alpha=0.16,
+            linewidth=0,
+        )
+        axes[1].fill_between(
+            [xmin, xmax],
+            [band["mass_min"], band["mass_min"]],
+            [band["mass_max"], band["mass_max"]],
+            color="tab:red",
+            alpha=0.12,
+            linewidth=0,
+        )
     axes[0].plot(v, br, "o-", label="DIRT wet BPM agglomerate")
     axes[0].set_xlabel("impact velocity (m/s)")
     axes[0].set_ylabel("breakage ratio")
     axes[0].set_ylim(-0.05, 1.02)
-    axes[0].set_title("Breakage increases with impact speed")
-    axes[0].text(0.03, 0.08, f"span={br_span:.2f}, R2(We*)={br_r2:.2f}", transform=axes[0].transAxes)
+    axes[0].set_title("Breakage enters Yang/Curtis We* bands")
+    axes[0].text(0.03, 0.08, f"Fig. 13 bands: {reference_passes}/{len(rows)} pass", transform=axes[0].transAxes)
     axes[1].plot(v, mr, "o-", color="tab:red", label="DIRT wet BPM agglomerate")
     axes[1].set_xlabel("impact velocity (m/s)")
     axes[1].set_ylabel("minimum largest-fragment mass ratio")
     axes[1].set_ylim(-0.02, 1.05)
     axes[1].set_title("Largest fragment shrinks")
-    axes[1].text(0.03, 0.08, f"drop={mr_drop:.2f}, R2(We*)={mr_r2:.2f}", transform=axes[1].transAxes)
+    axes[1].text(0.03, 0.08, f"R2(We*)={mr_r2:.2f}", transform=axes[1].transAxes)
     for ax in axes:
         ax.grid(True, alpha=0.25)
     fig.suptitle("Yang/Curtis wet fiber agglomerate impact trend gate")
@@ -216,24 +278,53 @@ def graph() -> None:
     fig.savefig(PLOTS / "breakage_vs_impact_velocity.png", dpi=180)
     plt.close(fig)
 
-    fig, ax1 = plt.subplots(figsize=(6.0, 4.0))
+    fig, ax1 = plt.subplots(figsize=(6.8, 4.3))
+    for band in bands:
+        xmin = band["modified_weber_min"]
+        xmax = band["modified_weber_max"]
+        ax1.fill_between(
+            [xmin, xmax],
+            [band["breakage_min"], band["breakage_min"]],
+            [band["breakage_max"], band["breakage_max"]],
+            color="tab:blue",
+            alpha=0.16,
+            linewidth=0,
+        )
     ax1.plot(we, br, "o-", label="breakage ratio")
     ax1.set_xlabel("modified Weber number, We / S*")
     ax1.set_ylabel("breakage ratio")
     ax1.set_ylim(-0.05, 1.02)
     ax2 = ax1.twinx()
+    for band in bands:
+        xmin = band["modified_weber_min"]
+        xmax = band["modified_weber_max"]
+        ax2.fill_between(
+            [xmin, xmax],
+            [band["mass_min"], band["mass_min"]],
+            [band["mass_max"], band["mass_max"]],
+            color="tab:red",
+            alpha=0.12,
+            linewidth=0,
+        )
     ax2.plot(we, mr, "s-", color="tab:red", label="largest fragment")
     ax2.set_ylabel("minimum largest-fragment mass ratio")
     ax2.set_ylim(-0.02, 1.05)
     ax1.grid(True, alpha=0.25)
+    ax1.text(
+        0.03,
+        0.06,
+        f"Yang/Curtis Fig. 13 envelope: {reference_passes}/{len(rows)} pass",
+        transform=ax1.transAxes,
+    )
     fig.tight_layout()
     fig.savefig(PLOTS / "weber_trend.png", dpi=180)
     plt.close(fig)
 
     print(
         "wet_fiber_breakage: "
-        f"breakage_span={br_span:.3f} R2={br_r2:.3f} offtrend={br_bad}; "
-        f"mass_drop={mr_drop:.3f} R2={mr_r2:.3f} offtrend={mr_bad}; "
+        f"yang_curtis_reference={reference_passes}/{len(rows)}; "
+        f"breakage_R2={br_r2:.3f} offtrend={br_bad}; "
+        f"mass_R2={mr_r2:.3f} offtrend={mr_bad}; "
         f"max_bonds_broken={max(bonds):.0f} -> {'PASS' if pass_gate else 'FAIL'}"
     )
     if not pass_gate:

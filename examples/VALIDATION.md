@@ -97,18 +97,20 @@ A small wet BPM fiber agglomerate impacts a plane with Willett pendular
 liquid-bridge cohesion enabled between fibers and bond breakage enabled inside
 the flexible fibers. The benchmark follows Yang et al. (2019): breakage ratio
 must increase with impact velocity / modified Weber number, and the minimum
-largest-fragment mass ratio must decrease. The gate is trend-based rather than
-digitized-figure based so no copyrighted plotted data is stored in git.
+largest-fragment mass ratio must decrease. The gate compares every DIRT point to
+a coarse external Yang/Curtis Fig. 13 modified-Weber reference band committed as
+`data/yang_curtis_reference_bands.csv`.
 
 ![Wet fiber breakage velocity trend](bench_curtis_wet_fiber_breakage/plots/breakage_vs_impact_velocity.png)
 
 *Breakage ratio and largest-fragment mass ratio across the DIRT velocity sweep.
-Latest run: PASS against the quantitative trend gate.*
+Latest run: PASS against the Yang/Curtis Fig. 13 low/high modified-Weber
+reference bands.*
 
 ![Wet fiber modified Weber trend](bench_curtis_wet_fiber_breakage/plots/weber_trend.png)
 
-*Same measurements against modified Weber number, matching Yang et al.'s
-energy-ratio framing. Latest run: PASS.*
+*Same measurements against modified Weber number with the Yang/Curtis reference
+bands shaded. Latest run: PASS.*
 
 ---
 

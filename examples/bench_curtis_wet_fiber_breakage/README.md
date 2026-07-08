@@ -13,30 +13,37 @@ measures the paper's two breakage observables: bridge-contact breakage ratio and
 minimum largest-fragment mass ratio.
 
 ```bash
-python3 examples/bench_curtis_wet_fiber_breakage/sweep.py
+source ~/projects/.build-env
+$BENCH_PYTHON examples/bench_curtis_wet_fiber_breakage/sweep.py
 ```
 
 ![breakage vs impact velocity](plots/breakage_vs_impact_velocity.png)
 
 *DIRT breakage ratio and minimum largest-fragment mass ratio over impact
-velocity. The quantitative gate requires the breakage ratio to rise, the largest
-fragment to shrink, both to correlate with modified Weber number, and at least
-one BPM bond to break. Latest run: PASS.*
+velocity. The quantitative gate checks every point against coarse Yang/Curtis
+Fig. 13 modified-Weber reference bands and requires at least one BPM bond to
+break. Latest run: PASS.*
 
 ![modified Weber trend](plots/weber_trend.png)
 
-*Same measurements against modified Weber number, following Yang et al.'s
-energy-ratio framing. Latest run: PASS.*
+*Same measurements against modified Weber number with the Yang/Curtis Fig. 13
+low-We* and high-We* reference bands shaded. Latest run: PASS.*
 
 ## Gate
 
-The trend gate is quantitative but avoids committing copyrighted figure data:
+The gate uses a small committed reference table,
+[`data/yang_curtis_reference_bands.csv`](data/yang_curtis_reference_bands.csv),
+read from the low- and high-modified-Weber envelopes in Yang et al. (2019)
+Fig. 13:
 
-* breakage-ratio span across the velocity sweep must be at least 0.22,
-* largest-fragment mass-ratio drop must be at least 0.28,
-* both metrics must have `R2 >= 0.75` against modified Weber number,
-* each curve may have at most one small off-trend step,
+* low `We* <= 150` cases must remain mostly intact
+  (`breakage_ratio <= 0.25`, `largest_fragment_mass_ratio >= 0.75`),
+* high `225 <= We* <= 500` cases must be in the post-transition breakage band
+  (`breakage_ratio >= 0.45`, `largest_fragment_mass_ratio <= 0.65`),
+* every DIRT point must fall inside its Yang/Curtis band,
+* the breakage ratio must not decrease and largest-fragment ratio must not
+  increase over this ordered sweep,
 * BPM bond breakage must be active (`max(bonds_broken) > 0`).
 
-These checks encode the paper's reported trends without storing its plotted
-points in this repository.
+The table stores only coarse pass bands with citation/provenance, not copied
+paper figures.
