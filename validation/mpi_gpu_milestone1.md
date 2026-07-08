@@ -4,6 +4,11 @@
 > validation note. Current `main` does not contain the GPU force plugin or
 > `crates/dirt_granular/src/gpu.rs`; the results below do not imply GPU contact
 > force support ships on main today.
+>
+> **Provenance:** historical GPU branch `origin/gpu`, recorded in dirt commit
+> `eaf94ac`. Main removed `crates/dirt_gpu`, GPU examples, and the GPU plugin path
+> in `c631d97`; the reproduction command below is archival and not runnable from
+> current `main`.
 
 **Result: a 2-rank MPI run with the GPU contact force now reproduces the 1-rank
 and CPU results to the f32 noise floor.** The scale-out architecture (MPI
@@ -65,6 +70,6 @@ band; with it, all atoms are conserved and the result sits at the f32 noise floo
   wall under that strong gravity. This loss is **identical** across CPU and GPU
   (deterministic), so the comparison is fair; it's a config-tuning artifact, not
   a correctness issue. A gentler g + longer run would conserve all grains.
-- Reproduce: `cargo build --release --example mpi_gpu_validate`, then
+- Historical reproduction on `origin/gpu` only: `cargo build --release --example mpi_gpu_validate`, then
   `DIRT_FORCE={cpu,gpu} mpiexec -n {1,2} target/release/examples/mpi_gpu_validate
   examples/mpi_gpu_validate/config_n{1,2}.toml`.

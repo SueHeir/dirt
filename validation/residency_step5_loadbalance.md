@@ -1,5 +1,10 @@
 # Step 5: dynamic load balancing — verification
 
+> **Current main-branch status (2026-07-08):** this document matches current CPU
+> MPI load-balancing code and the `mpi_loadbalance_validate` example. It does not
+> depend on the removed `dirt_gpu` crate or GPU resident plugins; the multi-GPU
+> mention below is future performance motivation only.
+
 `soil_core::{balanced_planes, rebalance_x, LoadBalancePlugin}` rebalance the
 x-decomposition by particle count (histogram → equal-count quantile planes via
 `all_reduce_sum` per bin), at `PreExchange`, so the following `Exchange` migrates

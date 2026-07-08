@@ -5,6 +5,11 @@
 > feature, resident GPU bridge, `GpuGranularResidentPlugin`, or
 > `GpuGranularResidentMpiPlugin`. The results below are branch provenance, not a
 > claim that main currently includes these GPU-resident coherence pieces.
+>
+> **Provenance:** historical GPU/coherence branch `origin/gpu`, with the coherence
+> validation recorded in dirt commit `077f748` after the bridge work in `d59b9f8`.
+> Main removed the GPU/coherence artifacts in `c631d97`; the validation command
+> below is intentionally archival and is not runnable from current `main`.
 
 Scheduler-mediated host↔device coherence: a CPU system added to a GPU-resident
 config now syncs transparently (and is attributed/counted) instead of silently
@@ -34,8 +39,12 @@ the resident step uses the original eager per-window download — unchanged.
 
 ## Validation: `coherence_validate` example
 
-`cargo run -p dirt_granular --example coherence_validate --release \
-   --no-default-features --features precision-double,gpu_coherence`
+Historical command on `origin/gpu` only:
+
+```bash
+cargo run -p dirt_granular --example coherence_validate --release \
+   --no-default-features --features precision-double,gpu_coherence
+```
 
 Four resident runs of the same 216-grain drop (window 50 × 20 ticks, Apple M5 Pro):
 

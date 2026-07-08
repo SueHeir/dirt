@@ -6,6 +6,11 @@
 > `GpuGranularForcePlugin`, or `GpuGranularResidentPlugin`. The "current state"
 > below refers to the GPU branch state at the time this note was written, not to
 > today's main branch.
+>
+> **Provenance:** historical GPU branch `origin/gpu`; this design/measurement was
+> recorded in dirt commit `8ec79df`. Main removed `crates/dirt_gpu` and its
+> examples in `c631d97`, so the runner paths below are archival and not current
+> runnable validation.
 
 **Goal:** keep the granular sim resident on the GPU — data stays on device, the
 host touches it only for I/O/checkpoints and (later) MPI halo exchange — instead
@@ -37,7 +42,8 @@ and it pays a full host↔device round-trip — including two blocking GPU readb
 
 ## First increment (this commit): quantify the residency win, prove batching exact
 
-Historical runner `crates/dirt_gpu/examples/residency_bench.rs` advances the
+Historical runner `crates/dirt_gpu/examples/residency_bench.rs` (removed from
+current `main`) advances the
 *same* granular scene
 K=500 steps two ways and measures wall-clock on the Apple M5 Pro:
 

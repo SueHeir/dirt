@@ -4,6 +4,10 @@
 > validation note. Current `main` does not contain
 > `GpuGranularResidentMpiPlugin` or
 > `crates/dirt_granular/src/gpu_resident_mpi.rs`.
+>
+> **Provenance:** historical GPU branch `origin/gpu`, recorded in dirt commit
+> `a275406`. Main removed the GPU resident MPI plugin in `c631d97`; this is not a
+> current runnable validation path.
 
 `GpuGranularResidentMpiPlugin` (historical
 `crates/dirt_granular/src/gpu_resident_mpi.rs`) fuses
