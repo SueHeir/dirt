@@ -227,11 +227,11 @@ measure = '([0-9]+/[0-9]+) checks passed'
 
 [bench.bench_lebc_shear]
 reference = "Lun / extended kinetic theory + LAMMPS / Fortran / LIGGGHTS; GDR MiDi / da Cruz μ(I) form"
-reference_type = "kinetic theory + cross-code + calibration"
-quantity = "full-sweep Bagnold-normalized KT stresses and frictional μ(I); harness smoke checks steady μ"
-tolerance = "full KT: ≥60% within ±15% normal stress and ±20% shear stress; smoke: 0.15 ≤ μ ≤ 0.9, P>0, drift <15%"
-measure_label = "checks passed"
-measure = '([0-9]+/[0-9]+) checks passed'
+reference_type = "kinetic theory + cross-code + external μ(I) envelope"
+quantity = "full-sweep Bagnold-normalized KT stresses; frictional μ(I) points vs GDR/da Cruz dense-flow envelope; harness smoke checks same μ envelope"
+tolerance = "full KT: ≥60% within ±15% normal stress and ±20% shear stress; μ(I): 0.30 ≤ μ ≤ 0.70, P>0, drift <15%"
+measure_label = "GDR/da Cruz μ(I) envelope"
+measure = 'GDR / da Cruz mu\(I\) envelope: ([0-9]+/[0-9]+) within'
 
 [bench.bench_nohistory_tangential]
 reference = "LAMMPS documented linear_nohistory velocity-Coulomb tangential law"

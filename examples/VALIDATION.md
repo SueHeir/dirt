@@ -819,22 +819,25 @@ is the bulk rheology ledger entry for the DEM shear campaign: the **frictionless
 full sweep** checks Bagnold-normalized normal and shear stresses against Lun /
 extended kinetic theory and independent LAMMPS / Fortran / LIGGGHTS reference
 points over solid fraction, while the **frictional production sweep** fits the
-GDR MiDi / da Cruz μ(I) and Φ(I) closure used by downstream continuum calibration.
+GDR MiDi / da Cruz μ(I) and Φ(I) closure used by downstream continuum calibration
+and gates the measured stress ratios against the published dense-flow envelope.
 
 The validation has two gates, deliberately kept separate:
 
 - **Bounded smoke gate (`sweep.py` default / harness): PASS.** Three frictional
   cases (Φ = 0.2, 0.3, 0.4) must produce positive pressure, a steady averaging
-  window (`p` drift < 15%), and a physical macroscopic stress ratio
-  `0.15 <= μ = |σ_xy|/P <= 0.90`. This keeps CI fast; it does not weaken or replace
-  the full rheology tolerances.
+  window (`p` drift < 15%), and a macroscopic stress ratio inside the GDR MiDi /
+  da Cruz dense-flow envelope `0.30 <= μ = |σ_xy|/P <= 0.70`. This keeps CI fast;
+  it does not weaken or replace the full rheology tolerances.
 - **Full-sweep KT gate (`sweep.py full` / `graph`): PASS on the committed plots.**
   At least 60% of frictionless KT points must fall within the plotted tolerance
   bands: normal stress `σ_yy/(ρ_s d² γ̇²)` within ±15% of Lun KT and shear stress
   `σ_xy/(ρ_s d² γ̇²)` within ±20%. The same full sweep overlays independent LAMMPS,
-  Fortran, and LIGGGHTS points and fits the frictional μ(I) curve to the GDR
-  MiDi / da Cruz form; the μ(I) fit is a calibration curve, not a pass/fail theory
-  claim.
+  Fortran, and LIGGGHTS points.
+- **Full-sweep μ(I) gate (`sweep.py full` / `graph`): PASS on the committed plot.**
+  Every frictional production point must remain inside the plotted GDR MiDi /
+  da Cruz dense-flow envelope `0.30 <= μ <= 0.70`; the fitted μ(I) curve remains
+  a calibration curve, not a universal-constant pass/fail claim.
 
 ![Kinetic-theory validation](bench_lebc_shear/plots/kt_validation.png)
 
@@ -844,7 +847,8 @@ shaded bands show the unchanged graph gate: at least 60% of points must be withi
 
 ![mu(I) fit](bench_lebc_shear/plots/mu_of_I.png)
 
-*Measured frictional μ(I) with the fitted GDR MiDi / da Cruz curve.*
+*Measured frictional μ(I). The orange band is the GDR MiDi / da Cruz dense-flow
+PASS gate (`0.30 <= μ <= 0.70`); the black curve is the calibration fit.*
 
 ![Phi(I) trend](bench_lebc_shear/plots/phi_of_I.png)
 
@@ -852,11 +856,11 @@ shaded bands show the unchanged graph gate: at least 60% of points must be withi
 
 **Honest read:** the strongest physics check is the frictionless stress collapse
 against kinetic theory and cross-code data; it is expected to deviate near jamming,
-where enduring contacts leave the collisional KT regime. The frictional μ(I) / Φ(I)
-fit is compared to the accepted GDR MiDi / da Cruz functional form, but its fitted
-constants are material/calibration outputs rather than independent universal
-numbers. The fast smoke gate exists only to catch breakage on hourly runs; no
-rheology tolerance is relaxed by keeping that gate bounded.
+where enduring contacts leave the collisional KT regime. The frictional μ(I) gate
+checks the measured stress ratios against the published dense-flow envelope, while
+the fitted μ(I) / Φ(I) constants are material/calibration outputs rather than
+independent universal numbers. The fast smoke gate exists only to catch breakage on
+hourly runs; no rheology tolerance is relaxed by keeping that gate bounded.
 
 ## `bench_hopper_beverloo` — silo discharge rate
 
