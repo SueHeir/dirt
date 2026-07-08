@@ -1,0 +1,85 @@
+# Guo/Curtis flexible-fiber cantilever validation.
+#
+# This checked-in file is the declarative template used by sweep.py. The sweep
+# writes run-specific TOML copies that only change the static tip force and the
+# output directory, then runs the same benchmark binary.
+
+[comm]
+processors_x = 1
+processors_y = 1
+processors_z = 1
+
+[domain]
+x_low  = -0.005
+x_high =  0.041
+y_low  = -0.005
+y_high =  0.005
+z_low  = -0.020
+z_high =  0.005
+boundary_x = "fixed"
+boundary_y = "fixed"
+boundary_z = "fixed"
+
+[neighbor]
+skin_fraction = 1.1
+bin_size = 0.008
+every = 1
+
+[dem]
+contact_model = "hertz"
+
+[[dem.materials]]
+name = "bpm"
+youngs_mod = 1.0e9
+poisson_ratio = 0.25
+restitution = 0.9
+friction = 0.0
+
+[[particles.insert]]
+source = "file"
+file = "examples/bench_curtis_cantilever/fiber_10_spaced.csv"
+format = "csv"
+material = "bpm"
+radius = 0.001
+density = 2500.0
+columns = { x = 0, y = 1, z = 2 }
+
+[bonds]
+auto_bond = true
+bond_tolerance = 2.1
+bond_radius_ratio = 1.0
+youngs_modulus = 1.0e9
+shear_modulus  = 4.0e8
+beta_normal  = 1.0
+beta_shear   = 1.0
+beta_twist   = 1.0
+beta_bending = 1.0
+
+[[group]]
+name = "anchor"
+region = { type = "block", min = [-5e-4, -5e-4, -5e-4], max = [5e-4, 5e-4, 5e-4] }
+dynamic = false
+
+[[group]]
+name = "tip"
+region = { type = "block", min = [0.0355, -5e-4, -5e-4], max = [0.0365, 5e-4, 5e-4] }
+dynamic = false
+
+[[freeze]]
+group = "anchor"
+
+[[viscous]]
+group = "all"
+gamma = 0.12
+
+[[addforce]]
+group = "tip"
+fz = -0.1
+
+[output]
+dir = "examples/bench_curtis_cantilever/runs/template"
+
+[run]
+steps = 350000
+thermo = 50000
+dt = 1e-7
