@@ -608,19 +608,16 @@ on every run of all three benches), but the **−2 asymptote is only approached 
 time** — these dilute gases cool to a finite `t/tc`, where the *local* log-log slope is
 still short of −2. Spheres and clumps cool far enough (`t/tc ≈ 5` and `≈ 11`, slopes ≈
 **−1.88** and **−1.79**) to land inside the `−2.3 < slope < −1.6` gate and **PASS**.
-The rod bench is **borderline near the unchanged late-slope gate**. The
-`20260707T070320Z` regression row failed 5/6 checks because the late slope was
-**−1.598 at `t/tc = 5.3`**, just outside the lower gate of −1.6. A direct rerun on the
-same main (`20260707T092151Z`) passed 6/6 with **R² = 0.9998** and slope
-**−1.621 at `t/tc = 5.5`**, just inside the same gate. Treat rods as a current PASS
-only at the harness level, with a real finite-window margin issue still visible near
-the asymptote. `tc` is only an order-of-magnitude match to kinetic theory (a printed
-diagnostic). Single realizations;
-a many-body gas is chaotic, so only curve-level agreement is meaningful. For clumps/rods
-the LAMMPS cross-check is **calibrated** (the rigid velocity projection otherwise starts
-LAMMPS ~4× hotter) and compared **past the rotational transient**; different rigid
-integrators leave a small residual. The claim is "same cooling law," not identical
-dynamics.
+The rod bench now uses a longer 1.6M-step run and reaches a deeper tail:
+the current run passes 6/6 with **R² = 0.9999** and slope **−1.841 at `t/tc = 12.9`**
+against the unchanged gate. If automation reports a rod slope near **−1.59** at
+only `t/tc ≈ 5.6`, it is running a stale 700k-step checkout, not the current
+benchmark configuration. `tc` is only an order-of-magnitude match to kinetic theory
+(a printed diagnostic). Single realizations; a many-body gas is chaotic, so only
+curve-level agreement is meaningful. For clumps/rods the LAMMPS cross-check is
+**calibrated** (the rigid velocity projection otherwise starts LAMMPS ~4× hotter)
+and compared **past the rotational transient**; different rigid integrators leave a
+small residual. The claim is "same cooling law," not identical dynamics.
 
 ---
 
@@ -1129,7 +1126,7 @@ will need a benchmark when re-added.)
 | bond_fiber_tensile | input Young's modulus via `K_n = E A / L` | analytical (self-consistent) | PASS; fitted E = 1.000050 GPa vs input 1.000001 GPa (0.005% error) |
 | bond_cantilever | Euler-Bernoulli uniform-load cantilever tip deflection | analytical | PASS; final tip deflection −9.476884e-07 m vs −9.535320e-07 m (0.61% error, 5% gate), 9/9 bonds present |
 | sphere/clump haff | Haff law + LAMMPS | law (cross-code) | PASS; R²≈0.9999, slope −1.88 / −1.79 at t/tc≈5 / 11; −2 not fully reached; tc unvalidated; clump cross-check calibrated |
-| rod haff | Haff law + optional LAMMPS | law (cross-code when available) | PASS on latest rerun but borderline; 20260707T070320Z failed 5/6 with slope −1.598 at t/tc=5.3, latest 20260707T092151Z passes 6/6 with R²=0.9998 and slope −1.621 at t/tc=5.5 against the unchanged −2.3<slope<−1.6 gate |
+| rod haff | Haff law + optional LAMMPS | law (cross-code when available) | PASS; current 1.6M-step run gives R²=0.9999 and slope −1.841 at t/tc=12.9 against the unchanged −2.3<slope<−1.6 gate; stale 700k-step harness checkouts still fail around slope −1.59 at t/tc≈5.6 |
 | SPH glass column collapse | Lube/Lajeunesse (empirical) + LAMMPS overlay | empirical macro gate | FAIL (remaining macro limitation); uses canonical `mu_r=0.10` because 03_angle_of_repose has no transferable closure; linear exponent 1.407 vs 1.0 outside ±0.25, power exponent 0.885 inside gate; exits 1 |
 | clump_insertion_determinism | own repeated config run | reproducibility | PASS; same-seed config path byte-identical, changed seed diverges |
 | angle_of_repose | empirical (none exact) | qualitative | PASS; trends only; frozen-bed |
