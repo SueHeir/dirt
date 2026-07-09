@@ -33,6 +33,13 @@ python3 examples/fiber_bond/validate.py \
 | `axial_plastic_piecewise.toml` | Axial plastic loading | Piecewise-linear hardening envelope (this code's config) | PASS, < 0.1% error |
 | `bending_plastic_guo.toml`     | Guo three-step bending plasticity (trilinear) | `F_t^0 = E_b I/(2L_c²)` loading; permanent profile vs digitized Guo Fig. 14(b) FEM curve | PASS, RMS `|Δ(y/L)| = 0.0271` |
 
+![fiber_bond measured-vs-reference summary](plots/fiber_bond_measured_vs_reference.png)
+
+*Guo three-step bending-plasticity checks as measured-vs-reference curves:
+DIRT moment response against the Guo trilinear reference, and final unloaded
+profile against the digitized Guo Fig. 14(b) FEM curve. Latest regenerated run:
+PASS.*
+
 ![Guo/Curtis permanent bending profile](plots/bending_plastic_permanent_profile.png)
 
 *Permanent unloaded deformation after the three Guo/Curtis load steps. The

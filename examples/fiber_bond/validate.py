@@ -800,6 +800,30 @@ def validate_bending_plastic_guo(rows, profile, out_dir):
         out2 = plots_dir / "bending_plastic_permanent_profile.png"
         fig.savefig(out2, dpi=150, bbox_inches="tight")
         print(f"  committed plot saved           : {out2}")
+
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(11, 4.5))
+        ax1.plot([t * 1e3 for t in th_env], [m * 1e3 for m in m_env],
+                 "-", lw=1.8, c="C1", label="Guo trilinear reference")
+        ax1.plot([t * 1e3 for t in th_bend], [m * 1e3 for m in m_bend],
+                 "-", lw=1.1, c="C0", label="DIRT mid-bond trajectory")
+        ax1.set_xlabel("bending angle  theta_bend  (mrad)")
+        ax1.set_ylabel("bending moment  M_bend  (mN m)")
+        ax1.set_title("Moment response")
+        ax1.legend(loc="lower right", framealpha=0.95)
+
+        ax2.plot(fem_x, fem_y, "s-", ms=4, mfc="white", mec="C1", mew=1.1,
+                 color="C1", label="Guo Fig. 14(b) FEM reference")
+        ax2.plot(sx, y_over_l, "o-", ms=5, mfc="white", mec="C0", mew=1.1,
+                 label="DIRT final unloaded profile")
+        ax2.set_xlabel("scaled position along fiber  x / L")
+        ax2.set_ylabel("permanent deflection  y / L")
+        ax2.set_title("Permanent profile")
+        ax2.legend(loc="upper left", framealpha=0.95)
+        fig.suptitle("fiber_bond measured vs reference")
+        fig.tight_layout()
+        out3 = plots_dir / "fiber_bond_measured_vs_reference.png"
+        fig.savefig(out3, dpi=150, bbox_inches="tight")
+        print(f"  committed summary plot saved   : {out3}")
     return ok
 
 
