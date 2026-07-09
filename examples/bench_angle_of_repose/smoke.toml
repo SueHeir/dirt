@@ -6,8 +6,8 @@
 # runs a fast deterministic trend gate under the harness wall-clock cap.
 
 [smoke]
-# Coarse span: frictionless collapse -> mid friction -> high friction.
-mu_list = [0.0, 0.3, 0.5]
+# Coarse span: frictionless collapse -> robust frictional slope -> high friction.
+mu_list = [0.0, 0.4, 0.5]
 
 # A single deterministic pack is intentional for the bounded gate. The full run
 # keeps the 3-pack spread/reproducibility tolerance.

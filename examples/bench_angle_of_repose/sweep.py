@@ -30,8 +30,9 @@ Commands (from anywhere):
     python3 examples/bench_angle_of_repose/sweep.py start      # build + run all sims -> CSV (full)
     python3 examples/bench_angle_of_repose/sweep.py graph      # validate + plot (full)
 
-Each (mu) case is run REPS times with independent random packs (the inserter is
-entropy-seeded), so the spread of theta_r is a direct reproducibility measure.
+Each (mu) case is run REPS times with independent random packs (distinct
+deterministic insertion seeds), so the spread of theta_r is a direct
+reproducibility measure.
 
 The angle is fit in this script from the settled particle positions DIRT dumps:
 the heap is centered on its (x,y) centroid, particles are binned by radial
@@ -148,13 +149,13 @@ GZ = -9.81
 # sparse monolayer of stragglers that avalanched out past the cone toe during the
 # collapse. The fit isolates the cone flank by (a) subtracting the floor baseline
 # height (a single resting layer), (b) finding the toe radius where the heap
-# height falls to ~one particle diameter above the baseline, and (c) fitting the
+# height falls to ~half a particle diameter above the baseline, and (c) fitting the
 # slope on the straight flank window between the apex skip and the toe.
 N_BINS = 26
 SURFACE_PCTL = 90.0     # height percentile per bin = heap surface envelope
 APEX_SKIP_FRAC = 0.15   # skip the inner 15% of the toe radius (rounded apex)
 TOE_HI_FRAC = 0.92      # stop the fit just inside the toe
-TOE_HEIGHT_FACTOR = 1.5 # toe = where (h - baseline) drops below this * diameter
+TOE_HEIGHT_FACTOR = 0.5 # toe = where (h - baseline) drops below this * diameter
 
 # -- Validation tolerances ------------------------------------------------------
 # The band is set for THIS protocol: lift-the-cylinder column collapse on a
@@ -347,15 +348,26 @@ def find_lammps():
     return None
 
 
-# Optional deterministic insert seed. The full sweep leaves this None so the
-# per-case configs are byte-identical to before (the inserter then uses its
-# default seed = 0); the bounded smoke gate sets it so its single rep is exactly
-# reproducible run-to-run.
+# Deterministic but independent insertion seeds. Reproducibility is useful for
+# committed validation plots, but every full-sweep replicate must use a distinct
+# random pack; otherwise the "3 reps" collapse to one packing and a single
+# outlier can masquerade as a mu trend.
+FULL_SEED_BASE = 20260709
+
+# Optional seed override. The bounded smoke gate sets this so its single rep is
+# exactly reproducible run-to-run; the full sweep leaves it None and derives a
+# distinct seed from (mu index, rep).
 INSERT_SEED = None
 
 
-def _dirt_config(mu, outdir):
-    seed_line = "" if INSERT_SEED is None else f"seed = {INSERT_SEED}\n"
+def _case_seed(mu_index, rep):
+    if INSERT_SEED is not None:
+        return INSERT_SEED + rep
+    return FULL_SEED_BASE + 100 * mu_index + rep
+
+
+def _dirt_config(mu, outdir, seed):
+    seed_line = f"seed = {seed}\n"
     return TOML_TEMPLATE.format(
         gz=GZ, youngs=YOUNGS_MOD, nu=POISSON, e_n=RESTITUTION, mu=mu,
         mu_r=ROLLING_FRICTION, k_roll=ROLLING_STIFFNESS, gamma_roll=ROLLING_DAMPING,
@@ -437,12 +449,12 @@ def _run_lammps(lammps, mu):
 # -- generate -------------------------------------------------------------------
 def generate():
     n = 0
-    for mu in MU_LIST:
+    for mu_index, mu in enumerate(MU_LIST):
         for rep in range(REPS):
             cdir = case_dir(mu, rep)
             os.makedirs(cdir, exist_ok=True)
             with open(os.path.join(cdir, "config.toml"), "w") as f:
-                f.write(_dirt_config(mu, cdir))
+                f.write(_dirt_config(mu, cdir, _case_seed(mu_index, rep)))
             n += 1
     print(f"Generated {n} DIRT configs ({len(MU_LIST)} mu x {REPS} reps) under {SWEEP_DIR}")
 
@@ -508,7 +520,13 @@ def heap_profile(xs, ys, zs, rs):
 
 def _toe_radius(r_centers, h_surface, baseline, diameter):
     """Outermost radius where the heap still stands more than TOE_HEIGHT_FACTOR
-    diameters above the floor baseline — the cone toe, ignoring sparse stragglers."""
+    diameters above the floor baseline — the cone toe, ignoring sparse stragglers.
+
+    The threshold must stay below one particle diameter: shallow low-mu heaps can
+    have a real, resolvable flank whose height is only one layer above the apron.
+    A higher cutoff clips the flank to the rounded apex and turns the measured
+    slope into a packing artifact.
+    """
     thresh = baseline + TOE_HEIGHT_FACTOR * diameter
     r_toe = 0.0
     for i in range(len(r_centers)):
@@ -911,7 +929,7 @@ def graph():
 # same repose angle theta_r(mu) the full run measures and asserts the robust,
 # physically-guaranteed qualitative laws:
 #   * the frictionless collapse deposits nearly flat (theta_r ~ 0),
-#   * every frictional case holds a real slope in the sensible band, and
+#   * every frictional smoke case holds a real slope in the sensible band, and
 #   * theta_r rises across the mu range (coarse monotone trend).
 # It completes in ~3 min and prints ALL CHECKS PASSED / CHECKS FAILED.
 #

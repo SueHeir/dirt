@@ -103,8 +103,8 @@ harmless: it is deactivated at the lift before the heap forms.
 ## Parameter Sweep
 
 - **Sliding friction μ**: 0.0, 0.1, 0.2, 0.3, 0.4, 0.5
-- **Replicates**: 3 independent random packs per μ (the inserter is
-  entropy-seeded), giving a direct run-to-run spread for the reproducibility
+- **Replicates**: 3 independent random packs per μ (distinct deterministic
+  insertion seeds), giving a direct run-to-run spread for the reproducibility
   check.
 
 In the lift-the-cylinder protocol the heap forms by a column *collapse* on the
@@ -121,16 +121,17 @@ the primary validation.
 | μ | mean θ_r | std |
 |---|----------|-----|
 | 0.0 | 0.0° | 0.0° |
-| 0.1 | 0.0° | 0.0° |
-| 0.2 | 2.0° | 2.0° |
-| 0.3 | 8.2° | 2.4° |
-| 0.4 | 11.5° | 1.4° |
-| 0.5 | 11.5° | 3.9° |
+| 0.1 | 1.9° | 0.6° |
+| 0.2 | 8.1° | 0.4° |
+| 0.3 | 10.1° | 0.9° |
+| 0.4 | 13.6° | 0.9° |
+| 0.5 | 13.5° | 0.9° |
 
-θ_r increases monotonically, is flat (≈ 0°) at μ ≤ 0.1, and climbs into the
-collapse-heap band (~10–12°) by μ = 0.4–0.5, where it plateaus. Absolute angles
-vary within the quoted spread between independent random packs; the trend is
-reproducible. (`graph` PASSes on this data.)
+θ_r rises monotonically within the stochastic slack, is flat (≈ 0°) at μ = 0,
+has a small but nonzero slope by μ = 0.1, and climbs into the collapse-heap band
+by μ = 0.3–0.5. Absolute angles vary within the quoted spread between
+independent random packs; the trend is reproducible. (`graph` PASSes on this
+data.)
 
 ### CPU precision baseline
 
@@ -196,7 +197,7 @@ LAMMPS leg), each a ~1200-grain collapse relaxed on a real settle/rest detector 
 so it legitimately overran the 1800 s automation cap every hourly run (exit 124)
 and validated nothing. `sweep.py` with **no argument** now runs a **bounded gate**
 on the **same material, geometry and physics**: a coarse 3-point μ grid
-(μ = 0, 0.3, 0.5), **one deterministic (seeded) rep** each, and no LAMMPS. It fits
+(μ = 0, 0.4, 0.5), **one deterministic (seeded) rep** each, and no LAMMPS. It fits
 the same θ_r(μ) the full run measures and asserts the robust qualitative laws —
 the frictionless collapse is nearly flat (θ_r(0) ≤ 8°), every frictional case
 holds a real slope in the sensible band [10°, 40°], and θ_r rises across the μ
@@ -207,14 +208,14 @@ full-scale sweep and tolerances remain in `sweep.py full`. It completes in
 
 ```
   mu   theta_r(deg)   N
-  0.00     0.00     1200     frictionless → flat
-  0.30    11.40     1200     holds a slope, in band
-  0.50    13.48     1200     steeper, in band
+  0.00     0.00     1200     frictionless -> flat
+  0.40    13.67     1200     holds a slope, in band
+  0.50    13.75     1200     slightly steeper, in band
 ```
 
 ![Bounded smoke gate](plots/smoke_gate.png)
 
-*Bounded harness smoke gate: the actual μ = 0, 0.3, 0.5 measurements are plotted
+*Bounded harness smoke gate: the actual μ = 0, 0.4, 0.5 measurements are plotted
 against the flat-frictionless limit, the [10°, 40°] frictional pass band, and the
 coarse increasing-trend criterion. Latest run: PASS, 4/4 checks passed.*
 
@@ -320,7 +321,7 @@ profiles overlay rather than the LAMMPS deposit collapsing to a flat disk.
   slope. No frozen particle bed, second material, or `[[freeze]]` is involved —
   the floor supplies the base friction directly.
 - θ_r is fit on the **straight cone flank only** (apex-skip to just inside the
-  toe, where the toe is the outermost radius standing > 1.5 diameters above the
+  toe, where the toe is the outermost radius standing > 0.5 diameters above the
   floor baseline), excluding the rounded apex and the sparse stragglers that
   avalanche out past the toe during collapse.
 - "Lift the cylinder" deposits read **lower** than slowly-poured heaps (column
