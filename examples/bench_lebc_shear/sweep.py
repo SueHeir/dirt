@@ -89,6 +89,7 @@ SWEEPS = {
 # outputs; this gate asks the measured DEM points to live in the published
 # frictional dense-flow band rather than only in a loose "non-absurd" range.
 GDR_MU_LO, GDR_MU_HI = 0.30, 0.70
+MU_FIT_LOW_I_MAX = 0.10
 
 
 def count_for_phi(phi):
@@ -719,9 +720,16 @@ def graph():
         mu_s, mu2, I0 = fit_mu_of_I(prod)
         phi_max = max(p["phi"] for p in prod)
         rho_c = phi_max * DENSITY
+        i_min = min(p["I"] for p in prod)
+        i_max = max(p["I"] for p in prod)
+        fit_constrained = i_min <= MU_FIT_LOW_I_MAX
         print("\n=== μ(I) / Φ(I) fit (frictional production sweep) ===")
         print(f"  μ_s = {mu_s:.3f}   μ_2 = {mu2:.3f}   I_0 = {I0:.3f}")
         print(f"  Φ_max = {phi_max:.3f}   ρ_c = Φ_max·ρ_s = {rho_c:.1f} kg/m³")
+        print(f"  production I range = [{i_min:.3g}, {i_max:.3g}]")
+        if not fit_constrained:
+            print(f"  NOTE: μ(I) fit is unconstrained/illustrative: no production data at "
+                  f"I <= {MU_FIT_LOW_I_MAX:g}; do not use as a downstream closure.")
         mu_env_ok = sum(1 for p in prod if GDR_MU_LO <= p["mu"] <= GDR_MU_HI)
         mu_env_pass = mu_env_ok == len(prod)
         print(f"  GDR / da Cruz μ(I) envelope: {mu_env_ok}/{len(prod)} within "
@@ -730,7 +738,11 @@ def graph():
 
         os.makedirs(DATA_DIR, exist_ok=True)
         with open(os.path.join(DATA_DIR, "calibration.yaml"), "w") as f:
-            f.write("# DEM-calibrated μ(I) closure for sph_constitutive::MaterialParams\n")
+            if fit_constrained:
+                f.write("# DEM-calibrated μ(I) closure for sph_constitutive::MaterialParams\n")
+            else:
+                f.write("# Unconstrained illustrative μ(I) fit: production sweep has no low-I data.\n")
+                f.write("# Do not use as a downstream closure until low-I cases are added.\n")
             f.write("material: glass_beads_dem\n")
             f.write(f"rho_s: {DENSITY}\n")
             f.write(f"d: {D_MEAN}\n")
@@ -742,6 +754,8 @@ def graph():
         print(f"  wrote {os.path.join(DATA_DIR, 'calibration.yaml')}")
     else:
         mu_s = mu2 = I0 = None
+        i_min = i_max = None
+        fit_constrained = False
         print("\n(need ≥4 production points for a μ(I) fit)")
 
     print("\n=== Walton & Braun 1986 shear-assembly trend check ===")
@@ -758,16 +772,29 @@ def graph():
                label=f"GDR/da Cruz PASS band: {GDR_MU_LO:.2f}≤μ≤{GDR_MU_HI:.2f}")
     ax.scatter([p["I"] for p in prod], [p["mu"] for p in prod], c="tab:blue", label="DEM (frictional)")
     if mu_s is not None:
-        xs = [10 ** (-4 + 0.05 * k) for k in range(80)]
+        x_hi = max(1.0, max(p["I"] for p in prod) * 1.25)
+        log_lo, log_hi = -4.0, math.log10(x_hi)
+        xs = [10 ** (log_lo + (log_hi - log_lo) * k / 119.0) for k in range(120)]
+        fit_label = f"fit: μ_s={mu_s:.2f}, μ_2={mu2:.2f}, I_0={I0:.2f}"
+        if not fit_constrained:
+            fit_label = "unconstrained illustrative " + fit_label
         ax.plot(xs, [mu_s + (mu2 - mu_s) / (I0 / x + 1.0) for x in xs], "k-",
-                label=f"fit: μ_s={mu_s:.2f}, μ_2={mu2:.2f}, I_0={I0:.2f}")
+                label=fit_label)
     if prod:
         mu_env_ok = sum(1 for p in prod if GDR_MU_LO <= p["mu"] <= GDR_MU_HI)
         ax.text(0.98, 0.04, f"Gate: {mu_env_ok}/{len(prod)} in band",
                 transform=ax.transAxes, ha="right", va="bottom", fontsize=8,
                 bbox=dict(facecolor="white", edgecolor="0.7", alpha=0.85, pad=3))
+        if mu_s is not None and not fit_constrained:
+            ax.text(0.02, 0.96,
+                    f"Fit unconstrained: I={i_min:.2g}..{i_max:.2g}; no low-I (<= {MU_FIT_LOW_I_MAX:g}) data",
+                    transform=ax.transAxes, ha="left", va="top", fontsize=8,
+                    bbox=dict(facecolor="#fff7e6", edgecolor="tab:orange", alpha=0.92, pad=3))
     ax.set_xscale("log"); ax.set_xlabel("inertial number I"); ax.set_ylabel("μ = |σ_xy| / P")
-    ax.set_title("Lees–Edwards rheometer: μ(I)"); ax.legend(); ax.grid(True, alpha=0.3)
+    title = "Lees–Edwards rheometer: μ(I)"
+    if mu_s is not None and not fit_constrained:
+        title += " (illustrative fit)"
+    ax.set_title(title); ax.legend(fontsize=8); ax.grid(True, alpha=0.3)
     fig.tight_layout(); fig.savefig(os.path.join(PLOT_DIR, "mu_of_I.png"), dpi=130); plt.close(fig)
 
     # Φ(I)

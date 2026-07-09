@@ -7,7 +7,9 @@ tilt and streaming-velocity remap handled in fractional (lamda) coordinates so t
 flow is homogeneous and parallelizes across MPI ranks. In steady state the
 recorder reports the full stress tensor, the granular temperature, and the solid
 fraction; from these the sweep forms the inertial number `I`, the effective
-friction `μ(I)`, and `Φ(I)` — the closure the dev_soil_sph solver consumes.
+friction `μ(I)`, and `Φ(I)`. The current committed frictional sweep only samples
+high inertial numbers, so its `μ(I)` curve is shown as an illustrative trend, not
+as a constrained downstream closure.
 
 ## What it does
 
@@ -93,11 +95,14 @@ near random-close-packing, is reachable. The sweep runs two families:
 3. **μ(I) / Φ(I) gate and fit** (frictional sweep). Each measured frictional
    point must land inside the GDR MiDi / da Cruz dense-flow envelope
    `0.30 <= μ = |σ_xy|/P <= 0.70`; the plotted band and printed count are the
-   PASS/FAIL gate. The same points are then fit to
-   `μ(I) = μ_s + (μ₂−μ_s)/(I₀/I + 1)` and `Φ(I)` to extract the calibration
-   constants written to `data/calibration.yaml` for
-   `sph_constitutive::MaterialParams`. Those fitted constants are material
-   outputs, not universal pass/fail targets.
+   PASS/FAIL gate. The same points are fit to
+   `μ(I) = μ_s + (μ₂−μ_s)/(I₀/I + 1)` and `Φ(I)` only when reporting the trend.
+   Because the committed production points all sit at high `I` and include no
+   low-`I` data (`I <= 0.1`), the plotted curve is labeled
+   unconstrained/illustrative and the generated `data/calibration.yaml` is
+   caveated accordingly. A downstream `sph_constitutive::MaterialParams` closure
+   needs lower-`I` frictional cases before those constants are treated as
+   calibrated material outputs.
 4. **Walton & Braun (1986) homogeneous-shear trends** (`plots/walton_1986_overlay.png`).
    Digitized curves from the inelastic-disk study (Journal of Rheology 30, 949)
    provide an external rapid-shear assembly reference for the observables DIRT
@@ -122,7 +127,8 @@ unchanged PASS gate: at least 60% of KT points within 15% for normal stress and
 
 *Frictional production sweep: measured μ = |σ_xy|/P over inertial number I. The
 orange band is the GDR MiDi / da Cruz dense-flow PASS gate (`0.30 <= μ <= 0.70`);
-the black curve is the fitted μ(I) calibration consumed downstream.*
+the black curve is an unconstrained illustrative fit because the committed sweep
+has no low-`I` production data.*
 
 ![Phi(I) trend](plots/phi_of_I.png)
 
