@@ -45,8 +45,8 @@ Three groups, each with a quantitative theory gate:
 
         M^p = (4/3) * sigma_0 * r_b^3
 
-  Sweeping the yield stress sigma_0 (2.0, 2.5, 3.0 MPa) scales M^p linearly
-  (2.67, 3.33, 4.0 mN*m; all below the moment the fixed tip schedule can drive
+  Sweeping the yield stress sigma_0 (1.0, 1.25, 1.5 MPa) scales M^p linearly
+  (1.33, 1.67, 2.0 mN*m; all below the moment the fixed tip schedule can drive
   into the middle bond, so every case reaches its cap). The gate reconstructs the peak bond moment from the
   recorded kinematics (M = K_bend * (theta_bend - theta_p_bend)) and checks it
   plateaus at M^p for every sigma_0.
@@ -128,9 +128,9 @@ E_B = 1.0e9              # Pa
 POISSON_B = 0.25
 G_B = 4.0e8              # Pa
 RHO_B = 2500.0
-SIGMA0_LIST = [2.0e6, 2.5e6, 3.0e6]   # yield stress -> M^p = 2.67, 3.33, 4.0 mN*m (all reach the cap)
+SIGMA0_LIST = [1.0e6, 1.25e6, 1.5e6]  # yield stress -> M^p = 1.33, 1.67, 2.0 mN*m (all reach the cap)
 DT_B = 1.0e-7
-STEPS_B = 120000          # through the first load cycle's hold window (~12 ms), reaches the plateau
+STEPS_B = 900000          # full three-cycle Guo schedule (90 ms), so every yield stress reaches the cap
 
 
 def guo_Mp(sigma_0, r_b):
