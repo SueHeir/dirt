@@ -744,6 +744,7 @@ def plot(rows, lammps_rows=None):
         import matplotlib
         matplotlib.use("Agg")
         import matplotlib.pyplot as plt
+        import matplotlib.ticker as mticker
     except Exception as e:
         print(f"\n(matplotlib/numpy unavailable, skipped plots: {e})")
         return
@@ -768,6 +769,11 @@ def plot(rows, lammps_rows=None):
             label=r"$1.6\,a^{2/3}$ (power, $a\gtrsim3$)")
     ax.set_xscale("log")
     ax.set_yscale("log")
+    ax.set_xlim(0.4, 6.0)
+    ax.xaxis.set_major_locator(mticker.FixedLocator([0.5, 1.0, 2.0, 3.0, 4.0, 5.0]))
+    ax.xaxis.set_major_formatter(mticker.FormatStrFormatter("%g"))
+    ax.xaxis.set_minor_locator(mticker.LogLocator(base=10.0, subs=np.arange(2, 10) * 0.1))
+    ax.xaxis.set_minor_formatter(mticker.NullFormatter())
     ax.set_xlabel("Aspect ratio  a = H / L0")
     ax.set_ylabel(r"Normalized runout  $(L_f - L_0)/L_0$")
     ax.set_title("Column-Collapse Runout vs Aspect Ratio")
