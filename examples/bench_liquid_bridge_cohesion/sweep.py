@@ -381,7 +381,6 @@ def graph():
     plt.figure(figsize=(6.0, 4.0))
     xs = list(range(len(angles)))
     plt.plot(xs, [a for _, _, a in angles], "o-", label="DIRT mini heap")
-    plt.axhline(dry + REPOSE_MIN_INCREASE_DEG, color="0.5", ls="--", label="trend gate")
     plt.xticks(xs, [f"{name}\n{volume:.1e} m^3" for name, volume, _ in angles])
     plt.xlabel("case and liquid bridge volume per contact")
     plt.ylabel("static repose angle (deg)")

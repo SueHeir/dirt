@@ -6,7 +6,7 @@ Runs DIRT's selectable `contact_model = "mdr"` for a prescribed loading and
 unloading path, then gates the measured normal force against the rigid-flat
 particle-pair equations in LAMMPS `GranSubModNormalMDR::calculate_forces`
 (`src/GRANULAR/gran_sub_mod_normal.cpp`). The plot shows the
-force-displacement hysteresis and the tolerance band used by the gate.
+force-displacement hysteresis against the reference equations.
 """
 
 import csv
@@ -275,8 +275,6 @@ def graph():
         yr = [r["force"] for r in ref if r["phase"] == phase]
         ax.plot(xs, yr, "-", label=f"{phase} reference")
         ax.plot(xs, ys, marker, ms=3, linestyle="none", label=f"{phase} DIRT")
-        band = [ABS_TOL + REL_TOL * max(abs(v), ABS_TOL) for v in yr]
-        ax.fill_between(xs, [v - b for v, b in zip(yr, band)], [v + b for v, b in zip(yr, band)], alpha=0.16)
     ax.set_xlabel("overlap delta [m]")
     ax.set_ylabel("normal force [N]")
     ax.set_title("MDR elastic-plastic normal response: DIRT vs LAMMPS-source equations")
