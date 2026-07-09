@@ -285,6 +285,81 @@ TOL_EN_SPREAD = 0.01  # e_n must be ~angle-independent (elastic glass)
 TOL_ET = 0.03        # |e_t - sliding|      in the sliding regime
 TOL_SPIN = 0.03      # |R w/V - sliding|    in the sliding regime
 TOL_THR = 2.0        # |Theta_r - sliding| (deg) in the sliding regime
+SQRT_5_6 = 0.9128709291752768
+
+
+def _tsuji_alpha(e):
+    """Tsuji-Tanaka-Ishida Hertz damping polynomial used by DIRT/LAMMPS."""
+    return (1.2728 - 4.2783 * e + 11.087 * e**2 - 22.348 * e**3
+            + 27.467 * e**4 - 18.022 * e**5 + 4.8218 * e**6)
+
+
+def _hertz_beta_for_cor(e):
+    if e >= 0.9999:
+        return 0.0
+    return _tsuji_alpha(max(1.0e-3, min(0.9999, e))) / math.sqrt(5.0)
+
+
+PSI_PREF = 2.0 * (1.0 - NU) / (MU * (2.0 - NU))
+
+
+def maw_beta_for_theta(theta_deg, dt=2.0e-8):
+    """Independent Hertz-Mindlin oblique-impact reference in Maw variables."""
+    v_t0, v_n0 = vel_components(theta_deg)
+    if v_t0 <= 0.0 or v_n0 <= 0.0:
+        return float("nan")
+
+    mass = 4.0 / 3.0 * math.pi * RADIUS**3 * DENSITY
+    r_eff = RADIUS
+    e_eff = 1.0 / ((1.0 - NU * NU) / YOUNGS_MOD)
+    g_eff = 1.0 / (2.0 * (2.0 - NU) * (1.0 + NU) / YOUNGS_MOD)
+    beta_n = _hertz_beta_for_cor(E_N)
+
+    overlap = 0.0
+    overlap_rate = v_n0
+    v_s = v_t0
+    spring = 0.0
+    for step in range(2_000_000):
+        if step > 0 and overlap <= 0.0 and overlap_rate < 0.0:
+            break
+        if overlap > 0.0:
+            sdr = math.sqrt(overlap * r_eff)
+            k_n = 4.0 / 3.0 * e_eff * sdr
+            s_n = 2.0 * e_eff * sdr
+            k_t = 8.0 * g_eff * sdr
+            f_n = k_n * overlap + 2.0 * beta_n * SQRT_5_6 * math.sqrt(s_n * mass) * overlap_rate
+            f_n = max(0.0, f_n)
+
+            spring += v_s * dt
+            gamma_t = 2.0 * SQRT_5_6 * beta_n * math.sqrt(k_t * mass)
+            f_t = k_t * spring + gamma_t * v_s
+            f_t_max = MU * f_n
+            if abs(f_t) > f_t_max:
+                f_t = math.copysign(f_t_max, f_t)
+                spring = (f_t - gamma_t * v_s) / k_t if k_t > 0.0 else 0.0
+        else:
+            f_n = 0.0
+            f_t = 0.0
+
+        overlap_rate += (-f_n / mass) * dt
+        v_s += (-3.5 * f_t / mass) * dt
+        overlap += overlap_rate * dt
+    return -v_s / v_t0
+
+
+def maw_kharaz_row(theta_deg):
+    beta = maw_beta_for_theta(theta_deg)
+    v_t, v_n = vel_components(theta_deg)
+    e_t = 1.0 - (1.0 + beta) / 3.5
+    spin_nd = (5.0 / 7.0) * (1.0 + beta) * v_t / V_I
+    theta_r = math.degrees(math.atan2(e_t * v_t, E_N * v_n))
+    return {"theta_deg": theta_deg, "beta_cp": beta, "e_t": e_t,
+            "spin_nd": spin_nd, "theta_r_deg": theta_r}
+
+
+def maw_kharaz_curve(theta_min=2.0, theta_max=82.0, n=180):
+    return [maw_kharaz_row(theta_min + (theta_max - theta_min) * i / (n - 1))
+            for i in range(n)]
 
 
 def _load(path):
@@ -336,6 +411,12 @@ def validate(rows):
     print(f"\n  e_n spread across sweep: {e_spread:.4f}  (Kharaz glass: ~angle-independent, 0.98)")
     n_slide = sum(r["sliding"] for r in rows)
     print(f"  sliding-regime cases checked against exact rigid-body kinematics: {n_slide}/{len(rows)}")
+    deltas = [abs(r["beta_cp"] - maw_beta_for_theta(r["theta_meas_deg"])) for r in rows]
+    max_delta = max(deltas) if deltas else float("nan")
+    if max_delta > 0.04:
+        print(f"  max |delta beta| vs Maw/Hertz-Mindlin = {max_delta:.4f} > 0.04"); ok = False
+    else:
+        print(f"  max |delta beta| vs Maw/Hertz-Mindlin = {max_delta:.4f}")
     print("RESULT:", "ALL CHECKS PASSED" if ok else "CHECKS FAILED")
     return ok
 
@@ -349,6 +430,8 @@ def plot(rows, exp):
 
     d = sorted(rows, key=lambda x: x["theta_meas_deg"])
     th = [r["theta_meas_deg"] for r in d]
+    maw = maw_kharaz_curve()
+    th_m = [r["theta_deg"] for r in maw]
     # The rigid-body sliding relations only hold in the sliding regime; draw the
     # reference there (plus the boundary point) rather than extrapolating it into
     # the sticking/micro-slip region where it is unphysical.
@@ -359,11 +442,14 @@ def plot(rows, exp):
         return ([r["theta_deg"] for r in exp if key in r and not math.isnan(r[key])],
                 [r[key] for r in exp if key in r and not math.isnan(r[key])])
 
-    fig, axes = plt.subplots(2, 2, figsize=(11, 8))
+    fig, axes = plt.subplots(3, 2, figsize=(11, 11))
+    axes = axes.ravel()
 
     # (a) rebound angle
-    ax = axes[0, 0]
+    ax = axes[0]
     ax.plot(th, [r["theta_r_deg"] for r in d], "o-", label="DIRT")
+    ax.plot(th_m, [r["theta_r_deg"] for r in maw], "-", color="tab:green",
+            lw=1.7, label="Maw (1976)")
     ax.plot(th_s, [r["theta_r_slide_deg"] for r in ds], "k:", label="rigid sliding")
     if exp:
         x, y = exp_pts("theta_r_deg")
@@ -375,8 +461,10 @@ def plot(rows, exp):
     ax.set_title("(a) Rebound angle"); ax.legend()
 
     # (b) tangential restitution
-    ax = axes[0, 1]
+    ax = axes[1]
     ax.plot(th, [r["e_t"] for r in d], "o-", label=r"DIRT $e_t=v_t'/v_t$")
+    ax.plot(th_m, [r["e_t"] for r in maw], "-", color="tab:green",
+            lw=1.7, label="Maw (1976)")
     ax.plot(th_s, [r["e_t_slide"] for r in ds], "k:", label="rigid sliding")
     if exp:
         x, y = exp_pts("e_t")
@@ -389,8 +477,10 @@ def plot(rows, exp):
     ax.set_title("(b) Tangential restitution"); ax.legend()
 
     # (c) non-dimensional rebound spin
-    ax = axes[1, 0]
+    ax = axes[2]
     ax.plot(th, [r["spin_nd"] for r in d], "o-", label=r"DIRT $R\omega'/V_i$")
+    ax.plot(th_m, [r["spin_nd"] for r in maw], "-", color="tab:green",
+            lw=1.7, label="Maw (1976)")
     ax.plot(th_s, [r["spin_nd_slide"] for r in ds], "k:", label="rigid sliding")
     if exp:
         x, y = exp_pts("spin_nd")
@@ -402,13 +492,39 @@ def plot(rows, exp):
     ax.set_title("(c) Rebound angular velocity"); ax.legend()
 
     # (d) normal restitution vs Kharaz's measured 0.98
-    ax = axes[1, 1]
+    ax = axes[3]
     ax.plot(th, [r["e_n"] for r in d], "o-", label="DIRT")
     ax.axhline(E_N, color="r", lw=1.0, ls="--", label=f"Kharaz exp. $e_n$={E_N}")
     ax.set_ylim(0.9, 1.02)
     ax.set_xlabel(r"incidence angle $\Theta_i$ (deg)")
     ax.set_ylabel(r"normal restitution $e_n$")
     ax.set_title("(d) Normal restitution"); ax.legend()
+
+    # (e) contact-point beta, the Maw variable used by the validation gate.
+    ax = axes[4]
+    ax.plot(th, [r["beta_cp"] for r in d], "o-", label=r"DIRT $\beta$")
+    ax.plot(th_m, [r["beta_cp"] for r in maw], "-", color="tab:green",
+            lw=1.7, label="Maw (1976)")
+    ax.axhline(0, color="gray", lw=0.5)
+    ax.axvline(THETA_SLIDE_DEG, color="gray", lw=0.6, ls="--")
+    ax.set_xlabel(r"incidence angle $\Theta_i$ (deg)")
+    ax.set_ylabel(r"contact-point restitution $\beta$")
+    ax.set_title(r"(e) Maw contact-point restitution"); ax.legend()
+
+    # (f) residual against the quantitative Maw gate used by validate().
+    ax = axes[5]
+    beta_res = [(r["theta_meas_deg"], r["beta_cp"] - maw_beta_for_theta(r["theta_meas_deg"])) for r in d]
+    ax.axhspan(-0.04, 0.04, color="tab:green", alpha=0.12,
+               label=r"validation band $\pm0.04$")
+    ax.axhline(0.0, color="tab:green", lw=1.0)
+    ax.axhline(0.04, color="tab:green", lw=0.8, ls="--")
+    ax.axhline(-0.04, color="tab:green", lw=0.8, ls="--")
+    ax.plot([t for t, _ in beta_res], [b for _, b in beta_res], "o-", color="tab:blue")
+    ax.axvline(THETA_SLIDE_DEG, color="gray", lw=0.6, ls="--")
+    ax.set_xlabel(r"incidence angle $\Theta_i$ (deg)")
+    ax.set_ylabel(r"$\Delta\beta$")
+    ax.set_title(r"(f) DIRT - Maw residual, max $|\Delta\beta|$ gate")
+    ax.legend(loc="upper right", fontsize=9)
 
     fig.suptitle("Kharaz, Gorham & Salman (2001) oblique impact — 5 mm alumina on glass, "
                  r"$V_i$=3.85 m/s", fontsize=12)

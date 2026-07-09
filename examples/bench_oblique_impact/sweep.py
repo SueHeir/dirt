@@ -217,6 +217,78 @@ def generate():
 # ── start ────────────────────────────────────────────────────────────────────
 SWEEP_FIELDS = ["psi1", "beta", "beta_gross_slip", "e_n", "ke_out_over_in", "v_t", "v_n"]
 TRACE_FIELDS = ["overlap", "fn", "ft", "omega"]
+SQRT_5_6 = 0.9128709291752768
+
+
+def _tsuji_alpha(e):
+    """Tsuji-Tanaka-Ishida Hertz damping polynomial used by DIRT/LAMMPS."""
+    return (1.2728 - 4.2783 * e + 11.087 * e**2 - 22.348 * e**3
+            + 27.467 * e**4 - 18.022 * e**5 + 4.8218 * e**6)
+
+
+def _hertz_beta_for_cor(e):
+    if e >= 0.9999:
+        return 0.0
+    return _tsuji_alpha(max(1.0e-3, min(0.9999, e))) / math.sqrt(5.0)
+
+
+def maw_beta_for_psi1(psi1, dt=2.0e-8):
+    """Independent Hertz-Mindlin oblique-impact reference in Maw variables.
+
+    This integrates the one-contact compliant impact equations (Hertz normal
+    compliance, Mindlin tangential spring, Coulomb cap) outside DIRT. It is kept
+    in the example driver so the validation figure can draw a smooth analytical
+    S-curve rather than connecting the DIRT samples.
+    """
+    v_t0 = psi1 / PSI_PREF
+    if v_t0 <= 0.0:
+        return float("nan")
+
+    mass = 4.0 / 3.0 * math.pi * RADIUS**3 * DENSITY
+    r_eff = 0.5 * RADIUS
+    e_eff = 1.0 / (2.0 * (1.0 - NU * NU) / YOUNGS_MOD)
+    g_eff = 1.0 / (4.0 * (2.0 - NU) * (1.0 + NU) / YOUNGS_MOD)
+    beta_n = _hertz_beta_for_cor(E_N)
+
+    overlap = 0.0
+    overlap_rate = V_Z
+    v_s = v_t0
+    spring = 0.0
+    for step in range(2_000_000):
+        if step > 0 and overlap <= 0.0 and overlap_rate < 0.0:
+            break
+        if overlap > 0.0:
+            sdr = math.sqrt(overlap * r_eff)
+            k_n = 4.0 / 3.0 * e_eff * sdr
+            s_n = 2.0 * e_eff * sdr
+            k_t = 8.0 * g_eff * sdr
+            f_n = k_n * overlap + 2.0 * beta_n * SQRT_5_6 * math.sqrt(s_n * mass) * overlap_rate
+            f_n = max(0.0, f_n)
+
+            spring += v_s * dt
+            gamma_t = 2.0 * SQRT_5_6 * beta_n * math.sqrt(k_t * mass)
+            f_t = k_t * spring + gamma_t * v_s
+            f_t_max = MU * f_n
+            if abs(f_t) > f_t_max:
+                f_t = math.copysign(f_t_max, f_t)
+                spring = (f_t - gamma_t * v_s) / k_t if k_t > 0.0 else 0.0
+        else:
+            f_n = 0.0
+            f_t = 0.0
+
+        overlap_rate += (-f_n / mass) * dt
+        # v_s = v_t - R*omega; a tangential impulse changes it by 7J/(2m).
+        v_s += (-3.5 * f_t / mass) * dt
+        overlap += overlap_rate * dt
+    return -v_s / v_t0
+
+
+def maw_curve(psi_min=0.15, psi_max=10.5, n=220):
+    return [
+        {"psi1": psi_min + (psi_max - psi_min) * i / (n - 1),
+         "beta": maw_beta_for_psi1(psi_min + (psi_max - psi_min) * i / (n - 1))}
+        for i in range(n)
+    ]
 
 
 def _beta_row(r):
@@ -423,6 +495,12 @@ def validate(rows):
     if e_spread > 0.01:
         print(f"  e_n spread {e_spread:.4f} > 0.01 — normal restitution not constant"); ok = False
     print(f"\n  e_n spread across sweep: {e_spread:.4f} (constant => normal model decoupled from tangential)")
+    deltas = [abs(r["beta"] - maw_beta_for_psi1(r["psi1"])) for r in rows]
+    max_delta = max(deltas) if deltas else float("nan")
+    if max_delta > 0.035:
+        print(f"  max |delta beta| vs Maw/Hertz-Mindlin = {max_delta:.4f} > 0.035"); ok = False
+    else:
+        print(f"  max |delta beta| vs Maw/Hertz-Mindlin = {max_delta:.4f}")
     print("RESULT:", "PASS" if ok else "FAIL")
     return ok
 
@@ -450,20 +528,36 @@ def plot(dirt, lammps, trace_d, trace_l):
 
     # ── beta(psi1): DIRT vs LAMMPS vs gross-slip theory ──
     d = sorted(dirt, key=lambda x: x["psi1"])
-    fig, ax = plt.subplots(figsize=(6.5, 4.5))
+    fig, (ax, ax_res) = plt.subplots(
+        2, 1, figsize=(6.8, 6.2), sharex=True,
+        gridspec_kw={"height_ratios": [3.0, 1.15]},
+    )
     ax.plot([r["psi1"] for r in d], [r["beta"] for r in d], "o-", label="DIRT (Hertz-Mindlin)")
     if lammps:
         l = sorted(lammps, key=lambda x: x["psi1"])
         ax.plot([r["psi1"] for r in l], [r["beta"] for r in l], "s--", label="LAMMPS (Hertz-Mindlin)")
+    maw = maw_curve()
+    ax.plot([r["psi1"] for r in maw], [r["beta"] for r in maw], "-", color="tab:green",
+            lw=1.8, label="Maw (1976) analytical")
     # Gross-slip branch, only where it is physically valid (|beta_gs| <= peak).
     gs = [(r["psi1"], r["beta_gross_slip"]) for r in d if r["beta_gross_slip"] <= 0.5]
     if gs:
         ax.plot([p for p, _ in gs], [b for _, b in gs], "k:", label="gross-slip (rigid)")
     ax.axhline(0, color="gray", lw=0.5)
-    ax.set_xlabel(r"non-dim incidence angle $\psi_1$")
     ax.set_ylabel(r"tangential restitution $\beta = -v_s'/v_s$")
     ax.set_title("Oblique impact vs Maw (1976) — Kharaz conditions")
     ax.legend()
+    residual = [(r["psi1"], r["beta"] - maw_beta_for_psi1(r["psi1"])) for r in d]
+    ax_res.axhspan(-0.035, 0.035, color="tab:green", alpha=0.12,
+                   label=r"validation band $\pm0.035$")
+    ax_res.axhline(0.0, color="tab:green", lw=1.0)
+    ax_res.axhline(0.035, color="tab:green", lw=0.8, ls="--")
+    ax_res.axhline(-0.035, color="tab:green", lw=0.8, ls="--")
+    ax_res.plot([p for p, _ in residual], [b for _, b in residual], "o-", color="tab:blue")
+    ax_res.set_xlabel(r"non-dim incidence angle $\psi_1$")
+    ax_res.set_ylabel(r"$\Delta\beta$")
+    ax_res.set_title(r"DIRT - Maw residual, max $|\Delta\beta|$ gate")
+    ax_res.legend(loc="upper right", fontsize=9)
     fig.tight_layout()
     fig.savefig(os.path.join(PLOT_DIR, "beta_vs_psi1.png"))
     plt.close(fig)
