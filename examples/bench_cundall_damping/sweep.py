@@ -491,15 +491,9 @@ def plot(dirt, lammps):
     fig, (axa, axb) = plt.subplots(1, 2, figsize=(11.0, 4.4))
     d = sorted(dirt, key=lambda x: x["gamma"])
     gam = [r["gamma"] for r in d]
-    def pass_band(ax, x, y, label=None):
-        lo = [min(v * (1.0 - REL_TOL), v * (1.0 + REL_TOL)) for v in y]
-        hi = [max(v * (1.0 - REL_TOL), v * (1.0 + REL_TOL)) for v in y]
-        ax.fill_between(x, lo, hi, color="0.75", alpha=0.35, linewidth=0, label=label)
 
     a_up_pred = [r["a_up_pred"] for r in d]
     a_down_pred = [r["a_down_pred"] for r in d]
-    pass_band(axa, gam, a_up_pred, label=r"$\pm$1% PASS band")
-    pass_band(axa, gam, a_down_pred)
     axa.plot(gam, a_up_pred, "k-", label="theory")
     axa.plot(gam, a_down_pred, "k-")
     axa.plot(gam, [r["a_up"] for r in d], "o", ms=8, color="tab:blue", label="DIRT a_up")
@@ -512,24 +506,16 @@ def plot(dirt, lammps):
                  mfc="none", color="tab:orange", label="LAMMPS a_down")
     axa.set_xlabel(r"$\gamma_l$"); axa.set_ylabel(r"linear rate (m/s$^2$)")
     axa.set_title("Linear acceleration vs theory / LAMMPS")
-    axa.text(0.02, 0.04, r"PASS if every point lies in the $\pm$1% band",
-             transform=axa.transAxes, fontsize=8,
-             bbox={"facecolor": "white", "edgecolor": "0.7", "alpha": 0.85, "pad": 3})
     axa.legend(fontsize=8)
 
     alpha_down_pred = [r["alpha_down_pred"] for r in d]
     alpha_up_pred = [r["alpha_up_pred"] for r in d]
-    pass_band(axb, gam, alpha_down_pred, label=r"$\pm$1% PASS band")
-    pass_band(axb, gam, alpha_up_pred)
     axb.plot(gam, alpha_down_pred, "k-", label="theory")
     axb.plot(gam, alpha_up_pred, "k-")
     axb.plot(gam, [r["alpha_down"] for r in d], "o", ms=8, color="tab:blue", label=r"DIRT $\alpha_{down}$")
     axb.plot(gam, [r["alpha_up"] for r in d], "^", ms=8, color="tab:green", label=r"DIRT $\alpha_{up}$")
     axb.set_xlabel(r"$\gamma_a$"); axb.set_ylabel(r"angular rate (rad/s$^2$)")
     axb.set_title("Angular acceleration vs theory")
-    axb.text(0.02, 0.04, r"PASS if every point lies in the $\pm$1% band",
-             transform=axb.transAxes, fontsize=8,
-             bbox={"facecolor": "white", "edgecolor": "0.7", "alpha": 0.85, "pad": 3})
     axb.legend(fontsize=8)
     fig.tight_layout()
     fig.savefig(os.path.join(PLOT_DIR, "cundall_rates.png"))

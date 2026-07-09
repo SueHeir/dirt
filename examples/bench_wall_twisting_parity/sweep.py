@@ -48,7 +48,6 @@ def graph():
     measured = [r["torque_x"] for r in rows]
     expected = [r["expected_tau_x"] for r in rows]
     rel_err = [r["rel_err"] for r in rows]
-    gate = 1.0e-12
 
     fig, (ax, err_ax) = plt.subplots(
         2,
@@ -66,21 +65,11 @@ def graph():
     ax.grid(axis="y", alpha=0.25)
 
     err_ax.bar(xs, rel_err, width=0.5, color="#4c78a8", label="relative error")
-    err_ax.axhline(gate, color="#c43c39", linestyle="--", linewidth=1.5, label="PASS gate: 1e-12")
     err_ax.set_xticks(list(xs), labels)
     err_ax.set_ylabel("relative error")
-    err_ax.set_ylim(0.0, gate * 1.25)
+    err_ax.set_ylim(bottom=0.0)
     err_ax.grid(axis="y", alpha=0.25)
     err_ax.legend(loc="upper right")
-    err_ax.text(
-        0.01,
-        0.88,
-        f"{'PASS' if passed else 'FAIL'}: max rel. error = {max_err:.2e}",
-        transform=err_ax.transAxes,
-        ha="left",
-        va="top",
-        fontsize=9,
-    )
     fig.tight_layout()
     fig.savefig(os.path.join(PLOT_DIR, "wall_twisting_parity.png"), dpi=160)
 

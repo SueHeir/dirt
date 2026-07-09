@@ -179,7 +179,6 @@ def plot_reference_comparison():
     A = np.vstack([vt_nh[subcap], np.ones(subcap.sum())]).T
     (eta_t, _intercept), *_ = np.linalg.lstsq(A, ft_nh[subcap], rcond=None)
     ft_ref = np.sign(vt_nh) * np.minimum(mu_fn_nh, eta_t * np.abs(vt_nh))
-    tol = 1e-3 * cap
 
     order = np.argsort(vt_nh)
     os.makedirs(PLOT_DIR, exist_ok=True)
@@ -189,15 +188,6 @@ def plot_reference_comparison():
         gridspec_kw={"height_ratios": [3, 1]},
     )
 
-    ax.fill_between(
-        vt_nh[order],
-        ft_ref[order] - tol,
-        ft_ref[order] + tol,
-        color="#4c78a8",
-        alpha=0.18,
-        linewidth=0,
-        label="pass band (±0.1% cap)",
-    )
     ax.plot(
         vt_nh[order],
         ft_ref[order],
@@ -233,13 +223,10 @@ def plot_reference_comparison():
 
     resid = ft_nh - ft_ref
     ax_resid.scatter(vt_nh, resid, s=10, color="#d62728", alpha=0.78, edgecolors="none")
-    ax_resid.axhline(tol, color="#1f4e79", linestyle="--", linewidth=1.0, label="± pass tolerance")
-    ax_resid.axhline(-tol, color="#1f4e79", linestyle="--", linewidth=1.0)
     ax_resid.axhline(0.0, color="#777777", linewidth=0.8)
     ax_resid.set_xlabel("Relative tangential velocity $v_t$ [m/s]")
     ax_resid.set_ylabel("DIRT - ref [N]")
     ax_resid.grid(True, color="#dddddd", linewidth=0.8)
-    ax_resid.legend(loc="best", frameon=False, fontsize=9)
 
     fig.tight_layout()
     fig.savefig(PLOT, dpi=180)

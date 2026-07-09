@@ -300,9 +300,6 @@ def plot(rows):
     markers = ["o", "s", "^", "D"]
 
     fig, ax = plt.subplots(figsize=(6.2, 5.0))
-    ax.fill_between([0.2, 1.05], [0.2 - COR_TOL, 1.05 - COR_TOL],
-                    [0.2 + COR_TOL, 1.05 + COR_TOL], color="0.88",
-                    label="+/- COR tolerance")
     for iv, v in enumerate(vels):
         pts = [(e, float(data[(e, v)]["cor_measured"])) for e in cors if (e, v) in data]
         ax.plot([p[0] for p in pts], [p[1] for p in pts], markers[iv % len(markers)],
@@ -319,8 +316,6 @@ def plot(rows):
     fig, ax = plt.subplots(figsize=(6.8, 5.0))
     e_grid = np.linspace(min(cors), 1.0, 200)
     theory = np.array([contact_time_theory(e) for e in e_grid]) * 1e6
-    ax.fill_between(e_grid, theory * (1.0 - TIME_TOL), theory * (1.0 + TIME_TOL),
-                    color="0.88", label="+/- 2% tolerance")
     ax.plot(e_grid, theory, "k-", label="linear theory")
     for iv, v in enumerate(vels):
         pts = [(e, float(data[(e, v)]["contact_time"]) * 1e6) for e in cors if (e, v) in data]
@@ -337,8 +332,6 @@ def plot(rows):
     v_grid = np.linspace(min(vels) * 0.9, max(vels) * 1.1, 200)
     for ic, e in enumerate(cors):
         theory = np.array([peak_overlap_theory(e, v) for v in v_grid]) * 1e6
-        ax.fill_between(v_grid, theory * (1.0 - OVERLAP_TOL), theory * (1.0 + OVERLAP_TOL),
-                        color=colors[ic % len(colors)], alpha=0.08)
         ax.plot(v_grid, theory, "-", color=colors[ic % len(colors)], linewidth=1.2)
         pts = [(v, float(data[(e, v)]["max_overlap"]) * 1e6) for v in vels if (e, v) in data]
         ax.plot([p[0] for p in pts], [p[1] for p in pts], "o",
