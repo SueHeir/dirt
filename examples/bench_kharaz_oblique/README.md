@@ -99,7 +99,9 @@ conditions and overlays the Maw/Hertz–Mindlin analytical micro-slip curves:
 *Rebound angle, tangential restitution, non-dimensional rebound spin, and normal
 restitution vs incidence angle. Points: DIRT (flat glass anvil). Green: analytical
 Maw/Hertz–Mindlin curves. Dotted: exact rigid-body sliding kinematics (drawn only
-where valid). Dashed red: Kharaz's measured eₙ = 0.98.*
+where valid). Dashed red: Kharaz's measured eₙ = 0.98. The bottom row shows the
+contact-point β curve and the DIRT–Maw β residual against the ±0.04 validation
+gate.*
 
 ### A note on the experimental points
 

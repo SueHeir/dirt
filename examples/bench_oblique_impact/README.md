@@ -82,7 +82,8 @@ LAMMPS remains close as an independent DEM cross-check (max `|Δβ| = 0.0178`):
 
 *Tangential restitution β vs non-dimensional incidence angle ψ₁. Points: DIRT
 and LAMMPS. Green: analytical Maw/Hertz–Mindlin S-curve. Dotted: exact rigid
-gross-slip limit.*
+gross-slip limit. The residual panel shows the DIRT–Maw β error against the
+±0.035 validation gate.*
 
 This validation also drove two fixes in the contact model: a tangential
 damping-sign error (energy injection) and the requirement that a frozen contact

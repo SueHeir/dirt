@@ -528,7 +528,10 @@ def plot(dirt, lammps, trace_d, trace_l):
 
     # ── beta(psi1): DIRT vs LAMMPS vs gross-slip theory ──
     d = sorted(dirt, key=lambda x: x["psi1"])
-    fig, ax = plt.subplots(figsize=(6.5, 4.5))
+    fig, (ax, ax_res) = plt.subplots(
+        2, 1, figsize=(6.8, 6.2), sharex=True,
+        gridspec_kw={"height_ratios": [3.0, 1.15]},
+    )
     ax.plot([r["psi1"] for r in d], [r["beta"] for r in d], "o-", label="DIRT (Hertz-Mindlin)")
     if lammps:
         l = sorted(lammps, key=lambda x: x["psi1"])
@@ -541,10 +544,20 @@ def plot(dirt, lammps, trace_d, trace_l):
     if gs:
         ax.plot([p for p, _ in gs], [b for _, b in gs], "k:", label="gross-slip (rigid)")
     ax.axhline(0, color="gray", lw=0.5)
-    ax.set_xlabel(r"non-dim incidence angle $\psi_1$")
     ax.set_ylabel(r"tangential restitution $\beta = -v_s'/v_s$")
     ax.set_title("Oblique impact vs Maw (1976) — Kharaz conditions")
     ax.legend()
+    residual = [(r["psi1"], r["beta"] - maw_beta_for_psi1(r["psi1"])) for r in d]
+    ax_res.axhspan(-0.035, 0.035, color="tab:green", alpha=0.12,
+                   label=r"validation band $\pm0.035$")
+    ax_res.axhline(0.0, color="tab:green", lw=1.0)
+    ax_res.axhline(0.035, color="tab:green", lw=0.8, ls="--")
+    ax_res.axhline(-0.035, color="tab:green", lw=0.8, ls="--")
+    ax_res.plot([p for p, _ in residual], [b for _, b in residual], "o-", color="tab:blue")
+    ax_res.set_xlabel(r"non-dim incidence angle $\psi_1$")
+    ax_res.set_ylabel(r"$\Delta\beta$")
+    ax_res.set_title(r"DIRT - Maw residual, max $|\Delta\beta|$ gate")
+    ax_res.legend(loc="upper right", fontsize=9)
     fig.tight_layout()
     fig.savefig(os.path.join(PLOT_DIR, "beta_vs_psi1.png"))
     plt.close(fig)

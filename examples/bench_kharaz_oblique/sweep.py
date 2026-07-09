@@ -442,10 +442,11 @@ def plot(rows, exp):
         return ([r["theta_deg"] for r in exp if key in r and not math.isnan(r[key])],
                 [r[key] for r in exp if key in r and not math.isnan(r[key])])
 
-    fig, axes = plt.subplots(2, 2, figsize=(11, 8))
+    fig, axes = plt.subplots(3, 2, figsize=(11, 11))
+    axes = axes.ravel()
 
     # (a) rebound angle
-    ax = axes[0, 0]
+    ax = axes[0]
     ax.plot(th, [r["theta_r_deg"] for r in d], "o-", label="DIRT")
     ax.plot(th_m, [r["theta_r_deg"] for r in maw], "-", color="tab:green",
             lw=1.7, label="Maw (1976)")
@@ -460,7 +461,7 @@ def plot(rows, exp):
     ax.set_title("(a) Rebound angle"); ax.legend()
 
     # (b) tangential restitution
-    ax = axes[0, 1]
+    ax = axes[1]
     ax.plot(th, [r["e_t"] for r in d], "o-", label=r"DIRT $e_t=v_t'/v_t$")
     ax.plot(th_m, [r["e_t"] for r in maw], "-", color="tab:green",
             lw=1.7, label="Maw (1976)")
@@ -476,7 +477,7 @@ def plot(rows, exp):
     ax.set_title("(b) Tangential restitution"); ax.legend()
 
     # (c) non-dimensional rebound spin
-    ax = axes[1, 0]
+    ax = axes[2]
     ax.plot(th, [r["spin_nd"] for r in d], "o-", label=r"DIRT $R\omega'/V_i$")
     ax.plot(th_m, [r["spin_nd"] for r in maw], "-", color="tab:green",
             lw=1.7, label="Maw (1976)")
@@ -491,13 +492,39 @@ def plot(rows, exp):
     ax.set_title("(c) Rebound angular velocity"); ax.legend()
 
     # (d) normal restitution vs Kharaz's measured 0.98
-    ax = axes[1, 1]
+    ax = axes[3]
     ax.plot(th, [r["e_n"] for r in d], "o-", label="DIRT")
     ax.axhline(E_N, color="r", lw=1.0, ls="--", label=f"Kharaz exp. $e_n$={E_N}")
     ax.set_ylim(0.9, 1.02)
     ax.set_xlabel(r"incidence angle $\Theta_i$ (deg)")
     ax.set_ylabel(r"normal restitution $e_n$")
     ax.set_title("(d) Normal restitution"); ax.legend()
+
+    # (e) contact-point beta, the Maw variable used by the validation gate.
+    ax = axes[4]
+    ax.plot(th, [r["beta_cp"] for r in d], "o-", label=r"DIRT $\beta$")
+    ax.plot(th_m, [r["beta_cp"] for r in maw], "-", color="tab:green",
+            lw=1.7, label="Maw (1976)")
+    ax.axhline(0, color="gray", lw=0.5)
+    ax.axvline(THETA_SLIDE_DEG, color="gray", lw=0.6, ls="--")
+    ax.set_xlabel(r"incidence angle $\Theta_i$ (deg)")
+    ax.set_ylabel(r"contact-point restitution $\beta$")
+    ax.set_title(r"(e) Maw contact-point restitution"); ax.legend()
+
+    # (f) residual against the quantitative Maw gate used by validate().
+    ax = axes[5]
+    beta_res = [(r["theta_meas_deg"], r["beta_cp"] - maw_beta_for_theta(r["theta_meas_deg"])) for r in d]
+    ax.axhspan(-0.04, 0.04, color="tab:green", alpha=0.12,
+               label=r"validation band $\pm0.04$")
+    ax.axhline(0.0, color="tab:green", lw=1.0)
+    ax.axhline(0.04, color="tab:green", lw=0.8, ls="--")
+    ax.axhline(-0.04, color="tab:green", lw=0.8, ls="--")
+    ax.plot([t for t, _ in beta_res], [b for _, b in beta_res], "o-", color="tab:blue")
+    ax.axvline(THETA_SLIDE_DEG, color="gray", lw=0.6, ls="--")
+    ax.set_xlabel(r"incidence angle $\Theta_i$ (deg)")
+    ax.set_ylabel(r"$\Delta\beta$")
+    ax.set_title(r"(f) DIRT - Maw residual, max $|\Delta\beta|$ gate")
+    ax.legend(loc="upper right", fontsize=9)
 
     fig.suptitle("Kharaz, Gorham & Salman (2001) oblique impact — 5 mm alumina on glass, "
                  r"$V_i$=3.85 m/s", fontsize=12)
