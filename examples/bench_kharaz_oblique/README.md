@@ -80,10 +80,10 @@ cargo run --release --example bench_kharaz_oblique --no-default-features \
 ## Status / findings
 
 **PASS.** DIRT reproduces the Kharaz rebound/spin curves at the paper's exact
-conditions:
+conditions and overlays the Maw/Hertz–Mindlin analytical micro-slip curves:
 
-- **Normal restitution** is flat at **eₙ = 0.980** across the whole 5°–80° sweep
-  (spread 0.0000) — matching Kharaz's measured glass value 0.98.
+- **Normal restitution** is flat at **eₙ = 0.986** across the whole 5°–80° sweep
+  (spread 0.0000), within 0.006 of Kharaz's measured glass value 0.98.
 - **Sliding regime (Θᵢ ≳ 32.5°):** the rebound angle Θ_r, tangential restitution
   eₜ = v_t'/v_t, and non-dimensional rebound spin Rω'/Vᵢ match the exact
   rigid-body kinematics to three decimals (max |Δeₜ|, |ΔRω/Vᵢ| < 0.001,
@@ -91,14 +91,15 @@ conditions:
 - **Sticking / micro-slip regime (Θᵢ < 32.5°):** DIRT traces the Maw S-curve —
   tangential restitution dips to a minimum eₜ ≈ 0.62 near Θᵢ ≈ 20°, and the
   rebound spin peaks at Rω'/Vᵢ ≈ 0.39 near Θᵢ ≈ 30° before both join the sliding
-  branch. This is the characteristic Kharaz/Maw shape.
+  branch. The contact-point restitution agrees with the analytical curve to
+  max `|Δβ| = 0.0015`.
 
 ![Kharaz rebound/spin curves](plots/kharaz_rebound_spin.png)
 
 *Rebound angle, tangential restitution, non-dimensional rebound spin, and normal
-restitution vs incidence angle. Points: DIRT (flat glass anvil). Dotted: exact
-rigid-body sliding kinematics (drawn only where valid). Dashed red: Kharaz's
-measured eₙ = 0.98.*
+restitution vs incidence angle. Points: DIRT (flat glass anvil). Green: analytical
+Maw/Hertz–Mindlin curves. Dotted: exact rigid-body sliding kinematics (drawn only
+where valid). Dashed red: Kharaz's measured eₙ = 0.98.*
 
 ### A note on the experimental points
 

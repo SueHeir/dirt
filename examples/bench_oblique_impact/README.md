@@ -60,15 +60,16 @@ cargo run --release --example bench_oblique_impact --no-default-features -- \
 | `sweep/<case>/` | per-case DIRT configs + LAMMPS inputs | no (gitignored) |
 | `data/sweep.csv`, `data/sweep_lammps.csv` | β(ψ₁) results | no |
 | `data/trace_dirt.csv`, `data/trace_lammps.csv` | per-step contact-force trace | no |
-| `plots/beta_vs_psi1.png` | β vs ψ₁: DIRT vs LAMMPS vs gross-slip theory | **yes** |
+| `plots/beta_vs_psi1.png` | β vs ψ₁: DIRT vs LAMMPS vs Maw analytical curve vs gross-slip theory | **yes** |
 | `plots/contact_trace.png` | per-step normal & tangential force loops (ψ₁≈1.7) | **yes** |
 
 ## Status / findings
 
-**Validated.** DIRT reproduces the full Maw S-curve and matches LAMMPS across the
-whole range (max `|Δβ| ≈ 0.007`):
+**Validated.** DIRT reproduces the Maw S-curve and matches the independent
+Hertz–Mindlin/Maw-variable reference across the whole range (max `|Δβ| = 0.0255`);
+LAMMPS remains close as an independent DEM cross-check (max `|Δβ| = 0.0178`):
 
-- **Normal restitution** is constant at `eₙ ≈ 0.985` independent of tangential
+- **Normal restitution** is constant at `eₙ ≈ 0.989` independent of tangential
   velocity (spread < 0.002), confirming the normal model is decoupled from the
   tangential one.
 - **Tangential restitution** follows Maw: the `β ≈ −1` sticking plateau at low
@@ -76,6 +77,12 @@ whole range (max `|Δβ| ≈ 0.007`):
   the analytical gross-slip branch at high ψ₁.
 - The per-step trace shows DIRT and LAMMPS tracing an identical normal curve and
   tangential loading/unloading hysteresis loop.
+
+![Maw tangential restitution curve](plots/beta_vs_psi1.png)
+
+*Tangential restitution β vs non-dimensional incidence angle ψ₁. Points: DIRT
+and LAMMPS. Green: analytical Maw/Hertz–Mindlin S-curve. Dotted: exact rigid
+gross-slip limit.*
 
 This validation also drove two fixes in the contact model: a tangential
 damping-sign error (energy injection) and the requirement that a frozen contact
