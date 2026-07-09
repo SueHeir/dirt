@@ -75,9 +75,6 @@ def write_plot(steps, rel_mass, rel_p, tol):
     bonds = [s[2] for s in steps]
     damage = [s[3] for s in steps]
     contacts = [s[4] for s in steps]
-    bonds0 = bonds[0]
-    bond_gate = 0.10 * bonds0
-    contact_gate = 8
 
     width, height = 1200, 520
     left = (70, 80, 490, 380)
@@ -88,11 +85,11 @@ def write_plot(steps, rel_mass, rel_p, tol):
         return right[0] + (step - xmin) / (xmax - xmin) * right[2]
 
     def sy_count(value):
-        ymax = max(max(bonds), bond_gate) * 1.08
+        ymax = max(max(bonds), 1.0) * 1.08
         return right[1] + right[3] - value / ymax * right[3]
 
     def sy_contact(value):
-        ymax = max(max(contacts), contact_gate) * 1.18
+        ymax = max(max(contacts), 1.0) * 1.18
         return right[1] + right[3] - value / ymax * right[3]
 
     def sy_damage(value):
@@ -138,10 +135,6 @@ def write_plot(steps, rel_mass, rel_p, tol):
             gy = y + h * i / 5
             svg.append(line(x, gy, x + w, gy, "#e2e8f0", 1))
 
-    limit_y = sy_err(tol)
-    svg.append(line(left[0], limit_y, left[0] + left[2], limit_y, "#111827", 2, "8 6"))
-    svg.append(text(left[0] + 10, limit_y - 8, f"PASS limit = {tol:.0e}", 14))
-
     bar_w = 90
     for label, value, color, cx in [
         ("mass", rel_mass, "#2b6cb0", left[0] + 165),
@@ -154,28 +147,18 @@ def write_plot(steps, rel_mass, rel_p, tol):
         svg.append(text(cx, y - 12, shown, 14, "middle"))
 
     svg.append(text(22, 285, "max relative conservation error", 14, "middle"))
-    svg.append(text(left[0] - 10, sy_err(tol), f"{tol:.0e}", 12, "end"))
     svg.append(text(left[0] - 10, sy_err(floor), f"{floor:.0e}", 12, "end"))
 
     svg.append(f'<polyline fill="none" stroke="#2f855a" stroke-width="3" points="{poly((sx(x), sy_count(y)) for x, y in zip(xs, bonds))}"/>')
-    svg.append(line(right[0], sy_count(bond_gate), right[0] + right[2], sy_count(bond_gate), "#2f855a", 2, "8 6"))
     svg.append(f'<polyline fill="none" stroke="#805ad5" stroke-width="3" points="{poly((sx(x), sy_contact(y)) for x, y in zip(xs, contacts))}"/>')
-    svg.append(line(right[0], sy_contact(contact_gate), right[0] + right[2], sy_contact(contact_gate), "#805ad5", 2, "2 6"))
     svg.append(f'<polyline fill="none" stroke="#718096" stroke-width="2.4" points="{poly((sx(x), sy_damage(y)) for x, y in zip(xs, damage))}"/>')
-    svg.append(line(right[0], sy_damage(0.99), right[0] + right[2], sy_damage(0.99), "#718096", 1.8, "10 5 2 5"))
 
     svg.append(text(right[0] + right[2] / 2, right[1] + right[3] + 34, "simulation step", 15, "middle"))
     svg.append(text(right[0] - 46, right[1] + 180, "surviving peri bonds", 14, "middle", "#2f855a"))
     svg.append(text(right[0] + right[2] + 56, right[1] + 170, "DEM contacts / damage", 14, "middle", "#805ad5"))
-    svg.append(text(right[0] + 18, right[1] + 28, "fracture PASS: <10% initial bonds", 13, color="#2f855a"))
-    svg.append(text(right[0] + 18, right[1] + 48, "contact PASS: >=8", 13, color="#805ad5"))
-    svg.append(text(right[0] + 18, right[1] + 68, "damage PASS: >=0.99", 13, color="#718096"))
 
     svg.append(text(right[0], right[1] + right[3] + 18, f"{min(xs)}", 12, "middle"))
     svg.append(text(right[0] + right[2], right[1] + right[3] + 18, f"{max(xs)}", 12, "middle"))
-    svg.append(text(right[0] - 10, sy_count(bond_gate), f"{bond_gate:.0f}", 12, "end", "#2f855a"))
-    svg.append(text(right[0] + right[2] + 10, sy_contact(contact_gate), f"{contact_gate}", 12, "start", "#805ad5"))
-    svg.append(text(right[0] + right[2] + 10, sy_damage(0.99), "0.99", 12, "start", "#718096"))
 
     svg.append("</svg>\n")
 

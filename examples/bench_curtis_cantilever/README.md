@@ -31,8 +31,8 @@ under `data/`, and regenerates the plots below.
 ![Tip deflection vs load](plots/tip_deflection_vs_load.png)
 
 *Normalized free-end deflection from DIRT overlaid on the Euler-Bernoulli
-small-deflection beam-theory curve. The shaded band is the +/-3% PASS gate.
-Latest run: PASS, max relative error 2.988%, with all 9 bonds intact.*
+small-deflection beam-theory curve. Latest run: PASS, max relative error
+2.988%, with all 9 bonds intact.*
 
 ![Moment and deflection profiles](plots/moment_deflection_profiles.png)
 

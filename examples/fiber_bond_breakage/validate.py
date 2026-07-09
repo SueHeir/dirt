@@ -438,13 +438,10 @@ def _plot_axial_plastic_breakage(rows, out_dir, eps, stress, eps_p, breakpoints,
                 label=f"Break threshold = {f_break:.2f} N")
     ax1.axvline(eps_pred * 100, ls=":", lw=1.4, c="C3",
                 label=f"Predicted break strain = {eps_pred*100:.2f}%")
-    ax1.axvspan(eps_pred * 0.95 * 100, eps_pred * 1.05 * 100,
-                color="C3", alpha=0.10, label="PASS band (break strain ±5%)")
     for bp in breakpoints:
         ax1.axvline(bp * 100, ls=":", c="0.7", lw=0.7)
     ax1.set_ylabel("axial force  F_n  (N)")
-    verdict = "PASS" if ok else "FAIL"
-    ax1.set_title(f"Coupled axial plasticity + breakage force-strain validation ({verdict})")
+    ax1.set_title("Coupled axial plasticity + breakage force-strain validation")
     ax1.legend(loc="lower right", framealpha=0.95)
 
     ax2.plot([e * 100 for e in eps], [p * 100 for p in eps_p],

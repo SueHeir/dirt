@@ -273,24 +273,6 @@ def graph() -> None:
     ref_v = [velocity_from_modified_weber(w) for w in ref_we]
 
     fig, axes = plt.subplots(1, 2, figsize=(9.5, 4.0))
-    axes[0].fill_between(
-        ref_v,
-        [max(-0.4, y - BREAKAGE_TOL) for y in ref_br],
-        [min(1.05, y + BREAKAGE_TOL) for y in ref_br],
-        color="tab:blue",
-        alpha=0.16,
-        linewidth=0,
-        label="Fig. 13 tolerance",
-    )
-    axes[1].fill_between(
-        ref_v,
-        [max(0.0, y - MASS_TOL) for y in ref_mr],
-        [min(1.05, y + MASS_TOL) for y in ref_mr],
-        color="tab:red",
-        alpha=0.12,
-        linewidth=0,
-        label="Fig. 13 tolerance",
-    )
     axes[0].plot(ref_v, ref_br, "k--", lw=1.1, label="Yang/Curtis Fig. 13")
     axes[1].plot(ref_v, ref_mr, "k--", lw=1.1, label="Yang/Curtis Fig. 13")
     axes[0].plot(v, br, "o-", label="DIRT wet BPM agglomerate")
@@ -298,55 +280,31 @@ def graph() -> None:
     axes[0].set_ylabel("breakage ratio")
     axes[0].set_ylim(-0.05, 1.02)
     axes[0].set_title("Breakage vs Yang/Curtis Fig. 13")
-    axes[0].text(0.03, 0.08, f"Fig. 13 bands: {reference_passes}/{len(rows)} pass", transform=axes[0].transAxes)
     axes[1].plot(v, mr, "o-", color="tab:red", label="DIRT wet BPM agglomerate")
     axes[1].set_xlabel("impact velocity (m/s)")
     axes[1].set_ylabel("minimum largest-fragment mass ratio")
     axes[1].set_ylim(-0.02, 1.05)
     axes[1].set_title("Largest fragment vs Yang/Curtis Fig. 13")
-    axes[1].text(0.03, 0.08, f"Fig. 13 bands: {reference_passes}/{len(rows)} pass", transform=axes[1].transAxes)
     for ax in axes:
         ax.grid(True, alpha=0.25)
         ax.legend(fontsize=7)
-    fig.suptitle("Yang/Curtis wet fiber agglomerate impact trend gate")
+    fig.suptitle("Yang/Curtis wet fiber agglomerate impact trend")
     fig.tight_layout()
     fig.savefig(PLOTS / "breakage_vs_impact_velocity.png", dpi=180)
     plt.close(fig)
 
     fig, ax1 = plt.subplots(figsize=(6.8, 4.3))
-    ax1.fill_between(
-        ref_we,
-        [max(-0.4, y - BREAKAGE_TOL) for y in ref_br],
-        [min(1.05, y + BREAKAGE_TOL) for y in ref_br],
-        color="tab:blue",
-        alpha=0.16,
-        linewidth=0,
-    )
     ax1.plot(ref_we, ref_br, "k--", lw=1.1, label="Yang/Curtis Fig. 13 breakage")
     ax1.plot(we, br, "o-", label="breakage ratio")
     ax1.set_xlabel("modified Weber number, We / S*")
     ax1.set_ylabel("breakage ratio")
     ax1.set_ylim(-0.05, 1.02)
     ax2 = ax1.twinx()
-    ax2.fill_between(
-        ref_we,
-        [max(0.0, y - MASS_TOL) for y in ref_mr],
-        [min(1.05, y + MASS_TOL) for y in ref_mr],
-        color="tab:red",
-        alpha=0.12,
-        linewidth=0,
-    )
     ax2.plot(ref_we, ref_mr, "k:", lw=1.1, label="Yang/Curtis Fig. 13 mass")
     ax2.plot(we, mr, "s-", color="tab:red", label="largest fragment")
     ax2.set_ylabel("minimum largest-fragment mass ratio")
     ax2.set_ylim(-0.02, 1.05)
     ax1.grid(True, alpha=0.25)
-    ax1.text(
-        0.03,
-        0.06,
-        f"Yang/Curtis Fig. 13 digitized curve: {reference_passes}/{len(rows)} pass",
-        transform=ax1.transAxes,
-    )
     ax1.legend(loc="upper left", fontsize=7)
     ax2.legend(loc="upper right", fontsize=7)
     fig.tight_layout()

@@ -665,11 +665,6 @@ def validate_bending_plastic_guo(rows, profile, out_dir):
         fem_tip = fem_ref[-1][1] if fem_ref else float("nan")
         dem_tip = interp_linear(sx, y_over_l, 1.0)
         fem_tip_rel_err = abs(dem_tip - fem_tip) / abs(fem_tip) if abs(fem_tip) > 1e-30 else float("inf")
-        # The reference is a digitized FEM curve for a 20/40/60 sphero-cylinder
-        # study. The paper reports the coarsest DEM fiber still differs from FEM
-        # by about 30% at the free end (Fig. 15); this 11-sphere validation case
-        # is intentionally smaller, so the gate keeps that published coarse-grid
-        # envelope visible instead of pretending to be mesh-converged.
         fem_profile_ok = (
             fem_rms_err <= 0.05
             and fem_max_err <= 0.075
@@ -755,7 +750,7 @@ def validate_bending_plastic_guo(rows, profile, out_dir):
     fig.savefig(out, dpi=150, bbox_inches="tight")
     print(f"  plot saved                     : {out}")
 
-    # ── Figure 3: permanent deformation profile vs Guo/FEM reference gate ─
+    # ── Figure 3: permanent deformation profile vs Guo/FEM reference ─
     if profile_rows:
         xs0 = [p["x0"] for p in profile_rows]
         zs = [p["z"] for p in profile_rows]
@@ -766,11 +761,8 @@ def validate_bending_plastic_guo(rows, profile, out_dir):
         fem_ref = load_xy_reference(reference_path)
         fem_x = [x for x, _ in fem_ref]
         fem_y = [y for _, y in fem_ref]
-        band = 0.075
 
         fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(8, 6), sharex=True)
-        ax1.fill_between(fem_x, [y - band for y in fem_y], [y + band for y in fem_y],
-                         color="C1", alpha=0.14, label="PASS band: digitized FEM ±0.075 L")
         ax1.plot(fem_x, fem_y, "s-", ms=4, mfc="white", mec="C1", mew=1.1,
                  color="C1", label="Guo 2018 Fig. 14(b) FEM step 3 (digitized)")
         ax1.plot(sx, y_over_l, "o-", ms=5, mfc="white", mec="C0", mew=1.1,

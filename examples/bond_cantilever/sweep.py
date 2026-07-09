@@ -106,12 +106,8 @@ def graph() -> bool:
     ts_ms = [r["t"] * 1e3 for r in rows]
     tips_um = [r["tip_z"] * 1e6 for r in rows]
     ref_um = ref * 1e6
-    lower_um = ref_um * (1.0 + TOL)
-    upper_um = ref_um * (1.0 - TOL)
-
     fig, ax = plt.subplots(figsize=(7.2, 4.5))
     ax.plot(ts_ms, tips_um, lw=1.8, color="C0", label="DIRT tip deflection")
-    ax.axhspan(lower_um, upper_um, color="C1", alpha=0.18, label="PASS band (+/-5%)")
     ax.axhline(ref_um, color="C1", lw=1.8, ls="--", label="Euler-Bernoulli reference")
     ax.plot(
         [last["t"] * 1e3],

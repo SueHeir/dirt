@@ -24,13 +24,13 @@ $BENCH_PYTHON examples/bench_curtis_wet_fiber_breakage/sweep.py
 
 *DIRT breakage ratio and minimum largest-fragment mass ratio over impact
 velocity. The quantitative gate checks every point against a digitized
-Yang/Curtis Fig. 13 modified-Weber master curve with visible tolerance bands and
-requires at least one BPM bond to break. Latest run: PASS.*
+Yang/Curtis Fig. 13 modified-Weber master curve and requires at least one BPM
+bond to break. Latest run: PASS.*
 
 ![modified Weber trend](plots/weber_trend.png)
 
 *Same measurements against modified Weber number with the digitized Yang/Curtis
-Fig. 13 reference and pass bands. Latest run: PASS.*
+Fig. 13 reference. Latest run: PASS.*
 
 ## Gate
 
