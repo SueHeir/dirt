@@ -6,10 +6,13 @@
 # runs a fast deterministic trend gate under the harness wall-clock cap.
 
 [smoke]
-# Coarse span: frictionless collapse -> robust frictional slope -> high friction.
-mu_list = [0.0, 0.4, 0.5]
+# Coarse span: frictionless collapse -> mid-friction slope -> high friction.
+# Keep mu=0.3 in the bounded gate: it is the hardest mid-friction smoke point and
+# catches the toe-fit regression that made the full curve non-physical.
+mu_list = [0.0, 0.3, 0.5]
 
-# A single deterministic pack is intentional for the bounded gate. The full run
-# keeps the 3-pack spread/reproducibility tolerance.
-reps = 1
+# A small deterministic ensemble keeps the gate bounded while testing the same
+# mean-theta quantity as the full validation. The full run still owns the wider
+# 6-mu sweep, optional LAMMPS overlay, and reproducibility-spread tolerance.
+reps = 3
 seed = 12345

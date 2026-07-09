@@ -197,27 +197,28 @@ LAMMPS leg), each a ~1200-grain collapse relaxed on a real settle/rest detector 
 so it legitimately overran the 1800 s automation cap every hourly run (exit 124)
 and validated nothing. `sweep.py` with **no argument** now runs a **bounded gate**
 on the **same material, geometry and physics**: a coarse 3-point μ grid
-(μ = 0, 0.4, 0.5), **one deterministic (seeded) rep** each, and no LAMMPS. It fits
-the same θ_r(μ) the full run measures and asserts the robust qualitative laws —
-the frictionless collapse is nearly flat (θ_r(0) ≤ 8°), every frictional case
-holds a real slope in the sensible band [10°, 40°], and θ_r rises across the μ
-range (coarse monotone trend). The bounded gate is declared in `smoke.toml`; the
-full-scale sweep and tolerances remain in `sweep.py full`. It completes in
-**~4.25 min** on the automation host and prints
+(μ = 0, 0.3, 0.5), **three deterministic seeded reps** each, and no LAMMPS. It
+fits the same mean θ_r(μ) the full run measures and asserts the robust
+qualitative laws — the frictionless collapse is nearly flat (mean θ_r(0) ≤ 8°),
+every frictional mean holds a real slope in the sensible band [10°, 40°], and
+mean θ_r rises across the μ range (coarse monotone trend). The bounded gate is
+declared in `smoke.toml`; the full-scale sweep and tolerances remain in
+`sweep.py full`. It completes under the automation cap on the host and prints
 `ALL CHECKS PASSED`/`CHECKS FAILED` (exit 0/1). Measured:
 
 ```
-  mu   theta_r(deg)   N
-  0.00     0.00     1200     frictionless -> flat
-  0.40    13.67     1200     holds a slope, in band
-  0.50    13.75     1200     slightly steeper, in band
+  mu   theta_r mean +/- std (deg)   reps   N each
+  0.00      0.00 +/- 0.00              3    1200     frictionless -> flat
+  0.30     10.57 +/- 0.71              3    1200     mid-friction, in band
+  0.50     13.69 +/- 0.27              3    1200     high friction, in band
 ```
 
 ![Bounded smoke gate](plots/smoke_gate.png)
 
-*Bounded harness smoke gate: the actual μ = 0, 0.4, 0.5 measurements are plotted
-against the flat-frictionless limit, the [10°, 40°] frictional pass band, and the
-coarse increasing-trend criterion. Latest run: PASS, 4/4 checks passed.*
+*Bounded harness smoke gate: the actual μ = 0, 0.3, 0.5 measurements are plotted
+as deterministic pack points plus the gated mean against the flat-frictionless
+limit, the [10°, 40°] frictional pass band, and the coarse increasing-trend
+criterion. Latest run: PASS, 4/4 checks passed.*
 
 This is an **additive breakage gate**, not a replacement for the full validation:
 it deliberately does **not** assert the fine, μ-resolved monotonicity between

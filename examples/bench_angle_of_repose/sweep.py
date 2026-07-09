@@ -841,7 +841,7 @@ def plot(rows, lammps_rows):
 
 
 def plot_smoke(rows, checks):
-    """Plot the bounded harness gate: actual three-point smoke measurements plus
+    """Plot the bounded harness gate: deterministic ensemble measurements plus
     the pass criteria that decide PASS/FAIL."""
     if not rows:
         print("\nSmoke plot skipped (no smoke rows recorded)")
@@ -856,8 +856,11 @@ def plot_smoke(rows, checks):
         return
 
     plt.rcParams.update({"figure.dpi": 150, "savefig.dpi": 150, "font.size": 11})
-    rows = sorted(rows, key=lambda r: r["mu"])
-    mus = [r["mu"] for r in rows]
+    rows = sorted(rows, key=lambda r: (r["mu"], r.get("rep", 0)))
+    stats = _stats_by_mu(rows)
+    mus = [s[0] for s in stats]
+    means = [s[1] for s in stats]
+    stds = [s[2] for s in stats]
     thetas = [r["theta_deg"] for r in rows]
 
     fig, ax = plt.subplots(figsize=(6.5, 4.5))
@@ -865,26 +868,30 @@ def plot_smoke(rows, checks):
                label=f"frictional pass band [{ANGLE_LO_DEG:.0f},{ANGLE_HI_DEG:.0f}] deg")
     ax.axhspan(0.0, LOWMU_MAX_DEG, color="#1f77b4", alpha=0.08,
                label=f"mu=0 flat pass <= {LOWMU_MAX_DEG:.0f} deg")
-    ax.plot(mus, thetas, "o-", color="#111111", lw=2.0,
-            label="bounded smoke measurement")
+    ax.scatter([r["mu"] for r in rows], thetas, s=24, color="#777777", alpha=0.7,
+               label="deterministic packs")
+    ax.errorbar(mus, means, yerr=stds, fmt="o-", color="#111111", lw=2.0,
+                capsize=4, label="bounded smoke mean")
 
-    for r in rows:
-        mu = r["mu"]
-        theta = r["theta_deg"]
+    for mu, theta, std, _nrep in stats:
         if mu == 0.0:
             passed = theta <= LOWMU_MAX_DEG
             label = "flat PASS" if passed else "flat FAIL"
+            xytext = (28, 14)
+            ha = "center"
         else:
             passed = ANGLE_LO_DEG <= theta <= ANGLE_HI_DEG
             label = "band PASS" if passed else "band FAIL"
-        ax.annotate(f"{theta:.2f} deg\n{label}", (mu, theta),
-                    xytext=(0, 10), textcoords="offset points",
-                    ha="center", va="bottom", fontsize=9)
+            xytext = (0, 10)
+            ha = "center"
+        ax.annotate(f"{theta:.2f} +/- {std:.2f} deg\n{label}", (mu, theta),
+                    xytext=xytext, textcoords="offset points",
+                    ha=ha, va="bottom", fontsize=9)
 
     if len(mus) >= 2:
         ax.annotate("coarse trend PASS" if all(ok for ok, msg in checks if "theta_r rises" in msg)
                     else "coarse trend FAIL",
-                    xy=(mus[-1], thetas[-1]), xytext=(-84, -34),
+                    xy=(mus[-1], means[-1]), xytext=(-84, -34),
                     textcoords="offset points",
                     arrowprops={"arrowstyle": "->", "lw": 1.0},
                     fontsize=9)
@@ -893,7 +900,7 @@ def plot_smoke(rows, checks):
     ax.set_title(f"Angle-of-repose bounded smoke gate: {verdict}")
     ax.set_xlabel(r"sliding friction $\mu$")
     ax.set_ylabel(r"angle of repose $\theta_r$ (deg)")
-    ax.set_xlim(min(mus) - 0.05, max(mus) + 0.05)
+    ax.set_xlim(min(mus) - 0.05, max(mus) + 0.08)
     ax.set_ylim(0.0, max(ANGLE_HI_DEG + 5.0, max(thetas) + 8.0))
     ax.grid(True, alpha=0.25)
     ax.legend(loc="upper left", fontsize=8)
@@ -925,8 +932,8 @@ def graph():
 # real settle/rest detector — so it legitimately overran the 1800 s automation cap
 # every hourly run (exit 124) and validated nothing. `sweep.py` with NO argument
 # now runs a BOUNDED gate on the SAME material, geometry and physics: a coarse
-# 3-point mu grid, ONE deterministic rep (seeded pack), and no LAMMPS. It fits the
-# same repose angle theta_r(mu) the full run measures and asserts the robust,
+# 3-point mu grid, a small deterministic ensemble, and no LAMMPS. It fits the
+# same mean repose angle theta_r(mu) the full run measures and asserts the robust,
 # physically-guaranteed qualitative laws:
 #   * the frictionless collapse deposits nearly flat (theta_r ~ 0),
 #   * every frictional smoke case holds a real slope in the sensible band, and
@@ -935,9 +942,9 @@ def graph():
 #
 # This is an ADDITIVE breakage gate, NOT a replacement for the full validation.
 # It deliberately does NOT assert the fine, mu-resolved monotonicity between
-# adjacent close friction values (the subtle mid-mu behaviour) or the run-to-run
-# reproducibility spread — those, with their tolerances, remain the full run's job
-# (validate(), unchanged, still run via `sweep.py full`). It reuses the SAME
+# adjacent close friction values (the subtle mid-mu behaviour) or replace the
+# full run-to-run reproducibility check — those, with their tolerances, remain
+# the full run's job (validate(), unchanged, still run via `sweep.py full`). It reuses the SAME
 # physical bounds as validate() (ANGLE_LO_DEG/ANGLE_HI_DEG/LOWMU_MAX_DEG/
 # MONOTONIC_SLACK_DEG) — nothing is loosened.
 SMOKE_CONFIG = os.path.join(SCRIPT_DIR, "smoke.toml")
@@ -949,8 +956,8 @@ def _load_smoke_config():
     mu_list = [float(v) for v in cfg["mu_list"]]
     reps = int(cfg.get("reps", 1))
     seed = int(cfg["seed"])
-    if reps != 1:
-        raise ValueError("smoke.toml must keep reps = 1 for the bounded harness gate")
+    if reps < 1:
+        raise ValueError("smoke.toml reps must be >= 1")
     if not mu_list or mu_list[0] != 0.0 or len(mu_list) < 3:
         raise ValueError("smoke.toml must span mu=0 through at least two frictional cases")
     return mu_list, reps, seed
@@ -958,7 +965,7 @@ def _load_smoke_config():
 
 def smoke():
     """Bounded fast gate (the harness default): form a heap at a coarse mu grid
-    (one deterministic rep each) and assert the robust theta_r(mu) laws. Prints
+    (a small deterministic ensemble) and assert the robust theta_r(mu) laws. Prints
     'ALL CHECKS PASSED' / 'CHECKS FAILED' and exits 0/1."""
     global MU_LIST, REPS, INSERT_SEED, SWEEP_DIR, DATA_DIR, SWEEP_CSV
     MU_LIST, REPS, INSERT_SEED = _load_smoke_config()
@@ -976,20 +983,21 @@ def smoke():
 
     rows = []
     for mu in MU_LIST:
-        cdir = case_dir(mu, 0)
-        print(f"  mu={mu:<4} rep=0", end="  ", flush=True)
-        res = _run_dirt(cdir)
-        if res is None:
-            print("DIRT FAILED / no heap recorded")
-            continue
-        xs, ys, zs, rad = _load_positions(res)
-        r_c, h_s, base, diam = heap_profile(xs, ys, zs, rad)
-        theta, r_toe = fit_angle(r_c, h_s, base, diam)
-        rows.append({"mu": mu, "theta_deg": theta, "r_toe": r_toe, "n": len(xs)})
-        print(f"theta_r = {theta:5.2f} deg  (r_toe={r_toe*1e3:.1f} mm, N={len(xs)})")
+        for rep in range(REPS):
+            cdir = case_dir(mu, rep)
+            print(f"  mu={mu:<4} rep={rep}", end="  ", flush=True)
+            res = _run_dirt(cdir)
+            if res is None:
+                print("DIRT FAILED / no heap recorded")
+                continue
+            xs, ys, zs, rad = _load_positions(res)
+            r_c, h_s, base, diam = heap_profile(xs, ys, zs, rad)
+            theta, r_toe = fit_angle(r_c, h_s, base, diam)
+            rows.append({"mu": mu, "rep": rep, "theta_deg": theta, "r_toe": r_toe, "n": len(xs)})
+            print(f"theta_r = {theta:5.2f} deg  (r_toe={r_toe*1e3:.1f} mm, N={len(xs)})")
 
     with open(SWEEP_CSV, "w", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=["mu", "theta_deg", "r_toe", "n"])
+        w = csv.DictWriter(f, fieldnames=["mu", "rep", "theta_deg", "r_toe", "n"])
         w.writeheader()
         for r in rows:
             w.writerow(r)
@@ -997,28 +1005,31 @@ def smoke():
     print("\n=== Angle-of-repose smoke gate (coarse theta_r(mu) trend) ===")
     print(f"  material: E={YOUNGS_MOD:.1e} Pa  nu={POISSON}  e={RESTITUTION}  "
           f"rolling(sds): k_roll={ROLLING_STIFFNESS:g} mu_roll={ROLLING_FRICTION:g}")
-    print(f"  {'mu':>6}{'theta_r(deg)':>14}{'r_toe(mm)':>12}{'N':>7}")
+    print(f"  {'mu':>6}{'rep':>5}{'theta_r(deg)':>14}{'r_toe(mm)':>12}{'N':>7}")
     for r in rows:
-        print(f"  {r['mu']:>6.2f}{r['theta_deg']:>14.2f}{r['r_toe']*1e3:>12.1f}{r['n']:>7d}")
+        print(f"  {r['mu']:>6.2f}{r['rep']:>5d}{r['theta_deg']:>14.2f}{r['r_toe']*1e3:>12.1f}{r['n']:>7d}")
 
-    thetas = {r["mu"]: r["theta_deg"] for r in rows}
+    stats = _stats_by_mu(rows)
+    thetas = {mu: mean for (mu, mean, _std, _nrep) in stats}
     checks = []
 
     # 0. every case formed a heap and came to rest (data recorded).
-    checks.append((len(rows) == len(MU_LIST),
-                   f"all {len(MU_LIST)} cases recorded a settled heap ({len(rows)} ok)"))
+    expected = len(MU_LIST) * REPS
+    complete = len(rows) == expected and all(nrep == REPS for (_mu, _mean, _std, nrep) in stats)
+    checks.append((complete,
+                   f"all {expected} smoke runs recorded a settled heap ({len(rows)} ok)"))
 
-    # 1. frictionless collapse is nearly flat (theta_r small).
+    # 1. frictionless collapse is nearly flat (mean theta_r small).
     mu0_ok = 0.0 in thetas and thetas[0.0] <= LOWMU_MAX_DEG
     checks.append((mu0_ok,
-                   f"frictionless heap flat: theta_r(mu=0) = "
+                   f"frictionless heap flat: mean theta_r(mu=0) = "
                    f"{thetas.get(0.0, float('nan')):.2f} <= {LOWMU_MAX_DEG} deg"))
 
-    # 2. every frictional case holds a real slope in the sensible band.
+    # 2. every frictional mean holds a real slope in the sensible band.
     fric = [(mu, thetas[mu]) for mu in MU_LIST if mu > 0.0 and mu in thetas]
     band_ok = bool(fric) and all(ANGLE_LO_DEG <= t <= ANGLE_HI_DEG for _, t in fric)
     checks.append((band_ok,
-                   f"every frictional case in [{ANGLE_LO_DEG:.0f},{ANGLE_HI_DEG:.0f}] deg "
+                   f"every frictional mean in [{ANGLE_LO_DEG:.0f},{ANGLE_HI_DEG:.0f}] deg "
                    f"({', '.join(f'{t:.1f}' for _, t in fric)})"))
 
     # 3. coarse monotone trend: theta_r non-decreasing across the mu grid
@@ -1028,7 +1039,7 @@ def smoke():
                for i in range(len(ordered) - 1))
     net = len(ordered) >= 2 and ordered[-1] > ordered[0] + 1.0
     checks.append((mono and net,
-                   f"theta_r rises across mu (coarse monotone, "
+                   f"mean theta_r rises across mu (coarse monotone, "
                    f"{ordered[0]:.1f} -> {ordered[-1]:.1f} deg)"))
 
     npass = sum(1 for ok, _ in checks if ok)
