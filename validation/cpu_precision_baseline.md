@@ -13,7 +13,7 @@ Combined archive regeneration: `python3 validation/_summarize.py`.
 ![CPU precision deltas](plots/cpu_precision_deltas.png)
 
 *Mixed/single precision signature deltas relative to double. Completed runs are plotted;
-the dashed 10% line is a visible large-drift reference, and non-OK runs are listed below
+non-OK runs are listed below
 instead of being silently dropped.*
 
 ## Contact physics

@@ -72,9 +72,10 @@ single rank) is:
 
 ![bounded smoke gates](plots/smoke_gates.png)
 
-*Bounded smoke-gate measurements for deliverables 1/4/6 against their explicit
-PASS criteria. Latest independent revision run: all three gates PASS (2/2, 3/3,
-3/3 checks respectively).*
+*Bounded smoke-gate measurements for deliverables 1 and 4 against their
+declared criteria. The conductivity smoke result is reported in the table above;
+its former bar-only panel was removed. Latest independent revision run: all
+three gates PASS (2/2, 3/3, 3/3 checks respectively).*
 
 The full runs (config.toml sweeps, fits, and plots) are **unchanged** and remain
 the scientific calibration; the gates are additive fast breakage checks, never a

@@ -119,8 +119,6 @@ def write_plots(ys, phi, T, qy, *, title_note=""):
     fig, ax = plt.subplots(figsize=(6.2, 4.6))
     phi_line = [0.02 + 0.005 * k for k in range(0, 120)]
     kt_line = [kt_kappa_star(x, E) for x in phi_line]
-    ax.fill_between(phi_line, [0.4 * k for k in kt_line], [6.0 * k for k in kt_line],
-                    color="0.75", alpha=0.35, label="smoke tolerance band (0.4–6× KT)")
     ax.plot(phi_line, kt_line, "k-", lw=2, label=f"KT (Lun/Gidaspow, e={E})")
     if phis:
         ax.scatter(phis, k_eb, c="tab:blue", zorder=3, label="DEM κ* (energy balance, total)")

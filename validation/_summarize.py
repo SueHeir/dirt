@@ -177,7 +177,7 @@ def write_markdown(data):
         "![CPU precision deltas](plots/cpu_precision_deltas.png)",
         "",
         "*Mixed/single precision signature deltas relative to double. Completed runs are plotted;",
-        "the dashed 10% line is a visible large-drift reference, and non-OK runs are listed below",
+        "non-OK runs are listed below",
         "instead of being silently dropped.*",
         "",
         "## Contact physics",
@@ -210,16 +210,13 @@ def write_plot(data, examples):
     completed = []
     mixed = []
     single = []
-    non_ok = []
     for ex in examples:
         d = data.get(ex, {}).get("precision-double", {})
         if d.get("status") != "ok":
-            non_ok.append(ex)
             continue
         dm = rel_delta(data.get(ex, {}).get("precision-mixed", {}), d["sig"])
         ds = rel_delta(data.get(ex, {}).get("precision-single", {}), d["sig"])
         if dm is None or ds is None:
-            non_ok.append(ex)
             continue
         completed.append(ex)
         mixed.append(max(dm, 1e-13))
@@ -231,7 +228,6 @@ def write_plot(data, examples):
     width = 0.38
     ax.bar([i - width / 2 for i in x], mixed, width, label="mixed vs double", color="#31688e")
     ax.bar([i + width / 2 for i in x], single, width, label="single vs double", color="#35b779")
-    ax.axhline(1e-1, color="#b23a48", linestyle="--", linewidth=1.2, label="10% large-drift reference")
     ax.set_yscale("log")
     ax.set_ylim(1e-13, max(2e-1, max(mixed + single) * 2 if mixed else 2e-1))
     ax.set_ylabel("relative signature delta")
@@ -240,17 +236,6 @@ def write_plot(data, examples):
     ax.set_xticklabels([ex.replace("bench_", "") for ex in completed], rotation=45, ha="right")
     ax.grid(axis="y", which="both", alpha=0.25)
     ax.legend(loc="upper left")
-    if non_ok:
-        ax.text(
-            0.99,
-            0.95,
-            "Non-OK, no fingerprint: " + ", ".join(non_ok),
-            ha="right",
-            va="top",
-            transform=ax.transAxes,
-            fontsize=9,
-            bbox={"boxstyle": "round,pad=0.25", "facecolor": "white", "edgecolor": "#777777", "alpha": 0.9},
-        )
     fig.tight_layout()
     fig.savefig(os.path.join(PLOTS, "cpu_precision_deltas.png"), dpi=180)
     plt.close(fig)
