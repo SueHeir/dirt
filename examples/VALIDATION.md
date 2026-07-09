@@ -156,12 +156,15 @@ covered by the broader granular benchmarks.
 
 ## `bench_chung_ooi_impact` — Chung & Ooi elastic normal impact
 
-Reproduces Chung & Ooi's (2011) elastic normal-impact Tests 1 and 2: identical
-sphere-sphere impact and sphere-wall impact. Both cases are undamped
-(`restitution = 1`), so the reference is the independent closed-form Hertz
-solution. The sweep checks maximum force, contact duration, and peak overlap across
-relative impact velocities from 0.5 to 10 m/s; all 31 checks pass with force and
-overlap errors at round-off scale and contact-duration errors below 0.5%.
+Chung & Ooi (2011) is a widely-used suite of standard test cases for *verifying DEM
+codes* against known answers; this benchmark reproduces its elastic normal-impact
+Tests 1 and 2 — a head-on sphere–sphere impact and a sphere–wall impact, where one
+grain flies into another (or into a rigid plane) and bounces off. Both cases are
+undamped (`restitution = 1`), so the collision is purely elastic and the reference is
+the independent closed-form Hertz solution. The sweep checks maximum contact force,
+contact duration, and peak overlap across relative impact velocities from 0.5 to 10
+m/s; all 31 checks pass with force and overlap errors at round-off scale and
+contact-duration errors below 0.5%.
 
 ![](bench_chung_ooi_impact/plots/max_force.png)
 
@@ -587,8 +590,13 @@ external experiment, nor does it exercise arbitrary multi-contact spin histories
 
 ## `bench_jkr_adhesion` — adhesive pull-off
 
-Two glass spheres approach, adhere, and separate; the peak tensile (pull-off) force is
-compared to the JKR value `F = (3/2)πwR*` across work-of-adhesion values.
+Two glass spheres are brought slowly into contact, held while a short-range adhesive
+force bonds them across the interface, then pulled apart quasi-statically until the
+bond snaps. While separating, the contact carries a *tensile* (attractive) force
+rather than the usual repulsion; the benchmark records the largest tension reached
+just before the spheres let go — the pull-off force — and sweeps the work of adhesion
+`w` (the interfacial surface energy), comparing each measured pull-off to the JKR
+value `F = (3/2)πwR*`.
 
 ![Pull-off vs work of adhesion](bench_jkr_adhesion/plots/pulloff_vs_surface_energy.png)
 
@@ -669,9 +677,12 @@ absolute angle is setup-dependent and intentionally gated only as a trend.
 
 ## `bench_fiber_crossover` — friction at a bonded-fiber crossover
 
-Two perpendicular bonded-sphere fibers cross at one contact; the upper is dragged
-tangentially under a fixed normal load and the sliding force is compared to the Coulomb
-limit `F_slide = μN`.
+Two bonded-sphere fibers are laid perpendicular so they touch at a single crossing
+contact — like two crossed sticks resting on each other. A fixed normal load presses
+them together while the upper fiber is dragged sideways across the lower one; the
+tangential force first rises elastically (the contact grips), then flattens once the
+junction starts to slide. The benchmark reads that sliding plateau and checks it
+against the Coulomb limit `F_slide = μN` as the normal load is swept.
 
 ![Sliding force vs normal load](bench_fiber_crossover/plots/fslide_vs_N.png)
 
@@ -689,8 +700,13 @@ contact-model check, not an independent validation.
 
 ## `bond_fiber_tensile` — axial BPM stiffness self-check
 
-An 11-sphere bonded fiber is pulled in tension and the middle-bond stress-strain
-slope is compared to the input Young's modulus implied by `K_n = E A / L`.
+A straight chain of 11 spheres joined end-to-end by bonded-particle-model (BPM)
+bonds is stretched lengthwise, like pulling on a slender rod. As the fiber elongates
+each bond carries an axial force set by its stiffness `K_n = E A / L`; the benchmark
+reads the stress–strain slope of the *middle* bond (away from the loaded ends, so it
+sees a clean uniform stress) and checks that it reproduces the input Young's modulus
+`E` — i.e. that the stiffness configured on the BPM bond actually shows up as the
+fiber's measured axial stiffness.
 
 ![BPM fiber tensile stress-strain](bond_fiber_tensile/plots/fiber_stress_strain_validation.png)
 
@@ -880,10 +896,14 @@ Bulk behaviour against empirical correlations or trends — the weakest tier.
 
 ## `bench_angle_of_repose` — heap formation
 
-Spheres confined in a cylinder slump onto a frictional floor wall when the cylinder
-is lifted; the repose angle is measured vs sliding friction. There is no exact analytical
-angle, so the benchmark checks only that the angle rises with friction, is near-flat at
-μ = 0, and is reproducible.
+A loose column of spheres is held inside an open-bottomed cylinder standing on a
+frictional floor. The cylinder is lifted straight up and the now-unconfined column
+slumps outward into a conical heap — the granular version of the classic
+"lifted-cup" pile test. The angle the heap's flank makes with the floor is its
+*angle of repose*, and the benchmark measures that angle as the grain–grain sliding
+friction is increased. There is no exact analytical repose angle, so it checks only
+the qualitative signature a correct model must show: the angle grows with friction,
+is near-flat at μ = 0, and is reproducible across repeats.
 
 ![Repose angle vs friction](bench_angle_of_repose/plots/theta_vs_mu.png)
 
@@ -909,12 +929,16 @@ and the sweep stops at μ = 0.3 (the angle saturates above). The heap now stands
 
 ## `bench_granular_conductivity` — granular-temperature conductivity
 
-A vibro-fluidized bed reaches steady solid-fraction and granular-temperature
-profiles. Integrating inelastic dissipation from the top down gives the upward
-energy flux, so the benchmark extracts a dimensionless Fourier-law conductivity
-`κ*(Φ)` and compares it to the Lun/Gidaspow kinetic-theory reference. The bounded
-smoke gate checks that the energy-balance estimate is positive, finite, and within
-an order-unity band around KT.
+A box of grains is shaken from below so the bed stays agitated (vibro-fluidized)
+instead of settling, and it reaches a steady state where the grains are "hottest" —
+most agitated, highest *granular temperature* — near the vibrating base and calmer
+higher up. That gradient drives a steady upward flow of velocity-fluctuation energy
+through the bed. Integrating the inelastic collisional dissipation from the top down
+gives that upward energy flux, so the benchmark can back out a dimensionless
+Fourier-law conductivity `κ*(Φ)` — how readily agitation diffuses through the packing
+at each solid fraction — and compares it to the Lun/Gidaspow kinetic-theory
+reference. The bounded smoke gate checks that the energy-balance estimate is positive,
+finite, and within an order-unity band around KT.
 
 ![Dimensionless conductivity vs kinetic theory](bench_granular_conductivity/plots/kappa_of_phi.png)
 
@@ -1083,8 +1107,12 @@ alignment/interlocking regime.
 
 ## `bench_hopper_beverloo` — silo discharge rate
 
-A 2D slot hopper discharges under gravity; the mass flow rate is fit against
-**Beverloo's empirical correlation** `W ∝ (D − k·d)^(3/2)` over five orifice widths.
+A tall, thin (quasi-2D) hopper is filled with grains and its bottom slot is opened,
+letting the bed drain under gravity like sand through an hourglass. Once flow is
+steady the discharge rate is essentially constant (independent of how much is left
+above — the hallmark of granular, not fluid, outflow); the benchmark measures that
+steady mass flow rate for five orifice widths and fits it to **Beverloo's empirical
+correlation** `W ∝ (D − k·d)^(3/2)`, checking the width-scaling exponent.
 
 ![Beverloo scaling](bench_hopper_beverloo/plots/beverloo_W_vs_D.png)
 
@@ -1181,7 +1209,8 @@ fully-resolved value; the study recommends **`dt ≲ 0.25 · dt_R`** for < 2 %.
 
 **B. Particle count.** A free-cooling granular gas is run at `N ∈ {200 … 1600}`
 at fixed volume fraction `φ = 0.07` (box grows with `N`), 4 seeds each. The Haff
-cooling time `t_c` plateaus (Δ = 0.3 % from `N = 800→1600`) while the Haff-fit
+cooling time `t_c` is nearly converged (Δ = 1.64 % from `N = 800→1600`, within
+the 10 % gate) while the Haff-fit
 RMS residual and the run-to-run scatter shrink like `~1/√N`; recommended
 **`N ≥ 400`** for < 1 % fit residual and < 3 % scatter at this `φ`.
 
@@ -1241,10 +1270,14 @@ PASS.** This closes the "MPI domain decomposition" gap formerly listed below.
 
 ## `bond_mpi_drift` — BPM bonds across MPI migration
 
-A 3-sphere bonded chain drifts through a periodic 2-rank x-domain. The run samples
-global bond metrics every 1000 steps while the chain crosses rank boundaries and
-periodic wrap. The check is exact integer agreement with the two expected bonds:
-`bond_count == 2` and `bond_missing == 0` at every sample.
+In a parallel (MPI) run the simulation box is split across processes, so a bonded
+fiber that drifts sideways can end up with its member spheres owned by *different*
+ranks — and the bond bookkeeping has to survive that handoff intact. Here a 3-sphere
+bonded chain is pushed steadily through a periodic box split into two ranks along x,
+repeatedly crossing the rank boundary and the periodic wrap. The run samples the
+global bond metrics every 1000 steps and demands exact integer agreement with the two
+bonds that must always be present: `bond_count == 2` and `bond_missing == 0` at every
+sample.
 
 ![BPM MPI bond migration counts](bond_mpi_drift/plots/bond_mpi_drift_counts.png)
 
@@ -1288,13 +1321,16 @@ permanent-deformation profile for this single loading schedule.
 
 ## `peri_dem_interop` — same-substrate peri-to-DEM handoff
 
-The non-`bench_` `peri_dem_interop` example is a closed-system interop check: two
-brittle peridynamic bars collide, bonds break, and the resulting fragments
-continue through ordinary DEM contact on the same soil atom set and neighbor
-list. The hard gate is conservation across the handoff: max relative mass and
-momentum drift must stay below 1e-9. The sweep also requires actual fracture
-(surviving bonds below 10% of the reference family and peak damage >=0.99) and
-post-breakage DEM contacts (at least 8 active contacts).
+This non-`bench_` example checks the handoff between two physics methods that share
+the *same* particle set: peridynamics (a bond-based continuum method that can
+represent cracks) and ordinary DEM contact. Two brittle peridynamic bars are fired at
+each other; on impact their internal bonds snap, the bars shatter, and the resulting
+loose fragments have to keep interacting through normal DEM contact on the same soil
+atoms and neighbor list — with no particle created, lost, or double-counted at the
+transition. The hard gate is conservation across that handoff: max relative mass and
+momentum drift must stay below 1e-9. The sweep also requires that real fracture
+actually occurred (surviving bonds below 10% of the reference family and peak damage
+≥ 0.99) and that post-breakage DEM contact engages (at least 8 active contacts).
 
 ![Peri-to-DEM transition validation](peri_dem_interop/plots/peri_dem_transition_validation.svg)
 
@@ -1426,13 +1462,16 @@ Recent benchmark work removed several former gaps from this list:
 
 ## `bench_mdr_elastoplastic_normal` — MDR elastic-plastic normal contact
 
-Exercises `contact_model = "mdr"` with a quasi-static two-sphere loading and
-unloading path. The executable drives DIRT's fused contact loop at prescribed
-overlaps and records the normal force. `sweep.py` compares the trace to the
-particle-pair rigid-flat equations in LAMMPS `GranSubModNormalMDR`:
-per-side placement, elastic loading, first yield, plastic unloading with
-`deltaR`, MDR contact-radius stiffness, and the adhesive tensile branch. The
-gate is `2e-10` relative or `1e-8 N` absolute.
+The MDR (Method of Dimensionality Reduction) contact model captures *elastic–plastic*
+normal contact: press two grains together hard enough and the contact yields and
+flattens permanently, so on release the force follows a different, stiffer path than
+it did on loading and a residual dent is left behind. This benchmark drives a single
+two-sphere contact quasi-statically through one such load–unload cycle at prescribed
+overlaps, recording the normal force at each step, and compares the whole trace to the
+particle-pair rigid-flat MDR equations in LAMMPS `GranSubModNormalMDR` — per-side
+placement, elastic loading, first yield, plastic unloading with `deltaR`, MDR
+contact-radius stiffness, and the adhesive tensile branch. The gate is `2e-10`
+relative or `1e-8 N` absolute.
 
 ![MDR normal force trace](bench_mdr_elastoplastic_normal/plots/mdr_force_trace.png)
 
