@@ -111,9 +111,8 @@ branch-opening validation and plots are **unchanged** and still run via
 
 ![bounded smoke gate summary](../plots/smoke_gates.png)
 
-*Panel 04 shows the enduring-contact smoke measurements against the residual
-fraction PASS band and branch-opening criterion. Latest independent revision run:
-PASS, 3/3 checks.*
+*Panel 04 shows the enduring-contact smoke measurements against the declared
+criteria. Latest independent revision run: PASS, 3/3 checks.*
 
 ## Expected Plots
 

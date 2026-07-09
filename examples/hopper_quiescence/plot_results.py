@@ -118,15 +118,6 @@ def main() -> int:
     fig, axes = plt.subplots(2, 2, figsize=(10, 7))
     ax = axes[0][0]
     ax.plot(bx, by, label="baseline", color="#365f91", linewidth=2)
-    ax.fill_between(
-        bx,
-        [max(0.0, y - DISCHARGE_TOL_FRAC) for y in by],
-        [min(1.05, y + DISCHARGE_TOL_FRAC) for y in by],
-        color="#365f91",
-        alpha=0.16,
-        linewidth=0,
-        label="baseline ±1% pass band",
-    )
     ax.plot(cx, cy, label="coherence", color="#b45f06", linewidth=2)
     ax.set_title("Discharge curve")
     ax.set_xlabel("flow-stage step / 1000")
@@ -134,37 +125,14 @@ def main() -> int:
     ax.set_ylim(-0.02, 1.05)
     ax.grid(True, alpha=0.25)
     ax.legend(loc="lower right")
-    ax.text(
-        0.03,
-        0.92,
-        "PASS" if discharge_pass else "FAIL",
-        transform=ax.transAxes,
-        weight="bold",
-        color="#1b7837" if discharge_pass else "#b2182b",
-    )
 
     ax = axes[0][1]
-    ax.axhspan(
-        height_ref - HEIGHT_TOL_M,
-        height_ref + HEIGHT_TOL_M,
-        color="#365f91",
-        alpha=0.16,
-        label="baseline ±1 mm pass band",
-    )
     ax.axhline(height_ref, color="#365f91", linewidth=1.2, label="baseline reference")
     ax.scatter(["baseline", "coherence"], [height_ref, coh_fill["top_z"]], s=70, color=["#365f91", "#b45f06"])
     ax.set_title("Settled fill height")
     ax.set_ylabel("top_z at fill end [m]")
     ax.grid(True, axis="y", alpha=0.25)
     ax.legend(loc="best")
-    ax.text(
-        0.03,
-        0.92,
-        f"{'PASS' if height_pass else 'FAIL'}  Δ={height_delta * 1000:.2f} mm",
-        transform=ax.transAxes,
-        weight="bold",
-        color="#1b7837" if height_pass else "#b2182b",
-    )
 
     ax = axes[1][0]
     labels = ["fill", "flow"]

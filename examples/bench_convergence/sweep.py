@@ -807,7 +807,6 @@ def plot(a_rows, b_rows, stats, c_rows):
             if anchor is not None:
                 ax.axhline(anchor, color="k", linestyle="--", linewidth=1,
                            label="Hertz analytic")
-            ax.axvline(0.15, color="0.6", linestyle=":", linewidth=1)
             ax.set_xscale("log")
             ax.set_xticks(sorted(A_DT_FRACS))
             ax.set_xticklabels([f"{f:g}" for f in sorted(A_DT_FRACS)], fontsize=8)
@@ -816,9 +815,6 @@ def plot(a_rows, b_rows, stats, c_rows):
             ax.set_ylabel(ylabel)
             ax.legend()
             ax.grid(True, which="major", alpha=0.25)
-        axes[1].annotate("solver\ndefault", xy=(0.15, axes[1].get_ylim()[0]),
-                         xytext=(0.15, axes[1].get_ylim()[0]), fontsize=7,
-                         color="0.5", ha="center", va="bottom")
         fig.suptitle("Timestep convergence — single-sphere Hertz rebound "
                      "(observables → analytic as dt → 0)")
         fig.tight_layout()
@@ -876,8 +872,6 @@ def plot(a_rows, b_rows, stats, c_rows):
         tcs = [r["tc_mean"] * 1e3 for r in c_rows]
         ax.plot(xs, errs, "o-", color=colors[3], markersize=6,
                 label="finite-size error in mean t_c")
-        ax.axhline(C_LARGE_BOX_TOL * 100, color="0.35", linestyle="--",
-                   linewidth=1, label=f"{C_LARGE_BOX_TOL*100:.0f}% tolerance")
         ax.set_xlabel("periodic box size L/d")
         ax.set_ylabel("|t_c(L) - t_c(L_max)| / t_c(L_max) [%]")
         ax.set_title("Box-size convergence at fixed density")

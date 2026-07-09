@@ -286,7 +286,6 @@ def write_delta_plot(rows):
 
     colors = ["#2878b5", "#d95f02"]
     bar_w = (plot_w / len(metrics)) * 0.28
-    tol_y = sy(TOL)
     tick_values = [1e-30, 1e-25, 1e-20, 1e-15, 1e-10]
     label_y = top + plot_h + 24
 
@@ -304,7 +303,7 @@ def write_delta_plot(rows):
         "]]></style>",
         '<rect width="100%" height="100%" fill="#ffffff"/>',
         '<text class="title" x="82" y="28">bench_mpi_decomposition: multi-rank agreement</text>',
-        f'<text class="small" x="82" y="47">relative delta vs 1x1x1 reference; dashed line is unchanged {TOL:.0e} pass tolerance</text>',
+        '<text class="small" x="82" y="47">relative delta vs 1x1x1 reference</text>',
     ]
 
     for tv in tick_values:
@@ -315,8 +314,6 @@ def write_delta_plot(rows):
     parts.extend([
         f'<line class="axis" x1="{left}" y1="{top}" x2="{left}" y2="{top + plot_h}"/>',
         f'<line class="axis" x1="{left}" y1="{top + plot_h}" x2="{left + plot_w}" y2="{top + plot_h}"/>',
-        f'<line class="tol" x1="{left}" y1="{tol_y:.1f}" x2="{left + plot_w}" y2="{tol_y:.1f}"/>',
-        f'<text class="small" fill="#b2182b" x="{left + plot_w - 4}" y="{tol_y - 6:.1f}" text-anchor="end">pass tolerance {TOL:.0e}</text>',
     ])
 
     for i, (label, _) in enumerate(metrics):

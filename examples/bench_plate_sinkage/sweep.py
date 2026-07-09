@@ -813,8 +813,6 @@ def plot(rows, lammps_rows=None):
     names = [r["terrain"] for r in published]
     ns = [r["n"] for r in published]
     y = list(range(len(names)))
-    ax_n.axvspan(pub_n_min, pub_n_max, color="#d8f0d2", alpha=0.8,
-                 label="published sandy/loam n gate")
     ax_n.plot(ns, y, "o", color="#555555", label="NASA Table 1")
     if rep:
         ax_n.axvline(rep["n"], color="#1f77b4", lw=2,
@@ -822,7 +820,7 @@ def plot(rows, lammps_rows=None):
     ax_n.set_yticks(y)
     ax_n.set_yticklabels(names, fontsize=8)
     ax_n.set_xlabel("Bekker exponent n")
-    ax_n.set_title("Fitted exponent gate")
+    ax_n.set_title("Published fitted exponents")
     ax_n.grid(True, axis="x", ls=":", alpha=0.4)
     ax_n.legend(fontsize=8, loc="lower right")
     fig.tight_layout()

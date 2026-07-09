@@ -116,10 +116,9 @@ re-piled discharge sleeps fully (KE = 0, 97% pairs skipped) by the end.
 ![Hopper quiescence validation](plots/hopper_quiescence_validation.png)
 
 *Short matched `val_*.toml` run: coherence is plotted against the baseline
-reference discharge curve with the ±1% pass band and against the fill-height
-baseline with the ±1 mm pass band. Latest regenerated figure: PASS, fill-height
-delta 0.34 mm and discharge within ±1% of baseline; phase wall times are shown
-for the same run.*
+reference discharge curve and fill-height reference. Latest regenerated figure:
+PASS, fill-height delta 0.19 mm and discharge within ±1% of baseline; phase wall
+times are shown for the same run.*
 
 Key findings:
 

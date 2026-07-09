@@ -294,7 +294,6 @@ def graph():
     sstar = [p["sxy_star"] for p in pts]
     ax0.plot(ar, pstar, "o-", color="tab:blue", label="DIRT pressure")
     ax0.plot(ar, sstar, "s-", color="tab:purple", label="DIRT shear")
-    ax0.axvspan(1.5, max(ar) + 0.2, color="tab:blue", alpha=0.06, label="elongated-rod gate")
     ax0.annotate("Guo et al.: dilute elongated-rod stresses decrease as AR increases", xy=(4.0, pstar[2]),
                  xytext=(1.1, max(pstar) * 0.92), fontsize=8,
                  arrowprops=dict(arrowstyle="->", color="0.35", lw=0.8))
@@ -321,11 +320,7 @@ def graph():
     ax2.grid(True, alpha=0.3)
     ax2.legend(fontsize=7)
 
-    fig.suptitle(
-        "Rod-like shear-flow aspect-ratio benchmark: "
-        f"pressure {'PASS' if pressure_pass else 'FAIL'}, shear {'PASS' if shear_pass else 'FAIL'}",
-        fontsize=11,
-    )
+    fig.suptitle("Rod-like shear-flow aspect-ratio benchmark", fontsize=11)
     fig.tight_layout()
     fig.savefig(os.path.join(PLOT_DIR, "rod_shear_aspect_ratio.png"), dpi=140)
     plt.close(fig)
