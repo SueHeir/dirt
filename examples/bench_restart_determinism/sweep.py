@@ -242,28 +242,24 @@ def plot_results(rel_pos, rel_vel, digest_flags):
 
     labels = ["position", "velocity"]
     values = [rel_pos, rel_vel]
-    colors = ["#2f6f73" if v <= TOL else "#b45f3c" for v in values]
-    ax0.bar(labels, values, color=colors)
-    ax0.axhline(TOL, color="black", linestyle="--", linewidth=1.2,
-                label=f"tolerance = {TOL:.0e}")
-    ax0.set_yscale("log")
-    ax0.set_ylim(max(1e-18, min(values + [TOL]) / 10), max(TOL * 10, max(values + [TOL]) * 10))
+    ax0.bar(labels, values, color=["#4c78a8", "#f58518"])
+    positive = [v for v in values if v > 0.0]
+    if positive:
+        ax0.set_yscale("log")
+        ax0.set_ylim(min(positive) / 10.0, max(positive) * 10.0)
+    else:
+        ax0.set_ylim(0.0, 1.0)
     ax0.set_ylabel("max relative error vs uninterrupted A")
     ax0.set_title("Restart continuity")
-    ax0.legend(loc="upper right", frameon=False)
     for i, v in enumerate(values):
         ax0.text(i, max(v, ax0.get_ylim()[0]) * 1.3, f"{v:.1e}", ha="center", va="bottom")
 
     names = list(digest_flags.keys())
     flags = list(digest_flags.values())
-    colors = ["#2f6f73" if v == 0 else "#b45f3c" for v in flags]
-    ax1.bar(names, flags, color=colors)
-    ax1.axhline(0.5, color="black", linestyle="--", linewidth=1.2,
-                label="pass: no digest delta")
+    ax1.bar(names, flags, color=["#4c78a8", "#f58518"][:len(flags)])
     ax1.set_ylim(0, 1.1)
     ax1.set_ylabel("SHA-256 mismatch flag vs A")
     ax1.set_title("Digest deltas")
-    ax1.legend(loc="upper right", frameon=False)
     ax1.tick_params(axis="x", rotation=20)
     for i, v in enumerate(flags):
         ax1.text(i, v + 0.04, "0" if v == 0 else "1", ha="center", va="bottom")

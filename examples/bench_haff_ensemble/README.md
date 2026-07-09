@@ -43,10 +43,9 @@ the first seed when a compatible LAMMPS binary is available.
 
 ![Haff ensemble validation](plots/haff_ensemble.png)
 
-*Cooling curves, Haff-fit residuals, and fitted `tc` distributions for the three
-Haff examples. The orange band is the kinetic-theory acceptance interval; the
-optional LAMMPS curve is shown where the local LAMMPS binary can run the matched
-case. Latest committed run: PASS.*
+*Cooling curves and Haff-fit residuals for the three Haff examples. The optional
+LAMMPS curve is shown where the local LAMMPS binary can run the matched case.
+Latest committed run: PASS.*
 
 ## References
 

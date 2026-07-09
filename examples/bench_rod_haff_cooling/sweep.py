@@ -375,7 +375,7 @@ def graph():
     T0d, tcd, r2d, sd, ttcd = haff_fit(td, Td, t_eq)
     p = td2 > 0
     ax.loglog(td2[p], Td2[p], "o", ms=3, color="#1f77b4", alpha=0.7,
-              label=f"DIRT  (gate slope {sd:.2f})")
+              label=f"DIRT  (slope {sd:.2f})")
     if lammps:
         tl2, Tl2 = restart(np.array(lammps["time"]), np.array(lammps["T_total"]))
         _, _, _, sl, _ = haff_fit(tl2, Tl2)
@@ -387,11 +387,6 @@ def graph():
     haff_eq = T0d / (1 + t_eq / tcd) ** 2
     ax.loglog(tf, haff_abs / haff_eq, "-", color="black", lw=1.5,
               label=f"Haff fit  T0/(1+t/tc)²,  tc={tcd:.2e}s")
-    ax.text(0.04, 0.06, f"Gate: -2.3 < slope < -1.6\nmeasured {sd:.2f} at t/tc={ttcd:.1f}\nR²={r2d:.4f}",
-            transform=ax.transAxes, fontsize=9,
-            bbox={"facecolor": "white", "edgecolor": "0.8", "alpha": 0.9})
-    # The Haff fit is the -2 law (it tends to slope -2 only at t >> tc); the
-    # annotation reports the exact slope gate used by validate().
     ax.set_xlabel("Time since equilibration [s]")
     ax.set_ylabel(r"$T_\mathrm{total}/T(t_\mathrm{eq})$")
     ax.set_title(f"Cooling from equilibration onward (skipped first {t_eq:.2f} s)")

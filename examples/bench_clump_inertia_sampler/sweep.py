@@ -90,7 +90,7 @@ def graph():
     ax0.bar(labels, failures, color=["#4c78a8", "#f58518"])
     ax0.axhline(0.0, color="black", linewidth=0.8)
     ax0.set_ylabel("bitwise repeat failures")
-    ax0.set_title("Repeatability gate")
+    ax0.set_title("Repeatability")
     ax0.set_ylim(0, max(1, max(failures) + 1))
     for i, v in enumerate(failures):
         ax0.text(i, v + 0.03, str(v), ha="center", va="bottom")
@@ -101,15 +101,12 @@ def graph():
         ax1.scatter(xs, ys, s=20, alpha=0.65, edgecolors="none")
         mean = sum(ys) / len(ys)
         ax1.plot([count * 0.88, count * 1.12], [mean, mean], color="black", linewidth=1.0)
-    ax1.axhline(tolerance, color="#d62728", linestyle="--", linewidth=1.2, label="5% tolerance")
     ax1.set_xscale("log")
     ax1.set_xlabel("Monte Carlo samples")
     ax1.set_ylabel("max diagonal inertia rel. error")
     ax1.set_title("Seed-to-seed spread vs analytic sphere")
-    ax1.legend(loc="upper right")
 
-    status = "PASS" if repeat_ok and spread_ok else "FAIL"
-    fig.suptitle(f"Clump inertia sampler determinism: {status}")
+    fig.suptitle("Clump inertia sampler determinism")
     fig.savefig(PLOT, dpi=180)
     print(f"wrote {PLOT}")
     print(f"repeatability: {'PASS' if repeat_ok else 'FAIL'}")
