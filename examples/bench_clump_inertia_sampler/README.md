@@ -23,6 +23,6 @@ python3 examples/bench_clump_inertia_sampler/sweep.py graph
 
 ![Clump inertia sampler determinism](plots/inertia_sampler_determinism.png)
 
-*Repeatability and seed-spread gate. PASS means zero bitwise repeat failures and
-all 100 000-sample seeded estimates stay within the 5% inertia tolerance around
-the analytical single-sphere reference.*
+*Repeatability and seed-spread measurements against the analytical single-sphere
+reference. The stdout validation reports the bitwise-repeat and 100 000-sample
+inertia-tolerance checks.*

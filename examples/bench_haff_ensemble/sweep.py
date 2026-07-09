@@ -287,7 +287,7 @@ def run_lammps_reference(case, seed0_csv):
         return None
 
 
-def graph(all_results, bands):
+def graph(all_results):
     import numpy as np
     import matplotlib
     matplotlib.use("Agg")
@@ -295,7 +295,7 @@ def graph(all_results, bands):
 
     os.makedirs(PLOT_DIR, exist_ok=True)
     plt.rcParams.update({"font.size": 9, "axes.labelsize": 10, "figure.dpi": 150, "savefig.dpi": 150})
-    fig, axes = plt.subplots(len(CASES), 3, figsize=(15, 11))
+    fig, axes = plt.subplots(len(CASES), 2, figsize=(11, 11))
     for row, case in enumerate(CASES):
         results = all_results[case.key]
         ax = axes[row][0]
@@ -335,19 +335,6 @@ def graph(all_results, bands):
         ax.set_ylabel("linearized residual / mean")
         ax.set_title(f"Haff residuals (R2 min {min(r['fit']['r2'] for r in results['seeds']):.4f})")
 
-        ax = axes[row][2]
-        tcs = np.array([r["fit"]["tc"] for r in results["seeds"]])
-        theory = np.array([r["tc_theory"] for r in results["seeds"]])
-        ratios = tcs / theory
-        lo, hi = bands[case.key]
-        ax.axhspan(lo, hi, color="#ffcc80", alpha=0.35, label="theory band")
-        ax.axhline(1.0, color="black", lw=1.0, label="kinetic estimate")
-        ax.plot([r["seed"] for r in results["seeds"]], ratios, "o", color="#1f77b4")
-        ax.set_xlabel("Seed")
-        ax.set_ylabel("fitted tc / kinetic tc")
-        ax.set_ylim(0, max(hi * 1.15, float(ratios.max()) * 1.2))
-        ax.set_title(f"tc distribution, median={np.median(ratios):.2f}")
-        ax.legend(fontsize=7)
     fig.tight_layout()
     fig.savefig(PLOT, bbox_inches="tight")
     plt.close(fig)
@@ -395,7 +382,7 @@ def main():
     print("=" * 72)
     for case in CASES:
         ok = validate_case(case, all_results[case.key]["seeds"], bands[case.key]) and ok
-    graph(all_results, bands)
+    graph(all_results)
     print(f"\nSummary: {SUMMARY_CSV}")
     print("ALL CHECKS PASSED" if ok else "CHECKS FAILED")
     return 0 if ok else 1

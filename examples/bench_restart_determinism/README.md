@@ -58,10 +58,9 @@ per-run), runs each in its own process, and compares final binary dumps.
 ![Restart continuity and digest determinism](plots/restart_determinism.png)
 
 *Measured restart-continuity errors for positions and velocities against the
-uninterrupted reference A, with the `1e-9` tolerance line, plus SHA-256 digest
-mismatch flags versus A for the restarted final dump and the independent twin
-run. PASS means the continuity errors are below tolerance and every digest flag
-is zero.*
+uninterrupted reference A, plus SHA-256 digest mismatch flags versus A for the
+restarted final dump and the independent twin run. The stdout validation reports
+the continuity tolerance and digest checks.*
 
 ## Run
 
