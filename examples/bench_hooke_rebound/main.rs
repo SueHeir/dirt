@@ -22,8 +22,8 @@
 //!     --features precision-double -- examples/bench_hooke_rebound/config.toml
 //! ```
 
-use dirt_core::prelude::*;
 use dirt_core::dirt_atom::DemAtom;
+use dirt_core::prelude::*;
 use std::fs;
 use std::io::Write as IoWrite;
 
@@ -188,11 +188,20 @@ fn track_rebound(
         .unwrap();
 
         println!("=== Hooke (linear-spring) Rebound Results ===");
-        println!("  Impact velocity:  {:.6e} m/s (relative, normal)", tracker.v_impact);
-        println!("  Rebound velocity: {:.6e} m/s (relative, normal)", tracker.v_rebound);
+        println!(
+            "  Impact velocity:  {:.6e} m/s (relative, normal)",
+            tracker.v_impact
+        );
+        println!(
+            "  Rebound velocity: {:.6e} m/s (relative, normal)",
+            tracker.v_rebound
+        );
         println!("  COR (measured):   {:.6}", cor);
         println!("  Max contact force:{:.6e} N", tracker.max_force);
-        println!("  Contact duration: {:.6e} s ({} steps)", contact_time, contact_steps);
+        println!(
+            "  Contact duration: {:.6e} s ({} steps)",
+            contact_time, contact_steps
+        );
         println!("  Peak overlap:     {:.6e} m", tracker.max_overlap);
         println!("  Timestep dt:      {:.6e} s", dt);
         println!("  Results saved to: {}", results_file);
