@@ -511,21 +511,18 @@ fn validate_clump_config(app: &mut App) -> Result<(), AppError> {
 }
 
 fn validate_clump_insertion_region(region: &Region) -> Result<(), AppError> {
-    match region {
-        Region::Plane { .. } => Err(AppError::message(
-            "[[clump.insert]] region must be bounded; Plane cannot be sampled",
-        )),
-        Region::Union { regions } | Region::Intersect { regions } if regions.is_empty() => Err(
-            AppError::message("[[clump.insert]] region union/intersect must not be empty"),
-        ),
-        Region::Union { regions } | Region::Intersect { regions } => {
-            for child in regions {
-                validate_clump_insertion_region(child)?;
-            }
-            Ok(())
-        }
-        _ => Ok(()),
-    }
+    // Do not duplicate SOIL's geometry rules here.  The insertion system uses
+    // this exact sampler, whose fallible API validates finite dimensions,
+    // positive radii, bounded planes, empty boolean regions, and unsuccessful
+    // rejection sampling.  A private, seeded RNG makes this preflight
+    // deterministic and deliberately leaves the insertion RNG untouched.
+    let mut rng = StdRng::seed_from_u64(0xC1A0_5EED);
+    region.random_point_inside(&mut rng).map_err(|error| {
+        AppError::message(format!(
+            "[[clump.insert]] region cannot be sampled: {error}"
+        ))
+    })?;
+    Ok(())
 }
 
 // ── Systems ─────────────────────────────────────────────────────────────────
@@ -1498,7 +1495,7 @@ pub fn is_body_atom(clump_data: &ClumpAtom, i: usize) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dirt_atom::DemAtom;
+    use dirt_atom::{DemAtom, DemAtomPlugin};
     use soil_core::{Atom, AtomDataRegistry, SingleProcessComm};
 
     /// Non-overlapping dimer (center distance > r1 + r2) for deterministic tests.
@@ -1525,6 +1522,42 @@ mod tests {
             ClumpAtom::new(),
             MultisphereBodyStore::new(),
         )
+    }
+
+    #[test]
+    fn degenerate_clump_region_is_a_typed_plugin_error() {
+        let mut app = App::new();
+        app.add_resource(Config::from_str(
+            r#"
+[[dem.materials]]
+name = "glass"
+youngs_mod = 8.7e9
+poisson_ratio = 0.3
+restitution = 0.9
+friction = 0.5
+
+[[clump.definitions]]
+name = "dimer"
+spheres = [{ offset = [0.0, 0.0, 0.0], radius = 0.001 }]
+
+[[clump.insert]]
+definition = "dimer"
+count = 1
+density = 2500.0
+material = "glass"
+region = { type = "block", min = [1.0, 1.0, 1.0], max = [1.0, 2.0, 2.0] }
+"#,
+        ));
+        app.try_add_plugins(DemAtomPlugin)
+            .expect("valid material setup must satisfy ClumpPlugin dependency");
+
+        let error = match app.try_add_plugins(ClumpPlugin) {
+            Err(error) => error,
+            Ok(_) => panic!("degenerate clump insertion region must fail preflight"),
+        };
+        assert!(error
+            .to_string()
+            .contains("min[0] must be less than max[0]"));
     }
 
     fn clump_state_bits(atoms: &Atom, bodies: &MultisphereBodyStore) -> Vec<u64> {
