@@ -24,6 +24,16 @@ its curve-level check is still against the rigid-body/Maw theory those experimen
 points confirmed, because the paper's per-point scatter lives only in paywalled
 figures.
 
+## `bench_guo2018_fiber_shear_cell` — external-reference acceptance contract
+
+The Guo rubber-cord shear-cell validator is deliberately fail-closed until a
+solver supplies six complete histories.  It requires a measured normal-load
+qualification and a steady driven-shear window, then compares the 64-mm cell
+against digitized experimental Fig. 6/7 values and uses 96-mm cases as a size
+sensitivity check.  No solver result or PASS claim is committed.  See its
+README for the protocol and its explicit digitization, finite-size, wall, and
+bonded-sphere limitations.
+
 ## `material_pair_table_validation` — typed Material compatibility
 
 The typed `Material` registration path is compared with a golden mixed-material
