@@ -5,8 +5,8 @@
 <!-- /disclaimer-banner -->
 
 
-**A granular-DEM solver that runs as a complete code today and remains a
-composable component when tomorrow's problem needs another method.**
+**A granular-DEM solver that runs as a complete code today, built on a
+composition-oriented simulation stack.**
 
 DIRT — the *Discrete-element Interaction-Resolved Toolkit* — provides contact,
 walls, bonds, clumps, integration, diagnostics, and validated DEM examples. Its
@@ -14,14 +14,15 @@ unusual property is not simply that those capabilities are Rust plugins. It is
 that DIRT shares its state, lifecycle, and schedule model with the rest of the
 GRASS ecosystem.
 
-Run DIRT as a standalone DEM application. Add or replace physics as ordinary
-systems. Or place the same solver inside a larger scheduled application where a
-fluid, thermal, structural, or other solver exchanges state at explicit phases —
-in-process or across MPI.
+Run DIRT as a standalone DEM application, and add or replace its DEM physics as
+ordinary systems. The same underlying GRASS and SOIL composition model is a
+foundation for future multi-solver work, but DIRT does not yet ship or validate a
+cross-substrate coupling case. Such a case belongs in a dedicated
+`dev_couple_*` repository, where its exchange and validation can be assessed on
+their own terms.
 
-Most DEM codes are complete applications first and coupling components second.
-DIRT is intended to be both. It is a ground-up Rust reimplementation building on
-roughly two years of prior DEM development (formerly MDDEM).
+DIRT is a ground-up Rust reimplementation building on roughly two years of prior
+DEM development (formerly MDDEM).
 
 ## A simulation is a few plugins you assemble in Rust
 
@@ -59,16 +60,17 @@ deformable structure, thermal field, electrostatic field, or continuum model. If
 the DEM code owns a private timestep driver and private state model, every
 coupling begins as an integration project.
 
-DIRT instead inherits a common composition layer:
+DIRT is organized around a common composition layer:
 
 - SOIL owns reusable parallel particle infrastructure.
 - DIRT owns DEM physics.
 - GRASS owns scheduling, lifecycle, I/O, and solver composition.
-- Coupling code owns only the exchange between participating solvers.
+- A future dedicated coupling can own the exchange between participating solvers.
 
 Validation remains essential evidence for individual DEM claims, but it is not
-the reason to adopt the architecture. The architectural reason is that a solver
-built this way does not have to be dismantled before it can join another one.
+evidence of an unbuilt coupling capability. The architecture keeps the relevant
+solver seams explicit; whether they support a particular coupling remains to be
+demonstrated in a dedicated, validated case.
 
 > Prefer config files to code? A prebuilt driver runs the shipped scenarios and
 > parameter sweeps from TOML with no recompile — see
