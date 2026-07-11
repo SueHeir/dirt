@@ -467,6 +467,62 @@ impl Plugin for ClumpPlugin {
             ParticleSimScheduleSet::PostFinalIntegration,
         );
     }
+
+    fn try_build(&self, app: &mut App) -> Result<(), AppError> {
+        validate_clump_config(app)?;
+        self.build(app);
+        Ok(())
+    }
+}
+
+fn validate_clump_config(app: &mut App) -> Result<(), AppError> {
+    let config = Config::try_load::<ClumpTopConfig>(app, "clump")
+        .map_err(|error| AppError::message(error.to_string()))?;
+    let materials = app
+        .get_resource_ref::<dirt_atom::MaterialTable>()
+        .ok_or_else(|| AppError::message("ClumpPlugin requires DemAtomPlugin"))?;
+    let defs = config.definitions.as_deref().unwrap_or_default();
+    for def in defs {
+        if def.spheres.is_empty() {
+            return Err(AppError::message(format!(
+                "Clump '{}' must have at least one sphere",
+                def.name
+            )));
+        }
+    }
+    for insert in config.insert.as_deref().unwrap_or_default() {
+        if !defs.iter().any(|def| def.name == insert.definition) {
+            return Err(AppError::message(format!(
+                "Clump definition '{}' not found",
+                insert.definition
+            )));
+        }
+        if !materials.names.iter().any(|name| name == &insert.material) {
+            return Err(AppError::message(format!(
+                "Material '{}' not found in [[dem.materials]]",
+                insert.material
+            )));
+        }
+        if let Some(region) = &insert.region {
+            validate_clump_insertion_region(region)?;
+        }
+    }
+    Ok(())
+}
+
+fn validate_clump_insertion_region(region: &Region) -> Result<(), AppError> {
+    // Do not duplicate SOIL's geometry rules here.  The insertion system uses
+    // this exact sampler, whose fallible API validates finite dimensions,
+    // positive radii, bounded planes, empty boolean regions, and unsuccessful
+    // rejection sampling.  A private, seeded RNG makes this preflight
+    // deterministic and deliberately leaves the insertion RNG untouched.
+    let mut rng = StdRng::seed_from_u64(0xC1A0_5EED);
+    region.random_point_inside(&mut rng).map_err(|error| {
+        AppError::message(format!(
+            "[[clump.insert]] region cannot be sampled: {error}"
+        ))
+    })?;
+    Ok(())
 }
 
 // ── Systems ─────────────────────────────────────────────────────────────────
@@ -1169,8 +1225,7 @@ fn insert_clumps_with_rng<R: Rng>(
     while inserted < insert.count && attempts < max_attempts {
         attempts += 1;
         let pos = region.random_point_inside(rng).unwrap_or_else(|e| {
-            eprintln!("ERROR: invalid region in [[clump.insert]]: {}", e);
-            std::process::exit(1);
+            panic!("ClumpPlugin preflight should reject invalid insertion regions: {e}")
         });
 
         // Check overlap with existing clump COMs
@@ -1440,7 +1495,7 @@ pub fn is_body_atom(clump_data: &ClumpAtom, i: usize) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dirt_atom::DemAtom;
+    use dirt_atom::{DemAtom, DemAtomPlugin};
     use soil_core::{Atom, AtomDataRegistry, SingleProcessComm};
 
     /// Non-overlapping dimer (center distance > r1 + r2) for deterministic tests.
@@ -1467,6 +1522,42 @@ mod tests {
             ClumpAtom::new(),
             MultisphereBodyStore::new(),
         )
+    }
+
+    #[test]
+    fn degenerate_clump_region_is_a_typed_plugin_error() {
+        let mut app = App::new();
+        app.add_resource(Config::from_str(
+            r#"
+[[dem.materials]]
+name = "glass"
+youngs_mod = 8.7e9
+poisson_ratio = 0.3
+restitution = 0.9
+friction = 0.5
+
+[[clump.definitions]]
+name = "dimer"
+spheres = [{ offset = [0.0, 0.0, 0.0], radius = 0.001 }]
+
+[[clump.insert]]
+definition = "dimer"
+count = 1
+density = 2500.0
+material = "glass"
+region = { type = "block", min = [1.0, 1.0, 1.0], max = [1.0, 2.0, 2.0] }
+"#,
+        ));
+        app.try_add_plugins(DemAtomPlugin)
+            .expect("valid material setup must satisfy ClumpPlugin dependency");
+
+        let error = match app.try_add_plugins(ClumpPlugin) {
+            Err(error) => error,
+            Ok(_) => panic!("degenerate clump insertion region must fail preflight"),
+        };
+        assert!(error
+            .to_string()
+            .contains("min[0] must be less than max[0]"));
     }
 
     fn clump_state_bits(atoms: &Atom, bodies: &MultisphereBodyStore) -> Vec<u64> {
@@ -1535,8 +1626,8 @@ mod tests {
     fn config_insert_snapshot(seed: Option<u64>) -> Vec<u64> {
         let mut app = App::new();
         let mut registry = AtomDataRegistry::new();
-        registry.register(DemAtom::new());
-        registry.register(ClumpAtom::new());
+        registry.try_register(DemAtom::new(), 0).unwrap();
+        registry.try_register(ClumpAtom::new(), 0).unwrap();
 
         let mut domain = Domain::new();
         domain.boundaries_low = [-0.03; 3];
@@ -1811,8 +1902,8 @@ mod tests {
         atoms.force[0] = [0.0, 0.0, 10.0];
 
         let mut registry = AtomDataRegistry::new();
-        registry.register(dem);
-        registry.register(clump);
+        registry.try_register(dem, atoms.len()).unwrap();
+        registry.try_register(clump, atoms.len()).unwrap();
 
         let mut app = App::new();
         app.add_resource(atoms);
@@ -1871,8 +1962,8 @@ mod tests {
         bodies.bodies[0].quaternion = [half.cos(), 0.0, 0.0, half.sin()];
 
         let mut registry = AtomDataRegistry::new();
-        registry.register(dem);
-        registry.register(clump);
+        registry.try_register(dem, atoms.len()).unwrap();
+        registry.try_register(clump, atoms.len()).unwrap();
 
         let mut app = App::new();
         app.add_resource(atoms);
@@ -1971,8 +2062,8 @@ mod tests {
         bodies.bodies[0].omega = [0.0, 0.0, 100.0];
 
         let mut registry = AtomDataRegistry::new();
-        registry.register(dem);
-        registry.register(clump);
+        registry.try_register(dem, atoms.len()).unwrap();
+        registry.try_register(clump, atoms.len()).unwrap();
 
         let mut app = App::new();
         app.add_resource(atoms);
@@ -2015,8 +2106,8 @@ mod tests {
         atoms.force[1] = [0.0, 5.0, 0.0];
 
         let mut registry = AtomDataRegistry::new();
-        registry.register(dem);
-        registry.register(clump);
+        registry.try_register(dem, atoms.len()).unwrap();
+        registry.try_register(clump, atoms.len()).unwrap();
 
         let mut app = App::new();
         app.add_resource(atoms);

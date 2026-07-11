@@ -405,6 +405,20 @@ file_prefix = "contact""#,
             );
         }
     }
+
+    fn try_build(&self, app: &mut App) -> Result<(), AppError> {
+        let config = Config::try_load::<ContactAnalysisConfig>(app, "contact_analysis")
+            .map_err(|error| AppError::message(error.to_string()))?;
+        if config.coordination
+            && app
+                .get_mut_resource(std::any::TypeId::of::<DumpRegistry>())
+                .is_none()
+        {
+            return Err(AppError::message(missing_dump_registry_diagnostic()));
+        }
+        self.build(app);
+        Ok(())
+    }
 }
 
 // ── Systems ─────────────────────────────────────────────────────────────────

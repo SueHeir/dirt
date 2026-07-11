@@ -139,11 +139,9 @@
 //! Add [`WallPlugin`] to your app. It depends on `DemAtomPlugin` (for
 //! [`MaterialTable`] and [`DemAtom`] data).
 //!
-//! Wall config errors are fatal: a malformed `[[wall]]` entry (bad TOML, an
-//! unknown cylinder axis, a wrong-length `center`, a missing region, a zero
-//! normal, …) prints an `ERROR:` line and calls `std::process::exit(1)` at
-//! setup rather than returning a `Result` — the run stops immediately and
-//! identically on every rank.
+//! Wall configuration is preflighted through [`Plugin::try_build`]. A malformed
+//! `[[wall]]` entry is returned as an [`AppError`] to the outer runner, which
+//! owns formatting and MPI-consistent termination.
 //!
 //! # Systems
 //!
@@ -669,6 +667,8 @@ impl Plugin for WallPlugin {
     }
 
     fn build(&self, app: &mut App) {
+        validate_wall_plugin_config(app)
+            .unwrap_or_else(|error| panic!("WallPlugin failed to build: {error}"));
         let walls = {
             let config = app
                 .get_resource_ref::<Config>()
@@ -682,7 +682,9 @@ impl Plugin for WallPlugin {
                             Ok(w) => w,
                             Err(e) => {
                                 eprintln!("ERROR: failed to parse [[wall]] entry {}: {}", idx, e);
-                                std::process::exit(1);
+                                panic!(
+                                    "WallPlugin preflight should reject malformed [[wall]] entries"
+                                );
                             }
                         })
                         .collect(),
@@ -691,13 +693,15 @@ impl Plugin for WallPlugin {
                             Ok(w) => vec![w],
                             Err(e) => {
                                 eprintln!("ERROR: failed to parse [wall] entry: {}", e);
-                                std::process::exit(1);
+                                panic!(
+                                    "WallPlugin preflight should reject malformed [wall] entries"
+                                );
                             }
                         }
                     }
                     _ => {
                         eprintln!("ERROR: [wall] must be a table or array of tables");
-                        std::process::exit(1);
+                        panic!("WallPlugin preflight should reject a non-table wall value");
                     }
                 }
             } else {
@@ -722,7 +726,7 @@ impl Plugin for WallPlugin {
                             "ERROR: wall material '{}' not found in [[dem.materials]]. Available: {:?}",
                             w.material, material_table.names
                         );
-                        std::process::exit(1);
+                        panic!("WallPlugin preflight should reject unknown wall materials");
                     }
                 };
 
@@ -744,21 +748,21 @@ impl Plugin for WallPlugin {
                                     "ERROR: cylinder wall axis must be x, y, or z, got '{}'",
                                     axis_str
                                 );
-                                std::process::exit(1);
+                                panic!("WallPlugin preflight should reject unknown cylinder axes");
                             }
                         };
                         let center_vec = w.center.as_ref().unwrap_or_else(|| {
                             eprintln!("ERROR: cylinder wall requires 'center' [c0, c1]");
-                            std::process::exit(1);
+                            panic!("WallPlugin preflight should require cylinder center");
                         });
                         if center_vec.len() != 2 {
                             eprintln!("ERROR: cylinder wall 'center' must have 2 elements");
-                            std::process::exit(1);
+                            panic!("WallPlugin preflight should validate cylinder center length");
                         }
                         let center = [center_vec[0], center_vec[1]];
                         let radius = w.radius.unwrap_or_else(|| {
                             eprintln!("ERROR: cylinder wall requires 'radius'");
-                            std::process::exit(1);
+                            panic!("WallPlugin preflight should require cylinder radius");
                         });
                         let lo = w.lo.unwrap_or(f64::NEG_INFINITY);
                         let hi = w.hi.unwrap_or(f64::INFINITY);
@@ -779,16 +783,16 @@ impl Plugin for WallPlugin {
                     "sphere" => {
                         let center_vec = w.center.as_ref().unwrap_or_else(|| {
                             eprintln!("ERROR: sphere wall requires 'center' [x, y, z]");
-                            std::process::exit(1);
+                            panic!("WallPlugin preflight should require sphere center");
                         });
                         if center_vec.len() != 3 {
                             eprintln!("ERROR: sphere wall 'center' must have 3 elements");
-                            std::process::exit(1);
+                            panic!("WallPlugin preflight should validate sphere center length");
                         }
                         let center = [center_vec[0], center_vec[1], center_vec[2]];
                         let radius = w.radius.unwrap_or_else(|| {
                             eprintln!("ERROR: sphere wall requires 'radius'");
-                            std::process::exit(1);
+                            panic!("WallPlugin preflight should require sphere radius");
                         });
                         let inside = w.inside.unwrap_or(false);
                         spheres.push(WallSphere {
@@ -804,7 +808,7 @@ impl Plugin for WallPlugin {
                     "region" => {
                         let region = w.region.clone().unwrap_or_else(|| {
                             eprintln!("ERROR: region wall requires a 'region' field");
-                            std::process::exit(1);
+                            panic!("WallPlugin preflight should require region wall region");
                         });
                         let inside = w.inside.unwrap_or(false);
                         regions.push(WallRegion {
@@ -826,7 +830,7 @@ impl Plugin for WallPlugin {
                                 "ERROR: wall normal vector must be non-zero (wall material '{}')",
                                 w.material
                             );
-                            std::process::exit(1);
+                            panic!("WallPlugin preflight should reject zero wall normals");
                         }
                         let nx = w.normal_x / mag;
                         let ny = w.normal_y / mag;
@@ -882,7 +886,7 @@ impl Plugin for WallPlugin {
                             "ERROR: unknown wall type in [[wall]]: '{}'. Expected 'plane', 'cylinder', 'sphere', or 'region'",
                             other
                         );
-                        std::process::exit(1);
+                        panic!("WallPlugin preflight should reject unknown wall types");
                     }
                 }
             }
@@ -918,6 +922,110 @@ impl Plugin for WallPlugin {
             ParticleSimScheduleSet::Force,
         );
     }
+
+    fn try_build(&self, app: &mut App) -> Result<(), AppError> {
+        validate_wall_plugin_config(app)?;
+        self.build(app);
+        Ok(())
+    }
+}
+
+/// Validate wall input before the plugin mutates the app.  This is deliberately
+/// shared with the legacy `build` entry point so callers using
+/// `App::try_add_plugins` receive one typed, rank-consistent setup failure.
+fn validate_wall_plugin_config(app: &mut App) -> Result<(), AppError> {
+    let defs = {
+        let config = app
+            .get_resource_ref::<Config>()
+            .ok_or_else(|| AppError::message("WallPlugin requires Config"))?;
+        match config.table.get("wall") {
+            Some(toml::Value::Array(entries)) => entries
+                .iter()
+                .enumerate()
+                .map(|(index, entry)| {
+                    entry.clone().try_into::<WallDef>().map_err(|error| {
+                        AppError::message(format!(
+                            "failed to parse [[wall]] entry {index}: {error}"
+                        ))
+                    })
+                })
+                .collect::<Result<Vec<_>, _>>()?,
+            Some(toml::Value::Table(entry)) => vec![toml::Value::Table(entry.clone())
+                .try_into::<WallDef>()
+                .map_err(|error| {
+                    AppError::message(format!("failed to parse [wall] entry: {error}"))
+                })?],
+            Some(_) => {
+                return Err(AppError::message(
+                    "[wall] must be a table or array of tables",
+                ))
+            }
+            None => Vec::new(),
+        }
+    };
+    let materials = app
+        .get_resource_ref::<MaterialTable>()
+        .ok_or_else(|| AppError::message("WallPlugin requires DemAtomPlugin"))?;
+
+    for wall in defs {
+        if materials.find_material(&wall.material).is_none() {
+            return Err(AppError::message(format!(
+                "wall material '{}' not found in [[dem.materials]]. Available: {:?}",
+                wall.material, materials.names
+            )));
+        }
+        match wall.wall_type.as_str() {
+            "plane" => {
+                let magnitude = (wall.normal_x * wall.normal_x
+                    + wall.normal_y * wall.normal_y
+                    + wall.normal_z * wall.normal_z)
+                    .sqrt();
+                if magnitude <= 1e-15 {
+                    return Err(AppError::message(format!(
+                        "wall normal vector must be non-zero (wall material '{}')",
+                        wall.material
+                    )));
+                }
+            }
+            "cylinder" => {
+                let axis = wall.axis.as_deref().unwrap_or("z");
+                if !matches!(axis, "x" | "X" | "y" | "Y" | "z" | "Z") {
+                    return Err(AppError::message(format!(
+                        "cylinder wall axis must be x, y, or z, got '{axis}'"
+                    )));
+                }
+                let center = wall.center.as_ref().ok_or_else(|| {
+                    AppError::message("cylinder wall requires 'center' [c0, c1]")
+                })?;
+                if center.len() != 2 {
+                    return Err(AppError::message("cylinder wall 'center' must have 2 elements"));
+                }
+                if wall.radius.is_none() {
+                    return Err(AppError::message("cylinder wall requires 'radius'"));
+                }
+            }
+            "sphere" => {
+                let center = wall.center.as_ref().ok_or_else(|| {
+                    AppError::message("sphere wall requires 'center' [x, y, z]")
+                })?;
+                if center.len() != 3 {
+                    return Err(AppError::message("sphere wall 'center' must have 3 elements"));
+                }
+                if wall.radius.is_none() {
+                    return Err(AppError::message("sphere wall requires 'radius'"));
+                }
+            }
+            "region" => {
+                if wall.region.is_none() {
+                    return Err(AppError::message("region wall requires a 'region' field"));
+                }
+            }
+            other => return Err(AppError::message(format!(
+                "unknown wall type in [[wall]]: '{other}'. Expected 'plane', 'cylinder', 'sphere', or 'region'"
+            ))),
+        }
+    }
+    Ok(())
 }
 
 // ── Systems ─────────────────────────────────────────────────────────────────
@@ -2051,7 +2159,7 @@ mod tests {
         atom.natoms = 1;
 
         let mut registry = AtomDataRegistry::new();
-        registry.register(dem);
+        registry.try_register(dem, atom.len()).unwrap();
 
         let mut app = App::new();
         app.add_resource(atom);
@@ -2239,7 +2347,7 @@ mod tests {
         atom.natoms = 1;
 
         let mut registry = AtomDataRegistry::new();
-        registry.register(dem);
+        registry.try_register(dem, atom.len()).unwrap();
 
         let walls = make_walls(vec![make_wall_plane(0.0, 0.0, 0.0, 0.0, 0.0, 1.0)]);
 
@@ -2273,7 +2381,7 @@ mod tests {
         atom.natoms = 1;
 
         let mut registry = AtomDataRegistry::new();
-        registry.register(dem);
+        registry.try_register(dem, atom.len()).unwrap();
 
         let walls = make_walls(vec![make_wall_plane(0.0, 0.0, 0.0, 0.0, 0.0, 1.0)]);
 
@@ -2301,7 +2409,7 @@ mod tests {
         atom.natoms = 1;
 
         let mut registry = AtomDataRegistry::new();
-        registry.register(dem);
+        registry.try_register(dem, atom.len()).unwrap();
 
         let mut plane = make_wall_plane(0.0, 0.0, 0.0, 0.0, 0.0, 1.0);
         plane.name = Some("blocker".into());
@@ -2335,7 +2443,7 @@ mod tests {
         atom.natoms = 1;
 
         let mut registry = AtomDataRegistry::new();
-        registry.register(dem);
+        registry.try_register(dem, atom.len()).unwrap();
 
         let walls = make_walls(vec![make_wall_plane(0.0, 0.0, 0.0, 1.0, 0.0, 1.0)]);
 
@@ -2369,7 +2477,7 @@ mod tests {
         atom.natoms = 1;
 
         let mut registry = AtomDataRegistry::new();
-        registry.register(dem);
+        registry.try_register(dem, atom.len()).unwrap();
 
         let mut wall = make_wall_plane(0.0, 0.0, 0.0, 0.0, 0.0, 1.0);
         wall.bound_x_low = 0.0;
@@ -2404,7 +2512,7 @@ mod tests {
         atom.natoms = 1;
 
         let mut registry = AtomDataRegistry::new();
-        registry.register(dem);
+        registry.try_register(dem, atom.len()).unwrap();
 
         let walls = make_walls(vec![make_wall_plane(0.0, 0.0, 0.0, 0.0, 0.0, 1.0)]);
 
@@ -2549,7 +2657,7 @@ mod tests {
             atom.natoms = 1;
 
             let mut registry = AtomDataRegistry::new();
-            registry.register(dem);
+            registry.try_register(dem, atom.len()).unwrap();
 
             let mut plane = make_wall_plane(0.0, 0.0, 0.0, 0.0, 0.0, 1.0);
             plane.velocity = wall_vel;
@@ -2596,7 +2704,7 @@ mod tests {
         atom.natoms = 1;
 
         let mut registry = AtomDataRegistry::new();
-        registry.register(dem);
+        registry.try_register(dem, atom.len()).unwrap();
 
         let mut material_table = dirt_atom::MaterialTable::new();
         material_table.rolling_model = "sds".to_string();
@@ -2797,7 +2905,7 @@ mod tests {
         atom.natoms = 1;
 
         let mut registry = AtomDataRegistry::new();
-        registry.register(dem);
+        registry.try_register(dem, atom.len()).unwrap();
 
         let walls = make_walls_with_cylinder(WallCylinder {
             axis: 2, // Z
@@ -2844,7 +2952,7 @@ mod tests {
         atom.natoms = 1;
 
         let mut registry = AtomDataRegistry::new();
-        registry.register(dem);
+        registry.try_register(dem, atom.len()).unwrap();
 
         let walls = make_walls_with_cylinder(WallCylinder {
             axis: 2,
@@ -2896,7 +3004,7 @@ mod tests {
         atom.natoms = 1;
 
         let mut registry = AtomDataRegistry::new();
-        registry.register(dem);
+        registry.try_register(dem, atom.len()).unwrap();
 
         let walls = make_walls_with_sphere(WallSphere {
             center: [0.005, 0.005, 0.005],
@@ -2940,7 +3048,7 @@ mod tests {
         atom.natoms = 1;
 
         let mut registry = AtomDataRegistry::new();
-        registry.register(dem);
+        registry.try_register(dem, atom.len()).unwrap();
 
         let walls = make_walls_with_sphere(WallSphere {
             center: [0.005, 0.005, 0.005],
@@ -2998,7 +3106,7 @@ mod tests {
             atom.natoms = 1;
 
             let mut registry = AtomDataRegistry::new();
-            registry.register(dem);
+            registry.try_register(dem, atom.len()).unwrap();
 
             let walls = make_walls_with_cylinder(WallCylinder {
                 axis: 2,
@@ -3082,7 +3190,7 @@ mod tests {
         atom.natoms = 1;
 
         let mut registry = AtomDataRegistry::new();
-        registry.register(dem);
+        registry.try_register(dem, atom.len()).unwrap();
 
         let walls = make_walls_with_cylinder(WallCylinder {
             axis: 2,
@@ -3155,7 +3263,7 @@ mod tests {
             atom.natoms = 1;
 
             let mut registry = AtomDataRegistry::new();
-            registry.register(dem);
+            registry.try_register(dem, atom.len()).unwrap();
 
             let walls = make_walls_with_sphere(WallSphere {
                 center: sph_center,
@@ -3216,7 +3324,7 @@ mod tests {
         atom.natoms = 1;
 
         let mut registry = AtomDataRegistry::new();
-        registry.register(dem);
+        registry.try_register(dem, atom.len()).unwrap();
 
         let walls = make_walls(vec![make_wall_plane(0.0, 0.0, 0.0, 0.0, 0.0, 1.0)]);
 
@@ -3256,7 +3364,7 @@ mod tests {
             atom.natoms = 1;
 
             let mut registry = AtomDataRegistry::new();
-            registry.register(dem);
+            registry.try_register(dem, atom.len()).unwrap();
 
             let walls = make_walls(vec![make_wall_plane(0.0, 0.0, 0.0, 0.0, 0.0, 1.0)]);
 
@@ -3308,7 +3416,7 @@ mod tests {
         atom.natoms = 1;
 
         let mut registry = AtomDataRegistry::new();
-        registry.register(dem);
+        registry.try_register(dem, atom.len()).unwrap();
 
         let walls = make_walls_with_region(WallRegion {
             region: Region::Sphere {
@@ -3353,7 +3461,7 @@ mod tests {
         atom.natoms = 1;
 
         let mut registry = AtomDataRegistry::new();
-        registry.register(dem);
+        registry.try_register(dem, atom.len()).unwrap();
 
         let walls = make_walls_with_region(WallRegion {
             region: Region::Sphere {
@@ -3398,7 +3506,7 @@ mod tests {
         atom.natoms = 1;
 
         let mut registry = AtomDataRegistry::new();
-        registry.register(dem);
+        registry.try_register(dem, atom.len()).unwrap();
 
         let walls = make_walls_with_region(WallRegion {
             region: Region::Block {
@@ -3451,7 +3559,7 @@ mod tests {
         atom.natoms = 1;
 
         let mut registry = AtomDataRegistry::new();
-        registry.register(dem);
+        registry.try_register(dem, atom.len()).unwrap();
 
         let walls = make_walls_with_region(WallRegion {
             region: Region::Cone {
@@ -3503,7 +3611,7 @@ mod tests {
             atom.nlocal = 1;
             atom.natoms = 1;
             let mut registry = AtomDataRegistry::new();
-            registry.register(dem);
+            registry.try_register(dem, atom.len()).unwrap();
             let walls = make_walls_with_sphere(WallSphere {
                 center: sphere_center,
                 radius: sphere_radius,
@@ -3533,7 +3641,7 @@ mod tests {
             atom.nlocal = 1;
             atom.natoms = 1;
             let mut registry = AtomDataRegistry::new();
-            registry.register(dem);
+            registry.try_register(dem, atom.len()).unwrap();
             let walls = make_walls_with_region(WallRegion {
                 region: Region::Sphere {
                     center: sphere_center,

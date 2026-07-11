@@ -15,7 +15,7 @@ Wall contacts reuse the same per-pair `MaterialTable` tables as particle–parti
 - **Adhesion is asymmetric by geometry:** plane walls support JKR/DMT (`surface_energy`) *and* SJKR cohesion (`cohesion_energy`); cylinder/sphere/region walls support **SJKR cohesion only**. If their material sets `surface_energy > 0`, setup warns that JKR/DMT `surface_energy` is plane-wall-only.
 - The optional **`temperature`** field is *stored but never read* by this crate — it is a hook for an external heat-transfer system.
 
-Malformed `[[wall]]` config (bad TOML, unknown cylinder axis, wrong-length `center`, missing region, zero normal) prints an `ERROR:` and calls `std::process::exit(1)` at setup.
+Malformed `[[wall]]` config (bad TOML, unknown cylinder axis, wrong-length `center`, missing region, zero normal) is returned as an `AppError` during fallible plugin setup. The outer runner formats the error and terminates MPI ranks consistently.
 
 ## Wall types
 

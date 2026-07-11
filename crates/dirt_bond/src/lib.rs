@@ -895,6 +895,17 @@ impl Plugin for DemBondPlugin {
         );
         app.add_update_system(output_bond_metrics, ParticleSimScheduleSet::PostForce);
     }
+
+    fn try_build(&self, app: &mut App) -> Result<(), AppError> {
+        let config = Config::try_load::<BondConfig>(app, "bonds")
+            .map_err(|error| AppError::message(error.to_string()))?;
+        if let Some(path) = config.file.as_deref() {
+            read_and_parse_bonds(path, config.format.as_deref().unwrap_or("lammps_data"))
+                .map_err(|error| AppError::message(error.to_string()))?;
+        }
+        self.build(app);
+        Ok(())
+    }
 }
 
 // ── Setup systems ───────────────────────────────────────────────────────────
@@ -996,8 +1007,7 @@ pub fn load_bonds_from_file(
             return;
         }
         Err(e) => {
-            eprintln!("ERROR: {}", e);
-            std::process::exit(1);
+            panic!("DemBondPlugin preflight should reject invalid bond files: {e}");
         }
     };
 
@@ -1066,7 +1076,7 @@ pub fn load_bonds_from_file(
 
 /// Read `file_path` (whose `format` has already been pulled from the config)
 /// and parse its `Bonds` section, returning a descriptive [`BondConfigError`]
-/// for every failure mode instead of panicking or calling `process::exit`.
+/// for every failure mode instead of panicking or terminating the process.
 ///
 /// `Ok(None)` means the file parsed cleanly but carries no `Bonds` section
 /// (nothing to load); `Ok(Some(_))` returns the parsed records. This is the
@@ -1803,9 +1813,10 @@ mod tests {
         let history = BondHistoryStore::new();
 
         let mut registry = AtomDataRegistry::new();
-        registry.register(dem);
-        registry.register(bond_store);
-        registry.register(history);
+        registry.try_register(dem, atom.len()).unwrap();
+        let atom_count = bond_store.len();
+        registry.try_register(bond_store, atom_count).unwrap();
+        registry.try_register(history, atom.len()).unwrap();
 
         let mut domain = soil_core::Domain::new();
         domain.size = [10.0, 10.0, 10.0];
@@ -2014,9 +2025,11 @@ Bonds
         atom.natoms = 2;
 
         let mut registry = AtomDataRegistry::new();
-        registry.register(dem);
-        registry.register(BondStore::new());
-        registry.register(BondHistoryStore::new());
+        registry.try_register(dem, atom.len()).unwrap();
+        registry.try_register(BondStore::new(), atom.len()).unwrap();
+        registry
+            .try_register(BondHistoryStore::new(), atom.len())
+            .unwrap();
 
         let mut domain = soil_core::Domain::new();
         domain.size = [10.0, 10.0, 10.0];
@@ -2054,9 +2067,11 @@ Bonds
         atom.natoms = 2;
 
         let mut registry = AtomDataRegistry::new();
-        registry.register(dem);
-        registry.register(BondStore::new());
-        registry.register(BondHistoryStore::new());
+        registry.try_register(dem, atom.len()).unwrap();
+        registry.try_register(BondStore::new(), atom.len()).unwrap();
+        registry
+            .try_register(BondHistoryStore::new(), atom.len())
+            .unwrap();
 
         let mut domain = soil_core::Domain::new();
         domain.size = [10.0, 10.0, 10.0];
@@ -2410,7 +2425,8 @@ format = "lammps_data"
         }]);
 
         let mut registry = AtomDataRegistry::new();
-        registry.register(bond_store);
+        let atom_count = bond_store.len();
+        registry.try_register(bond_store, atom_count).unwrap();
 
         let mut domain = soil_core::Domain::new();
         domain.ghost_cutoff = 0.001; // deliberately too small
@@ -2447,7 +2463,8 @@ format = "lammps_data"
         }]);
 
         let mut registry = AtomDataRegistry::new();
-        registry.register(bond_store);
+        let atom_count = bond_store.len();
+        registry.try_register(bond_store, atom_count).unwrap();
 
         let mut domain = soil_core::Domain::new();
         domain.ghost_cutoff = 0.001;
@@ -2479,7 +2496,8 @@ format = "lammps_data"
         }]);
 
         let mut registry = AtomDataRegistry::new();
-        registry.register(bond_store);
+        let atom_count = bond_store.len();
+        registry.try_register(bond_store, atom_count).unwrap();
 
         let mut domain = soil_core::Domain::new();
         domain.ghost_cutoff = 0.05; // already larger than 0.002 × 2.5 = 0.005

@@ -121,6 +121,16 @@ impl Plugin for HertzMindlinContactPlugin {
             }
         }
     }
+
+    fn try_build(&self, app: &mut App) -> Result<(), AppError> {
+        if app.get_resource_ref::<MaterialTable>().is_none() {
+            return Err(AppError::message(
+                "HertzMindlinContactPlugin requires DemAtomPlugin (MaterialTable)",
+            ));
+        }
+        self.build(app);
+        Ok(())
+    }
 }
 
 /// Fused Hertz-Mindlin contact force for all neighbor pairs.

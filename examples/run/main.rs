@@ -69,19 +69,40 @@ fn main() {
     let mut app = App::new();
     seed_from_loading(&mut app);
 
-    app
-        // Infrastructure: CLI parse + TOML load, comm, domain, neighbor, run, print.
-        .add_plugins(CorePlugins)
-        // DEM: atom data + insertion, Velocity Verlet, Hertz-Mindlin contact, rotation.
-        .add_plugins(GranularDefaultPlugins)
-        // Optional, config-driven physics — each inert unless its section is present.
-        .add_plugins(GravityPlugin) // [gravity] body force
-        .add_plugins(WallPlugin) // [[wall]] container / boundary faces
-        .add_plugins(FixesPlugin) // [[addforce]] / [[freeze]] / [[viscous]] / ...
-        .add_plugins(DeformPlugin); // [deform] / [loading] box deformation driver
+    if let Err(error) = configure_plugins(&mut app) {
+        report_app_error(error);
+        process::exit(1);
+    }
 
     // Everything case-specific comes from the TOML config path on argv.
     app.start();
+}
+
+/// Assemble the config-driven DIRT stack through the fallible plugin boundary.
+/// The executable owns the single user-facing error format and termination path.
+fn configure_plugins(app: &mut App) -> Result<(), AppError> {
+    // Infrastructure: CLI parse + TOML load, comm, domain, neighbor, run, print.
+    app.try_add_plugins(CorePlugins)?;
+    // DEM: atom data + insertion, Velocity Verlet, Hertz-Mindlin contact, rotation.
+    app.try_add_plugins(GranularDefaultPlugins)?;
+    // Optional, config-driven physics — each inert unless its section is present.
+    app.try_add_plugins(GravityPlugin)?; // [gravity] body force
+    app.try_add_plugins(WallPlugin)?; // [[wall]] container / boundary faces
+    app.try_add_plugins(FixesPlugin)?; // [[addforce]] / [[freeze]] / [[viscous]] / ...
+    app.try_add_plugins(DeformPlugin)?; // [deform] / [loading] box deformation driver
+    Ok(())
+}
+
+/// Render fallible plugin failures once at the executable boundary. Plugin
+/// names remain available to API callers; config users get the stable detail
+/// emitted by the plugin without scheduler wrapper text.
+fn report_app_error(error: AppError) {
+    match error {
+        AppError::PluginBuild { message, .. } | AppError::SetupSystem { message, .. } => {
+            eprintln!("ERROR: {message}")
+        }
+        other => eprintln!("ERROR: {other}"),
+    }
 }
 
 /// If argv points at a config with a `[loading]` section, load it, expand the
