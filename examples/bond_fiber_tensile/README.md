@@ -31,10 +31,8 @@ slope of σ(ε) and compares it to the input `E`.
 
 ![BPM fiber tensile stress-strain validation](plots/fiber_stress_strain_validation.png)
 
-*Measured middle-bond stress versus global strain from the example run. The blue
-line is the input Young's modulus reconstructed from `K_n = E A / L`; the green
-band shows the ±1% pass band, and the fitted slope is within 0.005% of the input
-`E` (PASS).*
+*Measured middle-bond stress versus global strain from the example run, overlaid
+with the elastic reference reconstructed from `K_n = E A / L`.*
 
 ## What's measured
 

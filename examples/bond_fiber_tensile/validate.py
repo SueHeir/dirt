@@ -78,21 +78,31 @@ def main():
         import matplotlib.pyplot as plt  # type: ignore
 
         fig, ax = plt.subplots(figsize=(6, 4))
-        ax.plot([e * 100 for e in eps], [s / 1e6 for s in sig], "o", ms=3, label="measured")
-        eps_fit = sorted(eps_f)
-        sig_fit = [e_fit * e for e in eps_fit]
         ax.plot(
-            [e * 100 for e in eps_fit],
-            [s / 1e6 for s in sig_fit],
+            [e * 100 for e in eps],
+            [s / 1e6 for s in sig],
+            "o",
+            ms=3,
+            label="DIRT middle-bond stress",
+        )
+        eps_ref = sorted(eps)
+        sig_ref = [e_from_k * e for e in eps_ref]
+        ax.plot(
+            [e * 100 for e in eps_ref],
+            [s / 1e6 for s in sig_ref],
             "-",
-            label=f"fit E = {e_fit:.3e} Pa",
+            label="elastic reference: $\\sigma=E\\varepsilon$",
         )
         ax.set_xlabel("strain ε  (%)")
         ax.set_ylabel("stress σ  (MPa)")
         ax.set_title("BPM fiber: σ(ε)")
         ax.legend()
         ax.grid(True, alpha=0.3)
-        out = Path(path).parent / "fiber_stress_strain.png"
+        # The README embeds this committed data-vs-reference figure.  Keep the
+        # figure generation here, adjacent to the measurement, so its contents
+        # cannot drift from the validator's CSV input.
+        out = Path(__file__).parent / "plots" / "fiber_stress_strain_validation.png"
+        out.parent.mkdir(parents=True, exist_ok=True)
         fig.savefig(out, dpi=150, bbox_inches="tight")
         print(f"  plot saved      : {out}")
     except ImportError:

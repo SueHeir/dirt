@@ -87,8 +87,6 @@ def validate_and_plot():
         ms=4,
         label="Potyondy-Cundall Fig. 8(a), digitized",
     )
-    ax0.axvspan(1 - STRAIN_TOL, 1 + STRAIN_TOL, color="C2", alpha=0.13, label="failure-strain gate")
-    ax0.axhspan(1 - PEAK_TOL, 1 + PEAK_TOL, color="C1", alpha=0.13, label="peak-strength gate")
     ax0.set_xlabel("axial strain / target peak strain")
     ax0.set_ylabel("axial stress / Table 2 PFC2D qu")
     ax0.set_title("Stress-strain replication")

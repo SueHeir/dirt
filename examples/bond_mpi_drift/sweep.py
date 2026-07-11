@@ -95,19 +95,14 @@ def plot(rows: list[dict[str, float]]) -> None:
         2, 1, figsize=(7.2, 5.4), sharex=True, constrained_layout=True
     )
 
-    ax_count.axhspan(1.5, 2.5, color="C2", alpha=0.12, label="integer PASS gate")
     ax_count.axhline(EXPECTED_BONDS, color="black", lw=1.4, ls="--", label="reference = 2")
-    ax_count.axhline(1.5, color="C3", lw=1.0, ls=":", label="fail threshold")
-    ax_count.axhline(2.5, color="C3", lw=1.0, ls=":")
     ax_count.plot(x, count, "o-", color="C0", ms=3, lw=1.2, label="measured")
     ax_count.set_ylabel("bond_count")
     ax_count.set_ylim(1.2, 2.8)
     ax_count.legend(loc="upper right", ncol=2, fontsize=8)
     ax_count.grid(True, alpha=0.25)
 
-    ax_missing.axhspan(-0.05, 0.5, color="C2", alpha=0.12, label="integer PASS gate")
     ax_missing.axhline(EXPECTED_MISSING, color="black", lw=1.4, ls="--", label="reference = 0")
-    ax_missing.axhline(0.5, color="C3", lw=1.0, ls=":", label="first nonzero fails")
     ax_missing.plot(x, missing, "o-", color="C1", ms=3, lw=1.2, label="measured")
     ax_missing.set_xlabel("time (ms)")
     ax_missing.set_ylabel("bond_missing")

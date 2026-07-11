@@ -60,9 +60,8 @@ step    N  atoms=3  bond_count=2  bond_missing=0  [min=2, max_miss=0]  OK
 ![BPM MPI bond migration counts](plots/bond_mpi_drift_counts.png)
 
 *Measured 2-rank MPI `bond_count` and `bond_missing` over 200 migration
-samples against the exact `2/0` reference. The shaded band and red dotted
-lines show the integer pass gate; latest run: PASS, `bond_count` min/max =
-2/2 and `bond_missing` max = 0.*
+samples against the exact `2/0` reference. Latest run: PASS, `bond_count`
+min/max = 2/2 and `bond_missing` max = 0.*
 
 At setup, the plugin prints:
 

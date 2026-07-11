@@ -35,19 +35,18 @@ python3 examples/fiber_bond/validate.py \
 
 ![fiber_bond measured-vs-reference summary](plots/fiber_bond_measured_vs_reference.png)
 
-*Measured scenario quantities divided by their Guo / closed-form references; the
-black interval on each bar is that scenario's PASS band. Latest regenerated run:
-PASS for axial elastic, cantilever bending, bending vibration, axial plastic, and
-bending plastic.*
+*Guo three-step bending-plasticity checks as measured-vs-reference curves:
+DIRT moment response against the Guo trilinear reference, and final unloaded
+profile against the digitized Guo Fig. 14(b) FEM curve. Latest regenerated run:
+PASS.*
 
 ![Guo/Curtis permanent bending profile](plots/bending_plastic_permanent_profile.png)
 
 *Permanent unloaded deformation after the three Guo/Curtis load steps. The
 orange curve is a digitized FEM reference from Guo et al. Fig. 14(b), step 3
-at `α = 1.885 s^-1`; the shaded band is the validator's `±0.075 L` max-error
-limit. Latest run PASS with RMS `|Δ(y/L)| = 0.0271`, max `0.0556`, free-end
-error `25.9%` (limit 35%), and tail curvature 3.82% of the fixed-end peak
-(limit 10%).*
+at `α = 1.885 s^-1`; the blue curve is the DIRT final unloaded profile. Latest
+run PASS with RMS `|Δ(y/L)| = 0.0271`, max `0.0556`, free-end error `25.9%`,
+and tail curvature 3.82% of the fixed-end peak.*
 
 ## Breakage scenarios — see [`../fiber_bond_breakage`](../fiber_bond_breakage)
 

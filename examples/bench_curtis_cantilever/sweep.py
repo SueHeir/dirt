@@ -165,8 +165,6 @@ def write_outputs(results: list[dict[str, float | str]], profile_rows: list[dict
     fig, ax = plt.subplots(figsize=(7.5, 4.8))
     xx = [i * max(x) / 200.0 for i in range(201)]
     yy = [v / 3.0 for v in xx]
-    ax.fill_between(xx, [v * (1 - TIP_TOL) for v in yy], [v * (1 + TIP_TOL) for v in yy],
-                    color="0.88", label=f"+/-{TIP_TOL:.0%} gate")
     ax.plot(xx, yy, "-", c="C1", lw=2.0, label="Euler-Bernoulli thin-beam theory")
     ax.plot(x, y, "o", ms=7, mfc="white", mec="C0", mew=1.6, label="DIRT bonded-sphere fiber")
     ax.set_xlabel("normalized load  F (L-rs)^2 / EI")
@@ -185,8 +183,6 @@ def write_outputs(results: list[dict[str, float | str]], profile_rows: list[dict
         xs = [r["x_over_span"] for r in rows]
         dem = [r["dem"] for r in rows]
         th = [r["theory"] for r in rows]
-        ax.fill_between(xs, [v - tol for v in th], [v + tol for v in th],
-                        color="0.88", label=f"+/-{tol:.0%} absolute gate")
         ax.plot(xs, th, "-", c="C1", lw=2.0, label="beam theory")
         ax.plot(xs, dem, "o", ms=6, mfc="white", mec="C0", mew=1.4, label="DIRT")
         ax.set_xlabel("position along fiber  x / (L-rs)")

@@ -70,9 +70,8 @@ The latest regenerated run samples through step 99 000 (9.9 ms):
 ![Tip deflection vs Euler-Bernoulli beam theory](plots/tip_deflection_vs_beam.png)
 
 *Tip deflection over time from `data/cantilever.csv` compared with the
-Euler-Bernoulli static reference. The shaded band is the ±5 % PASS criterion;
-the latest sample is 0.61 % from the reference, with all 9 bonds present and
-zero missing-partner skips.*
+Euler-Bernoulli static reference. The latest sample is 0.61 % from the
+reference, with all 9 bonds present and zero missing-partner skips.*
 
 The tip oscillates within ~the beam-theory deflection (lightly damped flexural
 vibration) and stays bounded. No bond breaks, no partner skips, no exponential

@@ -834,7 +834,7 @@ def plot(cb_rows, guo_rows, weibull_rows):
         ax2.set_ylim(lim)
         ax2.set_xlabel("analytical quantile")
         ax2.set_ylabel("measured break strain")
-        ax2.set_title("Weibull QQ gate")
+        ax2.set_title("Weibull QQ comparison")
         ax2.legend()
         fig.tight_layout()
         fig.savefig(os.path.join(PLOT_DIR, "weibull_cdf_qq.png"))

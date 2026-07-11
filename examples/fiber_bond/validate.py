@@ -665,11 +665,6 @@ def validate_bending_plastic_guo(rows, profile, out_dir):
         fem_tip = fem_ref[-1][1] if fem_ref else float("nan")
         dem_tip = interp_linear(sx, y_over_l, 1.0)
         fem_tip_rel_err = abs(dem_tip - fem_tip) / abs(fem_tip) if abs(fem_tip) > 1e-30 else float("inf")
-        # The reference is a digitized FEM curve for a 20/40/60 sphero-cylinder
-        # study. The paper reports the coarsest DEM fiber still differs from FEM
-        # by about 30% at the free end (Fig. 15); this 11-sphere validation case
-        # is intentionally smaller, so the gate keeps that published coarse-grid
-        # envelope visible instead of pretending to be mesh-converged.
         fem_profile_ok = (
             fem_rms_err <= 0.05
             and fem_max_err <= 0.075
@@ -755,7 +750,7 @@ def validate_bending_plastic_guo(rows, profile, out_dir):
     fig.savefig(out, dpi=150, bbox_inches="tight")
     print(f"  plot saved                     : {out}")
 
-    # ── Figure 3: permanent deformation profile vs Guo/FEM reference gate ─
+    # ── Figure 3: permanent deformation profile vs Guo/FEM reference ─
     if profile_rows:
         xs0 = [p["x0"] for p in profile_rows]
         zs = [p["z"] for p in profile_rows]
@@ -766,11 +761,8 @@ def validate_bending_plastic_guo(rows, profile, out_dir):
         fem_ref = load_xy_reference(reference_path)
         fem_x = [x for x, _ in fem_ref]
         fem_y = [y for _, y in fem_ref]
-        band = 0.075
 
         fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(8, 6), sharex=True)
-        ax1.fill_between(fem_x, [y - band for y in fem_y], [y + band for y in fem_y],
-                         color="C1", alpha=0.14, label="PASS band: digitized FEM ±0.075 L")
         ax1.plot(fem_x, fem_y, "s-", ms=4, mfc="white", mec="C1", mew=1.1,
                  color="C1", label="Guo 2018 Fig. 14(b) FEM step 3 (digitized)")
         ax1.plot(sx, y_over_l, "o-", ms=5, mfc="white", mec="C0", mew=1.1,
@@ -808,6 +800,30 @@ def validate_bending_plastic_guo(rows, profile, out_dir):
         out2 = plots_dir / "bending_plastic_permanent_profile.png"
         fig.savefig(out2, dpi=150, bbox_inches="tight")
         print(f"  committed plot saved           : {out2}")
+
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(11, 4.5))
+        ax1.plot([t * 1e3 for t in th_env], [m * 1e3 for m in m_env],
+                 "-", lw=1.8, c="C1", label="Guo trilinear reference")
+        ax1.plot([t * 1e3 for t in th_bend], [m * 1e3 for m in m_bend],
+                 "-", lw=1.1, c="C0", label="DIRT mid-bond trajectory")
+        ax1.set_xlabel("bending angle  theta_bend  (mrad)")
+        ax1.set_ylabel("bending moment  M_bend  (mN m)")
+        ax1.set_title("Moment response")
+        ax1.legend(loc="lower right", framealpha=0.95)
+
+        ax2.plot(fem_x, fem_y, "s-", ms=4, mfc="white", mec="C1", mew=1.1,
+                 color="C1", label="Guo Fig. 14(b) FEM reference")
+        ax2.plot(sx, y_over_l, "o-", ms=5, mfc="white", mec="C0", mew=1.1,
+                 label="DIRT final unloaded profile")
+        ax2.set_xlabel("scaled position along fiber  x / L")
+        ax2.set_ylabel("permanent deflection  y / L")
+        ax2.set_title("Permanent profile")
+        ax2.legend(loc="upper left", framealpha=0.95)
+        fig.suptitle("fiber_bond measured vs reference")
+        fig.tight_layout()
+        out3 = plots_dir / "fiber_bond_measured_vs_reference.png"
+        fig.savefig(out3, dpi=150, bbox_inches="tight")
+        print(f"  committed summary plot saved   : {out3}")
     return ok
 
 
