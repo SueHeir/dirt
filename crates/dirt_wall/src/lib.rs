@@ -423,6 +423,12 @@ pub struct WallPlane {
     /// Accumulated scalar contact force this timestep (along normal),
     /// used by the servo controller to compute the feedback error.
     pub force_accumulator: f64,
+    /// Vector contact force exerted by this wall on particles this timestep.
+    ///
+    /// Unlike [`Self::force_accumulator`], this retains tangential components
+    /// and is therefore suitable for a wall-shear measurement. It is reset in
+    /// the same pre-force pass as the scalar servo feedback force.
+    pub force_vector: [f64; 3],
     /// Wall temperature in K (None = no wall heat transfer).
     pub temperature: Option<f64>,
 }
@@ -878,6 +884,7 @@ impl Plugin for WallPlugin {
                             motion,
                             origin: [w.point_x, w.point_y, w.point_z],
                             force_accumulator: 0.0,
+                            force_vector: [0.0; 3],
                             temperature: w.temperature,
                         });
                     }
@@ -1099,6 +1106,7 @@ pub fn wall_move(mut walls: ResMut<Walls>, atoms: Res<Atom>) {
 pub fn wall_zero_force_accumulators(mut walls: ResMut<Walls>) {
     for wall in &mut walls.planes {
         wall.force_accumulator = 0.0;
+        wall.force_vector = [0.0; 3];
     }
     for wall in &mut walls.cylinders {
         wall.force_accumulator = 0.0;
@@ -1409,6 +1417,7 @@ pub fn wall_contact_force(
     // Collect per-wall forces to accumulate after the loop
     let nwalls = walls.planes.len();
     let mut wall_forces = vec![0.0f64; nwalls];
+    let mut wall_force_vectors = vec![[0.0f64; 3]; nwalls];
 
     for (wall_idx, wall) in walls.planes.iter().enumerate() {
         if !walls.active[wall_idx] {
@@ -1499,9 +1508,14 @@ pub fn wall_contact_force(
             };
 
             // Force direction: along wall normal (pushes atom away from wall)
-            atoms.force[i][0] += (f_net * wall.normal_x) as Accum;
-            atoms.force[i][1] += (f_net * wall.normal_y) as Accum;
-            atoms.force[i][2] += (f_net * wall.normal_z) as Accum;
+            let mut force_on_atom = [
+                f_net * wall.normal_x,
+                f_net * wall.normal_y,
+                f_net * wall.normal_z,
+            ];
+            atoms.force[i][0] += force_on_atom[0] as Accum;
+            atoms.force[i][1] += force_on_atom[1] as Accum;
+            atoms.force[i][2] += force_on_atom[2] as Accum;
 
             // Twisting friction torque (wall-particle)
             if delta > 0.0 {
@@ -1544,6 +1558,9 @@ pub fn wall_contact_force(
                 atoms.force[i][0] += ft[0] as Accum;
                 atoms.force[i][1] += ft[1] as Accum;
                 atoms.force[i][2] += ft[2] as Accum;
+                force_on_atom[0] += ft[0];
+                force_on_atom[1] += ft[1];
+                force_on_atom[2] += ft[2];
                 dem.torque[i][0] += tau[0];
                 dem.torque[i][1] += tau[1];
                 dem.torque[i][2] += tau[2];
@@ -1580,12 +1597,16 @@ pub fn wall_contact_force(
 
             // Accumulate wall force for servo control
             wall_forces[wall_idx] += f_net;
+            wall_force_vectors[wall_idx][0] += force_on_atom[0];
+            wall_force_vectors[wall_idx][1] += force_on_atom[1];
+            wall_force_vectors[wall_idx][2] += force_on_atom[2];
         }
     }
 
     // Write accumulated forces back to walls
     for (idx, &f) in wall_forces.iter().enumerate() {
         walls.planes[idx].force_accumulator += f;
+        walls.planes[idx].force_vector = wall_force_vectors[idx];
     }
 
     // ── Cylinder walls ──────────────────────────────────────────────────
@@ -2083,6 +2104,7 @@ mod tests {
             motion: WallMotion::Static,
             origin: [point_x, point_y, point_z],
             force_accumulator: 0.0,
+            force_vector: [0.0; 3],
             temperature: None,
         }
     }
@@ -2364,6 +2386,11 @@ mod tests {
         );
         assert!((atom.force[0][0]).abs() < 1e-15);
         assert!((atom.force[0][1]).abs() < 1e-15);
+        let walls = app.get_resource_ref::<Walls>().unwrap();
+        assert!(
+            (walls.planes[0].force_vector[2] - atom.force[0][2] as f64).abs() < 1e-15,
+            "wall measurement must retain the force it applied to the particle"
+        );
     }
 
     #[test]

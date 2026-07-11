@@ -1,13 +1,15 @@
 # Guo flexible-fibre normal-stress-fixed shear-cell campaign
 
-This directory contains source-faithful campaign preparation and a fail-closed
-acceptance contract; it does not yet contain a bundled physics result.  Guo
+This directory contains a source-parameterized DIRT shear-cell executable and
+a fail-closed acceptance contract; it does not contain a bundled physics
+result. Guo
 et al., *AIChE Journal* **65** (online 2018; issue 2019),
 doi:10.1002/aic.16397, report the
 rubber-cord measurements digitized in `data/guo_2019_rubber_cord.csv`: Fig. 6
 steady shear stress and Fig. 7 solid fraction at 651, 1735, and 3470 Pa.
 
-The prepared 64-mm and 96-mm populations use the reported rubber-cord Table 2
+The prepared 64-mm and 96-mm populations and the executable's material,
+bond, and timestep fields use the reported rubber-cord Table 2
 representation: 17 beads of 2.4-mm diameter at 1.2-mm spacing, 21.6-mm fibre
 length, 1157.5-kg/m³ density, 6.28-MPa modulus, and a 2.3e-7-s time step.
 Prepare and audit one without running a solver:
@@ -18,6 +20,18 @@ python3 examples/bench_guo2018_fiber_shear_cell/prepare.py \
 python3 examples/bench_guo2018_fiber_shear_cell/prepare.py --audit /tmp/guo64
 ```
 
+To create an auditable DIRT input for one of the six cases, use the executable
+path rather than hand-editing a topology or requested force. The default run
+uses periodic lateral boundaries, an explicit gravity-settle stage, a measured
+normal-load qualification before it enables the 20-mm/s lower-wall drive, and
+records live lid reactions and solid fraction to `cell_history.csv`.
+
+```bash
+python3 examples/bench_guo2018_fiber_shear_cell/run_case.py \
+  --pressure-pa 651 --width-mm 64 --output /tmp/guo-p651-w64 --prepare-only
+# Omit --prepare-only to run DIRT; the gamma >= 0.5 case is intentionally long.
+```
+
 The old replay had zero lid reaction while the packing fell.  That is neither
 a loaded cell nor an experimental comparison.  `validate.py` makes that
 failure impossible to label PASS: it accepts only solver-written histories
@@ -25,8 +39,8 @@ with a gravity-settle stage, at least 40 measured-load samples within 15% of
 the requested pressure, and at least 40 driven-shear samples at engineering
 strain >= 0.50.  The final shear window must retain the measured load.
 
-Run a complete campaign with a solver that records the required CSV columns,
-then validate its six histories (the 96-mm cases contain 750 17-bead fibres):
+Run all six solver cases with `run_case.py` (the 96-mm cases contain 750
+17-bead fibres), then validate their histories:
 
 ```bash
 python3 examples/bench_guo2018_fiber_shear_cell/validate.py \
@@ -41,15 +55,18 @@ python3 examples/bench_guo2018_fiber_shear_cell/validate.py \
 The 64-mm observations are compared to the external experimental digitization
 (30% relative shear-stress and 0.05 absolute solid-fraction tolerances).  The
 96-mm observations are an independent finite-size check with the same bands;
-they are not fitted to a second reference curve.  The validator has no
-hand-entered DIRT results and fails when a history is missing, incomplete, or
-does not reach the predeclared state.
+they are not fitted to a second reference curve. The validator has no
+hand-entered DIRT results and fails when a history is missing, incomplete,
+records a requested rather than measured load, or does not reach the
+predeclared state.
 
 Digitization error, finite size, wall roughness, and representing rubber cord
 as bonded spheres remain limitations.  A passing gate supports this specified
 model-to-experiment comparison; it does not establish material calibration or
-general rubber-cord mechanics.  Until a DIRT executable supplies all six
-histories, there is no replication result or result graph to claim.
+general rubber-cord mechanics. Until a DIRT run supplies all six histories,
+there is no replication result or result graph to claim. The deterministic
+starting placement is a documented solver initial condition, not a claim that
+the paper's unreported packing microstate was recovered.
 
 ```bash
 python3 examples/bench_guo2018_fiber_shear_cell/validate.py --self-test

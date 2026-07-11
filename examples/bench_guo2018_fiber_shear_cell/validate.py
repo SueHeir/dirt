@@ -126,6 +126,12 @@ class ValidatorTests(unittest.TestCase):
             measure(path, 651, 64)
         path.unlink()
 
+    def test_rejects_requested_load_when_lid_did_not_measure_it(self):
+        path = self.history(normal=0.0)
+        with self.assertRaisesRegex(ValueError, "measured lid load"):
+            measure(path, 651, 64)
+        path.unlink()
+
 
 if __name__ == "__main__":
     main()
