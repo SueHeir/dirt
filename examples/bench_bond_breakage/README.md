@@ -71,8 +71,8 @@ schedule (`fiber_bond/main.rs::apply_three_step_load`, activated by the
 M^p = (4/3) · sigma_0 · r_b^3
 ```
 
-Sweeping `sigma_0` (1.0, 1.25, 1.5 MPa) scales `M^p` linearly
-(1.33, 1.67, 2.00 mN·m). The peak bond moment is reconstructed from the recorded
+Sweeping `sigma_0` (2.0, 2.5, 3.0 MPa) scales `M^p` linearly
+(2.67, 3.33, 4.00 mN·m). The peak bond moment is reconstructed from the recorded
 kinematics as `M = K_bend · (θ_bend − θ_p_bend)`.
 
 **Gate:** peak reconstructed moment plateaus at `M^p` for every `sigma_0`
@@ -80,9 +80,9 @@ kinematics as `M = K_bend · (θ_bend − θ_p_bend)`.
 
 | σ₀ (MPa) | M^p (mN·m) | peak (mN·m) | ratio |
 |----------|------------|-------------|-------|
-| 1.0      | 1.3333     | 1.3333      | 1.000 |
-| 1.25     | 1.6667     | 1.6667      | 1.000 |
-| 1.5      | 2.0000     | 1.9988      | 0.999 |
+| 2.0      | 2.6667     | 2.6667      | 1.000 |
+| 2.5      | 3.3333     | 3.3333      | 1.000 |
+| 3.0      | 4.0000     | 4.0000      | 1.000 |
 
 The `sigma_0` values are chosen so `M^p` stays below the moment the fixed tip
 schedule can drive into the middle bond, so every case reaches its cap.
