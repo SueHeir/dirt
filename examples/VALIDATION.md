@@ -918,6 +918,13 @@ friction is increased. There is no exact analytical repose angle, so it checks o
 the qualitative signature a correct model must show: the angle grows with friction,
 is near-flat at μ = 0, and is reproducible across repeats.
 
+**Experimental scope:** Elekes & Parteli (2021), doi:10.1073/pnas.2107965118,
+report roughly 20–25° for millimetre glass beads prepared by hopper pouring. That
+is not a valid gate for this lifted-column protocol: preparation history and the
+unreported rolling-contact parameters alter the result. No rolling-friction value
+is selected to hit that interval. A quantitative experiment comparison requires a
+matched hopper protocol and independently specified contact and uncertainty data.
+
 ![Repose angle vs friction](bench_angle_of_repose/plots/theta_vs_mu.png)
 
 *Mean repose angle vs sliding friction (±1 s.d. over repeats), with the "sensible" band
