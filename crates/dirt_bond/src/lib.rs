@@ -1813,9 +1813,10 @@ mod tests {
         let history = BondHistoryStore::new();
 
         let mut registry = AtomDataRegistry::new();
-        registry.register(dem);
-        registry.register(bond_store);
-        registry.register(history);
+        registry.try_register(dem, atom.len()).unwrap();
+        let atom_count = bond_store.len();
+        registry.try_register(bond_store, atom_count).unwrap();
+        registry.try_register(history, atom.len()).unwrap();
 
         let mut domain = soil_core::Domain::new();
         domain.size = [10.0, 10.0, 10.0];
@@ -2024,9 +2025,11 @@ Bonds
         atom.natoms = 2;
 
         let mut registry = AtomDataRegistry::new();
-        registry.register(dem);
-        registry.register(BondStore::new());
-        registry.register(BondHistoryStore::new());
+        registry.try_register(dem, atom.len()).unwrap();
+        registry.try_register(BondStore::new(), atom.len()).unwrap();
+        registry
+            .try_register(BondHistoryStore::new(), atom.len())
+            .unwrap();
 
         let mut domain = soil_core::Domain::new();
         domain.size = [10.0, 10.0, 10.0];
@@ -2064,9 +2067,11 @@ Bonds
         atom.natoms = 2;
 
         let mut registry = AtomDataRegistry::new();
-        registry.register(dem);
-        registry.register(BondStore::new());
-        registry.register(BondHistoryStore::new());
+        registry.try_register(dem, atom.len()).unwrap();
+        registry.try_register(BondStore::new(), atom.len()).unwrap();
+        registry
+            .try_register(BondHistoryStore::new(), atom.len())
+            .unwrap();
 
         let mut domain = soil_core::Domain::new();
         domain.size = [10.0, 10.0, 10.0];
@@ -2420,7 +2425,8 @@ format = "lammps_data"
         }]);
 
         let mut registry = AtomDataRegistry::new();
-        registry.register(bond_store);
+        let atom_count = bond_store.len();
+        registry.try_register(bond_store, atom_count).unwrap();
 
         let mut domain = soil_core::Domain::new();
         domain.ghost_cutoff = 0.001; // deliberately too small
@@ -2457,7 +2463,8 @@ format = "lammps_data"
         }]);
 
         let mut registry = AtomDataRegistry::new();
-        registry.register(bond_store);
+        let atom_count = bond_store.len();
+        registry.try_register(bond_store, atom_count).unwrap();
 
         let mut domain = soil_core::Domain::new();
         domain.ghost_cutoff = 0.001;
@@ -2489,7 +2496,8 @@ format = "lammps_data"
         }]);
 
         let mut registry = AtomDataRegistry::new();
-        registry.register(bond_store);
+        let atom_count = bond_store.len();
+        registry.try_register(bond_store, atom_count).unwrap();
 
         let mut domain = soil_core::Domain::new();
         domain.ghost_cutoff = 0.05; // already larger than 0.002 × 2.5 = 0.005

@@ -1593,8 +1593,8 @@ mod tests {
     fn config_insert_snapshot(seed: Option<u64>) -> Vec<u64> {
         let mut app = App::new();
         let mut registry = AtomDataRegistry::new();
-        registry.register(DemAtom::new());
-        registry.register(ClumpAtom::new());
+        registry.try_register(DemAtom::new(), 0).unwrap();
+        registry.try_register(ClumpAtom::new(), 0).unwrap();
 
         let mut domain = Domain::new();
         domain.boundaries_low = [-0.03; 3];
@@ -1869,8 +1869,8 @@ mod tests {
         atoms.force[0] = [0.0, 0.0, 10.0];
 
         let mut registry = AtomDataRegistry::new();
-        registry.register(dem);
-        registry.register(clump);
+        registry.try_register(dem, atoms.len()).unwrap();
+        registry.try_register(clump, atoms.len()).unwrap();
 
         let mut app = App::new();
         app.add_resource(atoms);
@@ -1929,8 +1929,8 @@ mod tests {
         bodies.bodies[0].quaternion = [half.cos(), 0.0, 0.0, half.sin()];
 
         let mut registry = AtomDataRegistry::new();
-        registry.register(dem);
-        registry.register(clump);
+        registry.try_register(dem, atoms.len()).unwrap();
+        registry.try_register(clump, atoms.len()).unwrap();
 
         let mut app = App::new();
         app.add_resource(atoms);
@@ -2029,8 +2029,8 @@ mod tests {
         bodies.bodies[0].omega = [0.0, 0.0, 100.0];
 
         let mut registry = AtomDataRegistry::new();
-        registry.register(dem);
-        registry.register(clump);
+        registry.try_register(dem, atoms.len()).unwrap();
+        registry.try_register(clump, atoms.len()).unwrap();
 
         let mut app = App::new();
         app.add_resource(atoms);
@@ -2073,8 +2073,8 @@ mod tests {
         atoms.force[1] = [0.0, 5.0, 0.0];
 
         let mut registry = AtomDataRegistry::new();
-        registry.register(dem);
-        registry.register(clump);
+        registry.try_register(dem, atoms.len()).unwrap();
+        registry.try_register(clump, atoms.len()).unwrap();
 
         let mut app = App::new();
         app.add_resource(atoms);

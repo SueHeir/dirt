@@ -1411,7 +1411,7 @@ misspelled_force = 1.0
         atoms.force[0] = [5.0, 0.0, 0.0];
 
         let mut registry = soil_core::AtomDataRegistry::new();
-        registry.register(dem);
+        registry.try_register(dem, atoms.len()).unwrap();
 
         let groups = make_group_registry("all", vec![true]);
         let ga = 0.3_f64;

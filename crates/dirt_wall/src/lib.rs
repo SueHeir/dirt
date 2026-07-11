@@ -2159,7 +2159,7 @@ mod tests {
         atom.natoms = 1;
 
         let mut registry = AtomDataRegistry::new();
-        registry.register(dem);
+        registry.try_register(dem, atom.len()).unwrap();
 
         let mut app = App::new();
         app.add_resource(atom);
@@ -2347,7 +2347,7 @@ mod tests {
         atom.natoms = 1;
 
         let mut registry = AtomDataRegistry::new();
-        registry.register(dem);
+        registry.try_register(dem, atom.len()).unwrap();
 
         let walls = make_walls(vec![make_wall_plane(0.0, 0.0, 0.0, 0.0, 0.0, 1.0)]);
 
@@ -2381,7 +2381,7 @@ mod tests {
         atom.natoms = 1;
 
         let mut registry = AtomDataRegistry::new();
-        registry.register(dem);
+        registry.try_register(dem, atom.len()).unwrap();
 
         let walls = make_walls(vec![make_wall_plane(0.0, 0.0, 0.0, 0.0, 0.0, 1.0)]);
 
@@ -2409,7 +2409,7 @@ mod tests {
         atom.natoms = 1;
 
         let mut registry = AtomDataRegistry::new();
-        registry.register(dem);
+        registry.try_register(dem, atom.len()).unwrap();
 
         let mut plane = make_wall_plane(0.0, 0.0, 0.0, 0.0, 0.0, 1.0);
         plane.name = Some("blocker".into());
@@ -2443,7 +2443,7 @@ mod tests {
         atom.natoms = 1;
 
         let mut registry = AtomDataRegistry::new();
-        registry.register(dem);
+        registry.try_register(dem, atom.len()).unwrap();
 
         let walls = make_walls(vec![make_wall_plane(0.0, 0.0, 0.0, 1.0, 0.0, 1.0)]);
 
@@ -2477,7 +2477,7 @@ mod tests {
         atom.natoms = 1;
 
         let mut registry = AtomDataRegistry::new();
-        registry.register(dem);
+        registry.try_register(dem, atom.len()).unwrap();
 
         let mut wall = make_wall_plane(0.0, 0.0, 0.0, 0.0, 0.0, 1.0);
         wall.bound_x_low = 0.0;
@@ -2512,7 +2512,7 @@ mod tests {
         atom.natoms = 1;
 
         let mut registry = AtomDataRegistry::new();
-        registry.register(dem);
+        registry.try_register(dem, atom.len()).unwrap();
 
         let walls = make_walls(vec![make_wall_plane(0.0, 0.0, 0.0, 0.0, 0.0, 1.0)]);
 
@@ -2657,7 +2657,7 @@ mod tests {
             atom.natoms = 1;
 
             let mut registry = AtomDataRegistry::new();
-            registry.register(dem);
+            registry.try_register(dem, atom.len()).unwrap();
 
             let mut plane = make_wall_plane(0.0, 0.0, 0.0, 0.0, 0.0, 1.0);
             plane.velocity = wall_vel;
@@ -2704,7 +2704,7 @@ mod tests {
         atom.natoms = 1;
 
         let mut registry = AtomDataRegistry::new();
-        registry.register(dem);
+        registry.try_register(dem, atom.len()).unwrap();
 
         let mut material_table = dirt_atom::MaterialTable::new();
         material_table.rolling_model = "sds".to_string();
@@ -2905,7 +2905,7 @@ mod tests {
         atom.natoms = 1;
 
         let mut registry = AtomDataRegistry::new();
-        registry.register(dem);
+        registry.try_register(dem, atom.len()).unwrap();
 
         let walls = make_walls_with_cylinder(WallCylinder {
             axis: 2, // Z
@@ -2952,7 +2952,7 @@ mod tests {
         atom.natoms = 1;
 
         let mut registry = AtomDataRegistry::new();
-        registry.register(dem);
+        registry.try_register(dem, atom.len()).unwrap();
 
         let walls = make_walls_with_cylinder(WallCylinder {
             axis: 2,
@@ -3004,7 +3004,7 @@ mod tests {
         atom.natoms = 1;
 
         let mut registry = AtomDataRegistry::new();
-        registry.register(dem);
+        registry.try_register(dem, atom.len()).unwrap();
 
         let walls = make_walls_with_sphere(WallSphere {
             center: [0.005, 0.005, 0.005],
@@ -3048,7 +3048,7 @@ mod tests {
         atom.natoms = 1;
 
         let mut registry = AtomDataRegistry::new();
-        registry.register(dem);
+        registry.try_register(dem, atom.len()).unwrap();
 
         let walls = make_walls_with_sphere(WallSphere {
             center: [0.005, 0.005, 0.005],
@@ -3106,7 +3106,7 @@ mod tests {
             atom.natoms = 1;
 
             let mut registry = AtomDataRegistry::new();
-            registry.register(dem);
+            registry.try_register(dem, atom.len()).unwrap();
 
             let walls = make_walls_with_cylinder(WallCylinder {
                 axis: 2,
@@ -3190,7 +3190,7 @@ mod tests {
         atom.natoms = 1;
 
         let mut registry = AtomDataRegistry::new();
-        registry.register(dem);
+        registry.try_register(dem, atom.len()).unwrap();
 
         let walls = make_walls_with_cylinder(WallCylinder {
             axis: 2,
@@ -3263,7 +3263,7 @@ mod tests {
             atom.natoms = 1;
 
             let mut registry = AtomDataRegistry::new();
-            registry.register(dem);
+            registry.try_register(dem, atom.len()).unwrap();
 
             let walls = make_walls_with_sphere(WallSphere {
                 center: sph_center,
@@ -3324,7 +3324,7 @@ mod tests {
         atom.natoms = 1;
 
         let mut registry = AtomDataRegistry::new();
-        registry.register(dem);
+        registry.try_register(dem, atom.len()).unwrap();
 
         let walls = make_walls(vec![make_wall_plane(0.0, 0.0, 0.0, 0.0, 0.0, 1.0)]);
 
@@ -3364,7 +3364,7 @@ mod tests {
             atom.natoms = 1;
 
             let mut registry = AtomDataRegistry::new();
-            registry.register(dem);
+            registry.try_register(dem, atom.len()).unwrap();
 
             let walls = make_walls(vec![make_wall_plane(0.0, 0.0, 0.0, 0.0, 0.0, 1.0)]);
 
@@ -3416,7 +3416,7 @@ mod tests {
         atom.natoms = 1;
 
         let mut registry = AtomDataRegistry::new();
-        registry.register(dem);
+        registry.try_register(dem, atom.len()).unwrap();
 
         let walls = make_walls_with_region(WallRegion {
             region: Region::Sphere {
@@ -3461,7 +3461,7 @@ mod tests {
         atom.natoms = 1;
 
         let mut registry = AtomDataRegistry::new();
-        registry.register(dem);
+        registry.try_register(dem, atom.len()).unwrap();
 
         let walls = make_walls_with_region(WallRegion {
             region: Region::Sphere {
@@ -3506,7 +3506,7 @@ mod tests {
         atom.natoms = 1;
 
         let mut registry = AtomDataRegistry::new();
-        registry.register(dem);
+        registry.try_register(dem, atom.len()).unwrap();
 
         let walls = make_walls_with_region(WallRegion {
             region: Region::Block {
@@ -3559,7 +3559,7 @@ mod tests {
         atom.natoms = 1;
 
         let mut registry = AtomDataRegistry::new();
-        registry.register(dem);
+        registry.try_register(dem, atom.len()).unwrap();
 
         let walls = make_walls_with_region(WallRegion {
             region: Region::Cone {
@@ -3611,7 +3611,7 @@ mod tests {
             atom.nlocal = 1;
             atom.natoms = 1;
             let mut registry = AtomDataRegistry::new();
-            registry.register(dem);
+            registry.try_register(dem, atom.len()).unwrap();
             let walls = make_walls_with_sphere(WallSphere {
                 center: sphere_center,
                 radius: sphere_radius,
@@ -3641,7 +3641,7 @@ mod tests {
             atom.nlocal = 1;
             atom.natoms = 1;
             let mut registry = AtomDataRegistry::new();
-            registry.register(dem);
+            registry.try_register(dem, atom.len()).unwrap();
             let walls = make_walls_with_region(WallRegion {
                 region: Region::Sphere {
                     center: sphere_center,
