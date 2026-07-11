@@ -467,6 +467,65 @@ impl Plugin for ClumpPlugin {
             ParticleSimScheduleSet::PostFinalIntegration,
         );
     }
+
+    fn try_build(&self, app: &mut App) -> Result<(), AppError> {
+        validate_clump_config(app)?;
+        self.build(app);
+        Ok(())
+    }
+}
+
+fn validate_clump_config(app: &mut App) -> Result<(), AppError> {
+    let config = Config::try_load::<ClumpTopConfig>(app, "clump")
+        .map_err(|error| AppError::message(error.to_string()))?;
+    let materials = app
+        .get_resource_ref::<dirt_atom::MaterialTable>()
+        .ok_or_else(|| AppError::message("ClumpPlugin requires DemAtomPlugin"))?;
+    let defs = config.definitions.as_deref().unwrap_or_default();
+    for def in defs {
+        if def.spheres.is_empty() {
+            return Err(AppError::message(format!(
+                "Clump '{}' must have at least one sphere",
+                def.name
+            )));
+        }
+    }
+    for insert in config.insert.as_deref().unwrap_or_default() {
+        if !defs.iter().any(|def| def.name == insert.definition) {
+            return Err(AppError::message(format!(
+                "Clump definition '{}' not found",
+                insert.definition
+            )));
+        }
+        if !materials.names.iter().any(|name| name == &insert.material) {
+            return Err(AppError::message(format!(
+                "Material '{}' not found in [[dem.materials]]",
+                insert.material
+            )));
+        }
+        if let Some(region) = &insert.region {
+            validate_clump_insertion_region(region)?;
+        }
+    }
+    Ok(())
+}
+
+fn validate_clump_insertion_region(region: &Region) -> Result<(), AppError> {
+    match region {
+        Region::Plane { .. } => Err(AppError::message(
+            "[[clump.insert]] region must be bounded; Plane cannot be sampled",
+        )),
+        Region::Union { regions } | Region::Intersect { regions } if regions.is_empty() => Err(
+            AppError::message("[[clump.insert]] region union/intersect must not be empty"),
+        ),
+        Region::Union { regions } | Region::Intersect { regions } => {
+            for child in regions {
+                validate_clump_insertion_region(child)?;
+            }
+            Ok(())
+        }
+        _ => Ok(()),
+    }
 }
 
 // ── Systems ─────────────────────────────────────────────────────────────────
@@ -1169,8 +1228,7 @@ fn insert_clumps_with_rng<R: Rng>(
     while inserted < insert.count && attempts < max_attempts {
         attempts += 1;
         let pos = region.random_point_inside(rng).unwrap_or_else(|e| {
-            eprintln!("ERROR: invalid region in [[clump.insert]]: {}", e);
-            std::process::exit(1);
+            panic!("ClumpPlugin preflight should reject invalid insertion regions: {e}")
         });
 
         // Check overlap with existing clump COMs

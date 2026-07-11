@@ -887,6 +887,17 @@ impl Plugin for DemBondPlugin {
         );
         app.add_update_system(output_bond_metrics, ParticleSimScheduleSet::PostForce);
     }
+
+    fn try_build(&self, app: &mut App) -> Result<(), AppError> {
+        let config = Config::try_load::<BondConfig>(app, "bonds")
+            .map_err(|error| AppError::message(error.to_string()))?;
+        if let Some(path) = config.file.as_deref() {
+            read_and_parse_bonds(path, config.format.as_deref().unwrap_or("lammps_data"))
+                .map_err(|error| AppError::message(error.to_string()))?;
+        }
+        self.build(app);
+        Ok(())
+    }
 }
 
 // ── Setup systems ───────────────────────────────────────────────────────────
@@ -988,8 +999,7 @@ pub fn load_bonds_from_file(
             return;
         }
         Err(e) => {
-            eprintln!("ERROR: {}", e);
-            std::process::exit(1);
+            panic!("DemBondPlugin preflight should reject invalid bond files: {e}");
         }
     };
 
@@ -1058,7 +1068,7 @@ pub fn load_bonds_from_file(
 
 /// Read `file_path` (whose `format` has already been pulled from the config)
 /// and parse its `Bonds` section, returning a descriptive [`BondConfigError`]
-/// for every failure mode instead of panicking or calling `process::exit`.
+/// for every failure mode instead of panicking or terminating the process.
 ///
 /// `Ok(None)` means the file parsed cleanly but carries no `Bonds` section
 /// (nothing to load); `Ok(Some(_))` returns the parsed records. This is the

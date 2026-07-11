@@ -71,7 +71,7 @@
 //!   within a reporting window (e.g. across run stages), reported rates divide
 //!   by the sum of the elapsed per-step timesteps in that window.
 //! - **Degenerate normals are rejected.** A normal with magnitude `≤ 1e-30`
-//!   is a configuration error. The plugin exits during setup instead of
+//!   is a configuration error returned during fallible plugin setup instead of
 //!   silently measuring a different cross-section.
 
 use std::collections::HashMap;
@@ -286,6 +286,8 @@ impl Plugin for MeasurePlanePlugin {
     }
 
     fn build(&self, app: &mut App) {
+        validate_measure_planes(app)
+            .unwrap_or_else(|error| panic!("MeasurePlanePlugin failed to build: {error}"));
         let defs = {
             let config = app
                 .get_resource_ref::<Config>()
@@ -302,8 +304,7 @@ impl Plugin for MeasurePlanePlugin {
             .iter()
             .map(|def| {
                 MeasurePlaneState::try_new(def).unwrap_or_else(|err| {
-                    eprintln!("ERROR: {err}");
-                    std::process::exit(1);
+                    panic!("MeasurePlanePlugin preflight should reject invalid planes: {err}");
                 })
             })
             .collect();
@@ -328,6 +329,27 @@ impl Plugin for MeasurePlanePlugin {
             ParticleSimScheduleSet::PostFinalIntegration,
         );
     }
+
+    fn try_build(&self, app: &mut App) -> Result<(), AppError> {
+        validate_measure_planes(app)?;
+        self.build(app);
+        Ok(())
+    }
+}
+
+fn validate_measure_planes(app: &mut App) -> Result<(), AppError> {
+    let defs = {
+        let config = app
+            .get_resource_ref::<Config>()
+            .ok_or_else(|| AppError::message("MeasurePlanePlugin requires Config"))?;
+        config
+            .try_parse_array::<MeasurePlaneDef>("measure_plane")
+            .map_err(|error| AppError::message(error.to_string()))?
+    };
+    for def in &defs {
+        MeasurePlaneState::try_new(def).map_err(AppError::message)?;
+    }
+    Ok(())
 }
 
 // ── Systems ─────────────────────────────────────────────────────────────────
@@ -458,6 +480,27 @@ fn measure_plane_report(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn malformed_measure_plane_is_a_typed_plugin_error() {
+        let mut app = App::new();
+        app.add_resource(Config::from_str(
+            r#"
+[[measure_plane]]
+name = "degenerate"
+point = [0.0, 0.0, 0.0]
+normal = [0.0, 0.0, 0.0]
+"#,
+        ));
+
+        let error = match app.try_add_plugins(MeasurePlanePlugin) {
+            Err(error) => error,
+            Ok(_) => panic!("degenerate plane must fail plugin preflight"),
+        };
+        assert!(error
+            .to_string()
+            .contains("normal vector must have magnitude"));
+    }
 
     fn report_snapshot(state: &mut MeasurePlaneState) -> (u64, f64, f64, f64) {
         let window_time = state.window_elapsed_time;

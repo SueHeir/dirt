@@ -353,6 +353,8 @@ impl Plugin for FixesPlugin {
     }
 
     fn build(&self, app: &mut App) {
+        validate_fixes_config(app)
+            .unwrap_or_else(|error| panic!("FixesPlugin failed to build: {error}"));
         let config = app
             .get_resource_ref::<Config>()
             .expect("Config resource must exist before FixesPlugin");
@@ -430,6 +432,40 @@ impl Plugin for FixesPlugin {
             );
         }
     }
+
+    fn try_build(&self, app: &mut App) -> Result<(), AppError> {
+        validate_fixes_config(app)?;
+        self.build(app);
+        Ok(())
+    }
+}
+
+fn validate_fixes_config(app: &mut App) -> Result<(), AppError> {
+    let config = app
+        .get_resource_ref::<Config>()
+        .ok_or_else(|| AppError::message("FixesPlugin requires Config"))?;
+    config
+        .try_parse_array::<AddForceDef>("addforce")
+        .map_err(|error| AppError::message(error.to_string()))?;
+    config
+        .try_parse_array::<SetForceDef>("setforce")
+        .map_err(|error| AppError::message(error.to_string()))?;
+    config
+        .try_parse_array::<MoveLinearDef>("move_linear")
+        .map_err(|error| AppError::message(error.to_string()))?;
+    config
+        .try_parse_array::<FreezeDef>("freeze")
+        .map_err(|error| AppError::message(error.to_string()))?;
+    config
+        .try_parse_array::<ViscousDef>("viscous")
+        .map_err(|error| AppError::message(error.to_string()))?;
+    config
+        .try_parse_array::<CundallDef>("cundall")
+        .map_err(|error| AppError::message(error.to_string()))?;
+    config
+        .try_parse_array::<NveLimitDef>("nve_limit")
+        .map_err(|error| AppError::message(error.to_string()))?;
+    Ok(())
 }
 
 // ── Systems ────────────────────────────────────────────────────────────────
@@ -836,8 +872,16 @@ gz = -9.81"#,
     }
 
     fn build(&self, app: &mut App) {
-        Config::load::<GravityConfig>(app, "gravity");
+        Config::try_load::<GravityConfig>(app, "gravity")
+            .unwrap_or_else(|error| panic!("GravityPlugin failed to build: {error}"));
         app.add_update_system(apply_gravity, ParticleSimScheduleSet::Force);
+    }
+
+    fn try_build(&self, app: &mut App) -> Result<(), AppError> {
+        Config::try_load::<GravityConfig>(app, "gravity")
+            .map_err(|error| AppError::message(error.to_string()))?;
+        app.add_update_system(apply_gravity, ParticleSimScheduleSet::Force);
+        Ok(())
     }
 }
 
@@ -858,6 +902,24 @@ pub fn apply_gravity(mut atoms: ResMut<Atom>, gravity: Res<GravityConfig>) {
 mod tests {
     use super::*;
     use dirt_test_utils::{make_atoms, make_group_registry};
+
+    #[test]
+    fn malformed_fix_is_a_typed_plugin_error() {
+        let mut app = App::new();
+        app.add_resource(Config::from_str(
+            r#"
+[[addforce]]
+group = "fluid"
+misspelled_force = 1.0
+"#,
+        ));
+
+        let error = match app.try_add_plugins(FixesPlugin) {
+            Err(error) => error,
+            Ok(_) => panic!("malformed fix must fail plugin preflight"),
+        };
+        assert!(error.to_string().contains("addforce"));
+    }
 
     #[test]
     fn test_addforce_applies_constant_force() {
