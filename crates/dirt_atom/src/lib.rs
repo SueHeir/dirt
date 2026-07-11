@@ -2161,11 +2161,13 @@ mod tests {
                 geo(1.0e-4, 2.0e-4),
             ),
         ];
+        println!("PAIR_TABLE,property,value");
         for (name, actual, expected) in expected {
             assert!(
                 (actual - expected).abs() <= 1.0e-12 * expected.abs().max(1.0),
                 "{name}: expected {expected:e}, got {actual:e}"
             );
+            println!("PAIR_TABLE,{name},{actual:.17e}");
         }
     }
 

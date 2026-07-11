@@ -1,17 +1,29 @@
 #!/usr/bin/env python3
 """Plot typed Material pair-table values against a pre-redesign golden table."""
 import csv
+import subprocess
 from pathlib import Path
 import matplotlib.pyplot as plt
 
 ROOT = Path(__file__).parent
 TOL = 1e-12
 
-def read(name):
+def read_file(name):
     with (ROOT / "data" / name).open() as f:
         return {r["property"]: float(r["value"]) for r in csv.DictReader(f)}
 
-legacy, typed = read("legacy_pair_table.csv"), read("typed_pair_table.csv")
+def measure_typed():
+    result = subprocess.run(
+        ["cargo", "test", "--quiet", "-p", "dirt_atom", "--no-default-features",
+         "--features", "precision-double", "tests::typed_materials_match_independent_legacy_mixing_rules",
+         "--", "--exact", "--nocapture"],
+        cwd=ROOT.parent.parent, check=True, text=True, capture_output=True,
+    )
+    rows = [line.removeprefix("PAIR_TABLE,") for line in result.stdout.splitlines()
+            if line.startswith("PAIR_TABLE,")]
+    return {r["property"]: float(r["value"]) for r in csv.DictReader(rows)}
+
+legacy, typed = read_file("legacy_pair_table.csv"), measure_typed()
 assert legacy.keys() == typed.keys()
 errors = {k: abs(typed[k] - legacy[k]) / max(abs(legacy[k]), 1.0) for k in legacy}
 failed = [k for k, e in errors.items() if e > TOL]

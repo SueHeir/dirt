@@ -84,8 +84,8 @@ let steel = table.add(Material::new("steel", Elastic::new(200e9, 0.28, 0.8))
 table.build_pair_tables();
 
 // Per-pair properties indexed as table_ij[i][j]:
-let friction = table.friction_ij[glass as usize][steel as usize];
-let e_eff = table.e_eff_ij[glass as usize][steel as usize];
+let friction = table.friction_ij[glass.index()][steel.index()];
+let e_eff = table.e_eff_ij[glass.index()][steel.index()];
 ```
 
 Per-pair tables are mixed with **geometric mean** (friction, restitution, rolling/twisting
