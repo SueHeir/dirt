@@ -45,7 +45,7 @@ use serde::Deserialize;
 use grass_scheduler::prelude::CurrentState;
 use soil_core::{
     Atom, AtomDataRegistry, CommResource, CommState, Domain, ParticleSimScheduleSet, Real, Region,
-    RunConfig, RunState, ScheduleSetupSet, StageOverrides,
+    Config, RunConfig, RunState, ScheduleSetupSet, StageOverrides,
 };
 
 use crate::{DemAtom, MaterialTable, RadiusSpec};
@@ -647,6 +647,52 @@ density = 2500.0
             ParticleSimScheduleSet::PreInitialIntegration,
         );
     }
+
+    fn try_build(&self, app: &mut App) -> Result<(), AppError> {
+        let config = Config::try_load::<ParticlesConfig>(app, "particles")
+            .map_err(|error| AppError::message(error.to_string()))?;
+        let materials = app.get_resource_ref::<MaterialTable>()
+            .ok_or_else(|| AppError::message("DemAtomInsertPlugin requires DemAtomPlugin"))?;
+        validate_particles_config(&config, &materials)
+            .map_err(AppError::message)?;
+        drop(materials);
+        self.build(app);
+        Ok(())
+    }
+}
+
+/// Validates insertion inputs before scheduling, so malformed input is returned
+/// by `App::try_add_plugins` rather than reaching a simulation system.
+fn validate_particles_config(config: &ParticlesConfig, materials: &MaterialTable) -> Result<(), String> {
+    for insert in config.insert.as_deref().unwrap_or(&[]) {
+        match insert.source.as_str() {
+            "file" => {
+                let name = insert.material.as_deref().ok_or("file [[particles.insert]] requires 'material'")?;
+                resolve_material(materials, name)?;
+                insert.file.as_deref().ok_or("file [[particles.insert]] requires 'file'")?;
+                insert.format.as_deref().ok_or("file [[particles.insert]] requires 'format'")?;
+                if let Some(map) = &insert.type_map { resolve_type_map(map, materials).map_err(|e| e.to_string())?; }
+            }
+            "random" => {
+                let name = insert.material.as_deref().ok_or("[[particles.insert]] requires 'material'")?;
+                resolve_material(materials, name)?;
+                if is_rate_insert_config(insert) {
+                    let (_, radius, _) = validate_rate_insert_config(insert, "rate-based [[particles.insert]]")?;
+                    radius.try_max_radius().map_err(|e| e.to_string())?;
+                    validate_insert_velocity(insert.velocity.unwrap_or(0.0), "rate-based [[particles.insert]]")?;
+                } else {
+                    insert.count.ok_or("[[particles.insert]] requires 'count' for random insertion")?;
+                    let radius = insert.radius.as_ref().ok_or("[[particles.insert]] requires 'radius' for random insertion")?;
+                    insert.density.ok_or("[[particles.insert]] requires 'density' for random insertion")?;
+                    radius.try_max_radius().map_err(|e| e.to_string())?;
+                    validate_insert_velocity(insert.velocity.unwrap_or(0.0), "[[particles.insert]]")?;
+                }
+                if let Some(region) = &insert.region { validate_insert_region(region, "[[particles.insert]]")?; }
+            }
+            other => return Err(format!("unknown particles.insert source '{other}'; supported: random, file")),
+        }
+    }
+    Ok(())
 }
 
 // ── Helper: insert a single particle ────────────────────────────────────────
@@ -709,17 +755,17 @@ fn owns_position(domain: &Domain, pos: &[f64; 3]) -> bool {
 
 // ── Helper: resolve material index ──────────────────────────────────────────
 
-fn resolve_material(material_table: &MaterialTable, name: &str) -> u32 {
-    match material_table.find_material(name) {
-        Some(idx) => idx,
-        None => {
-            eprintln!(
-                "ERROR: Unknown material '{}' in [[particles.insert]]. Available: {:?}",
-                name, material_table.names
-            );
-            std::process::exit(1);
-        }
-    }
+fn resolve_material(material_table: &MaterialTable, name: &str) -> Result<u32, String> {
+    material_table.find_material(name).ok_or_else(|| format!(
+        "unknown material '{}' in [[particles.insert]]. Available: {:?}", name, material_table.names
+    ))
+}
+
+fn resolve_file_material(material_table: &MaterialTable, name: &str) -> Result<u32, InsertFileError> {
+    resolve_material(material_table, name).map_err(|message| InsertFileError::ParseField {
+        path: "config".to_string(), line: 0, field: "material".to_string(),
+        value: name.to_string(), source: message,
+    })
 }
 
 // ── Helper: resolve type_map to index map ────────────────────────────────────
@@ -737,7 +783,9 @@ fn resolve_type_map(
             .map_err(|_| InsertFileError::InvalidTypeMapKey {
                 key: key_str.clone(),
             })?;
-        let mat_idx = resolve_material(material_table, mat_name);
+        let mat_idx = resolve_material(material_table, mat_name).map_err(|message| InsertFileError::ParseField {
+            path: "config".to_string(), line: 0, field: "type_map material".to_string(), value: mat_name.clone(), source: message,
+        })?;
         index_map.insert(file_type, mat_idx);
     }
     Ok(index_map)
@@ -830,7 +878,8 @@ pub fn dem_insert_atoms(
                         eprintln!("ERROR: Rate-based [[particles.insert]] requires 'material'");
                         std::process::exit(1);
                     });
-                    let mat_idx = resolve_material(&material_table, mat_name);
+                    let mat_idx = resolve_material(&material_table, mat_name)
+                        .expect("rate insertion was validated before setup");
                     let (rate, radius_spec, _) =
                         validate_rate_insert_config(insert, "Rate-based [[particles.insert]]")
                             .unwrap_or_else(|e| {
@@ -887,7 +936,8 @@ pub fn dem_insert_atoms(
                         );
                         std::process::exit(1);
                     });
-                    let mat_idx = resolve_material(&material_table, mat_name);
+                    let mat_idx = resolve_material(&material_table, mat_name)
+                        .expect("random insertion was validated before setup");
                     let cutoff_padding = material_table.liquid_bridge_cutoff_padding(mat_idx);
                     let count = insert.count.unwrap_or_else(|| {
                         eprintln!("ERROR: [[particles.insert]] requires 'count' for random insertion (without rate)");
@@ -1110,7 +1160,7 @@ fn read_csv_particles(
             source: "CSV",
             field: "material",
         })?;
-    let mat_idx = resolve_material(material_table, mat_name);
+    let mat_idx = resolve_file_material(material_table, mat_name)?;
 
     let type_index_map = insert
         .type_map
@@ -1249,7 +1299,7 @@ fn read_lammps_dump_particles(
             source: "lammps_dump",
             field: "material",
         })?;
-    let mat_idx = resolve_material(material_table, mat_name);
+    let mat_idx = resolve_file_material(material_table, mat_name)?;
 
     let type_index_map = insert
         .type_map
@@ -1456,7 +1506,7 @@ fn read_lammps_data_particles(
             source: "lammps_data",
             field: "material",
         })?;
-    let mat_idx = resolve_material(material_table, mat_name);
+    let mat_idx = resolve_file_material(material_table, mat_name)?;
 
     let type_index_map = insert
         .type_map

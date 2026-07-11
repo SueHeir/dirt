@@ -594,6 +594,31 @@ pub struct MaterialTable {
     pub liquid_bridge_model: String,
 }
 
+/// Error returned when a material definition cannot be represented by a
+/// [`MaterialTable`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MaterialError {
+    /// A material enabled mutually exclusive cohesion models.
+    ConflictingCohesion {
+        /// Name of the rejected material.
+        name: String,
+    },
+}
+
+impl std::fmt::Display for MaterialError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::ConflictingCohesion { name } => write!(
+                f,
+                "material '{}' has both cohesion_energy and surface_energy > 0; use only one",
+                name
+            ),
+        }
+    }
+}
+
+impl std::error::Error for MaterialError {}
+
 impl Default for MaterialTable {
     fn default() -> Self {
         Self::new()
@@ -898,12 +923,44 @@ impl MaterialTable {
         liquid_contact_angle: f64,
         liquid_rupture_distance: f64,
     ) -> u32 {
+        self.try_add_material_with_liquid_bridge(
+            name, youngs_mod, poisson_ratio, restitution, friction, rolling_friction,
+            cohesion_energy, surface_energy, twisting_friction, kn, kt, rolling_stiffness,
+            rolling_damping, twisting_stiffness, twisting_damping, mdr_yield_stress,
+            mdr_psi_b, mdr_damping, liquid_bridge_volume, liquid_surface_tension,
+            liquid_contact_angle, liquid_rupture_distance,
+        ).unwrap_or_else(|error| panic!("MaterialTable construction failed: {error}"))
+    }
+
+    /// Fallible form of [`add_material_with_liquid_bridge`](Self::add_material_with_liquid_bridge).
+    #[allow(clippy::too_many_arguments)]
+    pub fn try_add_material_with_liquid_bridge(
+        &mut self,
+        name: &str,
+        youngs_mod: f64,
+        poisson_ratio: f64,
+        restitution: f64,
+        friction: f64,
+        rolling_friction: f64,
+        cohesion_energy: f64,
+        surface_energy: f64,
+        twisting_friction: f64,
+        kn: f64,
+        kt: f64,
+        rolling_stiffness: f64,
+        rolling_damping: f64,
+        twisting_stiffness: f64,
+        twisting_damping: f64,
+        mdr_yield_stress: f64,
+        mdr_psi_b: f64,
+        mdr_damping: f64,
+        liquid_bridge_volume: f64,
+        liquid_surface_tension: f64,
+        liquid_contact_angle: f64,
+        liquid_rupture_distance: f64,
+    ) -> Result<u32, MaterialError> {
         if cohesion_energy > 0.0 && surface_energy > 0.0 {
-            eprintln!(
-                "ERROR: material '{}' has both cohesion_energy and surface_energy > 0. Use only one.",
-                name
-            );
-            std::process::exit(1);
+            return Err(MaterialError::ConflictingCohesion { name: name.to_string() });
         }
         let idx = self.names.len() as u32;
         self.names.push(name.to_string());
@@ -928,7 +985,7 @@ impl MaterialTable {
         self.liquid_surface_tension.push(liquid_surface_tension);
         self.liquid_contact_angle.push(liquid_contact_angle);
         self.liquid_rupture_distance.push(liquid_rupture_distance);
-        idx
+        Ok(idx)
     }
 
     /// Looks up a material by name, returning its index if found.
@@ -1284,11 +1341,21 @@ friction = 0.4
     }
 
     fn build(&self, app: &mut App) {
+        configure_dem_atom(app).unwrap_or_else(|error| panic!("DemAtomPlugin failed to build: {error}"));
+    }
+
+    fn try_build(&self, app: &mut App) -> Result<(), AppError> {
+        configure_dem_atom(app)
+    }
+}
+
+fn configure_dem_atom(app: &mut App) -> Result<(), AppError> {
         app.add_plugins(AtomPlugin);
 
         register_atom_data!(app, DemAtom::new());
 
-        let dem_config = Config::load::<DemConfig>(app, "dem");
+        let dem_config = Config::try_load::<DemConfig>(app, "dem")
+            .map_err(|error| AppError::message(error.to_string()))?;
 
         // Ergonomics guard: contact_model = "hooke" silently ignores surface_energy
         // (JKR/DMT adhesion lives only on the Hertz path). Warn loudly instead of
@@ -1297,8 +1364,7 @@ friction = 0.4
             eprintln!("{}", msg);
         }
         if let Some(msg) = liquid_bridge_model_error(&dem_config) {
-            eprintln!("{}", msg);
-            std::process::exit(1);
+            return Err(AppError::message(msg));
         }
 
         // Build MaterialTable from config at plugin build time
@@ -1315,7 +1381,7 @@ friction = 0.4
 
         if let Some(ref materials) = dem_config.materials {
             for mat in materials {
-                material_table.add_material_with_liquid_bridge(
+                material_table.try_add_material_with_liquid_bridge(
                     &mat.name,
                     mat.youngs_mod,
                     mat.poisson_ratio,
@@ -1338,15 +1404,15 @@ friction = 0.4
                     mat.liquid_surface_tension,
                     mat.liquid_contact_angle,
                     mat.liquid_rupture_distance,
-                );
+                ).map_err(|error| AppError::message(error.to_string()))?;
             }
             material_table.build_pair_tables();
         }
 
         app.add_resource(material_table);
         app.add_setup_system(set_dem_ntypes, ScheduleSetupSet::Setup);
+        Ok(())
     }
-}
 
 /// Setup system that sets `Atom::ntypes` from the number of registered materials.
 fn set_dem_ntypes(mut atoms: ResMut<Atom>, material_table: Res<MaterialTable>) {
@@ -1479,6 +1545,18 @@ mod tests {
 
         mt.liquid_bridge_model = "off".to_string();
         assert_eq!(mt.liquid_bridge_cutoff_padding(glass), 0.0);
+    }
+
+    #[test]
+    fn conflicting_material_cohesion_is_a_typed_error() {
+        let mut table = MaterialTable::new();
+        let error = table
+            .try_add_material_with_liquid_bridge(
+                "bad", 1.0, 0.25, 0.9, 0.4, 0.0, 1.0, 1.0, 0.0, 0.0, 0.0,
+                0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+            )
+            .unwrap_err();
+        assert_eq!(error, MaterialError::ConflictingCohesion { name: "bad".to_string() });
     }
 
     // ── hooke_surface_energy_warning: silent-drop ergonomics guard ────────────
