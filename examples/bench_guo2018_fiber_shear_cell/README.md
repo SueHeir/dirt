@@ -28,8 +28,20 @@ records live lid reactions and solid fraction to `cell_history.csv`.
 
 ```bash
 python3 examples/bench_guo2018_fiber_shear_cell/run_case.py \
-  --pressure-pa 651 --width-mm 64 --output /tmp/guo-p651-w64 --prepare-only
+  --pressure-pa 651 --width-mm 64 --output /tmp/guo-p651-w64 --ranks 8 --prepare-only
 # Omit --prepare-only to run DIRT; the gamma >= 0.5 case is intentionally long.
+```
+
+For the complete campaign, `run_campaign.py` writes a campaign manifest and a
+per-case manifest (including the horizontal MPI decomposition) before invoking
+DIRT. MPI ranks are decomposed only over the periodic horizontal axes; the
+normal wall direction remains local. This improves execution throughput
+without changing the source population, timestep, measurement window, or
+acceptance tolerances.
+
+```bash
+python3 examples/bench_guo2018_fiber_shear_cell/run_campaign.py \
+  --output /scratch/guo2018-campaign --ranks 8
 ```
 
 The old replay had zero lid reaction while the packing fell.  That is neither
