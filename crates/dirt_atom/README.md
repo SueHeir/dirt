@@ -77,8 +77,8 @@ density = 2500.0
 use dirt_atom::MaterialTable;
 
 let mut table = MaterialTable::new();
-let glass = table.add_material("glass", 8.7e9, 0.3, 0.95, 0.4, 0.1, 0.0);
-let steel = table.add_material("steel", 200e9, 0.28, 0.8, 0.3, 0.05, 0.0);
+let glass = table.add_material("glass", 8.7e9, 0.3, 0.95, 0.4, 0.1, 0.0)?;
+let steel = table.add_material("steel", 200e9, 0.28, 0.8, 0.3, 0.05, 0.0)?;
 table.build_pair_tables();
 
 // Per-pair properties indexed as table_ij[i][j]:

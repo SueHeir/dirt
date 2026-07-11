@@ -474,7 +474,7 @@ fn liquid_bridge_model_error(config: &DemConfig) -> Option<String> {
 ///
 /// # Config-error convention
 ///
-/// `try_add_material*` validates physically inconsistent input (e.g. both
+/// `add_material*` validates physically inconsistent input (e.g. both
 /// `cohesion_energy` and `surface_energy` set) with [`MaterialError`].
 /// [`DemAtomPlugin`] maps that error to the fallible app boundary, allowing a
 /// runner to report the malformed table without terminating the process.
@@ -636,7 +636,7 @@ impl MaterialTable {
     ///
     /// let mut mat = MaterialTable::new();
     ///
-    /// // Phase 1 — register materials. Returns the material index.
+    /// // Phase 1 — register materials. Configuration input is fallible.
     /// let glass = mat.add_material(
     ///     "glass",
     ///     8.7e9, // Young's modulus E [Pa]
@@ -645,7 +645,7 @@ impl MaterialTable {
     ///     0.5,   // sliding friction
     ///     0.0,   // rolling friction
     ///     0.0,   // cohesion energy
-    /// );
+    /// ).expect("valid glass material");
     /// assert_eq!(glass, 0);
     /// assert!(mat.beta_ij.is_empty()); // pair tables still empty in phase 1
     ///
@@ -712,7 +712,8 @@ impl MaterialTable {
         }
     }
 
-    /// Adds a material with basic properties. Returns the material index.
+    /// Adds a material with basic properties. Returns the material index or a
+    /// [`MaterialError`].
     ///
     /// This is a convenience wrapper around [`add_material_full`](Self::add_material_full)
     /// with `surface_energy = 0.0` (no adhesion).
@@ -725,7 +726,7 @@ impl MaterialTable {
         friction: f64,
         rolling_friction: f64,
         cohesion_energy: f64,
-    ) -> u32 {
+    ) -> Result<u32, MaterialError> {
         self.add_material_full(
             name,
             youngs_mod,
@@ -738,7 +739,8 @@ impl MaterialTable {
         )
     }
 
-    /// Adds a material with basic properties plus surface energy. Returns the material index.
+    /// Adds a material with basic properties plus surface energy. Returns the material index or a
+    /// [`MaterialError`].
     ///
     /// Wraps [`add_material_extended`](Self::add_material_extended) with twisting/Hooke stiffness = 0.
     pub fn add_material_full(
@@ -751,7 +753,7 @@ impl MaterialTable {
         rolling_friction: f64,
         cohesion_energy: f64,
         surface_energy: f64,
-    ) -> u32 {
+    ) -> Result<u32, MaterialError> {
         self.add_material_extended(
             name,
             youngs_mod,
@@ -767,7 +769,8 @@ impl MaterialTable {
         )
     }
 
-    /// Adds a material with twisting friction and Hooke stiffnesses. Returns the material index.
+    /// Adds a material with twisting friction and Hooke stiffnesses. Returns the material index or a
+    /// [`MaterialError`].
     ///
     /// Wraps [`add_material_with_sds`](Self::add_material_with_sds) with SDS parameters = 0.
     pub fn add_material_extended(
@@ -783,7 +786,7 @@ impl MaterialTable {
         twisting_friction: f64,
         kn: f64,
         kt: f64,
-    ) -> u32 {
+    ) -> Result<u32, MaterialError> {
         self.add_material_with_sds(
             name,
             youngs_mod,
@@ -804,6 +807,7 @@ impl MaterialTable {
     }
 
     /// Add a material with all fields including SDS rolling/twisting parameters.
+    /// Returns [`MaterialError`] for incompatible material options.
     #[allow(clippy::too_many_arguments)]
     pub fn add_material_with_sds(
         &mut self,
@@ -822,7 +826,7 @@ impl MaterialTable {
         rolling_damping: f64,
         twisting_stiffness: f64,
         twisting_damping: f64,
-    ) -> u32 {
+    ) -> Result<u32, MaterialError> {
         self.add_material_with_mdr(
             name,
             youngs_mod,
@@ -846,6 +850,7 @@ impl MaterialTable {
     }
 
     /// Add a material with all fields including SDS and MDR parameters.
+    /// Returns [`MaterialError`] for incompatible material options.
     #[allow(clippy::too_many_arguments)]
     pub fn add_material_with_mdr(
         &mut self,
@@ -867,7 +872,7 @@ impl MaterialTable {
         mdr_yield_stress: f64,
         mdr_psi_b: f64,
         mdr_damping: f64,
-    ) -> u32 {
+    ) -> Result<u32, MaterialError> {
         self.add_material_with_liquid_bridge(
             name,
             youngs_mod,
@@ -895,6 +900,7 @@ impl MaterialTable {
     }
 
     /// Add a material with all fields including SDS, MDR, and liquid bridge parameters.
+    /// Returns [`MaterialError`] for incompatible material options.
     #[allow(clippy::too_many_arguments)]
     pub fn add_material_with_liquid_bridge(
         &mut self,
@@ -920,7 +926,7 @@ impl MaterialTable {
         liquid_surface_tension: f64,
         liquid_contact_angle: f64,
         liquid_rupture_distance: f64,
-    ) -> u32 {
+    ) -> Result<u32, MaterialError> {
         self.try_add_material_with_liquid_bridge(
             name,
             youngs_mod,
@@ -945,10 +951,9 @@ impl MaterialTable {
             liquid_contact_angle,
             liquid_rupture_distance,
         )
-        .unwrap_or_else(|error| panic!("MaterialTable construction failed: {error}"))
     }
 
-    /// Fallible form of [`add_material_with_liquid_bridge`](Self::add_material_with_liquid_bridge).
+    /// Backward-compatible alias for the fallible full material constructor.
     #[allow(clippy::too_many_arguments)]
     pub fn try_add_material_with_liquid_bridge(
         &mut self,
@@ -1451,7 +1456,8 @@ mod tests {
     #[test]
     fn single_material_beta_and_friction() {
         let mut mt = MaterialTable::new();
-        mt.add_material("glass", 8.7e9, 0.3, 0.95, 0.4, 0.0, 0.0);
+        mt.add_material("glass", 8.7e9, 0.3, 0.95, 0.4, 0.0, 0.0)
+            .expect("valid glass material");
         mt.build_pair_tables();
 
         let e = 0.95_f64;
@@ -1489,8 +1495,10 @@ mod tests {
     #[test]
     fn multi_material_mixing_symmetry() {
         let mut mt = MaterialTable::new();
-        mt.add_material("glass", 8.7e9, 0.3, 0.95, 0.4, 0.0, 0.0);
-        mt.add_material("steel", 200e9, 0.28, 0.8, 0.3, 0.0, 0.0);
+        mt.add_material("glass", 8.7e9, 0.3, 0.95, 0.4, 0.0, 0.0)
+            .expect("valid glass material");
+        mt.add_material("steel", 200e9, 0.28, 0.8, 0.3, 0.0, 0.0)
+            .expect("valid steel material");
         mt.build_pair_tables();
 
         // Symmetry
@@ -1536,7 +1544,8 @@ mod tests {
     #[test]
     fn e_eff_matches_manual_computation() {
         let mut mt = MaterialTable::new();
-        mt.add_material("glass", 8.7e9, 0.3, 0.95, 0.4, 0.0, 0.0);
+        mt.add_material("glass", 8.7e9, 0.3, 0.95, 0.4, 0.0, 0.0)
+            .expect("valid glass material");
         mt.build_pair_tables();
 
         let nu = 0.3_f64;
@@ -1554,11 +1563,14 @@ mod tests {
     fn liquid_bridge_cutoff_padding_tracks_active_rupture_range() {
         let mut mt = MaterialTable::new();
         mt.liquid_bridge_model = "willett2000".to_string();
-        let glass = mt.add_material_with_liquid_bridge(
-            "glass", 1.0e6, 0.25, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-            0.0, 0.0, 1.0e-11, 0.072, 0.0, 1.5e-4,
-        );
-        mt.add_material("dry", 1.0e6, 0.25, 1.0, 0.0, 0.0, 0.0);
+        let glass = mt
+            .add_material_with_liquid_bridge(
+                "glass", 1.0e6, 0.25, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                0.0, 0.0, 0.0, 1.0e-11, 0.072, 0.0, 1.5e-4,
+            )
+            .expect("valid liquid-bridge material");
+        mt.add_material("dry", 1.0e6, 0.25, 1.0, 0.0, 0.0, 0.0)
+            .expect("valid dry material");
         mt.build_pair_tables();
 
         assert!((mt.liquid_bridge_cutoff_padding(glass) - 1.5e-4).abs() < 1.0e-15);
@@ -1582,6 +1594,24 @@ mod tests {
             MaterialError::ConflictingCohesion {
                 name: "bad".to_string()
             }
+        );
+    }
+
+    #[test]
+    fn public_material_constructors_report_conflicting_cohesion() {
+        let mut table = MaterialTable::new();
+        let error = table
+            .add_material_full("bad", 1.0, 0.25, 0.9, 0.4, 0.0, 1.0, 1.0)
+            .unwrap_err();
+        assert_eq!(
+            error,
+            MaterialError::ConflictingCohesion {
+                name: "bad".to_string()
+            }
+        );
+        assert!(
+            table.names.is_empty(),
+            "a rejected material must not mutate the table"
         );
     }
 
