@@ -1,23 +1,27 @@
 # DIRT
 
 <!-- disclaimer-banner -->
-> This code was fully written via **Claude 4.6,4.8 and Fable 5**, and stands as a proof of concept for a **bevy-like** ecosystem for physics simulation research, with the goal of testing if one scheduler/framework (**GRASS**) works for most scientific codes. **SOIL** and **FIELD** are particle- and mesh-based substrates for physics such as **DIRT** (DEM) or **dev_field_efvm**. Note that all other physics based repos I have start with **dev_**, as I do **NOT** know these methods. Please read, evaluate, use with a grain of salt, I have not personally read or reviewed everything here.
+> **Research-software status:** This ecosystem is AI-authored and under active evaluation. DIRT's DEM claims are accompanied by reproducible analytical, cross-code, or empirical evidence; repositories prefixed `dev_` are experimental method demonstrations outside the author's domain expertise. See [DISCLAIMER.md](DISCLAIMER.md) and [examples/VALIDATION.md](examples/VALIDATION.md).
 <!-- /disclaimer-banner -->
 
 
-**A LAMMPS-validated granular-DEM engine, easily extended by composing Rust
-plugins on the GRASS framework.**
+**A granular-DEM solver that runs as a complete code today and remains a
+composable component when tomorrow's problem needs another method.**
 
-DIRT — the *Discrete-element Interaction-Resolved Toolkit* — is a research DEM
-code. The physics — Hertz–Mindlin contact, rotational dynamics, parallel bonds,
-walls, multisphere clumps, contact analysis — is a set of
-plugins you assemble in Rust and cross-check against LAMMPS and closed-form
-theory. It rides the [SOIL](https://github.com/SueHeir/soil) substrate (atom
-data, domain decomposition, halo exchange, neighbor lists) and the
-[GRASS](https://github.com/SueHeir/grass) scheduler, so adding or customizing
-physics means writing one more system function. It is a
-ground-up Rust reimplementation building on roughly two years of prior DEM
-development (formerly MDDEM).
+DIRT — the *Discrete-element Interaction-Resolved Toolkit* — provides contact,
+walls, bonds, clumps, integration, diagnostics, and validated DEM examples. Its
+unusual property is not simply that those capabilities are Rust plugins. It is
+that DIRT shares its state, lifecycle, and schedule model with the rest of the
+GRASS ecosystem.
+
+Run DIRT as a standalone DEM application. Add or replace physics as ordinary
+systems. Or place the same solver inside a larger scheduled application where a
+fluid, thermal, structural, or other solver exchanges state at explicit phases —
+in-process or across MPI.
+
+Most DEM codes are complete applications first and coupling components second.
+DIRT is intended to be both. It is a ground-up Rust reimplementation building on
+roughly two years of prior DEM development (formerly MDDEM).
 
 ## A simulation is a few plugins you assemble in Rust
 
@@ -47,6 +51,24 @@ model carries to any other solver on the stack. The
 [Your First Simulation](docs/src/getting-started/first-simulation.md) walk-through
 adds a real custom system (remove a blocker wall when the bed goes quiet) in a
 dozen lines.
+
+## Why this architecture matters for DEM
+
+DEM is frequently one half of a larger problem: particles interact with a fluid,
+deformable structure, thermal field, electrostatic field, or continuum model. If
+the DEM code owns a private timestep driver and private state model, every
+coupling begins as an integration project.
+
+DIRT instead inherits a common composition layer:
+
+- SOIL owns reusable parallel particle infrastructure.
+- DIRT owns DEM physics.
+- GRASS owns scheduling, lifecycle, I/O, and solver composition.
+- Coupling code owns only the exchange between participating solvers.
+
+Validation remains essential evidence for individual DEM claims, but it is not
+the reason to adopt the architecture. The architectural reason is that a solver
+built this way does not have to be dismantled before it can join another one.
 
 > Prefer config files to code? A prebuilt driver runs the shipped scenarios and
 > parameter sweeps from TOML with no recompile — see
