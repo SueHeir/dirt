@@ -921,9 +921,12 @@ is near-flat at μ = 0, and is reproducible across repeats.
 **Experimental scope:** Elekes & Parteli (2021), doi:10.1073/pnas.2107965118,
 report roughly 20–25° for millimetre glass beads prepared by hopper pouring. That
 is not a valid gate for this lifted-column protocol: preparation history and the
-unreported rolling-contact parameters alter the result. No rolling-friction value
-is selected to hit that interval. A quantitative experiment comparison requires a
-matched hopper protocol and independently specified contact and uncertainty data.
+contact parameters alter the result. In particular, their Table 1 uses
+`mu_s = 0.5`, `mu_r = 0.05`, while this benchmark sweeps `mu_s`, fixes its `sds`
+cap at `mu_r = 0.1`, and releases a pre-settled column rather than pouring.
+No rolling-friction value is selected to hit that interval. A quantitative
+experiment comparison requires a matched hopper protocol, independently specified
+contact and uncertainty data, and a predeclared fixed-parameter replicate gate.
 
 ![Repose angle vs friction](bench_angle_of_repose/plots/theta_vs_mu.png)
 

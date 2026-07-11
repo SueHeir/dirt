@@ -31,6 +31,18 @@ and is intentionally not performed here.  The solver checks below are therefore
 limited to protocol-internal DEM behaviour, while the optional LAMMPS result is
 an independent implementation cross-check rather than an experiment.
 
+The mismatch is concrete, rather than a generic caveat.  Elekes & Parteli's
+Table 1 specifies a sliding coefficient of 0.5 and rolling coefficient of 0.05
+for its glass beads.  This benchmark deliberately sweeps sliding friction and
+uses a fixed `sds` rolling cap of 0.1; more importantly, it creates a settled
+column and releases its retaining cylinder instead of depositing grains through
+a hopper.  Consequently neither its plotted values nor its `[10°, 40°]`
+protocol-internal band may be read as a comparison with the paper's 20--25°
+observation.  A future matched benchmark must make a *single, predeclared*
+material/protocol choice and compare its replicate mean and uncertainty to the
+source's reported spread; it must fail if that comparison is unavailable or
+outside the source band.
+
 ## Physics
 
 A loose column of monodisperse spheres is confined inside a thin cylinder on a
