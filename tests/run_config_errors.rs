@@ -248,6 +248,27 @@ velocity = inf
 }
 
 #[test]
+fn missing_file_insert_errors_at_fallible_runner_boundary() {
+    let stderr = run_config_error_case(
+        "missing-file-insert",
+        r#"
+source = "file"
+file = "/definitely/not/a/dirt-particles.csv"
+format = "csv"
+"#,
+    );
+    assert!(
+        stderr
+            .contains("ERROR: failed to open particle file '/definitely/not/a/dirt-particles.csv'"),
+        "stderr should contain the typed file-preflight error, got:\n{stderr}"
+    );
+    assert!(
+        !stderr.contains("Setup system `dem_insert_atoms`"),
+        "file insertion must fail before legacy setup, got:\n{stderr}"
+    );
+}
+
+#[test]
 fn too_large_immediate_radius_errors_before_region_sampling() {
     let stderr = run_config_error_case(
         "too-large-immediate-radius",

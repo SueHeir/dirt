@@ -44,8 +44,8 @@ use serde::Deserialize;
 
 use grass_scheduler::prelude::CurrentState;
 use soil_core::{
-    Atom, AtomDataRegistry, CommResource, CommState, Domain, ParticleSimScheduleSet, Real, Region,
-    Config, RunConfig, RunState, ScheduleSetupSet, StageOverrides,
+    Atom, AtomDataRegistry, CommResource, CommState, Config, Domain, DomainConfig,
+    ParticleSimScheduleSet, Real, Region, RunConfig, RunState, ScheduleSetupSet, StageOverrides,
 };
 
 use crate::{DemAtom, MaterialTable, RadiusSpec};
@@ -651,9 +651,12 @@ density = 2500.0
     fn try_build(&self, app: &mut App) -> Result<(), AppError> {
         let config = Config::try_load::<ParticlesConfig>(app, "particles")
             .map_err(|error| AppError::message(error.to_string()))?;
-        let materials = app.get_resource_ref::<MaterialTable>()
+        let domain_config = Config::try_load::<DomainConfig>(app, "domain")
+            .map_err(|error| AppError::message(error.to_string()))?;
+        let materials = app
+            .get_resource_ref::<MaterialTable>()
             .ok_or_else(|| AppError::message("DemAtomInsertPlugin requires DemAtomPlugin"))?;
-        validate_particles_config(&config, &materials)
+        validate_particles_config(&config, &materials, &domain_config)
             .map_err(AppError::message)?;
         drop(materials);
         self.build(app);
@@ -663,36 +666,133 @@ density = 2500.0
 
 /// Validates insertion inputs before scheduling, so malformed input is returned
 /// by `App::try_add_plugins` rather than reaching a simulation system.
-fn validate_particles_config(config: &ParticlesConfig, materials: &MaterialTable) -> Result<(), String> {
+fn validate_particles_config(
+    config: &ParticlesConfig,
+    materials: &MaterialTable,
+    domain_config: &DomainConfig,
+) -> Result<(), String> {
     for insert in config.insert.as_deref().unwrap_or(&[]) {
         match insert.source.as_str() {
             "file" => {
-                let name = insert.material.as_deref().ok_or("file [[particles.insert]] requires 'material'")?;
+                let name = insert
+                    .material
+                    .as_deref()
+                    .ok_or("file [[particles.insert]] requires 'material'")?;
                 resolve_material(materials, name)?;
-                insert.file.as_deref().ok_or("file [[particles.insert]] requires 'file'")?;
-                insert.format.as_deref().ok_or("file [[particles.insert]] requires 'format'")?;
-                if let Some(map) = &insert.type_map { resolve_type_map(map, materials).map_err(|e| e.to_string())?; }
+                insert
+                    .file
+                    .as_deref()
+                    .ok_or("file [[particles.insert]] requires 'file'")?;
+                insert
+                    .format
+                    .as_deref()
+                    .ok_or("file [[particles.insert]] requires 'format'")?;
+                if let Some(map) = &insert.type_map {
+                    resolve_type_map(map, materials).map_err(|e| e.to_string())?;
+                }
+                // Parse the complete file during fallible plugin assembly.  Merely
+                // checking its path leaves malformed rows to the legacy setup
+                // scheduler, where they cannot be returned to the runner.
+                validate_file_insert(insert, materials).map_err(|e| e.to_string())?;
             }
             "random" => {
-                let name = insert.material.as_deref().ok_or("[[particles.insert]] requires 'material'")?;
+                let name = insert
+                    .material
+                    .as_deref()
+                    .ok_or("[[particles.insert]] requires 'material'")?;
                 resolve_material(materials, name)?;
                 if is_rate_insert_config(insert) {
-                    let (_, radius, _) = validate_rate_insert_config(insert, "rate-based [[particles.insert]]")?;
-                    radius.try_max_radius().map_err(|e| e.to_string())?;
-                    validate_insert_velocity(insert.velocity.unwrap_or(0.0), "rate-based [[particles.insert]]")?;
+                    let (_, radius, _) =
+                        validate_rate_insert_config(insert, "rate-based [[particles.insert]]")?;
+                    let max_radius = radius.try_max_radius().map_err(|e| e.to_string())?;
+                    validate_insert_velocity(
+                        insert.velocity.unwrap_or(0.0),
+                        "rate-based [[particles.insert]]",
+                    )?;
+                    validate_preflight_region(
+                        insert,
+                        domain_config,
+                        max_radius,
+                        "rate-based [[particles.insert]]",
+                    )?;
                 } else {
-                    insert.count.ok_or("[[particles.insert]] requires 'count' for random insertion")?;
-                    let radius = insert.radius.as_ref().ok_or("[[particles.insert]] requires 'radius' for random insertion")?;
-                    insert.density.ok_or("[[particles.insert]] requires 'density' for random insertion")?;
-                    radius.try_max_radius().map_err(|e| e.to_string())?;
-                    validate_insert_velocity(insert.velocity.unwrap_or(0.0), "[[particles.insert]]")?;
+                    insert
+                        .count
+                        .ok_or("[[particles.insert]] requires 'count' for random insertion")?;
+                    let radius = insert
+                        .radius
+                        .as_ref()
+                        .ok_or("[[particles.insert]] requires 'radius' for random insertion")?;
+                    insert
+                        .density
+                        .ok_or("[[particles.insert]] requires 'density' for random insertion")?;
+                    let max_radius = radius.try_max_radius().map_err(|e| e.to_string())?;
+                    validate_insert_velocity(
+                        insert.velocity.unwrap_or(0.0),
+                        "[[particles.insert]]",
+                    )?;
+                    validate_preflight_region(
+                        insert,
+                        domain_config,
+                        max_radius,
+                        "[[particles.insert]]",
+                    )?;
                 }
-                if let Some(region) = &insert.region { validate_insert_region(region, "[[particles.insert]]")?; }
             }
-            other => return Err(format!("unknown particles.insert source '{other}'; supported: random, file")),
+            other => {
+                return Err(format!(
+                    "unknown particles.insert source '{other}'; supported: random, file"
+                ))
+            }
         }
     }
     Ok(())
+}
+
+fn validate_preflight_region(
+    insert: &InsertConfig,
+    domain_config: &DomainConfig,
+    max_radius: f64,
+    context: &str,
+) -> Result<(), String> {
+    if let Some(region) = &insert.region {
+        return validate_insert_region(region, context);
+    }
+    let mut domain = Domain::default();
+    domain.boundaries_low = [
+        domain_config.x_low,
+        domain_config.y_low,
+        domain_config.z_low,
+    ];
+    domain.boundaries_high = [
+        domain_config.x_high,
+        domain_config.y_high,
+        domain_config.z_high,
+    ];
+    default_insert_region(&domain, max_radius, context).map(|_| ())
+}
+
+/// Parses a file insertion into scratch stores during plugin preflight.
+///
+/// The real insertion still happens after domain decomposition, so ownership
+/// filtering and tags retain their normal setup-time semantics.  The scratch
+/// parse deliberately exercises the same readers, making file open/read/row
+/// errors typed `AppError`s from `try_add_plugins`/`try_start`.
+fn validate_file_insert(
+    insert: &InsertConfig,
+    materials: &MaterialTable,
+) -> Result<(), InsertFileError> {
+    let mut atom = Atom::default();
+    let mut dem_data = DemAtom::default();
+    let mut max_tag = 0;
+    insert_from_file(
+        insert,
+        &mut atom,
+        &mut dem_data,
+        materials,
+        &Domain::default(),
+        &mut max_tag,
+    )
 }
 
 // ── Helper: insert a single particle ────────────────────────────────────────
@@ -756,15 +856,24 @@ fn owns_position(domain: &Domain, pos: &[f64; 3]) -> bool {
 // ── Helper: resolve material index ──────────────────────────────────────────
 
 fn resolve_material(material_table: &MaterialTable, name: &str) -> Result<u32, String> {
-    material_table.find_material(name).ok_or_else(|| format!(
-        "unknown material '{}' in [[particles.insert]]. Available: {:?}", name, material_table.names
-    ))
+    material_table.find_material(name).ok_or_else(|| {
+        format!(
+            "unknown material '{}' in [[particles.insert]]. Available: {:?}",
+            name, material_table.names
+        )
+    })
 }
 
-fn resolve_file_material(material_table: &MaterialTable, name: &str) -> Result<u32, InsertFileError> {
+fn resolve_file_material(
+    material_table: &MaterialTable,
+    name: &str,
+) -> Result<u32, InsertFileError> {
     resolve_material(material_table, name).map_err(|message| InsertFileError::ParseField {
-        path: "config".to_string(), line: 0, field: "material".to_string(),
-        value: name.to_string(), source: message,
+        path: "config".to_string(),
+        line: 0,
+        field: "material".to_string(),
+        value: name.to_string(),
+        source: message,
     })
 }
 
@@ -783,8 +892,14 @@ fn resolve_type_map(
             .map_err(|_| InsertFileError::InvalidTypeMapKey {
                 key: key_str.clone(),
             })?;
-        let mat_idx = resolve_material(material_table, mat_name).map_err(|message| InsertFileError::ParseField {
-            path: "config".to_string(), line: 0, field: "type_map material".to_string(), value: mat_name.clone(), source: message,
+        let mat_idx = resolve_material(material_table, mat_name).map_err(|message| {
+            InsertFileError::ParseField {
+                path: "config".to_string(),
+                line: 0,
+                field: "type_map material".to_string(),
+                value: mat_name.clone(),
+                source: message,
+            }
         })?;
         index_map.insert(file_type, mat_idx);
     }
@@ -861,62 +976,27 @@ pub fn dem_insert_atoms(
             for insert in inserts {
                 if insert.source == "file" {
                     // ── File-based insertion ──
-                    if let Err(e) = insert_from_file(
+                    insert_from_file(
                         insert,
                         &mut atom,
                         &mut dem_data,
                         &material_table,
                         &domain,
                         &mut max_tag,
-                    ) {
-                        eprintln!("ERROR: {}", e);
-                        std::process::exit(1);
-                    }
+                    )
+                    .expect("file insertion was fully parsed during fallible plugin preflight");
                 } else if is_rate_insert_config(insert) {
                     // ── Rate-based: register for runtime insertion ──
-                    let mat_name = insert.material.as_deref().unwrap_or_else(|| {
-                        eprintln!("ERROR: Rate-based [[particles.insert]] requires 'material'");
-                        std::process::exit(1);
-                    });
+                    let mat_name = insert.material.as_deref().expect(
+                        "rate insertion material was validated during fallible plugin preflight",
+                    );
                     let mat_idx = resolve_material(&material_table, mat_name)
                         .expect("rate insertion was validated before setup");
-                    let (rate, radius_spec, _) =
+                    let (rate, _, _) =
                         validate_rate_insert_config(insert, "Rate-based [[particles.insert]]")
-                            .unwrap_or_else(|e| {
-                                eprintln!("ERROR: {}", e);
-                                std::process::exit(1);
-                            });
-                    let max_r = radius_spec.try_max_radius().unwrap_or_else(|e| {
-                        eprintln!(
-                            "ERROR: invalid radius in rate-based [[particles.insert]]: {}",
-                            e
-                        );
-                        std::process::exit(1);
-                    });
-                    let region = insert
-                        .region
-                        .clone()
-                        .map(Ok)
-                        .unwrap_or_else(|| {
-                            default_insert_region(&domain, max_r, "rate-based [[particles.insert]]")
-                        })
-                        .unwrap_or_else(|e| {
-                            eprintln!("ERROR: {}", e);
-                            std::process::exit(1);
-                        });
-                    if let Err(e) =
-                        validate_insert_region(&region, "rate-based [[particles.insert]]")
-                    {
-                        eprintln!("ERROR: {}", e);
-                        std::process::exit(1);
-                    }
-                    if let Err(e) = validate_insert_velocity(
-                        insert.velocity.unwrap_or(0.0),
-                        "rate-based [[particles.insert]]",
-                    ) {
-                        eprintln!("ERROR: {}", e);
-                        std::process::exit(1);
-                    }
+                            .expect(
+                                "rate insertion was validated during fallible plugin preflight",
+                            );
                     println!(
                         "DemAtomInsert: registering rate-based insertion for material '{}' (rate={}/every {})",
                         mat_name,
@@ -930,36 +1010,25 @@ pub fn dem_insert_atoms(
                     });
                 } else {
                     // ── Immediate random insertion (deterministic, born-in-owner) ──
-                    let mat_name = insert.material.as_deref().unwrap_or_else(|| {
-                        eprintln!(
-                            "ERROR: [[particles.insert]] requires 'material' for random insertion"
-                        );
-                        std::process::exit(1);
-                    });
+                    let mat_name = insert.material.as_deref().expect(
+                        "random insertion material was validated during fallible plugin preflight",
+                    );
                     let mat_idx = resolve_material(&material_table, mat_name)
                         .expect("random insertion was validated before setup");
                     let cutoff_padding = material_table.liquid_bridge_cutoff_padding(mat_idx);
-                    let count = insert.count.unwrap_or_else(|| {
-                        eprintln!("ERROR: [[particles.insert]] requires 'count' for random insertion (without rate)");
-                        std::process::exit(1);
-                    });
-                    let radius_spec = insert.radius.as_ref().unwrap_or_else(|| {
-                        eprintln!(
-                            "ERROR: [[particles.insert]] requires 'radius' for random insertion"
-                        );
-                        std::process::exit(1);
-                    });
-                    let density = insert.density.unwrap_or_else(|| {
-                        eprintln!(
-                            "ERROR: [[particles.insert]] requires 'density' for random insertion"
-                        );
-                        std::process::exit(1);
-                    });
+                    let count = insert.count.expect(
+                        "random insertion count was validated during fallible plugin preflight",
+                    );
+                    let radius_spec = insert.radius.as_ref().expect(
+                        "random insertion radius was validated during fallible plugin preflight",
+                    );
+                    let density = insert.density.expect(
+                        "random insertion density was validated during fallible plugin preflight",
+                    );
 
-                    let max_r = radius_spec.try_max_radius().unwrap_or_else(|e| {
-                        eprintln!("ERROR: invalid radius in [[particles.insert]]: {}", e);
-                        std::process::exit(1);
-                    });
+                    let max_r = radius_spec.try_max_radius().expect(
+                        "random insertion radius was validated during fallible plugin preflight",
+                    );
                     if comm.rank() == 0 {
                         println!(
                             "DemAtomInsert: inserting {} particles of material '{}' (r={}, rho={}, E={}, nu={})",
@@ -980,21 +1049,10 @@ pub fn dem_insert_atoms(
                         .unwrap_or_else(|| {
                             default_insert_region(&domain, max_r, "[[particles.insert]]")
                         })
-                        .unwrap_or_else(|e| {
-                            eprintln!("ERROR: {}", e);
-                            std::process::exit(1);
-                        });
-                    if let Err(e) = validate_insert_region(&region, "[[particles.insert]]") {
-                        eprintln!("ERROR: {}", e);
-                        std::process::exit(1);
-                    }
+                        .expect("random insertion region was validated during fallible plugin preflight");
 
                     // Velocity setup (drawn deterministically per accepted atom).
                     let rand_vel = insert.velocity.unwrap_or(0.0);
-                    if let Err(e) = validate_insert_velocity(rand_vel, "[[particles.insert]]") {
-                        eprintln!("ERROR: {}", e);
-                        std::process::exit(1);
-                    }
                     let normal = (rand_vel > 0.0).then(|| {
                         Normal::new(0.0, rand_vel)
                             .expect("insert velocity was validated before Normal construction")
@@ -1024,14 +1082,10 @@ pub fn dem_insert_atoms(
                     while inserted < count && attempts < max_attempts {
                         attempts += 1;
                         // Advance the shared RNG identically on every rank.
-                        let [x, y, z] = region.random_point_inside(&mut rng).unwrap_or_else(|e| {
-                            eprintln!("ERROR: invalid region in [[particles.insert]]: {}", e);
-                            std::process::exit(1);
-                        });
-                        let radius = radius_spec.try_sample(&mut rng).unwrap_or_else(|e| {
-                            eprintln!("ERROR: invalid radius in [[particles.insert]]: {}", e);
-                            std::process::exit(1);
-                        });
+                        let [x, y, z] = region.random_point_inside(&mut rng)
+                            .expect("random insertion region was validated during fallible plugin preflight");
+                        let radius = radius_spec.try_sample(&mut rng)
+                            .expect("random insertion radius was validated during fallible plugin preflight");
                         let candidate = [x, y, z];
 
                         if spatial_hash.has_overlap(&candidate, radius, &all_pos, &all_rad, &pbc) {
@@ -1831,10 +1885,7 @@ pub fn dem_rate_insert(
             &rate_state.entries[entry_idx].config,
             "rate-based [[particles.insert]]",
         )
-        .unwrap_or_else(|e| {
-            eprintln!("ERROR: {}", e);
-            std::process::exit(1);
-        });
+        .expect("rate insertion was validated during fallible plugin preflight");
 
         if step < start {
             continue;
@@ -1864,13 +1915,9 @@ pub fn dem_rate_insert(
         let mat_idx = rate_state.entries[entry_idx].mat_idx;
         let cutoff_padding = material_table.liquid_bridge_cutoff_padding(mat_idx);
 
-        let max_r = radius_spec.try_max_radius().unwrap_or_else(|e| {
-            eprintln!(
-                "ERROR: invalid radius in rate-based [[particles.insert]]: {}",
-                e
-            );
-            std::process::exit(1);
-        });
+        let max_r = radius_spec
+            .try_max_radius()
+            .expect("rate insertion radius was validated during fallible plugin preflight");
         let region = rate_state.entries[entry_idx]
             .config
             .region
@@ -1879,22 +1926,11 @@ pub fn dem_rate_insert(
             .unwrap_or_else(|| {
                 default_insert_region(&domain, max_r, "rate-based [[particles.insert]]")
             })
-            .unwrap_or_else(|e| {
-                eprintln!("ERROR: {}", e);
-                std::process::exit(1);
-            });
-        if let Err(e) = validate_insert_region(&region, "rate-based [[particles.insert]]") {
-            eprintln!("ERROR: {}", e);
-            std::process::exit(1);
-        }
+            .expect("rate insertion region was validated during fallible plugin preflight");
 
         // Velocity parameters (drawn deterministically per accepted candidate).
         let config_seed = rate_state.entries[entry_idx].config.seed.unwrap_or(0);
         let rand_vel = rate_state.entries[entry_idx].config.velocity.unwrap_or(0.0);
-        if let Err(e) = validate_insert_velocity(rand_vel, "rate-based [[particles.insert]]") {
-            eprintln!("ERROR: {}", e);
-            std::process::exit(1);
-        }
         let vel_normal = (rand_vel > 0.0).then(|| {
             Normal::new(0.0, rand_vel)
                 .expect("rate insertion velocity was validated before Normal construction")
@@ -1952,20 +1988,12 @@ pub fn dem_rate_insert(
             tag_cursor = tag_cursor.wrapping_add(1);
             attempts += 1;
 
-            let [x, y, z] = region.random_point_inside(&mut rng).unwrap_or_else(|e| {
-                eprintln!(
-                    "ERROR: invalid region in rate-based [[particles.insert]]: {}",
-                    e
-                );
-                std::process::exit(1);
-            });
-            let radius = radius_spec.try_sample(&mut rng).unwrap_or_else(|e| {
-                eprintln!(
-                    "ERROR: invalid radius in rate-based [[particles.insert]]: {}",
-                    e
-                );
-                std::process::exit(1);
-            });
+            let [x, y, z] = region
+                .random_point_inside(&mut rng)
+                .expect("rate insertion region was validated during fallible plugin preflight");
+            let radius = radius_spec
+                .try_sample(&mut rng)
+                .expect("rate insertion radius was validated during fallible plugin preflight");
             let candidate = [x, y, z];
 
             if spatial_hash.has_overlap(&candidate, radius, &all_pos, &all_rad, &pbc) {
