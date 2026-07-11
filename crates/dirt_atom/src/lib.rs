@@ -601,6 +601,15 @@ pub enum MaterialError {
         /// Name of the rejected material.
         name: String,
     },
+    /// A named material property was non-finite or outside the model's domain.
+    InvalidProperty {
+        /// Name of the rejected material.
+        name: String,
+        /// Fully qualified input property name.
+        property: &'static str,
+        /// Physical domain required by the contact models.
+        requirement: &'static str,
+    },
 }
 
 /// Stable index of a material registered in a [`MaterialTable`].
@@ -884,6 +893,104 @@ impl Material {
     }
 }
 
+/// Reject input that would make a constitutive or mixing calculation undefined.
+///
+/// This is deliberately performed before `MaterialTable::add` touches any
+/// column, so a failed registration cannot leave the parallel columns out of
+/// sync.  The bounds are the isotropic, non-negative parameter domains used by
+/// DIRT's DEM models (rather than an attempt to represent every exotic material).
+fn validate_material(material: &Material) -> Result<(), MaterialError> {
+    let invalid = |property, requirement| MaterialError::InvalidProperty {
+        name: material.name.clone(),
+        property,
+        requirement,
+    };
+    let finite = |value: f64| value.is_finite();
+    let nonnegative = |value: f64| finite(value) && value >= 0.0;
+
+    if !finite(material.elastic.youngs_mod) || material.elastic.youngs_mod <= 0.0 {
+        return Err(invalid("elastic.youngs_mod", "finite and > 0"));
+    }
+    if !finite(material.elastic.poisson_ratio)
+        || !(0.0..0.5).contains(&material.elastic.poisson_ratio)
+    {
+        return Err(invalid("elastic.poisson_ratio", "finite and in [0, 0.5)"));
+    }
+    if !finite(material.elastic.restitution) || !(0.0..=1.0).contains(&material.elastic.restitution)
+    {
+        return Err(invalid("elastic.restitution", "finite and in [0, 1]"));
+    }
+    for (property, value) in [
+        (
+            "elastic.normal_stiffness",
+            material.elastic.normal_stiffness,
+        ),
+        (
+            "elastic.tangential_stiffness",
+            material.elastic.tangential_stiffness,
+        ),
+        ("friction.sliding", material.friction.sliding),
+        ("friction.rolling", material.friction.rolling),
+        ("friction.twisting", material.friction.twisting),
+        ("mdr.yield_stress", material.mdr.yield_stress),
+        ("mdr.damping", material.mdr.damping),
+        ("liquid_bridge.volume", material.liquid_bridge.volume),
+        (
+            "liquid_bridge.surface_tension",
+            material.liquid_bridge.surface_tension,
+        ),
+        (
+            "liquid_bridge.rupture_distance",
+            material.liquid_bridge.rupture_distance,
+        ),
+    ] {
+        if !nonnegative(value) {
+            return Err(invalid(property, "finite and >= 0"));
+        }
+    }
+    if !finite(material.mdr.psi_b) || !(0.0..=1.0).contains(&material.mdr.psi_b) {
+        return Err(invalid("mdr.psi_b", "finite and in [0, 1]"));
+    }
+    if !finite(material.liquid_bridge.contact_angle)
+        || !(0.0..=std::f64::consts::PI).contains(&material.liquid_bridge.contact_angle)
+    {
+        return Err(invalid(
+            "liquid_bridge.contact_angle",
+            "finite and in [0, pi]",
+        ));
+    }
+    match material.adhesion {
+        Adhesion::None => {}
+        Adhesion::Sjkr { energy } if !nonnegative(energy) => {
+            return Err(invalid("adhesion.sjkr.energy", "finite and >= 0"));
+        }
+        Adhesion::SurfaceEnergy { energy } if !nonnegative(energy) => {
+            return Err(invalid("adhesion.surface_energy", "finite and >= 0"));
+        }
+        _ => {}
+    }
+    for (property, value) in match material.rolling {
+        Rolling::Constant => Vec::new(),
+        Rolling::Sds { stiffness, damping } => vec![
+            ("rolling.sds.stiffness", stiffness),
+            ("rolling.sds.damping", damping),
+        ],
+    }
+    .into_iter()
+    .chain(match material.twisting {
+        Twisting::Constant => Vec::new(),
+        Twisting::Sds { stiffness, damping } => vec![
+            ("twisting.sds.stiffness", stiffness),
+            ("twisting.sds.damping", damping),
+        ],
+    }) {
+        if !nonnegative(value) {
+            return Err(invalid(property, "finite and >= 0"));
+        }
+    }
+    Ok(())
+}
+
 impl std::fmt::Display for MaterialError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -891,6 +998,15 @@ impl std::fmt::Display for MaterialError {
                 f,
                 "material '{}' has both cohesion_energy and surface_energy > 0; use only one",
                 name
+            ),
+            Self::InvalidProperty {
+                name,
+                property,
+                requirement,
+            } => write!(
+                f,
+                "material '{}' property '{}' must be {}",
+                name, property, requirement
             ),
         }
     }
@@ -1319,16 +1435,12 @@ impl MaterialTable {
     /// column together, so a newly added property cannot drift out of alignment
     /// with the pair-table index used by the contact hot path.
     pub fn add(&mut self, material: Material) -> Result<MaterialId, MaterialError> {
+        validate_material(&material)?;
         let (cohesion_energy, surface_energy) = match material.adhesion {
             Adhesion::None => (0.0, 0.0),
             Adhesion::Sjkr { energy } => (energy, 0.0),
             Adhesion::SurfaceEnergy { energy } => (0.0, energy),
         };
-        if cohesion_energy > 0.0 && surface_energy > 0.0 {
-            return Err(MaterialError::ConflictingCohesion {
-                name: material.name,
-            });
-        }
         let (rolling_stiffness, rolling_damping) = match material.rolling {
             Rolling::Constant => (0.0, 0.0),
             Rolling::Sds { stiffness, damping } => (stiffness, damping),
@@ -1878,23 +1990,7 @@ mod tests {
     }
 
     #[test]
-    #[allow(deprecated)]
-    fn typed_materials_preserve_legacy_pair_tables_for_mixed_properties() {
-        let mut legacy = MaterialTable::new();
-        legacy
-            .add_material_with_liquid_bridge(
-                "soft", 8.7e9, 0.30, 0.95, 0.4, 0.1, 0.0, 0.2, 0.05, 1.0e6, 5.0e5, 2.0, 0.3, 3.0,
-                0.4, 1.0e6, 0.1, 0.02, 1.0e-11, 0.072, 0.2, 1.0e-4,
-            )
-            .unwrap();
-        legacy
-            .add_material_with_liquid_bridge(
-                "stiff", 70e9, 0.22, 0.80, 0.3, 0.2, 0.0, 0.5, 0.07, 2.0e6, 7.0e5, 4.0, 0.6, 5.0,
-                0.8, 2.0e6, 0.2, 0.04, 8.0e-12, 0.060, 0.4, 2.0e-4,
-            )
-            .unwrap();
-        legacy.build_pair_tables();
-
+    fn typed_materials_match_independent_legacy_mixing_rules() {
         let mut typed = MaterialTable::new();
         let soft = typed
             .add(
@@ -1965,22 +2061,110 @@ mod tests {
         assert_eq!((soft.raw(), stiff.raw()), (0, 1));
         typed.build_pair_tables();
 
-        for (legacy_table, typed_table) in [
-            (&legacy.beta_ij, &typed.beta_ij),
-            (&legacy.friction_ij, &typed.friction_ij),
-            (&legacy.e_eff_ij, &typed.e_eff_ij),
-            (&legacy.g_eff_ij, &typed.g_eff_ij),
-            (&legacy.kn_ij, &typed.kn_ij),
-            (&legacy.rolling_stiffness_ij, &typed.rolling_stiffness_ij),
-            (&legacy.mdr_yield_stress_ij, &typed.mdr_yield_stress_ij),
+        // These formulae were transcribed from the pre-PR (origin/main) table
+        // builder. They intentionally do not call a deprecated wrapper or the
+        // production mixing helpers, making this an independent regression
+        // oracle for every generated pair property.
+        let geo = |a: f64, b: f64| (a * b).sqrt();
+        let harmonic_or_nonzero = |a: f64, b: f64| {
+            if a > 0.0 && b > 0.0 {
+                2.0 * a * b / (a + b)
+            } else if a > 0.0 {
+                a
+            } else {
+                b
+            }
+        };
+        let hertz_beta = |e: f64| {
+            let e = e.clamp(1.0e-3, 0.9999);
+            (1.2728 - 4.2783 * e + 11.087 * e.powi(2) - 22.348 * e.powi(3) + 27.467 * e.powi(4)
+                - 18.022 * e.powi(5)
+                + 4.8218 * e.powi(6))
+                / 5.0_f64.sqrt()
+        };
+        let expected = [
+            ("beta", typed.beta_ij[0][1], hertz_beta(geo(0.95, 0.80))),
+            ("friction", typed.friction_ij[0][1], geo(0.4, 0.3)),
             (
-                &legacy.liquid_surface_tension_ij,
-                &typed.liquid_surface_tension_ij,
+                "rolling_friction",
+                typed.rolling_friction_ij[0][1],
+                geo(0.1, 0.2),
             ),
-        ] {
-            assert_eq!(
-                legacy_table, typed_table,
-                "typed input must retain legacy pair-table values"
+            ("cohesion_energy", typed.cohesion_energy_ij[0][1], 0.0),
+            (
+                "surface_energy",
+                typed.surface_energy_ij[0][1],
+                geo(0.2, 0.5),
+            ),
+            (
+                "twisting_friction",
+                typed.twisting_friction_ij[0][1],
+                geo(0.05, 0.07),
+            ),
+            (
+                "e_eff",
+                typed.e_eff_ij[0][1],
+                1.0 / ((1.0 - 0.30_f64.powi(2)) / 8.7e9 + (1.0 - 0.22_f64.powi(2)) / 70e9),
+            ),
+            (
+                "g_eff",
+                typed.g_eff_ij[0][1],
+                1.0 / (2.0 * (2.0 - 0.30) * 1.30 / 8.7e9 + 2.0 * (2.0 - 0.22) * 1.22 / 70e9),
+            ),
+            ("kn", typed.kn_ij[0][1], harmonic_or_nonzero(1.0e6, 2.0e6)),
+            ("kt", typed.kt_ij[0][1], harmonic_or_nonzero(5.0e5, 7.0e5)),
+            (
+                "rolling_stiffness",
+                typed.rolling_stiffness_ij[0][1],
+                harmonic_or_nonzero(2.0, 4.0),
+            ),
+            (
+                "rolling_damping",
+                typed.rolling_damping_ij[0][1],
+                geo(0.3, 0.6),
+            ),
+            (
+                "twisting_stiffness",
+                typed.twisting_stiffness_ij[0][1],
+                harmonic_or_nonzero(3.0, 5.0),
+            ),
+            (
+                "twisting_damping",
+                typed.twisting_damping_ij[0][1],
+                geo(0.4, 0.8),
+            ),
+            (
+                "mdr_yield_stress",
+                typed.mdr_yield_stress_ij[0][1],
+                geo(1.0e6, 2.0e6),
+            ),
+            ("mdr_psi_b", typed.mdr_psi_b_ij[0][1], 0.15),
+            ("mdr_damping", typed.mdr_damping_ij[0][1], geo(0.02, 0.04)),
+            (
+                "liquid_volume",
+                typed.liquid_bridge_volume_ij[0][1],
+                geo(1.0e-11, 8.0e-12),
+            ),
+            (
+                "liquid_surface_tension",
+                typed.liquid_surface_tension_ij[0][1],
+                geo(0.072, 0.060),
+            ),
+            (
+                "liquid_contact_angle",
+                typed.liquid_contact_angle_ij[0][1],
+                0.3,
+            ),
+            (
+                "liquid_rupture_distance",
+                typed.liquid_rupture_distance_ij[0][1],
+                geo(1.0e-4, 2.0e-4),
+            ),
+        ];
+        for (name, actual, expected) in expected {
+            assert!(
+                (actual - expected).abs() <= 1.0e-12 * expected.abs().max(1.0),
+                "{name}: expected {expected:e}, got {actual:e}"
             );
         }
     }
@@ -2057,6 +2241,59 @@ mod tests {
             table.names.is_empty(),
             "a rejected material must not mutate the table"
         );
+    }
+
+    #[test]
+    fn typed_material_validation_rejects_invalid_domains_without_mutation() {
+        let valid = || Material::new("bad", Elastic::new(1.0e6, 0.25, 0.9));
+        let cases = [
+            (
+                valid().with_friction(Friction {
+                    sliding: f64::NAN,
+                    ..Friction::default()
+                }),
+                "friction.sliding",
+            ),
+            (
+                Material::new("bad", Elastic::new(-1.0, 0.25, 0.9)),
+                "elastic.youngs_mod",
+            ),
+            (
+                Material::new("bad", Elastic::new(1.0e6, -0.01, 0.9)),
+                "elastic.poisson_ratio",
+            ),
+            (
+                Material::new("bad", Elastic::new(1.0e6, 0.25, 1.01)),
+                "elastic.restitution",
+            ),
+            (
+                valid().with_rolling(Rolling::Sds {
+                    stiffness: -1.0,
+                    damping: 0.0,
+                }),
+                "rolling.sds.stiffness",
+            ),
+            (
+                valid().with_liquid_bridge(LiquidBridge {
+                    contact_angle: std::f64::consts::PI + 0.01,
+                    ..LiquidBridge::default()
+                }),
+                "liquid_bridge.contact_angle",
+            ),
+        ];
+        for (material, property) in cases {
+            let mut table = MaterialTable::new();
+            let error = table.add(material).unwrap_err();
+            assert!(
+                matches!(error, MaterialError::InvalidProperty { property: actual, .. } if actual == property)
+            );
+            assert!(
+                table.names.is_empty(),
+                "invalid input must not mutate any column"
+            );
+            assert!(table.youngs_mod.is_empty());
+            assert!(table.liquid_bridge_volume.is_empty());
+        }
     }
 
     // ── hooke_surface_energy_warning: silent-drop ergonomics guard ────────────

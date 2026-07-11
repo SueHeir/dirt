@@ -1,0 +1,13 @@
+# Named inputs used by the typed pair-table regression.
+[soft]
+youngs_mod = 8.7e9
+poisson_ratio = 0.30
+restitution = 0.95
+
+[stiff]
+youngs_mod = 70e9
+poisson_ratio = 0.22
+restitution = 0.80
+
+[validation]
+relative_tolerance = 1e-12
