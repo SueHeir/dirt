@@ -706,7 +706,9 @@ fn validate_particles_config(
                 if is_rate_insert_config(insert) {
                     let (_, radius, _) =
                         validate_rate_insert_config(insert, "rate-based [[particles.insert]]")?;
-                    let max_radius = radius.try_max_radius().map_err(|e| e.to_string())?;
+                    let max_radius = radius.try_max_radius().map_err(|error| {
+                        format!("invalid radius in rate-based [[particles.insert]]: {error}")
+                    })?;
                     validate_insert_velocity(
                         insert.velocity.unwrap_or(0.0),
                         "rate-based [[particles.insert]]",
@@ -728,7 +730,9 @@ fn validate_particles_config(
                     insert
                         .density
                         .ok_or("[[particles.insert]] requires 'density' for random insertion")?;
-                    let max_radius = radius.try_max_radius().map_err(|e| e.to_string())?;
+                    let max_radius = radius.try_max_radius().map_err(|error| {
+                        format!("invalid radius in [[particles.insert]]: {error}")
+                    })?;
                     validate_insert_velocity(
                         insert.velocity.unwrap_or(0.0),
                         "[[particles.insert]]",
@@ -1269,6 +1273,14 @@ fn read_csv_particles(
         .map(|tm| resolve_type_map(tm, material_table))
         .transpose()?;
 
+    // Open before checking fields that are needed only to decode rows. This
+    // reports a missing input file at the fallible boundary instead of hiding
+    // it behind a later configuration omission.
+    let file = File::open(file_path).map_err(|e| InsertFileError::FileOpen {
+        path: file_path.to_string(),
+        source: e.to_string(),
+    })?;
+
     let density = insert.density.ok_or(InsertFileError::MissingField {
         source: "CSV",
         field: "density",
@@ -1289,10 +1301,6 @@ fn read_csv_particles(
         _ => None,
     };
 
-    let file = File::open(file_path).map_err(|e| InsertFileError::FileOpen {
-        path: file_path.to_string(),
-        source: e.to_string(),
-    })?;
     let reader = BufReader::new(file);
     let mut count = 0u32;
 

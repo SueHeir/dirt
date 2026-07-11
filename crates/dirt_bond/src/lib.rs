@@ -591,6 +591,14 @@ impl AtomData for BondHistoryStore {
         self
     }
 
+    fn len(&self) -> usize {
+        self.history.len()
+    }
+
+    fn push_default(&mut self) {
+        self.history.push(Vec::new());
+    }
+
     fn truncate(&mut self, n: usize) {
         self.history.resize_with(n, Vec::new);
         self.history.truncate(n);

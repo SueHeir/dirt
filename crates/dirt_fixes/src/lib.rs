@@ -46,8 +46,8 @@ use grass_scheduler::prelude::*;
 use serde::Deserialize;
 
 use soil_core::{
-    Accum, Atom, AtomDataRegistry, CommResource, Config, GroupRegistry, ParticleSimScheduleSet,
-    Real, ScheduleSetupSet,
+    Accum, Atom, AtomDataRegistry, CommResource, Config, GroupDef, GroupRegistry,
+    ParticleSimScheduleSet, Real, ScheduleSetupSet,
 };
 use soil_print::Thermo;
 
@@ -444,27 +444,75 @@ fn validate_fixes_config(app: &mut App) -> Result<(), AppError> {
     let config = app
         .get_resource_ref::<Config>()
         .ok_or_else(|| AppError::message("FixesPlugin requires Config"))?;
-    config
+    let add_forces = config
         .try_parse_array::<AddForceDef>("addforce")
         .map_err(|error| AppError::message(error.to_string()))?;
-    config
+    let set_forces = config
         .try_parse_array::<SetForceDef>("setforce")
         .map_err(|error| AppError::message(error.to_string()))?;
-    config
+    let move_linears = config
         .try_parse_array::<MoveLinearDef>("move_linear")
         .map_err(|error| AppError::message(error.to_string()))?;
-    config
+    let freezes = config
         .try_parse_array::<FreezeDef>("freeze")
         .map_err(|error| AppError::message(error.to_string()))?;
-    config
+    let viscous = config
         .try_parse_array::<ViscousDef>("viscous")
         .map_err(|error| AppError::message(error.to_string()))?;
-    config
+    let cundall = config
         .try_parse_array::<CundallDef>("cundall")
         .map_err(|error| AppError::message(error.to_string()))?;
-    config
+    let nve_limit = config
         .try_parse_array::<NveLimitDef>("nve_limit")
         .map_err(|error| AppError::message(error.to_string()))?;
+
+    let group_defs = config
+        .try_parse_array::<GroupDef>("group")
+        .map_err(|error| AppError::message(error.to_string()))?;
+    let mut available_groups = vec!["all".to_string()];
+    available_groups.extend(group_defs.iter().map(|def| def.name.clone()));
+    for (defs, context) in [
+        (
+            add_forces.iter().map(|def| &def.group).collect::<Vec<_>>(),
+            "fix addforce",
+        ),
+        (
+            set_forces.iter().map(|def| &def.group).collect::<Vec<_>>(),
+            "fix setforce",
+        ),
+        (
+            move_linears
+                .iter()
+                .map(|def| &def.group)
+                .collect::<Vec<_>>(),
+            "fix move_linear",
+        ),
+        (
+            freezes.iter().map(|def| &def.group).collect::<Vec<_>>(),
+            "fix freeze",
+        ),
+        (
+            viscous.iter().map(|def| &def.group).collect::<Vec<_>>(),
+            "fix viscous",
+        ),
+        (
+            cundall.iter().map(|def| &def.group).collect::<Vec<_>>(),
+            "fix cundall",
+        ),
+        (
+            nve_limit.iter().map(|def| &def.group).collect::<Vec<_>>(),
+            "fix nve_limit",
+        ),
+    ] {
+        for group in defs {
+            if !available_groups.iter().any(|name| name == group) {
+                return Err(AppError::message(format!(
+                    "{context}: group '{group}' not found; available groups: {}",
+                    available_groups.join(", ")
+                )));
+            }
+        }
+    }
     Ok(())
 }
 
@@ -472,32 +520,42 @@ fn validate_fixes_config(app: &mut App) -> Result<(), AppError> {
 
 /// Validates all fix group names at setup time and prints a summary on rank 0.
 ///
-/// # Panics
-///
-/// Panics (via `GroupRegistry::validate_name`) if any fix references a group
-/// name that has not been defined.
 fn setup_fixes(registry: Res<FixesRegistry>, comm: Res<CommResource>, groups: Res<GroupRegistry>) {
     // Validate all group names at setup time.
     for f in &registry.add_forces {
-        groups.validate_name(&f.group, "fix addforce");
+        groups
+            .validate_name(&f.group, "fix addforce")
+            .expect("FixesPlugin preflight validates group names");
     }
     for f in &registry.set_forces {
-        groups.validate_name(&f.group, "fix setforce");
+        groups
+            .validate_name(&f.group, "fix setforce")
+            .expect("FixesPlugin preflight validates group names");
     }
     for f in &registry.move_linears {
-        groups.validate_name(&f.group, "fix move_linear");
+        groups
+            .validate_name(&f.group, "fix move_linear")
+            .expect("FixesPlugin preflight validates group names");
     }
     for f in &registry.freezes {
-        groups.validate_name(&f.group, "fix freeze");
+        groups
+            .validate_name(&f.group, "fix freeze")
+            .expect("FixesPlugin preflight validates group names");
     }
     for f in &registry.viscous {
-        groups.validate_name(&f.group, "fix viscous");
+        groups
+            .validate_name(&f.group, "fix viscous")
+            .expect("FixesPlugin preflight validates group names");
     }
     for f in &registry.cundall {
-        groups.validate_name(&f.group, "fix cundall");
+        groups
+            .validate_name(&f.group, "fix cundall")
+            .expect("FixesPlugin preflight validates group names");
     }
     for f in &registry.nve_limit {
-        groups.validate_name(&f.group, "fix nve_limit");
+        groups
+            .validate_name(&f.group, "fix nve_limit")
+            .expect("FixesPlugin preflight validates group names");
     }
 
     if comm.rank() != 0 {

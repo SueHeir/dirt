@@ -82,6 +82,14 @@ impl AtomData for ContactHistoryStore {
         self
     }
 
+    fn len(&self) -> usize {
+        self.contacts.len()
+    }
+
+    fn push_default(&mut self) {
+        self.contacts.push(Vec::new());
+    }
+
     fn truncate(&mut self, n: usize) {
         // Grow if needed (atoms may have been inserted without going through unpack)
         self.contacts.resize_with(n, Vec::new);
