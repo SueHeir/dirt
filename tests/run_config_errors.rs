@@ -48,13 +48,13 @@ material = "glass"
 density = 2500.0
 seed = 1
 
-{extra_config}
-
 [[run]]
 name = "settle"
 dt = 1.0e-5
 steps = 0
 thermo = 1
+
+{extra_config}
 "#
         ),
     )
@@ -265,6 +265,36 @@ format = "csv"
     assert!(
         !stderr.contains("Setup system `dem_insert_atoms`"),
         "file insertion must fail before legacy setup, got:\n{stderr}"
+    );
+}
+
+#[test]
+fn later_stage_missing_file_insert_errors_at_fallible_runner_boundary() {
+    let stderr = run_config_case_with_extra(
+        "later-stage-missing-file-insert",
+        r#"
+count = 1
+radius = 0.001
+"#,
+        r#"
+[[run]]
+name = "bad-insert"
+dt = 1.0e-5
+steps = 0
+thermo = 1
+
+[run.particles]
+insert = [{ source = "file", file = "/definitely/not/a/later-stage-particles.csv", format = "csv", material = "glass" }]
+"#,
+    );
+    let stderr = output_to_config_error_stderr(stderr);
+    assert!(
+        stderr.contains("ERROR: invalid [particles] override for [[run]] stage 1: failed to open particle file '/definitely/not/a/later-stage-particles.csv'"),
+        "stderr should contain the typed later-stage file-preflight error, got:\n{stderr}"
+    );
+    assert!(
+        !stderr.contains("Setup system `dem_insert_atoms`"),
+        "later-stage insertion must fail before legacy setup, got:\n{stderr}"
     );
 }
 

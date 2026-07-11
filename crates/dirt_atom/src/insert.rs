@@ -44,7 +44,7 @@ use serde::Deserialize;
 
 use grass_scheduler::prelude::CurrentState;
 use soil_core::{
-    Atom, AtomDataRegistry, CommResource, CommState, Config, Domain, DomainConfig,
+    deep_merge, Atom, AtomDataRegistry, CommResource, CommState, Config, Domain, DomainConfig,
     ParticleSimScheduleSet, Real, Region, RunConfig, RunState, ScheduleSetupSet, StageOverrides,
 };
 
@@ -658,6 +658,8 @@ density = 2500.0
             .ok_or_else(|| AppError::message("DemAtomInsertPlugin requires DemAtomPlugin"))?;
         validate_particles_config(&config, &materials, &domain_config)
             .map_err(AppError::message)?;
+        validate_stage_particles_configs(app, &materials, &domain_config)
+            .map_err(AppError::message)?;
         drop(materials);
         self.build(app);
         Ok(())
@@ -745,6 +747,51 @@ fn validate_particles_config(
                 ))
             }
         }
+    }
+    Ok(())
+}
+
+/// Preflights every stage-level `[particles]` override before insertion systems
+/// are registered.  `dem_insert_atoms` reads a deep-merged stage table at setup
+/// time, so only checking the top-level section would leave later-stage errors
+/// to the infallible scheduler path.
+fn validate_stage_particles_configs(
+    app: &App,
+    materials: &MaterialTable,
+    domain_config: &DomainConfig,
+) -> Result<(), String> {
+    let config_table = app
+        .get_resource_ref::<Config>()
+        .map(|config| config.table.clone())
+        .unwrap_or_default();
+    let run_config = app
+        .get_resource_ref::<RunConfig>()
+        .ok_or("DemAtomInsertPlugin requires RunPlugin")?;
+
+    for (stage_index, stage) in run_config.stages.iter().enumerate() {
+        if !stage.overrides.contains_key("particles") {
+            continue;
+        }
+
+        let mut merged = config_table.clone();
+        deep_merge(&mut merged, &stage.overrides);
+        let particles = merged
+            .get("particles")
+            .cloned()
+            .ok_or_else(|| format!("stage {} has an invalid [particles] override", stage_index))?
+            .try_into::<ParticlesConfig>()
+            .map_err(|error| {
+                format!(
+                    "failed to parse [particles] override for [[run]] stage {}: {}",
+                    stage_index, error
+                )
+            })?;
+        validate_particles_config(&particles, materials, domain_config).map_err(|error| {
+            format!(
+                "invalid [particles] override for [[run]] stage {}: {}",
+                stage_index, error
+            )
+        })?;
     }
     Ok(())
 }
