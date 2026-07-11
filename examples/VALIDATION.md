@@ -24,6 +24,19 @@ its curve-level check is still against the rigid-body/Maw theory those experimen
 points confirmed, because the paper's per-point scatter lives only in paywalled
 figures.
 
+## `material_pair_table_validation` — typed Material compatibility
+
+The typed `Material` registration path is compared with a golden mixed-material
+pair table recorded from the pre-redesign `origin/main` implementation. It covers
+all 21 generated pair properties, including elastic, adhesion, rolling/twisting,
+MDR, and liquid-bridge mixing. The `1e-12` relative-error limit is a strict
+compatibility check rather than a physics calibration.
+
+![Typed Material pair-table compatibility](material_pair_table_validation/plots/typed_vs_legacy_pair_table.png)
+
+*PASS: 21/21 typed values match the pre-redesign golden table; the dashed line is
+the `1e-12` relative-error criterion and exact matches are drawn at the plot floor.*
+
 **These benchmarks catch real bugs.** The oblique-impact validation alone drove two
 contact-model fixes — a tangential damping-sign error that was injecting energy, and
 a requirement that a frozen contact partner also have its rotation frozen — and the
