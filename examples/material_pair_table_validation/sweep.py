@@ -14,14 +14,12 @@ def read_file(name):
 
 def measure_typed():
     result = subprocess.run(
-        ["cargo", "test", "--quiet", "-p", "dirt_atom", "--no-default-features",
-         "--features", "precision-double", "tests::typed_materials_match_independent_legacy_mixing_rules",
-         "--", "--exact", "--nocapture"],
+        ["cargo", "run", "--quiet", "--example", "material_pair_table_validation",
+         "--no-default-features", "--features", "precision-double"],
         cwd=ROOT.parent.parent, check=True, text=True, capture_output=True,
     )
-    rows = [line.removeprefix("PAIR_TABLE,") for line in result.stdout.splitlines()
-            if line.startswith("PAIR_TABLE,")]
-    return {r["property"]: float(r["value"]) for r in csv.DictReader(rows)}
+    return {r["property"]: float(r["value"])
+            for r in csv.DictReader(result.stdout.splitlines())}
 
 legacy, typed = read_file("legacy_pair_table.csv"), measure_typed()
 assert legacy.keys() == typed.keys()

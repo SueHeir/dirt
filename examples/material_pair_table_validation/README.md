@@ -5,11 +5,12 @@ pre-redesign `origin/main` `MaterialTable` implementation, then compares every
 generated pair property with a fresh execution of this branch's typed
 `MaterialTable` API. The golden table covers Hertz damping, elastic moduli, all
 friction/adhesion modes, Hooke and SDS values, MDR values, and liquid-bridge
-values. The corresponding Rust unit test independently transcribes the old
-mixing rules and checks these same 21 properties.
+values. The command is a standalone executable that constructs the inputs only
+through the public typed API and emits its generated pair table; it is not a
+unit-test printout or a static typed-output fixture.
 
 Run `python3 examples/material_pair_table_validation/sweep.py` to compile and
-execute the typed API's independent mixing-rule test, regenerate the figure,
+execute the typed API validation executable, regenerate the figure,
 and enforce the exact `1e-12` relative criterion. The sweep does not read a
 static typed-output CSV.
 

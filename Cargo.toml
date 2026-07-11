@@ -70,6 +70,10 @@ name = "two_particle_collision"
 path = "examples/two_particle_collision/main.rs"
 
 [[example]]
+name = "material_pair_table_validation"
+path = "examples/material_pair_table_validation/main.rs"
+
+[[example]]
 name = "peri_dem_interop"
 path = "examples/peri_dem_interop/main.rs"
 
