@@ -256,8 +256,15 @@ pub fn push_dem_test_atom(
 /// ```
 pub fn make_material_table() -> dirt_atom::MaterialTable {
     let mut mt = dirt_atom::MaterialTable::new();
-    mt.add_material("glass", 8.7e9, 0.3, 0.95, 0.4, 0.0, 0.0)
-        .expect("test glass material is valid");
+    mt.add(
+        dirt_atom::Material::new("glass", dirt_atom::Elastic::new(8.7e9, 0.3, 0.95)).with_friction(
+            dirt_atom::Friction {
+                sliding: 0.4,
+                ..Default::default()
+            },
+        ),
+    )
+    .expect("test glass material is valid");
     mt.build_pair_tables();
     mt
 }

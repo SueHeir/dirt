@@ -603,6 +603,287 @@ pub enum MaterialError {
     },
 }
 
+/// Stable index of a material registered in a [`MaterialTable`].
+///
+/// The raw integer remains available through [`MaterialId::index`] for atom
+/// type fields, but named APIs use this type to avoid mixing material IDs with
+/// unrelated counts or indices.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct MaterialId(u32);
+
+impl MaterialId {
+    /// Returns the zero-based table index used by hot-path pair tables.
+    pub const fn index(self) -> usize {
+        self.0 as usize
+    }
+
+    /// Returns the raw atom material type value.
+    pub const fn raw(self) -> u32 {
+        self.0
+    }
+}
+
+/// Elastic material constants shared by Hertz, Mindlin, and Hooke contacts.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Elastic {
+    /// Young's modulus (Pa).
+    pub youngs_mod: f64,
+    /// Poisson ratio (dimensionless).
+    pub poisson_ratio: f64,
+    /// Coefficient of restitution (dimensionless).
+    pub restitution: f64,
+    /// Linear Hooke normal stiffness (N/m); zero selects Hertz.
+    pub normal_stiffness: f64,
+    /// Linear Hooke tangential stiffness (N/m); zero selects Mindlin.
+    pub tangential_stiffness: f64,
+}
+
+impl Elastic {
+    /// Creates Hertz/Mindlin elastic constants with no Hooke stiffness override.
+    pub const fn new(youngs_mod: f64, poisson_ratio: f64, restitution: f64) -> Self {
+        Self {
+            youngs_mod,
+            poisson_ratio,
+            restitution,
+            normal_stiffness: 0.0,
+            tangential_stiffness: 0.0,
+        }
+    }
+
+    /// Adds linear Hooke normal and tangential stiffnesses.
+    pub const fn with_hooke_stiffness(mut self, normal: f64, tangential: f64) -> Self {
+        self.normal_stiffness = normal;
+        self.tangential_stiffness = tangential;
+        self
+    }
+}
+
+/// Sliding and torsional Coulomb friction coefficients.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Friction {
+    /// Sliding Coulomb friction coefficient.
+    pub sliding: f64,
+    /// Rolling Coulomb friction coefficient.
+    pub rolling: f64,
+    /// Twisting Coulomb friction coefficient.
+    pub twisting: f64,
+}
+
+impl Default for Friction {
+    fn default() -> Self {
+        Self {
+            sliding: default_friction(),
+            rolling: 0.0,
+            twisting: 0.0,
+        }
+    }
+}
+
+/// Adhesion choice for one material.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Adhesion {
+    /// No adhesive contribution.
+    None,
+    /// SJKR cohesion energy density (J/m³).
+    Sjkr {
+        /// Cohesion energy density.
+        energy: f64,
+    },
+    /// JKR/DMT surface energy (J/m²), selected by the table's adhesion model.
+    SurfaceEnergy {
+        /// Surface energy.
+        energy: f64,
+    },
+}
+
+impl Default for Adhesion {
+    fn default() -> Self {
+        Self::None
+    }
+}
+
+/// Optional spring-dashpot rolling model constants.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Rolling {
+    /// The constant rolling-friction model.
+    Constant,
+    /// SDS rolling spring stiffness (N m/rad) and damping coefficient.
+    Sds {
+        /// Rolling spring stiffness.
+        stiffness: f64,
+        /// Rolling damping coefficient.
+        damping: f64,
+    },
+}
+
+impl Default for Rolling {
+    fn default() -> Self {
+        Self::Constant
+    }
+}
+
+/// Optional spring-dashpot twisting model constants.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Twisting {
+    /// The constant twisting-friction model.
+    Constant,
+    /// SDS twisting spring stiffness (N m/rad) and damping coefficient.
+    Sds {
+        /// Twisting spring stiffness.
+        stiffness: f64,
+        /// Twisting damping coefficient.
+        damping: f64,
+    },
+}
+
+impl Default for Twisting {
+    fn default() -> Self {
+        Self::Constant
+    }
+}
+
+/// MDR elastic-plastic parameters.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct Mdr {
+    /// Yield stress (Pa).
+    pub yield_stress: f64,
+    /// Critical free-surface ratio.
+    pub psi_b: f64,
+    /// Dimensionless normal damping prefactor.
+    pub damping: f64,
+}
+
+/// Pendular liquid-bridge parameters.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct LiquidBridge {
+    /// Bridge volume per contact (m³).
+    pub volume: f64,
+    /// Liquid-vapor surface tension (N/m).
+    pub surface_tension: f64,
+    /// Solid-liquid contact angle (radians).
+    pub contact_angle: f64,
+    /// Optional rupture-distance override (m); zero uses the model estimate.
+    pub rupture_distance: f64,
+}
+
+/// Complete, named input for one material row.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Material {
+    /// Human-readable material name.
+    pub name: String,
+    /// Elastic constants.
+    pub elastic: Elastic,
+    /// Friction constants.
+    pub friction: Friction,
+    /// Adhesion selection.
+    pub adhesion: Adhesion,
+    /// Rolling model constants.
+    pub rolling: Rolling,
+    /// Twisting model constants.
+    pub twisting: Twisting,
+    /// MDR constants.
+    pub mdr: Mdr,
+    /// Liquid-bridge constants.
+    pub liquid_bridge: LiquidBridge,
+}
+
+impl Material {
+    /// Starts a material definition with required elastic constants and named defaults.
+    pub fn new(name: impl Into<String>, elastic: Elastic) -> Self {
+        Self {
+            name: name.into(),
+            elastic,
+            friction: Friction::default(),
+            adhesion: Adhesion::None,
+            rolling: Rolling::Constant,
+            twisting: Twisting::Constant,
+            mdr: Mdr::default(),
+            liquid_bridge: LiquidBridge::default(),
+        }
+    }
+
+    /// Sets sliding, rolling, and twisting friction coefficients.
+    pub const fn with_friction(mut self, friction: Friction) -> Self {
+        self.friction = friction;
+        self
+    }
+    /// Sets the material adhesion model and its parameter.
+    pub const fn with_adhesion(mut self, adhesion: Adhesion) -> Self {
+        self.adhesion = adhesion;
+        self
+    }
+    /// Sets rolling model constants.
+    pub const fn with_rolling(mut self, rolling: Rolling) -> Self {
+        self.rolling = rolling;
+        self
+    }
+    /// Sets twisting model constants.
+    pub const fn with_twisting(mut self, twisting: Twisting) -> Self {
+        self.twisting = twisting;
+        self
+    }
+    /// Sets MDR elastic-plastic constants.
+    pub const fn with_mdr(mut self, mdr: Mdr) -> Self {
+        self.mdr = mdr;
+        self
+    }
+    /// Sets liquid-bridge constants.
+    pub const fn with_liquid_bridge(mut self, liquid_bridge: LiquidBridge) -> Self {
+        self.liquid_bridge = liquid_bridge;
+        self
+    }
+}
+
+impl Material {
+    fn from_config(config: &MaterialConfig) -> Result<Self, MaterialError> {
+        if config.cohesion_energy > 0.0 && config.surface_energy > 0.0 {
+            return Err(MaterialError::ConflictingCohesion {
+                name: config.name.clone(),
+            });
+        }
+        Ok(Material::new(
+            &config.name,
+            Elastic::new(config.youngs_mod, config.poisson_ratio, config.restitution)
+                .with_hooke_stiffness(config.kn, config.kt),
+        )
+        .with_friction(Friction {
+            sliding: config.friction,
+            rolling: config.rolling_friction,
+            twisting: config.twisting_friction,
+        })
+        .with_adhesion(if config.cohesion_energy > 0.0 {
+            Adhesion::Sjkr {
+                energy: config.cohesion_energy,
+            }
+        } else if config.surface_energy > 0.0 {
+            Adhesion::SurfaceEnergy {
+                energy: config.surface_energy,
+            }
+        } else {
+            Adhesion::None
+        })
+        .with_rolling(Rolling::Sds {
+            stiffness: config.rolling_stiffness,
+            damping: config.rolling_damping,
+        })
+        .with_twisting(Twisting::Sds {
+            stiffness: config.twisting_stiffness,
+            damping: config.twisting_damping,
+        })
+        .with_mdr(Mdr {
+            yield_stress: config.mdr_yield_stress,
+            psi_b: config.mdr_psi_b,
+            damping: config.mdr_damping,
+        })
+        .with_liquid_bridge(LiquidBridge {
+            volume: config.liquid_bridge_volume,
+            surface_tension: config.liquid_surface_tension,
+            contact_angle: config.liquid_contact_angle,
+            rupture_distance: config.liquid_rupture_distance,
+        }))
+    }
+}
+
 impl std::fmt::Display for MaterialError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -623,6 +904,7 @@ impl Default for MaterialTable {
     }
 }
 
+#[allow(deprecated)] // compatibility wrappers deliberately delegate down the old ladder
 impl MaterialTable {
     /// Creates an empty `MaterialTable` with default contact/adhesion/rolling/twisting models.
     ///
@@ -632,28 +914,23 @@ impl MaterialTable {
     /// tables once before any contact force is evaluated:
     ///
     /// ```
-    /// use dirt_atom::MaterialTable;
+    /// use dirt_atom::{Elastic, Friction, Material, MaterialTable};
     ///
     /// let mut mat = MaterialTable::new();
     ///
     /// // Phase 1 — register materials. Configuration input is fallible.
-    /// let glass = mat.add_material(
-    ///     "glass",
-    ///     8.7e9, // Young's modulus E [Pa]
-    ///     0.3,   // Poisson's ratio ν
-    ///     0.95,  // restitution (target COR)
-    ///     0.5,   // sliding friction
-    ///     0.0,   // rolling friction
-    ///     0.0,   // cohesion energy
+    /// let glass = mat.add(
+    ///     Material::new("glass", Elastic::new(8.7e9, 0.3, 0.95))
+    ///         .with_friction(Friction { sliding: 0.5, ..Friction::default() }),
     /// ).expect("valid glass material");
-    /// assert_eq!(glass, 0);
+    /// assert_eq!(glass.raw(), 0);
     /// assert!(mat.beta_ij.is_empty()); // pair tables still empty in phase 1
     ///
     /// // Phase 2 — build the per-pair mixing tables. Required before contact eval.
     /// mat.build_pair_tables();
     ///
     /// // restitution 0.95 inverts to a small (but non-zero) Hertz damping ratio.
-    /// let beta = mat.beta_ij[glass as usize][glass as usize];
+    /// let beta = mat.beta_ij[glass.index()][glass.index()];
     /// assert!(beta > 0.0 && beta < 0.1);
     /// ```
     pub fn new() -> Self {
@@ -717,6 +994,7 @@ impl MaterialTable {
     ///
     /// This is a convenience wrapper around [`add_material_full`](Self::add_material_full)
     /// with `surface_energy = 0.0` (no adhesion).
+    #[deprecated(note = "use MaterialTable::add(Material::new(...)) for named material properties")]
     pub fn add_material(
         &mut self,
         name: &str,
@@ -743,6 +1021,7 @@ impl MaterialTable {
     /// [`MaterialError`].
     ///
     /// Wraps [`add_material_extended`](Self::add_material_extended) with twisting/Hooke stiffness = 0.
+    #[deprecated(note = "use MaterialTable::add(Material::new(...)) for named material properties")]
     pub fn add_material_full(
         &mut self,
         name: &str,
@@ -773,6 +1052,7 @@ impl MaterialTable {
     /// [`MaterialError`].
     ///
     /// Wraps [`add_material_with_sds`](Self::add_material_with_sds) with SDS parameters = 0.
+    #[deprecated(note = "use MaterialTable::add(Material::new(...)) for named material properties")]
     pub fn add_material_extended(
         &mut self,
         name: &str,
@@ -809,6 +1089,7 @@ impl MaterialTable {
     /// Add a material with all fields including SDS rolling/twisting parameters.
     /// Returns [`MaterialError`] for incompatible material options.
     #[allow(clippy::too_many_arguments)]
+    #[deprecated(note = "use MaterialTable::add(Material::new(...)) for named material properties")]
     pub fn add_material_with_sds(
         &mut self,
         name: &str,
@@ -852,6 +1133,7 @@ impl MaterialTable {
     /// Add a material with all fields including SDS and MDR parameters.
     /// Returns [`MaterialError`] for incompatible material options.
     #[allow(clippy::too_many_arguments)]
+    #[deprecated(note = "use MaterialTable::add(Material::new(...)) for named material properties")]
     pub fn add_material_with_mdr(
         &mut self,
         name: &str,
@@ -902,6 +1184,7 @@ impl MaterialTable {
     /// Add a material with all fields including SDS, MDR, and liquid bridge parameters.
     /// Returns [`MaterialError`] for incompatible material options.
     #[allow(clippy::too_many_arguments)]
+    #[deprecated(note = "use MaterialTable::add(Material::new(...)) for named material properties")]
     pub fn add_material_with_liquid_bridge(
         &mut self,
         name: &str,
@@ -955,6 +1238,7 @@ impl MaterialTable {
 
     /// Backward-compatible alias for the fallible full material constructor.
     #[allow(clippy::too_many_arguments)]
+    #[deprecated(note = "use MaterialTable::add(Material::new(...)) for named material properties")]
     pub fn try_add_material_with_liquid_bridge(
         &mut self,
         name: &str,
@@ -985,30 +1269,102 @@ impl MaterialTable {
                 name: name.to_string(),
             });
         }
-        let idx = self.names.len() as u32;
-        self.names.push(name.to_string());
-        self.youngs_mod.push(youngs_mod);
-        self.poisson_ratio.push(poisson_ratio);
-        self.restitution.push(restitution);
-        self.friction.push(friction);
-        self.rolling_friction.push(rolling_friction);
-        self.twisting_friction.push(twisting_friction);
+        self.add(
+            Material::new(
+                name,
+                Elastic::new(youngs_mod, poisson_ratio, restitution).with_hooke_stiffness(kn, kt),
+            )
+            .with_friction(Friction {
+                sliding: friction,
+                rolling: rolling_friction,
+                twisting: twisting_friction,
+            })
+            .with_adhesion(if cohesion_energy > 0.0 {
+                Adhesion::Sjkr {
+                    energy: cohesion_energy,
+                }
+            } else if surface_energy > 0.0 {
+                Adhesion::SurfaceEnergy {
+                    energy: surface_energy,
+                }
+            } else {
+                Adhesion::None
+            })
+            .with_rolling(Rolling::Sds {
+                stiffness: rolling_stiffness,
+                damping: rolling_damping,
+            })
+            .with_twisting(Twisting::Sds {
+                stiffness: twisting_stiffness,
+                damping: twisting_damping,
+            })
+            .with_mdr(Mdr {
+                yield_stress: mdr_yield_stress,
+                psi_b: mdr_psi_b,
+                damping: mdr_damping,
+            })
+            .with_liquid_bridge(LiquidBridge {
+                volume: liquid_bridge_volume,
+                surface_tension: liquid_surface_tension,
+                contact_angle: liquid_contact_angle,
+                rupture_distance: liquid_rupture_distance,
+            }),
+        )
+        .map(MaterialId::raw)
+    }
+
+    /// Validates and appends a named material input, returning its typed ID.
+    ///
+    /// This is the single registration path; it updates every per-material
+    /// column together, so a newly added property cannot drift out of alignment
+    /// with the pair-table index used by the contact hot path.
+    pub fn add(&mut self, material: Material) -> Result<MaterialId, MaterialError> {
+        let (cohesion_energy, surface_energy) = match material.adhesion {
+            Adhesion::None => (0.0, 0.0),
+            Adhesion::Sjkr { energy } => (energy, 0.0),
+            Adhesion::SurfaceEnergy { energy } => (0.0, energy),
+        };
+        if cohesion_energy > 0.0 && surface_energy > 0.0 {
+            return Err(MaterialError::ConflictingCohesion {
+                name: material.name,
+            });
+        }
+        let (rolling_stiffness, rolling_damping) = match material.rolling {
+            Rolling::Constant => (0.0, 0.0),
+            Rolling::Sds { stiffness, damping } => (stiffness, damping),
+        };
+        let (twisting_stiffness, twisting_damping) = match material.twisting {
+            Twisting::Constant => (0.0, 0.0),
+            Twisting::Sds { stiffness, damping } => (stiffness, damping),
+        };
+        let id = MaterialId(self.names.len() as u32);
+        self.names.push(material.name);
+        self.youngs_mod.push(material.elastic.youngs_mod);
+        self.poisson_ratio.push(material.elastic.poisson_ratio);
+        self.restitution.push(material.elastic.restitution);
+        self.friction.push(material.friction.sliding);
+        self.rolling_friction.push(material.friction.rolling);
+        self.twisting_friction.push(material.friction.twisting);
         self.cohesion_energy.push(cohesion_energy);
         self.surface_energy.push(surface_energy);
-        self.kn.push(kn);
-        self.kt.push(kt);
+        self.kn.push(material.elastic.normal_stiffness);
+        self.kt.push(material.elastic.tangential_stiffness);
         self.rolling_stiffness.push(rolling_stiffness);
         self.rolling_damping.push(rolling_damping);
         self.twisting_stiffness.push(twisting_stiffness);
         self.twisting_damping.push(twisting_damping);
-        self.mdr_yield_stress.push(mdr_yield_stress);
-        self.mdr_psi_b.push(mdr_psi_b);
-        self.mdr_damping.push(mdr_damping);
-        self.liquid_bridge_volume.push(liquid_bridge_volume);
-        self.liquid_surface_tension.push(liquid_surface_tension);
-        self.liquid_contact_angle.push(liquid_contact_angle);
-        self.liquid_rupture_distance.push(liquid_rupture_distance);
-        Ok(idx)
+        self.mdr_yield_stress.push(material.mdr.yield_stress);
+        self.mdr_psi_b.push(material.mdr.psi_b);
+        self.mdr_damping.push(material.mdr.damping);
+        self.liquid_bridge_volume
+            .push(material.liquid_bridge.volume);
+        self.liquid_surface_tension
+            .push(material.liquid_bridge.surface_tension);
+        self.liquid_contact_angle
+            .push(material.liquid_bridge.contact_angle);
+        self.liquid_rupture_distance
+            .push(material.liquid_bridge.rupture_distance);
+        Ok(id)
     }
 
     /// Looks up a material by name, returning its index if found.
@@ -1406,29 +1762,9 @@ fn configure_dem_atom(app: &mut App) -> Result<(), AppError> {
     if let Some(ref materials) = dem_config.materials {
         for mat in materials {
             material_table
-                .try_add_material_with_liquid_bridge(
-                    &mat.name,
-                    mat.youngs_mod,
-                    mat.poisson_ratio,
-                    mat.restitution,
-                    mat.friction,
-                    mat.rolling_friction,
-                    mat.cohesion_energy,
-                    mat.surface_energy,
-                    mat.twisting_friction,
-                    mat.kn,
-                    mat.kt,
-                    mat.rolling_stiffness,
-                    mat.rolling_damping,
-                    mat.twisting_stiffness,
-                    mat.twisting_damping,
-                    mat.mdr_yield_stress,
-                    mat.mdr_psi_b,
-                    mat.mdr_damping,
-                    mat.liquid_bridge_volume,
-                    mat.liquid_surface_tension,
-                    mat.liquid_contact_angle,
-                    mat.liquid_rupture_distance,
+                .add(
+                    Material::from_config(mat)
+                        .map_err(|error| AppError::message(error.to_string()))?,
                 )
                 .map_err(|error| AppError::message(error.to_string()))?;
         }
@@ -1539,6 +1875,114 @@ mod tests {
         );
         assert!(mt.e_eff_ij[0][0] > 0.0, "e_eff should be positive");
         assert!(mt.g_eff_ij[0][0] > 0.0, "g_eff should be positive");
+    }
+
+    #[test]
+    #[allow(deprecated)]
+    fn typed_materials_preserve_legacy_pair_tables_for_mixed_properties() {
+        let mut legacy = MaterialTable::new();
+        legacy
+            .add_material_with_liquid_bridge(
+                "soft", 8.7e9, 0.30, 0.95, 0.4, 0.1, 0.0, 0.2, 0.05, 1.0e6, 5.0e5, 2.0, 0.3, 3.0,
+                0.4, 1.0e6, 0.1, 0.02, 1.0e-11, 0.072, 0.2, 1.0e-4,
+            )
+            .unwrap();
+        legacy
+            .add_material_with_liquid_bridge(
+                "stiff", 70e9, 0.22, 0.80, 0.3, 0.2, 0.0, 0.5, 0.07, 2.0e6, 7.0e5, 4.0, 0.6, 5.0,
+                0.8, 2.0e6, 0.2, 0.04, 8.0e-12, 0.060, 0.4, 2.0e-4,
+            )
+            .unwrap();
+        legacy.build_pair_tables();
+
+        let mut typed = MaterialTable::new();
+        let soft = typed
+            .add(
+                Material::new(
+                    "soft",
+                    Elastic::new(8.7e9, 0.30, 0.95).with_hooke_stiffness(1.0e6, 5.0e5),
+                )
+                .with_friction(Friction {
+                    sliding: 0.4,
+                    rolling: 0.1,
+                    twisting: 0.05,
+                })
+                .with_adhesion(Adhesion::SurfaceEnergy { energy: 0.2 })
+                .with_rolling(Rolling::Sds {
+                    stiffness: 2.0,
+                    damping: 0.3,
+                })
+                .with_twisting(Twisting::Sds {
+                    stiffness: 3.0,
+                    damping: 0.4,
+                })
+                .with_mdr(Mdr {
+                    yield_stress: 1.0e6,
+                    psi_b: 0.1,
+                    damping: 0.02,
+                })
+                .with_liquid_bridge(LiquidBridge {
+                    volume: 1.0e-11,
+                    surface_tension: 0.072,
+                    contact_angle: 0.2,
+                    rupture_distance: 1.0e-4,
+                }),
+            )
+            .unwrap();
+        let stiff = typed
+            .add(
+                Material::new(
+                    "stiff",
+                    Elastic::new(70e9, 0.22, 0.80).with_hooke_stiffness(2.0e6, 7.0e5),
+                )
+                .with_friction(Friction {
+                    sliding: 0.3,
+                    rolling: 0.2,
+                    twisting: 0.07,
+                })
+                .with_adhesion(Adhesion::SurfaceEnergy { energy: 0.5 })
+                .with_rolling(Rolling::Sds {
+                    stiffness: 4.0,
+                    damping: 0.6,
+                })
+                .with_twisting(Twisting::Sds {
+                    stiffness: 5.0,
+                    damping: 0.8,
+                })
+                .with_mdr(Mdr {
+                    yield_stress: 2.0e6,
+                    psi_b: 0.2,
+                    damping: 0.04,
+                })
+                .with_liquid_bridge(LiquidBridge {
+                    volume: 8.0e-12,
+                    surface_tension: 0.060,
+                    contact_angle: 0.4,
+                    rupture_distance: 2.0e-4,
+                }),
+            )
+            .unwrap();
+        assert_eq!((soft.raw(), stiff.raw()), (0, 1));
+        typed.build_pair_tables();
+
+        for (legacy_table, typed_table) in [
+            (&legacy.beta_ij, &typed.beta_ij),
+            (&legacy.friction_ij, &typed.friction_ij),
+            (&legacy.e_eff_ij, &typed.e_eff_ij),
+            (&legacy.g_eff_ij, &typed.g_eff_ij),
+            (&legacy.kn_ij, &typed.kn_ij),
+            (&legacy.rolling_stiffness_ij, &typed.rolling_stiffness_ij),
+            (&legacy.mdr_yield_stress_ij, &typed.mdr_yield_stress_ij),
+            (
+                &legacy.liquid_surface_tension_ij,
+                &typed.liquid_surface_tension_ij,
+            ),
+        ] {
+            assert_eq!(
+                legacy_table, typed_table,
+                "typed input must retain legacy pair-table values"
+            );
+        }
     }
 
     #[test]

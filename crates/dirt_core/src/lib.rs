@@ -229,7 +229,7 @@ impl PluginGroup for CorePlugins {
 /// - [`GranularDefaultPlugins`] — Hertz–Mindlin + rotational dynamics + particle insertion
 ///
 /// ## DEM types
-/// - [`DemAtomPlugin`], [`DemConfig`], [`MaterialTable`] — DEM atom data and materials
+/// - [`DemAtomPlugin`], [`DemConfig`], [`MaterialTable`], [`Material`] — DEM atom data and materials
 /// - [`DemAtomInsertPlugin`], [`ParticlesConfig`] — particle insertion
 /// - [`DemBondPlugin`] — inter-particle bonds
 /// - [`WallPlugin`], [`Walls`], [`WallDef`], [`WallPlane`] — wall definitions
@@ -253,8 +253,11 @@ pub mod prelude {
     pub use crate::CorePlugins;
 
     // DEM plugins and config types
+    pub use dirt_atom::{
+        Adhesion, DemAtomPlugin, DemConfig, Elastic, Friction, LiquidBridge, Material, MaterialId,
+        MaterialTable, Mdr, Rolling, Twisting,
+    };
     pub use dirt_atom::{DemAtomInsertPlugin, ParticlesConfig};
-    pub use dirt_atom::{DemAtomPlugin, DemConfig, MaterialTable};
     pub use dirt_bond::DemBondPlugin;
     pub use dirt_clump::{
         ClumpAtom, ClumpDef, ClumpPlugin, ClumpRegistry, MultisphereBody, MultisphereBodyStore,
