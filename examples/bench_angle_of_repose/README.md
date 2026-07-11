@@ -10,6 +10,39 @@ single analytical number. When a LAMMPS binary is available, the same protocol i
 also run in LAMMPS and overlaid for an informative cross-code comparison (it does
 **not** gate validation — see "Cross-code overlay").
 
+## Experimental-comparison boundary
+
+This benchmark deliberately does **not** claim to reproduce the 20--25° angle
+reported for millimetre glass beads poured from a hopper by Elekes & Parteli,
+*PNAS* **118** (2021), e2107965118,
+doi:[10.1073/pnas.2107965118](https://doi.org/10.1073/pnas.2107965118).  That
+number is an external experimental reference, but it is not a valid pass band
+for this calculation: this example releases a pre-settled column onto a flat,
+frictional floor, whereas the paper's material is prepared by pouring.  Angle of
+repose is preparation- and contact-model-dependent; in particular, the paper
+does not supply this implementation's rolling spring/dashpot/cap parameters.
+
+For a useful experimental validation, a new hopper protocol must be implemented
+and its *independently measured* bead size distribution, particle--particle and
+particle--wall friction, rolling-resistance law, fill height, and uncertainty
+must be fixed before simulation.  Selecting a rolling-friction value after
+observing an angle inside the published interval is calibration, not validation,
+and is intentionally not performed here.  The solver checks below are therefore
+limited to protocol-internal DEM behaviour, while the optional LAMMPS result is
+an independent implementation cross-check rather than an experiment.
+
+The mismatch is concrete, rather than a generic caveat.  Elekes & Parteli's
+Table 1 specifies a sliding coefficient of 0.5 and rolling coefficient of 0.05
+for its glass beads.  This benchmark deliberately sweeps sliding friction and
+uses a fixed `sds` rolling cap of 0.1; more importantly, it creates a settled
+column and releases its retaining cylinder instead of depositing grains through
+a hopper.  Consequently neither its plotted values nor its `[10°, 40°]`
+protocol-internal band may be read as a comparison with the paper's 20--25°
+observation.  A future matched benchmark must make a *single, predeclared*
+material/protocol choice and compare its replicate mean and uncertainty to the
+source's reported spread; it must fail if that comparison is unavailable or
+outside the source band.
+
 ## Physics
 
 A loose column of monodisperse spheres is confined inside a thin cylinder on a
