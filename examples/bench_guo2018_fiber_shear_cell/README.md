@@ -56,21 +56,28 @@ Run all six solver cases with `run_case.py` (the 96-mm cases contain 750
 
 ```bash
 python3 examples/bench_guo2018_fiber_shear_cell/validate.py \
-  --case 651:64:generated/p651_w64/cell_history.csv \
-  --case 1735:64:generated/p1735_w64/cell_history.csv \
-  --case 3470:64:generated/p3470_w64/cell_history.csv \
-  --case 651:96:generated/p651_w96/cell_history.csv \
-  --case 1735:96:generated/p1735_w96/cell_history.csv \
-  --case 3470:96:generated/p3470_w96/cell_history.csv
+  --case 651:64:generated/p651_w64 \
+  --case 1735:64:generated/p1735_w64 \
+  --case 3470:64:generated/p3470_w64 \
+  --case 651:96:generated/p651_w96 \
+  --case 1735:96:generated/p1735_w96 \
+  --case 3470:96:generated/p3470_w96
 ```
 
 The 64-mm observations are compared to the external experimental digitization
 (30% relative shear-stress and 0.05 absolute solid-fraction tolerances).  The
 96-mm observations are an independent finite-size check with the same bands;
-they are not fitted to a second reference curve. The validator has no
-hand-entered DIRT results and fails when a history is missing, incomplete,
-records a requested rather than measured load, or does not reach the
-predeclared state.
+they are not fitted to a second reference curve. As a separate external audit,
+the stored Fig. 6 rubber-cord shear points must agree within 3% with the
+paper's printed experimental fit, `tau = 0.83 sigma_yy - 60 Pa`; this detects
+an inconsistent digitization without using any DIRT output. The validator accepts a case
+directory, not a free-standing CSV: it requires the `run_case.py` input
+manifest and the receipt written only after DIRT exits successfully, then
+checks SHA-256 digests that bind the history to those exact inputs. It fails
+when a history is missing, incomplete, records a requested rather than
+measured load, changes the global particle population, or does not reach the
+predeclared state. This is provenance checking, not a substitute for retaining
+the full independently reproducible solver run.
 
 Digitization error, finite size, wall roughness, and representing rubber cord
 as bonded spheres remain limitations.  A passing gate supports this specified

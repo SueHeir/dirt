@@ -7,6 +7,8 @@ measured lid reaction.
 """
 import argparse
 import csv
+import hashlib
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -19,6 +21,12 @@ WINDOW = 40
 LOAD_TOL = 0.15
 SHEAR_TOL = 0.30
 PHI_TOL = 0.05
+# Guo et al. Fig. 6 prints the rubber-cord experimental fit
+# tau = 0.83 sigma_yy - 60 Pa.  This independently constrains the stored
+# figure digitization; it is not derived from any DIRT observation.
+FIG6_RUBBER_CORD_SLOPE = 0.83
+FIG6_RUBBER_CORD_INTERCEPT_PA = -60.0
+FIG6_DIGITIZATION_REL_TOL = 0.03
 
 
 def reference():
@@ -30,6 +38,10 @@ def reference():
             values.setdefault(float(row["normal_stress_pa"]), {})[row["observable"]] = float(row["value"])
     if set(values) != set(LOADS) or any(set(v) != {"shear_stress_pa", "solid_fraction"} for v in values.values()):
         raise ValueError("incomplete external reference series")
+    for pressure, observables in values.items():
+        figure_fit = FIG6_RUBBER_CORD_SLOPE * pressure + FIG6_RUBBER_CORD_INTERCEPT_PA
+        if abs(observables["shear_stress_pa"] - figure_fit) / figure_fit > FIG6_DIGITIZATION_REL_TOL:
+            raise ValueError(f"Fig. 6 digitization at {pressure:g} Pa disagrees with its printed fit")
     return values
 
 
@@ -37,14 +49,19 @@ def mean(rows, field):
     return sum(float(r[field]) for r in rows) / len(rows)
 
 
-def measure(path, pressure, width):
+def sha256(path):
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+
+def measure(path, pressure, width, expected_atoms=None):
     """Return post-drive solver observables after checking the full protocol."""
     with Path(path).open(newline="") as stream:
         rows = list(csv.DictReader(stream))
     required = {"stage", "shear_strain", "normal_stress_pa", "shear_stress_pa", "solid_fraction", "n_atoms"}
     if not rows or not required <= set(rows[0]):
         raise ValueError(f"{path}: not a complete solver cell history")
-    expected_atoms = 8500 if width == 64 else 12750 if width == 96 else None
+    if expected_atoms is None:
+        expected_atoms = 8500 if width == 64 else 12750 if width == 96 else None
     if expected_atoms is None or any(int(r["n_atoms"]) != expected_atoms for r in rows):
         raise ValueError(f"{path}: unexpected or changing fibre population")
     stages = {r["stage"] for r in rows}
@@ -60,6 +77,26 @@ def measure(path, pressure, width):
     if abs(mean(final, "normal_stress_pa") - pressure) / pressure > LOAD_TOL:
         raise ValueError(f"{path}: lid load drifted outside tolerance during shear")
     return {name: mean(final, name) for name in ("normal_stress_pa", "shear_stress_pa", "solid_fraction")}
+
+
+def measure_case(case_dir, pressure, width):
+    """Measure a runner-receipted case, never a free-standing CSV."""
+    case_dir = Path(case_dir)
+    manifest_path, receipt_path = case_dir / "case_manifest.json", case_dir / "solver_receipt.json"
+    if not manifest_path.is_file() or not receipt_path.is_file():
+        raise ValueError(f"{case_dir}: missing run_case manifest or successful solver receipt")
+    manifest, receipt = json.loads(manifest_path.read_text()), json.loads(receipt_path.read_text())
+    if manifest.get("pressure_pa") != pressure or manifest.get("width_mm") != width:
+        raise ValueError(f"{case_dir}: manifest does not identify the requested case")
+    history = case_dir / manifest.get("solver_history", "")
+    if not history.is_file() or receipt.get("history_sha256") != sha256(history):
+        raise ValueError(f"{case_dir}: history differs from the successful solver receipt")
+    for name, digest in manifest.get("input_sha256", {}).items():
+        if not (case_dir / name).is_file() or sha256(case_dir / name) != digest:
+            raise ValueError(f"{case_dir}: solver input {name} differs from its manifest")
+    if receipt.get("input_sha256") != manifest.get("input_sha256"):
+        raise ValueError(f"{case_dir}: receipt is not bound to this solver input")
+    return measure(history, pressure, width, manifest.get("expected_global_atoms"))
 
 
 def compare(cases):
@@ -97,13 +134,16 @@ def main():
     cases = {}
     for encoded in args.case:
         pressure, width, path = parse_case(encoded)
-        cases[pressure, width] = measure(path, pressure, width)
+        cases[pressure, width] = measure_case(path, pressure, width)
     for pressure, observed, ref, shear_error, phi_error in compare(cases):
         print(f"{pressure:.0f} Pa: tau={observed['shear_stress_pa']:.1f}/{ref['shear_stress_pa']:.1f} (rel={shear_error:.3f}); phi={observed['solid_fraction']:.3f}/{ref['solid_fraction']:.3f} (abs={phi_error:.3f})")
     print("PASS: solver histories satisfy measured-load, external-reference, and size-sensitivity gates")
 
 
 class ValidatorTests(unittest.TestCase):
+    def test_external_digitization_agrees_with_printed_figure_fit(self):
+        self.assertEqual(set(reference()), set(LOADS))
+
     def history(self, normal=651.0, stages=True):
         rows = []
         if stages:

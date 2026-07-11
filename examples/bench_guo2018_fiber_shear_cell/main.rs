@@ -173,6 +173,9 @@ fn record_cell(
         solid += 4.0 * std::f64::consts::PI * (dem.radius[i] as f64).powi(3) / 3.0;
     }
     solid = comm.all_reduce_sum_f64(solid);
+    // `nlocal` is per-rank in a decomposed cell.  The campaign contract is
+    // about the physical fibre population, so record the global count.
+    let global_atoms = comm.all_reduce_sum_f64(atoms.nlocal as f64).round() as usize;
     if comm.rank() != 0 {
         return;
     }
@@ -226,7 +229,7 @@ fn record_cell(
         lower.force_vector[0].abs() / area,
         solid / (area * height),
         height,
-        atoms.nlocal
+        global_atoms
     )
     .unwrap();
 }

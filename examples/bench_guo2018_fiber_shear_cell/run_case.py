@@ -6,6 +6,7 @@ audited topology, writes a case-specific DIRT configuration, and invokes the
 solver.  It does not fabricate histories or call the acceptance validator.
 """
 import argparse
+import hashlib
 import json
 import math
 import os
@@ -27,6 +28,11 @@ def decomposition(ranks: int) -> tuple[int, int]:
     while x > 1 and ranks % x:
         x -= 1
     return x, ranks // x
+
+
+def sha256(path: Path) -> str:
+    """Content digest used to bind a receipt to its exact inputs."""
+    return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 def materialize(pressure_pa: float, width_mm: int, output: Path, ranks: int) -> Path:
@@ -51,6 +57,7 @@ def materialize(pressure_pa: float, width_mm: int, output: Path, ranks: int) -> 
         'dir = "examples/bench_guo2018_fiber_shear_cell/generated"', f'dir = "{output}"')
     path = output / "case.toml"
     path.write_text(config)
+    source = json.loads((output / "source_parameters.json").read_text())
     (output / "case_manifest.json").write_text(json.dumps({
         "pressure_pa": pressure_pa,
         "width_mm": width_mm,
@@ -59,6 +66,12 @@ def materialize(pressure_pa: float, width_mm: int, output: Path, ranks: int) -> 
         "processors_z": processors_z,
         "runner": "run_case.py",
         "solver_history": "cell_history.csv",
+        "expected_global_atoms": source["n_atoms"],
+        "input_sha256": {
+            "pack.csv": sha256(output / "pack.csv"),
+            "pack.bonds": sha256(output / "pack.bonds"),
+            "case.toml": sha256(path),
+        },
     }, indent=2) + "\n")
     return path
 
@@ -82,6 +95,16 @@ def main() -> None:
         if args.ranks > 1:
             command = [os.environ.get("MPIEXEC", "mpirun"), "-n", str(args.ranks), *command]
         subprocess.run(command, cwd=ROOT, check=True)
+        history = args.output.resolve() / "cell_history.csv"
+        if not history.is_file():
+            raise RuntimeError("DIRT exited without writing cell_history.csv")
+        # Written only after a successful solver invocation. This binds the
+        # history to the materialized input; it is not a physics result.
+        (args.output.resolve() / "solver_receipt.json").write_text(json.dumps({
+            "runner": "run_case.py", "command": command,
+            "history_sha256": sha256(history),
+            "input_sha256": json.loads((args.output.resolve() / "case_manifest.json").read_text())["input_sha256"],
+        }, indent=2) + "\n")
 
 
 if __name__ == "__main__":
