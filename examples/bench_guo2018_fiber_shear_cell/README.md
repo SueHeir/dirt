@@ -26,17 +26,17 @@ uses periodic lateral boundaries, an explicit gravity-settle stage, a measured
 normal-load qualification before it enables the 20-mm/s lower-wall drive, and
 records live lid reactions and solid fraction to `cell_history.csv`.
 
-**Current source-geometry gate — no campaign is runnable yet.** An independent
-volume audit of the declared 8,500-bead, 64-mm topology gives a represented
-solid fraction of 0.534 at the configured 50-mm initial lid gap.  Every
-digitized rubber-cord Fig. 7 experiment is at or below 0.380.  Because the
-configured servo begins above a falling bed and then compacts it, it cannot
-make that represented packing less dense. `run_case.py` therefore refuses to
-run the geometry instead of producing a misleading comparison. This is not a
-result or a calibration failure: the missing input is the paper's published
-annular-cell geometry/initial gap (and the mapping from overlapping DEM beads
-to physical cord volume). It must be recovered independently; changing the
-gap to fit Fig. 7 would be back-fitting and is prohibited.
+**Current source-geometry gate — no campaign is runnable yet.** The 17 spheres
+per fibre overlap; their raw summed volume is not the physical rubber-cord
+volume used by Fig. 7. An independent Table-2 spherocylinder audit corrects
+that error and still gives 0.408 physical-cord solid fraction for the declared
+8,500-bead, 64-mm Cartesian topology at its largest allowed (50-mm) lid gap.
+Every digitized rubber-cord Fig. 7 experiment is at or below 0.380.
+`run_case.py` therefore refuses to run the geometry instead of producing a
+misleading comparison. This is not a result or a calibration failure: the
+missing input is the paper's published annular-cell geometry/initial gap. It
+must be recovered independently; changing the gap to fit Fig. 7 would be
+back-fitting and is prohibited.
 
 ```bash
 python3 examples/bench_guo2018_fiber_shear_cell/run_case.py \

@@ -58,7 +58,15 @@ def write_case(width_mm, output):
         for fibre in range(fibres):
             for bead in range(BEADS - 1):
                 stream.write(f"{fibre * (BEADS - 1) + bead + 1} 1 {fibre * BEADS + bead} {fibre * BEADS + bead + 1}\n")
-    bead_volume = len(points) * 4.0 * math.pi * (DIAMETER / 2.0) ** 3 / 3.0
+    # Adjacent 2.4-mm spheres are separated by 1.2 mm, so summing their
+    # volumes double-counts the material in their overlaps.  Fig. 7 reports
+    # the physical rubber-cord volume fraction.  The Table-2 chain has the
+    # same end-to-end length and diameter as a spherocylinder, whose volume
+    # is the appropriate quantity for that comparison.  Keep the raw sphere
+    # sum as an audit value, but never use it as experimental solid fraction.
+    raw_bead_volume = len(points) * 4.0 * math.pi * (DIAMETER / 2.0) ** 3 / 3.0
+    fibre_volume = math.pi * (DIAMETER / 2.0) ** 2 * (LENGTH - DIAMETER) + 4.0 * math.pi * (DIAMETER / 2.0) ** 3 / 3.0
+    physical_cord_volume = fibres * fibre_volume
     initial_cell_volume = width * DEPTH * INITIAL_LID_HEIGHT
     metadata = {"paper": "Guo et al., AIChE J. 65 (2019), doi:10.1002/aic.16397, Table 2",
                 "width_m": width, "depth_m": DEPTH, "n_fibres": fibres,
@@ -67,12 +75,13 @@ def write_case(width_mm, output):
                 "beads_per_fibre": BEADS, "bond_spacing_m": SPACING,
                 "density_kg_m3": DENSITY, "youngs_modulus_pa": YOUNGS_MODULUS,
                 "timestep_s": TIMESTEP,
-                # DIRT's current recorder sums the represented DEM spheres.
-                # This is not the physical cord-volume correction; retaining
-                # both quantities makes that modelling choice auditable.
-                "represented_bead_volume_m3": bead_volume,
+                # Retain both conventions: raw spheres audit the DEM input,
+                # while the physical cord is the Fig.-7 comparison quantity.
+                "raw_overlapping_bead_volume_m3": raw_bead_volume,
+                "physical_cord_volume_m3": physical_cord_volume,
                 "initial_lid_height_m": INITIAL_LID_HEIGHT,
-                "represented_solid_fraction_at_initial_lid": bead_volume / initial_cell_volume}
+                "raw_bead_solid_fraction_at_initial_lid": raw_bead_volume / initial_cell_volume,
+                "physical_cord_solid_fraction_at_initial_lid": physical_cord_volume / initial_cell_volume}
     (output / "source_parameters.json").write_text(json.dumps(metadata, indent=2) + "\n")
     return metadata
 
@@ -88,11 +97,17 @@ def audit(output):
     if bonds != f'{metadata["n_bonds"]} bonds':
         raise ValueError("bond count disagrees with source topology")
     expected_volume = metadata["n_atoms"] * 4.0 * math.pi * (metadata["bead_diameter_m"] / 2.0) ** 3 / 3.0
-    if not math.isclose(metadata["represented_bead_volume_m3"], expected_volume, rel_tol=1e-12):
+    if not math.isclose(metadata["raw_overlapping_bead_volume_m3"], expected_volume, rel_tol=1e-12):
         raise ValueError("represented bead volume disagrees with source topology")
-    expected_phi = expected_volume / (metadata["width_m"] * DEPTH * metadata["initial_lid_height_m"])
-    if not math.isclose(metadata["represented_solid_fraction_at_initial_lid"], expected_phi, rel_tol=1e-12):
-        raise ValueError("initial represented solid fraction disagrees with source topology")
+    expected_physical_volume = metadata["n_fibres"] * (
+        math.pi * (metadata["bead_diameter_m"] / 2.0) ** 2
+        * (metadata["fibre_length_m"] - metadata["bead_diameter_m"])
+        + 4.0 * math.pi * (metadata["bead_diameter_m"] / 2.0) ** 3 / 3.0)
+    if not math.isclose(metadata["physical_cord_volume_m3"], expected_physical_volume, rel_tol=1e-12):
+        raise ValueError("physical cord volume disagrees with Table-2 fibre geometry")
+    expected_phi = expected_physical_volume / (metadata["width_m"] * DEPTH * metadata["initial_lid_height_m"])
+    if not math.isclose(metadata["physical_cord_solid_fraction_at_initial_lid"], expected_phi, rel_tol=1e-12):
+        raise ValueError("initial physical solid fraction disagrees with source topology")
     return metadata
 
 

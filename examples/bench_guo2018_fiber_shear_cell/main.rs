@@ -9,7 +9,6 @@ use std::fs;
 use std::io::Write as IoWrite;
 use std::sync::Once;
 
-use dirt_core::dirt_atom::DemAtom;
 use dirt_core::dirt_bond::DemBondPlugin;
 use dirt_core::prelude::*;
 
@@ -26,6 +25,7 @@ const QUALIFICATION_SAMPLES: usize = 40;
 const NORMAL_REL_TOL: f64 = 0.15;
 const LOWER_WALL: &str = "lower_drive";
 const LID: &str = "normal_load_lid";
+const BEADS_PER_FIBRE: f64 = 17.0;
 
 fn main() {
     let mut app = App::new();
@@ -144,7 +144,6 @@ impl LoadQualification {
 /// diagnostic, not substituted by its requested set point.
 fn record_cell(
     atoms: Res<Atom>,
-    registry: Res<AtomDataRegistry>,
     domain: Res<Domain>,
     walls: Res<Walls>,
     run_state: Res<RunState>,
@@ -173,12 +172,18 @@ fn record_cell(
     // different physical cell from the one the other ranks advance.
     let lid_force = comm.all_reduce_sum_f64(lid.force_accumulator);
     let lower_x_reaction = comm.all_reduce_sum_f64(lower.force_vector[0]);
-    let dem = registry.expect::<DemAtom>("guo2018_cell_recorder");
-    let mut solid = 0.0;
-    for i in 0..atoms.nlocal as usize {
-        solid += 4.0 * std::f64::consts::PI * (dem.radius[i] as f64).powi(3) / 3.0;
-    }
-    solid = comm.all_reduce_sum_f64(solid);
+    // Table 2 represents a 21.6-mm, 2.4-mm-diameter cord by 17 spheres at
+    // 1.2-mm spacing. Summing sphere volumes counts their overlaps twice.
+    // Record the physical spherocylinder volume so this is comparable with
+    // the paper's rubber-cord solid fraction, while retaining the actual
+    // DEM contact geometry for the solver itself.
+    let local_fibres = atoms.nlocal as f64 / BEADS_PER_FIBRE;
+    let radius = 0.0012_f64;
+    let fibre_length = 0.0216_f64;
+    let physical_fibre_volume =
+        std::f64::consts::PI * radius.powi(2) * (fibre_length - 2.0 * radius)
+            + 4.0 * std::f64::consts::PI * radius.powi(3) / 3.0;
+    let solid = comm.all_reduce_sum_f64(local_fibres * physical_fibre_volume);
     // `nlocal` is per-rank in a decomposed cell.  The campaign contract is
     // about the physical fibre population, so record the global count.
     let global_atoms = comm.all_reduce_sum_f64(atoms.nlocal as f64).round() as usize;
