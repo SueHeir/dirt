@@ -32,6 +32,8 @@ python3 examples/bench_guo2018_fiber_shear_cell/campaign_preflight.py
 python3 examples/bench_guo2018_fiber_shear_cell/campaign_preflight.py --self-test
 python3 examples/bench_guo2018_fiber_shear_cell/reconstruction_readiness.py --verify
 python3 examples/bench_guo2018_fiber_shear_cell/normal_load_audit.py --self-test
+python3 examples/bench_guo2018_fiber_shear_cell/status_contract.py --verify
+python3 examples/bench_guo2018_fiber_shear_cell/status_contract.py --self-test
 ```
 
 The hash-bound receipt in `data/reference_provenance.json`, the page-receipted
@@ -86,3 +88,8 @@ summary, and provenance receipt. It deliberately does not compare a result to
 Fig. 6/7; that comparison belongs only after the complete, non-selected
 ensemble exists. The values are a sensitivity bracket, **not** reported wall
 dimensions, not calibration parameters, and not a replication result.
+
+`data/replication_status.json` records the scientific status in a
+machine-readable form. `status_contract.py` cross-checks it against the
+independent source ledger and geometry contract, preventing a solver or
+curve-comparison claim while the source wall geometry remains unresolved.
