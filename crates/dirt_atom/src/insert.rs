@@ -475,6 +475,20 @@ fn validate_insert_region(region: &Region, context: &str) -> Result<(), String> 
     }
 }
 
+/// Samples one candidate point, treating SOIL's bounded rejection-sampling
+/// exhaustion as a rejected insertion attempt.
+///
+/// A composite region can be structurally valid while its overlap has such a
+/// small measure that SOIL exhausts its finite inner rejection budget.  No
+/// particle can be constructed in that case.  The outer insertion loop already
+/// has a deterministic attempt limit, so retrying there is the same physical
+/// outcome as an overlap rejection: successful draws keep the pre-existing RNG
+/// stream and MPI ownership rules, while an exhausted draw cannot panic or
+/// terminate just one simulation rank.
+fn try_sample_insertion_point(region: &Region, rng: &mut impl rand::Rng) -> Option<[f64; 3]> {
+    region.random_point_inside(rng).ok()
+}
+
 // ── SpatialHash for O(1) overlap checking ───────────────────────────────────
 
 /// Grid-based spatial hash for fast overlap detection during particle insertion.
@@ -1133,8 +1147,9 @@ pub fn dem_insert_atoms(
                     while inserted < count && attempts < max_attempts {
                         attempts += 1;
                         // Advance the shared RNG identically on every rank.
-                        let [x, y, z] = region.random_point_inside(&mut rng)
-                            .expect("random insertion region was validated during fallible plugin preflight");
+                        let Some([x, y, z]) = try_sample_insertion_point(&region, &mut rng) else {
+                            continue;
+                        };
                         let radius = radius_spec.try_sample(&mut rng)
                             .expect("random insertion radius was validated during fallible plugin preflight");
                         let candidate = [x, y, z];
@@ -2043,9 +2058,9 @@ pub fn dem_rate_insert(
             tag_cursor = tag_cursor.wrapping_add(1);
             attempts += 1;
 
-            let [x, y, z] = region
-                .random_point_inside(&mut rng)
-                .expect("rate insertion region was validated during fallible plugin preflight");
+            let Some([x, y, z]) = try_sample_insertion_point(&region, &mut rng) else {
+                continue;
+            };
             let radius = radius_spec
                 .try_sample(&mut rng)
                 .expect("rate insertion radius was validated during fallible plugin preflight");
@@ -2160,6 +2175,36 @@ mod tests {
     use super::*;
     use crate::RadiusDistribution;
     use soil_core::toml;
+
+    #[test]
+    fn bounded_sampling_draws_a_candidate_and_exhaustion_rejects_one() {
+        let block = Region::Block {
+            min: [-1.0, -2.0, -3.0],
+            max: [1.0, 2.0, 3.0],
+        };
+        let mut immediate_rng = StdRng::seed_from_u64(17);
+        let point = try_sample_insertion_point(&block, &mut immediate_rng)
+            .expect("a bounded region must produce an immediate-insertion candidate");
+        assert!(block.contains(&point));
+
+        let disjoint = Region::Intersect {
+            regions: vec![
+                Region::Sphere {
+                    center: [0.0, 0.0, 0.0],
+                    radius: 1.0,
+                },
+                Region::Sphere {
+                    center: [4.0, 0.0, 0.0],
+                    radius: 1.0,
+                },
+            ],
+        };
+        let mut rate_rng = StdRng::seed_from_u64(23);
+        assert!(
+            try_sample_insertion_point(&disjoint, &mut rate_rng).is_none(),
+            "SOIL rejection-budget exhaustion must become a rejected rate-insertion candidate"
+        );
+    }
 
     // ── SpatialHash tests ───────────────────────────────────────────────────
 

@@ -2,7 +2,12 @@ use std::fs;
 use std::process::{Command, Output};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-fn run_config_case_with_extra(name: &str, particles_insert: &str, extra_config: &str) -> Output {
+fn run_config_case_with_extra_and_steps(
+    name: &str,
+    particles_insert: &str,
+    extra_config: &str,
+    steps: usize,
+) -> (Output, std::path::PathBuf) {
     let stamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .expect("system clock must be after Unix epoch")
@@ -42,6 +47,10 @@ poisson_ratio = 0.3
 restitution = 0.3
 friction = 0.5
 
+[dump]
+interval = 1
+format = "text"
+
 [[particles.insert]]
 material = "glass"
 {particles_insert}
@@ -51,7 +60,7 @@ seed = 1
 [[run]]
 name = "settle"
 dt = 1.0e-5
-steps = 0
+steps = {steps}
 thermo = 1
 
 {extra_config}
@@ -77,7 +86,13 @@ thermo = 1
         .output()
         .expect("run generic config example");
 
-    fs::remove_dir_all(&dir).expect("remove temporary config directory");
+    (output, dir)
+}
+
+fn run_config_case_with_extra(name: &str, particles_insert: &str, extra_config: &str) -> Output {
+    let (output, dir) =
+        run_config_case_with_extra_and_steps(name, particles_insert, extra_config, 0);
+    fs::remove_dir_all(dir).expect("remove temporary config directory");
     output
 }
 
@@ -360,6 +375,48 @@ radius = 0.001
         stdout.contains("DemAtomInsert: inserting 1 particles"),
         "stdout should show the valid insert path ran, got:\n{stdout}"
     );
+}
+
+#[test]
+fn immediate_and_rate_inserts_generate_candidates() {
+    let (output, dir) = run_config_case_with_extra_and_steps(
+        "immediate-and-rate-candidates",
+        r#"
+count = 1
+radius = 0.001
+"#,
+        r#"
+[[particles.insert]]
+material = "glass"
+rate = 1
+radius = 0.001
+density = 2500.0
+seed = 2
+"#,
+        1,
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        output.status.success(),
+        "immediate and rate insertion candidate generation should run, stderr:\n{stderr}"
+    );
+    assert!(
+        stdout.contains("DemAtomInsert: inserting 1 particles"),
+        "stdout should show immediate candidate generation, got:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("DemAtomInsert: registering rate-based insertion"),
+        "stdout should show rate candidate generation was registered, got:\n{stdout}"
+    );
+    let dump = fs::read_to_string(dir.join("dump/dump_0.csv"))
+        .expect("first-step dump should contain immediate and rate-inserted atoms");
+    assert_eq!(
+        dump.lines().count(),
+        3,
+        "first-step dump should contain its header and both inserted atoms, got:\n{dump}"
+    );
+    fs::remove_dir_all(dir).expect("remove temporary config directory");
 }
 
 #[test]
