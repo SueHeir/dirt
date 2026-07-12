@@ -26,6 +26,23 @@ def require_published_control_cell() -> None:
     require_protocol(HERE / "config.toml")
 
 
+def require_primary_reference(source_pdf: Path | None) -> None:
+    """Stop before creating an allegedly source-derived solver input."""
+    sys.path.insert(0, str(HERE))
+    from evidence_contract import verify_primary_reference
+    # Do not accept a DOI, web landing page, or arbitrary file. The caller
+    # supplies the local paper while the committed manifest supplies its hash.
+    if source_pdf is None:
+        raise RuntimeError(
+            "BLOCKED: --source-pdf is required; refusing to "
+            "materialize an allegedly Guo-derived geometry"
+        )
+    try:
+        verify_primary_reference(source_pdf)
+    except ValueError as error:
+        raise RuntimeError(f"BLOCKED: Guo primary-method provenance failed: {error}") from error
+
+
 
 def decomposition(ranks: int) -> tuple[int, int]:
     """Return an x/z decomposition for the periodic horizontal cell axes."""
@@ -93,11 +110,13 @@ def main() -> None:
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--ranks", type=int, default=1,
                         help="MPI ranks; decomposed only over periodic x/z axes")
+    parser.add_argument("--source-pdf", type=Path,
+                        help="local primary PDF matching data/reference_provenance.json")
     parser.add_argument("--prepare-only", action="store_true", help="write and audit input but do not invoke DIRT")
     args = parser.parse_args()
-    # The source fibre topology can be prepared and audited, but a solver run
-    # is forbidden until the input matches the paper's *periodic planar DEM
-    # control cell* (not the experimental annulus).
+    # Both preparation and execution need an authenticated method source. A
+    # solver receipt cannot repair an unauditable input geometry afterwards.
+    require_primary_reference(args.source_pdf)
     if not args.prepare_only:
         require_published_control_cell()
     config = materialize(args.pressure_pa, args.width_mm, args.output, args.ranks)

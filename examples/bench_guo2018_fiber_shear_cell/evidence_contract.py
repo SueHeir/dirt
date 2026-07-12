@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Bind Guo Fig. 6/7 numbers to a primary-paper artifact before comparison.
+"""Bind Guo methods and Fig. 6/7 numbers to a primary-paper artifact.
 
 This is deliberately an evidence gate, not a physics or solver gate.  A CSV
 that is only internally consistent with a printed regression fit is not an
@@ -25,9 +25,14 @@ def sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def verify_reference_data(source_pdf: Path, provenance: Path = PROVENANCE,
-                          reference: Path = REFERENCE) -> dict:
-    """Return audited provenance or raise; never infer it from DIRT output."""
+def verify_primary_reference(source_pdf: Path, provenance: Path = PROVENANCE) -> dict:
+    """Return an authenticated primary-source record or raise.
+
+    A DOI proves bibliographic identity only. It cannot authenticate either a
+    digitized result or a transcription of the numerical geometry/material
+    table, so every route that calls something a Guo case must cross this
+    boundary first.
+    """
     if not source_pdf.is_file():
         raise ValueError(f"primary PDF is unavailable: {source_pdf}")
     record = json.loads(provenance.read_text())
@@ -39,6 +44,13 @@ def verify_reference_data(source_pdf: Path, provenance: Path = PROVENANCE,
         raise ValueError("reference provenance names a different DOI")
     if sha256(source_pdf) != record["primary_pdf_sha256"]:
         raise ValueError("primary PDF hash does not match the committed digitization record")
+    return record
+
+
+def verify_reference_data(source_pdf: Path, provenance: Path = PROVENANCE,
+                          reference: Path = REFERENCE) -> dict:
+    """Verify the result digitization after authenticating its primary PDF."""
+    record = verify_primary_reference(source_pdf, provenance)
     with reference.open(newline="") as stream:
         rows = list(csv.DictReader(stream))
     if not rows or set(rows[0]) != REQUIRED_COLUMNS:
@@ -69,6 +81,11 @@ class EvidenceContractTests(unittest.TestCase):
         with tempfile.NamedTemporaryFile() as pdf:
             with self.assertRaisesRegex(ValueError, "provenance is incomplete"):
                 verify_reference_data(Path(pdf.name))
+
+    def test_rejects_unverified_primary_before_any_method_transcription(self):
+        with tempfile.NamedTemporaryFile() as pdf:
+            with self.assertRaisesRegex(ValueError, "provenance is incomplete"):
+                verify_primary_reference(Path(pdf.name))
 
     def test_rejects_pdf_that_does_not_match_a_completed_record(self):
         with tempfile.TemporaryDirectory() as directory:
