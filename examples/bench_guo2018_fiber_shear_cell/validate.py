@@ -29,7 +29,12 @@ FIG6_RUBBER_CORD_INTERCEPT_PA = -60.0
 FIG6_DIGITIZATION_REL_TOL = 0.03
 
 
-def reference():
+def reference(source_pdf):
+    # The printed Fig. 6 line is a useful transcription cross-check, but it
+    # cannot establish that the stored Fig. 6/7 points came from the primary
+    # figure.  Require an independently hash-bound paper artifact first.
+    from evidence_contract import verify_reference_data
+    verify_reference_data(source_pdf)
     values = {}
     with REFERENCE.open(newline="") as stream:
         for row in csv.DictReader(stream):
@@ -102,11 +107,11 @@ def measure_case(case_dir, pressure, width):
     return measure(history, pressure, width, manifest.get("expected_global_atoms"))
 
 
-def compare(cases):
+def compare(cases, source_pdf):
     """Compare complete campaign observations to external figures and size check."""
     if set(cases) != {(p, w) for p in LOADS for w in (64, 96)}:
         raise ValueError("campaign must contain all three loads at 64 and 96 mm")
-    refs = reference()
+    refs = reference(source_pdf)
     report = []
     for pressure in LOADS:
         observed, ref = cases[pressure, 64], refs[pressure]
@@ -129,6 +134,7 @@ def parse_case(value):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--case", action="append", default=[], metavar="PA:MM:HISTORY", help="one solver history; provide all six cases")
+    parser.add_argument("--source-pdf", type=Path, help="primary PDF used to digitize the committed Fig. 6/7 points")
     parser.add_argument("--self-test", action="store_true")
     args = parser.parse_args()
     if args.self_test:
@@ -139,20 +145,24 @@ def main():
     # the experimental ring apparatus and prevents the current cylindrical
     # cup surrogate from being compared to Figs. 6/7.
     if args.case:
+        if args.source_pdf is None:
+            parser.error("--source-pdf is required: an unprovenanced CSV cannot be an external reference")
         from source_contract import require_published_control_cell
         require_published_control_cell(HERE / "config.toml")
     cases = {}
     for encoded in args.case:
         pressure, width, path = parse_case(encoded)
         cases[pressure, width] = measure_case(path, pressure, width)
-    for pressure, observed, ref, shear_error, phi_error in compare(cases):
+    for pressure, observed, ref, shear_error, phi_error in compare(cases, args.source_pdf):
         print(f"{pressure:.0f} Pa: tau={observed['shear_stress_pa']:.1f}/{ref['shear_stress_pa']:.1f} (rel={shear_error:.3f}); phi={observed['solid_fraction']:.3f}/{ref['solid_fraction']:.3f} (abs={phi_error:.3f})")
     print("PASS: solver histories satisfy measured-load, external-reference, and size-sensitivity gates")
 
 
 class ValidatorTests(unittest.TestCase):
     def test_external_digitization_agrees_with_printed_figure_fit(self):
-        self.assertEqual(set(reference()), set(LOADS))
+        with tempfile.NamedTemporaryFile() as pdf:
+            with self.assertRaisesRegex(ValueError, "provenance is incomplete"):
+                reference(Path(pdf.name))
 
     def history(self, normal=651.0, stages=True):
         rows = []

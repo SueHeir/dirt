@@ -42,3 +42,30 @@ validator is deliberately fail-closed and accepts only solver-receipted
 histories with measured normal-load qualification, a post-drive steady-strain
 window, all three loads, and the independent Fig. 6/7 digitization plus the
 64/96-mm sensitivity check.
+
+## Evidence boundary
+
+The six values in `data/guo_2019_rubber_cord.csv` were inherited without a
+primary-PDF hash or digitizer record.  They therefore are **not currently an
+external reference** and cannot be used to report this replication.  Agreement
+with the printed Fig. 6 line is only an internal transcription check; it does
+not authenticate the Fig. 6/7 points.
+
+`evidence_contract.py` requires a local copy of the primary paper and a
+committed SHA-256/digitizer/date record in `data/reference_provenance.json`
+before `validate.py` will even read the reference CSV.  The present manifest
+intentionally says `UNVERIFIED`, so this fails closed:
+
+```bash
+python3 examples/bench_guo2018_fiber_shear_cell/evidence_contract.py \
+  --source-pdf /path/to/guo-aic-16397.pdf
+```
+
+Once a legitimate source copy is available, record its content hash and the
+digitization details, retain only values visibly read from Figs. 6/7, and run
+the validator with `--source-pdf` for every comparison. Do not replace the
+source artifact with a fitted relation or with DIRT output.
+
+This rescue revision is AI-assisted. Its checks establish only the stated
+provenance and protocol boundaries; it makes no physics-correctness claim and
+does not ask a reviewer to supply one.
