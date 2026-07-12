@@ -77,6 +77,10 @@ name = "material_pair_table_validation"
 path = "examples/material_pair_table_validation/main.rs"
 
 [[example]]
+name = "simulation_fixture_validation"
+path = "examples/simulation_fixture_validation/main.rs"
+
+[[example]]
 name = "peri_dem_interop"
 path = "examples/peri_dem_interop/main.rs"
 
@@ -269,6 +273,8 @@ serde.workspace = true
 toml.workspace = true
 dirt_clump.workspace = true
 dirt_measure_plane.workspace = true
+dirt_test_utils.workspace = true
+dirt_atom.workspace = true
 soil_derive.workspace = true
 soil_deform = { workspace = true, default-features = false }
 grass_scheduler.workspace = true

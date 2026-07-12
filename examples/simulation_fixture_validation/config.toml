@@ -1,0 +1,5 @@
+# The validation driver declares its two fixtures in Rust so it can exercise the
+# public builder API. This file records the stable, double-precision invocation.
+[validation]
+precision = "double"
+timestep = 1e-7

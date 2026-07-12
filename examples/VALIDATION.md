@@ -37,6 +37,20 @@ compatibility check rather than a physics calibration.
 *PASS: 21/21 typed values match the pre-redesign golden table; the dashed line is
 the `1e-12` relative-error criterion and exact matches are drawn at the plot floor.*
 
+## `simulation_fixture_validation` — public fixture structural contract
+
+The `dirt_test_utils::SimulationFixture` builder is exercised from a standalone
+top-level example, then measured against a committed declaration of a default
+contact pair and a three-particle CSR chain. This checks nonzero synchronized
+Atom/DEM rows, `nlocal`/`natoms`, material pair-table dimensions, declared CSR
+offsets/indices, and the stable default timestep through the public API. It is a
+test-fixture integrity check, not an independent DEM physics calibration.
+
+![SimulationFixture structural contract](simulation_fixture_validation/plots/fixture_contract.png)
+
+*PASS: 20/20 measured scalar and CSR contract checks match exactly; the dashed
+line is the `1e-15` relative-error pass limit.*
+
 **These benchmarks catch real bugs.** The oblique-impact validation alone drove two
 contact-model fixes — a tangential damping-sign error that was injecting energy, and
 a requirement that a frozen contact partner also have its rotation frozen — and the
