@@ -1395,31 +1395,28 @@ misspelled_force = 1.0
     /// unaffected by gamma_a and vice versa.
     #[test]
     fn test_cundall_angular_signed_torque() {
-        use dirt_test_utils::push_dem_test_atom;
-        let mut atoms = Atom::new();
-        atoms.dt = 1e-6;
-        let mut dem = dirt_atom::DemAtom::new();
-        push_dem_test_atom(&mut atoms, &mut dem, 0, [0.0; 3], 0.01);
-        atoms.nlocal = 1;
-        atoms.natoms = 1;
+        use dirt_test_utils::{ParticleFixture, ParticleSpec};
+        let mut fixture = ParticleFixture::single(ParticleSpec::new(0, [0.0; 3], 0.01))
+            .with_timestep(1e-6)
+            .build();
+        let atoms = &mut fixture.atom;
         // omega/torque signs to hit both branches:
         //  x: T>0, w>0 -> *(1-ga);  y: T>0, w<0 -> *(1+ga);  z: T<0, w<0 -> *(1-ga)
+        let mut dem = fixture
+            .registry
+            .expect_mut::<dirt_atom::DemAtom>("test_cundall_angular_signed_torque");
         dem.omega[0] = [1.0, -1.0, -2.0];
         dem.torque[0] = [2.0, 3.0, -4.0];
+        drop(dem);
         // A linear force too, to confirm gamma_l is applied independently.
         atoms.vel[0] = [1.0, 0.0, 0.0];
         atoms.force[0] = [5.0, 0.0, 0.0];
 
-        let mut registry = soil_core::AtomDataRegistry::new();
-        registry.try_register(dem, atoms.len()).unwrap();
-
         let groups = make_group_registry("all", vec![true]);
         let ga = 0.3_f64;
         let gl = 0.1_f64;
-        let mut app = App::new();
-        app.add_resource(atoms);
+        let mut app = fixture.into_app();
         app.add_resource(groups);
-        app.add_resource(registry);
         app.add_resource(cundall_registry("all", gl, ga));
         app.add_update_system(apply_cundall, ParticleSimScheduleSet::PostForce);
         app.organize_systems();

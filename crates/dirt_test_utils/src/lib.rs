@@ -17,101 +17,247 @@
 //! assert_eq!(groups.groups[0].count, 3);
 //! ```
 //!
-//! For DEM-specific tests, use [`push_dem_test_atom`] and [`make_material_table`]:
+//! For DEM-specific tests, prefer [`ParticleFixture`]:
 //!
 //! ```
-//! use dirt_test_utils::{push_dem_test_atom, make_material_table};
+//! use dirt_test_utils::ParticleFixture;
 //!
-//! let mut atom = soil_core::Atom::new();
-//! let mut dem = dirt_atom::DemAtom::default();
-//! push_dem_test_atom(&mut atom, &mut dem, 0, [0.0, 0.0, 0.0], 0.5);
-//! // NOTE: push_dem_test_atom does NOT set nlocal/natoms — do it yourself:
-//! atom.nlocal = 1;
-//! atom.natoms = 1;
-//!
-//! let materials = make_material_table(); // single "glass" material
-//! assert_eq!(materials.names.len(), 1);
+//! let fixture = ParticleFixture::new().build();
+//! assert_eq!(fixture.atom.nlocal, 2);
+//! assert_eq!(fixture.neighbor.neighbor_indices, vec![1]);
 //! ```
 //!
 //! # How to write a DIRT test
 //!
-//! These helpers cover atom/material *construction* only. A force-law test also
-//! needs an `App` (from `grass_app`) with a neighbor list and the system under
-//! test scheduled into it. That assembly lives in the *consumer* crate (which
-//! depends on `grass_app`/`grass_scheduler`), not here — `dirt_test_utils`
-//! deliberately depends only on `soil_core` + `dirt_atom`, so the snippet below
-//! is illustrative (`text`, not a runnable doctest). It mirrors the real
-//! pattern in `dirt_granular`'s `contact.rs` tests (e.g.
-//! `fused_contact_repulsive_for_overlap`):
-//!
-//! ```text
-//! use dirt_test_utils::{push_dem_test_atom, make_material_table};
-//! use dirt_atom::DemAtom;
-//! use soil_core::{Atom, AtomDataRegistry, Neighbor, ParticleSimScheduleSet};
-//! use grass_app::prelude::*;          // App, add_update_system, organize_systems, run, get_resource_ref
-//!
-//! let mut app = App::new();
-//! let radius = 0.001;
-//!
-//! // 1. Build Atom + DemAtom in parallel with the helper.
-//! let mut atom = Atom::new();
-//! let mut dem = DemAtom::new();
-//! atom.dt = 1e-7;                     // DEM needs a tiny dt (~1e-7 s); the helper does NOT set it
-//! push_dem_test_atom(&mut atom, &mut dem, 0, [0.0, 0.0, 0.0], radius);
-//! push_dem_test_atom(&mut atom, &mut dem, 1, [0.0019, 0.0, 0.0], radius);
-//!
-//! // 2. Manually set the counts — push_dem_test_atom does NOT touch them.
-//! atom.nlocal = 2;
-//! atom.natoms = 2;
-//!
-//! // 3. Build a Neighbor list by hand (CSR offsets/indices for the pair 0–1).
-//! let mut neighbor = Neighbor::new();
-//! neighbor.neighbor_offsets = vec![0, 1, 1];
-//! neighbor.neighbor_indices = vec![1];
-//!
-//! // 4. Register per-atom data (and any history store) into the registry.
-//! let mut registry = AtomDataRegistry::new();
-//! registry.register(dem);
-//!
-//! // 5. Add resources, schedule the system under test at the Force set, organize, run.
-//! app.add_resource(atom);
-//! app.add_resource(neighbor);
-//! app.add_resource(registry);
-//! app.add_resource(make_material_table());
-//! app.add_update_system(my_force_system, ParticleSimScheduleSet::Force);
-//! app.organize_systems();
-//! app.run();
-//!
-//! // 6. Read results back off the App resources and assert.
-//! let atom = app.get_resource_ref::<Atom>().unwrap();
-//! assert!(atom.force[0][0] < 0.0);
-//! ```
-//!
-//! ## Two footguns
-//!
-//! - **`nlocal` / `natoms` are NOT set by [`push_dem_test_atom`].** It only
-//!   *appends* one atom to the `Atom` arrays and the parallel `DemAtom` arrays;
-//!   it leaves `atom.nlocal` and `atom.natoms` untouched. Force systems iterate
-//!   `0..nlocal`, so if you forget to set them (they default to 0) **your system
-//!   silently does nothing** — no panic, just an empty loop and a passing-but-
-//!   meaningless test. Set both after your last `push_*` call.
-//! - **DEM needs a tiny timestep.** [`make_atoms`] sets `dt = 0.001`, which is
-//!   far too large for stiff DEM contacts. For any contact/bond test, override
-//!   `atom.dt` to roughly `1e-7` (the value the real `dirt_granular`/`dirt_bond`
-//!   tests use) so a single `app.run()` step doesn't blow the contact up.
-//!
-//! # What this crate does NOT provide
-//!
-//! - **No `App` / `Neighbor` builders.** You construct and wire those in the
-//!   consuming crate (see the assembly above). The neighbor list in particular
-//!   is built by hand (raw CSR `neighbor_offsets` / `neighbor_indices`).
-//! - **No custom assertions or test macros.** Use plain `assert!` /
-//!   `assert_eq!`; these helpers only build inputs.
-//! - **No scheduling / plugin helpers.** Schedule sets and systems are added
-//!   directly via the `grass_app` / `grass_scheduler` API in the consumer.
+//! [`ParticleFixture::build`] creates synchronized `Atom`/`DemAtom` rows, non-zero
+//! counts, a stable timestep, material pair tables, and CSR neighbours. Add specialized
+//! extension data with [`SimulationFixture::register_atom_data`], then either use
+//! [`SimulationFixture::into_app`] or [`SimulationFixture::into_scheduled_app`].
+//! `push_dem_test_atom` remains available for tests that deliberately exercise malformed
+//! or partially assembled data.
 
+use grass_app::App;
+use grass_scheduler::{IntoScheduledSystem, ScheduleSet};
 use soil_core::group::{Group, GroupDef};
-use soil_core::{Atom, CommResource, GroupRegistry, SingleProcessComm};
+use soil_core::{
+    Atom, AtomData, AtomDataRegistry, CommResource, GroupRegistry, Neighbor, SingleProcessComm,
+};
+
+/// A conservative timestep used by [`ParticleFixture`] unless a smaller positive value is chosen.
+pub const DEFAULT_DEM_TIMESTEP: f64 = 1e-7;
+
+/// Largest timestep accepted by [`ParticleFixture::with_timestep`].
+///
+/// This is deliberately conservative for the stiff, small contact fixtures used by unit tests;
+/// a test that needs a different integration regime should build its resources explicitly.
+pub const MAX_TEST_DEM_TIMESTEP: f64 = 1e-6;
+
+/// One particle declaration for a [`ParticleFixture`].
+#[derive(Clone, Debug)]
+pub struct ParticleSpec {
+    /// Stable particle tag.
+    pub tag: u32,
+    /// Initial Cartesian position.
+    pub position: [f64; 3],
+    /// Sphere radius in metres.
+    pub radius: f64,
+}
+
+impl ParticleSpec {
+    /// Construct a particle declaration.
+    pub fn new(tag: u32, position: [f64; 3], radius: f64) -> Self {
+        assert!(
+            radius.is_finite() && radius > 0.0,
+            "fixture particle radius must be finite and positive"
+        );
+        Self {
+            tag,
+            position,
+            radius,
+        }
+    }
+}
+
+/// Declarative builder for the common particle portion of a DIRT test.
+///
+/// [`Default`] is a two-particle overlapping pair, rather than an empty fixture. This makes a
+/// forgotten atom insertion visible to force tests: the fixture always has non-zero counts and a
+/// declared neighbour pair. Use [`single`](Self::single) for wall/fix tests, or
+/// [`pair`](Self::pair) for a precisely positioned contact pair.
+#[derive(Clone, Debug)]
+pub struct ParticleFixture {
+    particles: Vec<ParticleSpec>,
+    pairs: Vec<(usize, usize)>,
+    timestep: f64,
+}
+
+impl Default for ParticleFixture {
+    fn default() -> Self {
+        Self::pair(
+            ParticleSpec::new(0, [0.0, 0.0, 0.0], 0.001),
+            ParticleSpec::new(1, [0.0019, 0.0, 0.0], 0.001),
+        )
+    }
+}
+
+impl ParticleFixture {
+    /// Start from the non-empty default contact fixture.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Build a valid one-particle fixture, useful for wall and fix tests.
+    pub fn single(particle: ParticleSpec) -> Self {
+        Self {
+            particles: vec![particle],
+            pairs: Vec::new(),
+            timestep: DEFAULT_DEM_TIMESTEP,
+        }
+    }
+
+    /// Build a valid two-particle fixture with one directed half-neighbour pair `0 -> 1`.
+    pub fn pair(first: ParticleSpec, second: ParticleSpec) -> Self {
+        Self {
+            particles: vec![first, second],
+            pairs: vec![(0, 1)],
+            timestep: DEFAULT_DEM_TIMESTEP,
+        }
+    }
+
+    /// Set a conservative positive DEM timestep.
+    ///
+    /// Panics for zero, negative, non-finite, or overly large values, preventing the usual
+    /// one-step contact test from silently using an unstable timestep.
+    pub fn with_timestep(mut self, timestep: f64) -> Self {
+        assert!(
+            timestep.is_finite() && timestep > 0.0 && timestep <= MAX_TEST_DEM_TIMESTEP,
+            "fixture timestep must be finite, positive, and <= {MAX_TEST_DEM_TIMESTEP:e}"
+        );
+        self.timestep = timestep;
+        self
+    }
+
+    /// Append a particle and return its local index.
+    pub fn push_particle(&mut self, particle: ParticleSpec) -> usize {
+        self.particles.push(particle);
+        self.particles.len() - 1
+    }
+
+    /// Declare a directed CSR neighbour pair. Both indices must name fixture particles.
+    pub fn add_pair(&mut self, pair: (usize, usize)) {
+        assert!(
+            pair.0 < self.particles.len() && pair.1 < self.particles.len(),
+            "fixture pair index is outside the particle list"
+        );
+        assert_ne!(
+            pair.0, pair.1,
+            "fixture neighbour pair cannot be self-referential"
+        );
+        self.pairs.push(pair);
+    }
+
+    /// Materialize synchronized atom, DEM extension, material, neighbour, and registry resources.
+    pub fn build(self) -> SimulationFixture {
+        let mut atom = Atom::new();
+        let mut dem = dirt_atom::DemAtom::new();
+        for particle in &self.particles {
+            push_dem_test_atom(
+                &mut atom,
+                &mut dem,
+                particle.tag,
+                particle.position,
+                particle.radius,
+            );
+        }
+        // The builder is never empty; keep this assertion next to the count assignment so future
+        // changes cannot reintroduce the silent 0..nlocal force-loop footgun.
+        assert!(
+            !self.particles.is_empty(),
+            "SimulationFixture requires at least one particle"
+        );
+        atom.nlocal = self.particles.len() as u32;
+        atom.natoms = self.particles.len() as u64;
+        atom.dt = self.timestep;
+
+        let mut neighbor = Neighbor::new();
+        let mut rows = vec![Vec::new(); self.particles.len()];
+        for (i, j) in self.pairs {
+            rows[i].push(j as u32);
+        }
+        neighbor.neighbor_offsets.push(0);
+        for row in rows {
+            neighbor.neighbor_indices.extend(row);
+            neighbor
+                .neighbor_offsets
+                .push(neighbor.neighbor_indices.len() as u32);
+        }
+
+        let mut registry = AtomDataRegistry::new();
+        registry
+            .try_register(dem, atom.len())
+            .expect("fixture DEM extension must match Atom length");
+        SimulationFixture {
+            atom,
+            neighbor,
+            registry,
+            materials: make_material_table(),
+        }
+    }
+}
+
+/// Ready-to-use base resources for a single-process DIRT unit test.
+///
+/// The fixture owns `Atom`, its registered [`dirt_atom::DemAtom`] extension, a material table with
+/// pair tables, and CSR neighbours. Domain-specific extensions such as bond histories or clump
+/// data remain the responsibility of their owning crates and can be added with
+/// [`register_atom_data`](Self::register_atom_data).
+pub struct SimulationFixture {
+    /// Synchronized particle arrays with non-zero `nlocal` and `natoms`.
+    pub atom: Atom,
+    /// CSR neighbours for the pairs declared on [`ParticleFixture`].
+    pub neighbor: Neighbor,
+    /// Atom-data registry containing a correctly sized `DemAtom`.
+    pub registry: AtomDataRegistry,
+    /// One valid glass material with built contact pair tables.
+    pub materials: dirt_atom::MaterialTable,
+}
+
+impl SimulationFixture {
+    /// Register another atom extension, checking it has exactly one row per fixture particle.
+    pub fn register_atom_data<T: AtomData + 'static>(&mut self, data: T) {
+        self.registry
+            .try_register(data, self.atom.len())
+            .expect("fixture atom extension must match Atom length");
+    }
+
+    /// Return the resources for a consumer that needs to add specialized resources before making an app.
+    pub fn into_parts(self) -> (Atom, Neighbor, AtomDataRegistry, dirt_atom::MaterialTable) {
+        (self.atom, self.neighbor, self.registry, self.materials)
+    }
+
+    /// Move the base resources into a new [`App`].
+    pub fn into_app(self) -> App {
+        let mut app = App::new();
+        app.add_resource(self.atom);
+        app.add_resource(self.neighbor);
+        app.add_resource(self.registry);
+        app.add_resource(self.materials);
+        app
+    }
+
+    /// Move resources into an [`App`] and schedule one test system.
+    ///
+    /// The caller may add further resources or systems before calling `organize_systems`.
+    pub fn into_scheduled_app<M>(
+        self,
+        system: impl IntoScheduledSystem<M>,
+        set: impl ScheduleSet,
+    ) -> App {
+        let mut app = self.into_app();
+        app.add_update_system(system, set);
+        app
+    }
+}
 
 /// Create an [`Atom`] with `n` test atoms arranged along the x-axis.
 ///
@@ -267,4 +413,61 @@ pub fn make_material_table() -> dirt_atom::MaterialTable {
     .expect("test glass material is valid");
     mt.build_pair_tables();
     mt
+}
+
+#[cfg(test)]
+mod fixture_tests {
+    use super::*;
+    use soil_core::ParticleSimScheduleSet;
+
+    #[test]
+    fn default_fixture_is_nonempty_and_synchronized() {
+        let fixture = ParticleFixture::default().build();
+        assert_eq!(fixture.atom.nlocal, 2);
+        assert_eq!(fixture.atom.natoms, 2);
+        assert_eq!(fixture.atom.len(), 2);
+        assert_eq!(
+            fixture
+                .registry
+                .expect::<dirt_atom::DemAtom>("fixture test")
+                .len(),
+            2
+        );
+        assert_eq!(fixture.neighbor.neighbor_offsets, vec![0, 1, 1]);
+        assert_eq!(fixture.neighbor.neighbor_indices, vec![1]);
+        assert_eq!(fixture.atom.dt, DEFAULT_DEM_TIMESTEP);
+        assert_eq!(fixture.materials.e_eff_ij.len(), 1);
+        assert_eq!(fixture.materials.e_eff_ij[0].len(), 1);
+    }
+
+    #[test]
+    fn declared_pairs_become_csr_rows() {
+        let mut builder = ParticleFixture::single(ParticleSpec::new(4, [0.0; 3], 0.002));
+        let second = builder.push_particle(ParticleSpec::new(9, [1.0, 0.0, 0.0], 0.002));
+        builder.add_pair((0, second));
+        let fixture = builder.build();
+        assert_eq!(fixture.neighbor.neighbor_offsets, vec![0, 1, 1]);
+        assert_eq!(fixture.neighbor.neighbor_indices, vec![1]);
+        assert_eq!(fixture.atom.tag, vec![4, 9]);
+    }
+
+    #[test]
+    #[should_panic(expected = "fixture timestep")]
+    fn rejects_unstable_timestep() {
+        let _ = ParticleFixture::new().with_timestep(0.01);
+    }
+
+    fn mark_first_atom(mut atom: grass_scheduler::ResMut<Atom>) {
+        atom.force[0][0] = 42.0;
+    }
+
+    #[test]
+    fn can_schedule_a_system_without_manual_resource_wiring() {
+        let mut app = ParticleFixture::new()
+            .build()
+            .into_scheduled_app(mark_first_atom, ParticleSimScheduleSet::Force);
+        app.organize_systems();
+        app.run();
+        assert_eq!(app.get_resource_ref::<Atom>().unwrap().force[0][0], 42.0);
+    }
 }

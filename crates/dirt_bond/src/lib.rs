@@ -1771,7 +1771,7 @@ pub fn output_bond_metrics(
 mod tests {
     use super::*;
     use dirt_atom::DemAtom;
-    use dirt_test_utils::push_dem_test_atom;
+    use dirt_test_utils::{push_dem_test_atom, ParticleFixture, ParticleSpec};
     use soil_core::{
         toml, Atom, AtomDataRegistry, BondEntry, BondStore, CommResource, SingleProcessComm,
     };
@@ -1791,16 +1791,18 @@ mod tests {
         vel1: [f64; 3],
         omega1: [f64; 3],
     ) -> App {
-        let mut app = App::new();
-        let mut atom = Atom::new();
-        let mut dem = DemAtom::new();
-        atom.dt = 1e-6;
-        push_dem_test_atom(&mut atom, &mut dem, 1, [0.0, 0.0, 0.0], radius);
-        push_dem_test_atom(&mut atom, &mut dem, 2, [sep, 0.0, 0.0], radius);
+        let mut fixture = ParticleFixture::pair(
+            ParticleSpec::new(1, [0.0, 0.0, 0.0], radius),
+            ParticleSpec::new(2, [sep, 0.0, 0.0], radius),
+        )
+        .with_timestep(1e-6)
+        .build();
+        let atom = &mut fixture.atom;
         atom.vel[1] = vel1.map(|v| v as soil_core::Real);
-        dem.omega[1] = omega1;
-        atom.nlocal = 2;
-        atom.natoms = 2;
+        fixture
+            .registry
+            .expect_mut::<DemAtom>("build_pair_app_with")
+            .omega[1] = omega1;
 
         let mut bond_store = BondStore::new();
         bond_store.bonds.push(vec![BondEntry {
@@ -1818,17 +1820,15 @@ mod tests {
         // per-bond thresholds sampled from the active criterion at setup.
         let history = BondHistoryStore::new();
 
-        let mut registry = AtomDataRegistry::new();
-        registry.try_register(dem, atom.len()).unwrap();
         let atom_count = bond_store.len();
-        registry.try_register(bond_store, atom_count).unwrap();
-        registry.try_register(history, atom.len()).unwrap();
+        assert_eq!(atom_count, atom.len());
+        fixture.register_atom_data(bond_store);
+        fixture.register_atom_data(history);
 
         let mut domain = soil_core::Domain::new();
         domain.size = [10.0, 10.0, 10.0];
 
-        app.add_resource(atom);
-        app.add_resource(registry);
+        let mut app = fixture.into_app();
         app.add_resource(cfg);
         app.add_resource(BondMetrics::default());
         app.add_resource(BondBreakage::default());

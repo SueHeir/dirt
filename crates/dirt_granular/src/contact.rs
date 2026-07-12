@@ -1747,7 +1747,7 @@ pub fn hooke_contact_force(
 mod tests {
     use super::*;
     use dirt_atom::DemAtom;
-    use dirt_test_utils::{make_material_table, push_dem_test_atom};
+    use dirt_test_utils::{make_material_table, push_dem_test_atom, ParticleFixture, ParticleSpec};
     use soil_core::Neighbor;
     use soil_core::{Atom, AtomDataRegistry};
 
@@ -1816,37 +1816,16 @@ mod tests {
 
     #[test]
     fn fused_contact_repulsive_for_overlap() {
-        let mut app = App::new();
         let radius = 0.001;
-        let mut atom = Atom::new();
-        let mut dem = DemAtom::new();
+        let mut fixture = ParticleFixture::pair(
+            ParticleSpec::new(0, [0.0, 0.0, 0.0], radius),
+            ParticleSpec::new(1, [0.0019, 0.0, 0.0], radius),
+        )
+        .build();
         let mut hist = ContactHistoryStore::new();
-        atom.dt = 1e-7;
-
-        push_test_atom_with_history(&mut atom, &mut dem, &mut hist, 0, [0.0, 0.0, 0.0], radius);
-        push_test_atom_with_history(
-            &mut atom,
-            &mut dem,
-            &mut hist,
-            1,
-            [0.0019, 0.0, 0.0],
-            radius,
-        );
-        atom.nlocal = 2;
-        atom.natoms = 2;
-
-        let mut neighbor = Neighbor::new();
-        neighbor.neighbor_offsets = vec![0, 1, 1];
-        neighbor.neighbor_indices = vec![1];
-
-        let mut registry = AtomDataRegistry::new();
-        registry.try_register(dem, atom.len()).unwrap();
-        registry.try_register(hist, atom.len()).unwrap();
-
-        app.add_resource(atom);
-        app.add_resource(neighbor);
-        app.add_resource(registry);
-        app.add_resource(make_material_table());
+        hist.contacts.resize_with(fixture.atom.len(), Vec::new);
+        fixture.register_atom_data(hist);
+        let mut app = fixture.into_app();
         app.add_update_system(hertz_mindlin_contact_force, ParticleSimScheduleSet::Force);
         app.organize_systems();
         app.run();

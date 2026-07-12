@@ -15,24 +15,19 @@ Provides helper functions that build minimal, valid `Atom`, `GroupRegistry`, `Co
 | `make_single_comm()` | Single-process `CommResource` backed by `SingleProcessComm` (no MPI). |
 | `push_dem_test_atom(atom, dem, tag, pos, radius)` | Pushes a solid sphere (ρ = 2500 kg/m³) into parallel `Atom` and `DemAtom` structures, filling radius, density, inverse inertia, quaternion, omega, angular momentum, torque, and body id. |
 | `make_material_table()` | `MaterialTable` with one `"glass"` material (E = 8.7 GPa, ν = 0.3, e = 0.95, μ = 0.4) and pre-built pair tables. |
+| `ParticleFixture` | Non-empty DEM fixture builder with synchronized atom/DEM rows, safe timestep, material pair tables, CSR neighbours, and optional `App` scheduling. |
 
 ## Usage
 
 ```rust,ignore
-use dirt_test_utils::{make_atoms, make_group_registry, make_single_comm};
-use dirt_test_utils::{push_dem_test_atom, make_material_table};
+use dirt_test_utils::{ParticleFixture, ParticleSpec};
 
-// Shared substrate fixtures
-let atoms = make_atoms(3);
-let groups = make_group_registry("all", vec![true, true, true]);
-let comm = make_single_comm();
+// Default is a valid overlapping pair; it cannot silently run a zero-atom loop.
+let fixture = ParticleFixture::new().build();
+assert_eq!(fixture.atom.nlocal, 2);
 
-// DEM fixtures
-let mut atom = soil_core::Atom::new();
-let mut dem = dirt_atom::DemAtom::default();
-push_dem_test_atom(&mut atom, &mut dem, 0, [0.0, 0.0, 0.0], 0.5);
-
-let materials = make_material_table();
+// A wall/fix test can instead use a single declared particle.
+let fixture = ParticleFixture::single(ParticleSpec::new(0, [0.0; 3], 0.001)).build();
 ```
 
 ## License
