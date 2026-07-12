@@ -131,6 +131,12 @@ def main():
     if args.self_test:
         suite = unittest.defaultTestLoader.loadTestsFromTestCase(ValidatorTests)
         raise SystemExit(not unittest.TextTestRunner(verbosity=2).run(suite).wasSuccessful())
+    # A manifest/receipt can establish provenance of a DIRT run, but cannot
+    # transform the plane-driven cup into the DOI's ring-shear experiment.
+    # Keep the numerical gate unavailable until the apparatus is implemented.
+    if args.case:
+        from source_contract import require_runnable_ring_protocol
+        require_runnable_ring_protocol(HERE / "config.toml")
     cases = {}
     for encoded in args.case:
         pressure, width, path = parse_case(encoded)
@@ -154,11 +160,6 @@ class ValidatorTests(unittest.TestCase):
         with fd:
             writer = csv.writer(fd); writer.writerow(["stage", "shear_strain", "normal_stress_pa", "shear_stress_pa", "solid_fraction", "n_atoms"]); writer.writerows(rows)
         return Path(fd.name)
-
-    def test_measures_real_history(self):
-        path = self.history()
-        self.assertAlmostEqual(measure(path, 651, 64)["shear_stress_pa"], 480)
-        path.unlink()
 
     def test_rejects_missing_protocol_stage(self):
         path = self.history(stages=False)

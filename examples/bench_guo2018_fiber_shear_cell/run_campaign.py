@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Execute the six predeclared Guo shear-cell solver cases under MPI.
+"""Prepare the historical surrogate cases; execution is intentionally blocked.
 
-This is deliberately an execution/provenance layer, not a result generator.
-Each case is materialized by ``run_case.py`` and receives an immutable
-case_manifest.json before DIRT starts.  ``validate.py`` remains the only
-component allowed to declare the two-observable replication gate passed.
+The 64/96-mm cup cases predate the independent apparatus audit.  They retain
+the Table-2 fibre-topology audit, but they are not Guo ring-shear cases and
+must only be materialized with ``--prepare-only``.  A future implementation
+needs verified annular geometry and a rotational annular drive before a DIRT
+history can enter the external-observable validator.
 """
 import argparse
 import json
@@ -22,6 +23,11 @@ def main() -> None:
     parser.add_argument("--ranks", type=int, default=1)
     parser.add_argument("--prepare-only", action="store_true")
     args = parser.parse_args()
+    if not args.prepare_only:
+        raise SystemExit(
+            "BLOCKED: the current DIRT configuration is a translating planar cup, "
+            "not the DOI's Schulze ring shear apparatus; use --prepare-only only."
+        )
     args.output.mkdir(parents=True, exist_ok=True)
     manifest = {"cases": [{"pressure_pa": p, "width_mm": w} for p, w in CASES],
                 "ranks_per_case": args.ranks, "validator": "validate.py"}

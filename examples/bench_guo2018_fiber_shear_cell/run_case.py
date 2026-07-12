@@ -19,6 +19,13 @@ HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
 
 
+def require_published_apparatus() -> None:
+    """Keep a runnable surrogate from acquiring an experimental claim."""
+    sys.path.insert(0, str(HERE))
+    from source_contract import require_runnable_ring_protocol
+    require_runnable_ring_protocol(HERE / "config.toml")
+
+
 
 def decomposition(ranks: int) -> tuple[int, int]:
     """Return an x/z decomposition for the periodic horizontal cell axes."""
@@ -89,6 +96,11 @@ def main() -> None:
                         help="MPI ranks; decomposed only over periodic x/z axes")
     parser.add_argument("--prepare-only", action="store_true", help="write and audit input but do not invoke DIRT")
     args = parser.parse_args()
+    # The source fibre topology can be prepared and audited, but a solver run
+    # would currently be a plane-driven cup, not the paper's ring-shear test.
+    # Keep preparation available for independent topology checks only.
+    if not args.prepare_only:
+        require_published_apparatus()
     config = materialize(args.pressure_pa, args.width_mm, args.output, args.ranks)
     print(f"prepared solver case: {config}")
     if not args.prepare_only:
