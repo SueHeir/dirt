@@ -143,7 +143,7 @@ mod tests {
         atom.natoms = 1;
 
         let mut registry = AtomDataRegistry::new();
-        registry.register(dem);
+        registry.try_register(dem, atom.len()).unwrap();
 
         app.add_resource(atom);
         app.add_resource(registry);
@@ -177,7 +177,7 @@ mod tests {
         atom.natoms = 1;
 
         let mut registry = AtomDataRegistry::new();
-        registry.register(dem);
+        registry.try_register(dem, atom.len()).unwrap();
 
         app.add_resource(atom);
         app.add_resource(registry);

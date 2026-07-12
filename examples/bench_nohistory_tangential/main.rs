@@ -117,8 +117,8 @@ fn build_system(
     nb.neighbor_indices = vec![1];
 
     let mut reg = AtomDataRegistry::new();
-    reg.register(dem);
-    reg.register(hist);
+    reg.try_register(dem, atom.len()).unwrap();
+    reg.try_register(hist, atom.len()).unwrap();
 
     (atom, nb, reg, mt)
 }

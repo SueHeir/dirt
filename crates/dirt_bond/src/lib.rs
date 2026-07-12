@@ -591,6 +591,12 @@ impl AtomData for BondHistoryStore {
         self
     }
 
+    fn snapshot(&self) -> Box<dyn AtomData> {
+        Box::new(BondHistoryStore {
+            history: self.history.clone(),
+        })
+    }
+
     fn len(&self) -> usize {
         self.history.len()
     }

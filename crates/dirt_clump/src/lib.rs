@@ -130,7 +130,8 @@ use soil_derive::AtomData;
 
 use soil_core::{
     register_atom_data, Accum, Atom, AtomData, AtomDataRegistry, CommResource, Config, Domain,
-    ParticleSimScheduleSet, Real, Region, RunState, ScheduleSetupSet,
+    ParticleSimScheduleSet, ParticleStore, ParticleStoreError, Real, Region, RunState,
+    ScheduleSetupSet,
 };
 
 #[cfg(feature = "mpi_backend")]
@@ -1110,8 +1111,6 @@ fn clump_insert_atoms(
         return;
     }
 
-    let mut dem_data = registry.expect_mut::<DemAtom>("clump_insert_atoms");
-    let mut clump_data = registry.expect_mut::<ClumpAtom>("clump_insert_atoms");
     for insert in inserts {
         let def = clump_registry.find(&insert.definition).unwrap_or_else(|| {
             panic!(
@@ -1174,8 +1173,7 @@ fn clump_insert_atoms(
         let mut rng = clump_insert_rng(insert);
         let inserted = insert_clumps_with_rng(
             &mut atoms,
-            &mut dem_data,
-            &mut clump_data,
+            &registry,
             &mut body_store,
             def,
             insert,
@@ -1204,8 +1202,7 @@ fn clump_insert_rng(insert: &ClumpInsertConfig) -> StdRng {
 #[allow(clippy::too_many_arguments)]
 fn insert_clumps_with_rng<R: Rng>(
     atoms: &mut Atom,
-    dem_data: &mut DemAtom,
-    clump_data: &mut ClumpAtom,
+    registry: &AtomDataRegistry,
     body_store: &mut MultisphereBodyStore,
     def: &ClumpDef,
     insert: &ClumpInsertConfig,
@@ -1304,10 +1301,9 @@ fn insert_clumps_with_rng<R: Rng>(
             [0.0; 3]
         };
 
-        insert_clump_with_cutoff_padding(
+        try_insert_clump_with_cutoff_padding(
             atoms,
-            dem_data,
-            clump_data,
+            registry,
             body_store,
             def,
             pos,
@@ -1316,7 +1312,8 @@ fn insert_clumps_with_rng<R: Rng>(
             mat_idx,
             cutoff_padding,
             next_clump_id,
-        );
+        )
+        .expect("validated clump configuration must accept transactional rows");
 
         com_positions.push(pos);
         next_clump_id += 1;
@@ -1336,8 +1333,7 @@ fn insert_clumps_with_rng<R: Rng>(
 /// Returns the number of atoms inserted (N sub-spheres).
 pub fn insert_clump(
     atoms: &mut Atom,
-    dem: &mut DemAtom,
-    clump_data: &mut ClumpAtom,
+    registry: &AtomDataRegistry,
     body_store: &mut MultisphereBodyStore,
     def: &ClumpDef,
     com_pos: [f64; 3],
@@ -1346,17 +1342,16 @@ pub fn insert_clump(
     atom_type: u32,
     clump_id: u32,
 ) -> usize {
-    insert_clump_with_cutoff_padding(
-        atoms, dem, clump_data, body_store, def, com_pos, com_vel, density, atom_type, 0.0,
-        clump_id,
+    try_insert_clump_with_cutoff_padding(
+        atoms, registry, body_store, def, com_pos, com_vel, density, atom_type, 0.0, clump_id,
     )
+    .expect("registered clump rows must accept transactional insertion")
 }
 
 #[allow(clippy::too_many_arguments)]
-fn insert_clump_with_cutoff_padding(
+fn try_insert_clump_with_cutoff_padding(
     atoms: &mut Atom,
-    dem: &mut DemAtom,
-    clump_data: &mut ClumpAtom,
+    registry: &AtomDataRegistry,
     body_store: &mut MultisphereBodyStore,
     def: &ClumpDef,
     com_pos: [f64; 3],
@@ -1365,7 +1360,7 @@ fn insert_clump_with_cutoff_padding(
     atom_type: u32,
     cutoff_padding: f64,
     clump_id: u32,
-) -> usize {
+) -> Result<usize, ParticleStoreError> {
     // Compute inertia tensor (auto-detect overlap)
     let (total_mass, tensor) = if has_overlap(&def.spheres) {
         compute_inertia_tensor_montecarlo(&def.spheres, density, 100_000)
@@ -1411,10 +1406,12 @@ fn insert_clump_with_cutoff_padding(
         sub_sphere_radii,
         sub_sphere_tags,
     };
-    body_store.bodies.push(body);
-    body_store.generate_map();
-
-    // Insert sub-sphere atoms (no parent atom)
+    // Insert sub-sphere atoms first.  The body is deliberately committed only
+    // after every ParticleStore row has accepted its default: an extension
+    // rejection must not leave an orphan body or a partially materialized
+    // clump.  Roll back already accepted rows through the facade as well.
+    let original_natoms = atoms.natoms;
+    let original_nlocal = atoms.nlocal;
     for (si, sphere) in def.spheres.iter().enumerate() {
         let sub_tag = base_tag + si as u32;
         let sub_pos = [
@@ -1425,44 +1422,49 @@ fn insert_clump_with_cutoff_padding(
 
         let sub_mass = density * (4.0 / 3.0) * PI * sphere.radius.powi(3);
 
-        atoms.tag.push(sub_tag);
-        atoms.atom_type.push(atom_type);
-        atoms.origin_index.push(0);
-        atoms
-            .pos
-            .push([sub_pos[0] as Real, sub_pos[1] as Real, sub_pos[2] as Real]);
-        atoms
-            .vel
-            .push([com_vel[0] as Real, com_vel[1] as Real, com_vel[2] as Real]);
-        atoms.force.push([0.0 as Accum; 3]);
-        atoms.mass.push(sub_mass as Real);
-        atoms.inv_mass.push(0.0 as Real); // Sub-spheres don't integrate via Verlet
-        atoms
-            .cutoff_radius
-            .push((sphere.radius + cutoff_padding.max(0.0)) as Real);
-        atoms.image.push([0, 0, 0]);
-        atoms.is_ghost.push(false);
-
-        dem.radius.push(sphere.radius);
-        dem.density.push(density);
-        dem.inv_inertia.push(0.0);
-        dem.quaternion.push([1.0, 0.0, 0.0, 0.0]);
-        dem.omega.push([0.0; 3]);
-        dem.ang_mom.push([0.0; 3]);
-        dem.torque.push([0.0; 3]);
-        dem.body_id.push(clump_id as f64);
-
-        clump_data.body_id.push(clump_id as f64);
-        clump_data.body_offset.push(sphere.offset);
+        let global_natoms = atoms.natoms + 1;
+        if let Err(error) = ParticleStore::new(atoms, registry).push_default_local(global_natoms) {
+            while atoms.nlocal > original_nlocal {
+                let last = atoms.nlocal as usize - 1;
+                ParticleStore::new(atoms, registry)
+                    .swap_remove(last)
+                    .expect("previously accepted clump rows must remain removable");
+            }
+            atoms.natoms = original_natoms;
+            return Err(error);
+        }
+        let i = atoms.len() - 1;
+        atoms.tag[i] = sub_tag;
+        atoms.atom_type[i] = atom_type;
+        atoms.origin_index[i] = 0;
+        atoms.pos[i] = [sub_pos[0] as Real, sub_pos[1] as Real, sub_pos[2] as Real];
+        atoms.vel[i] = [com_vel[0] as Real, com_vel[1] as Real, com_vel[2] as Real];
+        atoms.force[i] = [0.0 as Accum; 3];
+        atoms.mass[i] = sub_mass as Real;
+        atoms.inv_mass[i] = 0.0 as Real;
+        atoms.cutoff_radius[i] = (sphere.radius + cutoff_padding.max(0.0)) as Real;
+        atoms.image[i] = [0, 0, 0];
+        atoms.is_ghost[i] = false;
+        let mut dem = registry.expect_mut::<DemAtom>("insert_clump");
+        dem.radius[i] = sphere.radius;
+        dem.density[i] = density;
+        dem.inv_inertia[i] = 0.0;
+        dem.quaternion[i] = [1.0, 0.0, 0.0, 0.0];
+        dem.omega[i] = [0.0; 3];
+        dem.ang_mom[i] = [0.0; 3];
+        dem.torque[i] = [0.0; 3];
+        dem.body_id[i] = clump_id as f64;
+        drop(dem);
+        let mut clump_data = registry.expect_mut::<ClumpAtom>("insert_clump");
+        clump_data.body_id[i] = clump_id as f64;
+        clump_data.body_offset[i] = sphere.offset;
 
         let _ = si; // suppress unused warning
     }
 
-    let n = def.spheres.len();
-    atoms.nlocal += n as u32;
-    atoms.natoms += n as u64;
-
-    n
+    body_store.bodies.push(body);
+    body_store.generate_map();
+    Ok(def.spheres.len())
 }
 
 /// Check if two atoms belong to the same rigid body (for contact exclusion).
@@ -1496,7 +1498,35 @@ pub fn is_body_atom(clump_data: &ClumpAtom, i: usize) -> bool {
 mod tests {
     use super::*;
     use dirt_atom::{DemAtom, DemAtomPlugin};
-    use soil_core::{Atom, AtomDataRegistry, SingleProcessComm};
+    use soil_core::{Atom, AtomData, AtomDataRegistry, ParticleStoreError, SingleProcessComm};
+
+    /// A deliberately malformed extension used to prove that clump construction
+    /// never commits its body resource before all particle rows are accepted.
+    #[derive(Default)]
+    struct RejectDefaultRow;
+
+    impl AtomData for RejectDefaultRow {
+        fn as_any(&self) -> &dyn std::any::Any {
+            self
+        }
+        fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+            self
+        }
+        fn snapshot(&self) -> Box<dyn AtomData> {
+            Box::new(Self)
+        }
+        fn len(&self) -> usize {
+            0
+        }
+        fn push_default(&mut self) {}
+        fn truncate(&mut self, _: usize) {}
+        fn swap_remove(&mut self, _: usize) {}
+        fn pack(&self, _: usize, _: &mut Vec<f64>) {}
+        fn unpack(&mut self, _: &[f64]) -> usize {
+            0
+        }
+        fn apply_permutation(&mut self, _: &[usize], _: usize) {}
+    }
 
     /// Non-overlapping dimer (center distance > r1 + r2) for deterministic tests.
     fn make_dimer_def() -> ClumpDef {
@@ -1515,13 +1545,11 @@ mod tests {
         }
     }
 
-    fn setup_clump_test() -> (Atom, DemAtom, ClumpAtom, MultisphereBodyStore) {
-        (
-            Atom::new(),
-            DemAtom::new(),
-            ClumpAtom::new(),
-            MultisphereBodyStore::new(),
-        )
+    fn setup_clump_test() -> (Atom, AtomDataRegistry, MultisphereBodyStore) {
+        let mut registry = AtomDataRegistry::new();
+        registry.try_register(DemAtom::new(), 0).unwrap();
+        registry.try_register(ClumpAtom::new(), 0).unwrap();
+        (Atom::new(), registry, MultisphereBodyStore::new())
     }
 
     #[test]
@@ -1579,7 +1607,7 @@ region = { type = "block", min = [1.0, 1.0, 1.0], max = [1.0, 2.0, 2.0] }
     }
 
     fn seeded_insert_snapshot(seed: Option<u64>) -> Vec<u64> {
-        let (mut atoms, mut dem, mut clump, mut bodies) = setup_clump_test();
+        let (mut atoms, registry, mut bodies) = setup_clump_test();
         let def = make_dimer_def();
         let insert = ClumpInsertConfig {
             definition: "dimer".to_string(),
@@ -1607,8 +1635,7 @@ region = { type = "block", min = [1.0, 1.0, 1.0], max = [1.0, 2.0, 2.0] }
 
         let inserted = insert_clumps_with_rng(
             &mut atoms,
-            &mut dem,
-            &mut clump,
+            &registry,
             &mut bodies,
             &def,
             &insert,
@@ -1728,13 +1755,12 @@ region = { type = "block", min = [1.0, 1.0, 1.0], max = [1.0, 2.0, 2.0] }
 
     #[test]
     fn test_insert_clump_creates_correct_atoms() {
-        let (mut atoms, mut dem, mut clump, mut bodies) = setup_clump_test();
+        let (mut atoms, registry, mut bodies) = setup_clump_test();
         let def = make_dimer_def();
 
         let count = insert_clump(
             &mut atoms,
-            &mut dem,
-            &mut clump,
+            &registry,
             &mut bodies,
             &def,
             [0.0, 0.0, 0.0],
@@ -1750,6 +1776,7 @@ region = { type = "block", min = [1.0, 1.0, 1.0], max = [1.0, 2.0, 2.0] }
         assert_eq!(bodies.bodies.len(), 1);
 
         // Both atoms are sub-spheres with real radii
+        let dem = registry.expect::<DemAtom>("test_insert_clump_creates_correct_atoms");
         assert!((dem.radius[0] - 0.001).abs() < 1e-10);
         assert!((dem.radius[1] - 0.001).abs() < 1e-10);
 
@@ -1773,6 +1800,35 @@ region = { type = "block", min = [1.0, 1.0, 1.0], max = [1.0, 2.0, 2.0] }
 
         // Body has principal moments (diagonalized)
         assert!(bodies.bodies[0].principal_moments[0] > 0.0);
+    }
+
+    #[test]
+    fn clump_row_rejection_rolls_back_atoms_before_body_commit() {
+        let mut registry = AtomDataRegistry::new();
+        registry.try_register(DemAtom::new(), 0).unwrap();
+        registry.try_register(ClumpAtom::new(), 0).unwrap();
+        registry.try_register(RejectDefaultRow, 0).unwrap();
+        let mut atoms = Atom::new();
+        let mut bodies = MultisphereBodyStore::new();
+        let error = try_insert_clump_with_cutoff_padding(
+            &mut atoms,
+            &registry,
+            &mut bodies,
+            &make_dimer_def(),
+            [0.0; 3],
+            [0.0; 3],
+            2500.0,
+            0,
+            0.0,
+            7,
+        )
+        .unwrap_err();
+        assert_eq!(error, ParticleStoreError::MalformedExtensionRecord);
+        assert!(atoms.is_empty());
+        assert_eq!((atoms.nlocal, atoms.nghost, atoms.natoms), (0, 0, 0));
+        assert!(registry.validate_rows(0));
+        assert!(bodies.bodies.is_empty());
+        assert_eq!(bodies.find_by_id(7), None);
     }
 
     #[test]
@@ -1823,13 +1879,12 @@ region = { type = "block", min = [1.0, 1.0, 1.0], max = [1.0, 2.0, 2.0] }
 
     #[test]
     fn test_same_body_exclusion() {
-        let (mut atoms, mut dem, mut clump, mut bodies) = setup_clump_test();
+        let (mut atoms, registry, mut bodies) = setup_clump_test();
         let def = make_dimer_def();
 
         insert_clump(
             &mut atoms,
-            &mut dem,
-            &mut clump,
+            &registry,
             &mut bodies,
             &def,
             [0.0, 0.0, 0.0],
@@ -1840,20 +1895,27 @@ region = { type = "block", min = [1.0, 1.0, 1.0], max = [1.0, 2.0, 2.0] }
         );
 
         // Atoms 0 and 1 are in same body
-        assert!(same_body(&clump, 0, 1));
+        assert!(same_body(
+            &registry.expect::<ClumpAtom>("test_same_body_exclusion"),
+            0,
+            1
+        ));
         // Backward compat
-        assert!(same_body(&clump, 0, 1));
+        assert!(same_body(
+            &registry.expect::<ClumpAtom>("test_same_body_exclusion"),
+            0,
+            1
+        ));
     }
 
     #[test]
     fn test_different_bodies_not_excluded() {
-        let (mut atoms, mut dem, mut clump, mut bodies) = setup_clump_test();
+        let (mut atoms, registry, mut bodies) = setup_clump_test();
         let def = make_dimer_def();
 
         insert_clump(
             &mut atoms,
-            &mut dem,
-            &mut clump,
+            &registry,
             &mut bodies,
             &def,
             [0.0, 0.0, 0.0],
@@ -1864,8 +1926,7 @@ region = { type = "block", min = [1.0, 1.0, 1.0], max = [1.0, 2.0, 2.0] }
         );
         insert_clump(
             &mut atoms,
-            &mut dem,
-            &mut clump,
+            &registry,
             &mut bodies,
             &def,
             [0.01, 0.0, 0.0],
@@ -1876,19 +1937,19 @@ region = { type = "block", min = [1.0, 1.0, 1.0], max = [1.0, 2.0, 2.0] }
         );
 
         // Sub-spheres from different bodies not excluded
+        let clump = registry.expect::<ClumpAtom>("test_different_bodies_not_excluded");
         assert!(!same_body(&clump, 0, 2)); // body 1 sub vs body 2 sub
         assert!(!same_body(&clump, 1, 3));
     }
 
     #[test]
     fn test_force_aggregation() {
-        let (mut atoms, mut dem, mut clump, mut bodies) = setup_clump_test();
+        let (mut atoms, registry, mut bodies) = setup_clump_test();
         let def = make_dimer_def();
 
         insert_clump(
             &mut atoms,
-            &mut dem,
-            &mut clump,
+            &registry,
             &mut bodies,
             &def,
             [0.0, 0.0, 0.0],
@@ -1900,10 +1961,6 @@ region = { type = "block", min = [1.0, 1.0, 1.0], max = [1.0, 2.0, 2.0] }
 
         // Apply force to sub-sphere 0 (at x = -0.0015)
         atoms.force[0] = [0.0, 0.0, 10.0];
-
-        let mut registry = AtomDataRegistry::new();
-        registry.try_register(dem, atoms.len()).unwrap();
-        registry.try_register(clump, atoms.len()).unwrap();
 
         let mut app = App::new();
         app.add_resource(atoms);
@@ -1940,13 +1997,12 @@ region = { type = "block", min = [1.0, 1.0, 1.0], max = [1.0, 2.0, 2.0] }
 
     #[test]
     fn test_position_update_after_rotation() {
-        let (mut atoms, mut dem, mut clump, mut bodies) = setup_clump_test();
+        let (mut atoms, registry, mut bodies) = setup_clump_test();
         let def = make_dimer_def();
 
         insert_clump(
             &mut atoms,
-            &mut dem,
-            &mut clump,
+            &registry,
             &mut bodies,
             &def,
             [0.0, 0.0, 0.0],
@@ -1960,10 +2016,6 @@ region = { type = "block", min = [1.0, 1.0, 1.0], max = [1.0, 2.0, 2.0] }
         let angle = std::f64::consts::FRAC_PI_2;
         let half = angle * 0.5;
         bodies.bodies[0].quaternion = [half.cos(), 0.0, 0.0, half.sin()];
-
-        let mut registry = AtomDataRegistry::new();
-        registry.try_register(dem, atoms.len()).unwrap();
-        registry.try_register(clump, atoms.len()).unwrap();
 
         let mut app = App::new();
         app.add_resource(atoms);
@@ -1990,14 +2042,13 @@ region = { type = "block", min = [1.0, 1.0, 1.0], max = [1.0, 2.0, 2.0] }
 
     #[test]
     fn test_dimer_free_fall() {
-        let (mut atoms, mut dem, mut clump, mut bodies) = setup_clump_test();
+        let (mut atoms, registry, mut bodies) = setup_clump_test();
         let def = make_dimer_def();
 
         let com_pos = [0.0, 0.0, 0.1];
         insert_clump(
             &mut atoms,
-            &mut dem,
-            &mut clump,
+            &registry,
             &mut bodies,
             &def,
             com_pos,
@@ -2043,13 +2094,12 @@ region = { type = "block", min = [1.0, 1.0, 1.0], max = [1.0, 2.0, 2.0] }
 
     #[test]
     fn test_subsphere_velocity_from_rotation() {
-        let (mut atoms, mut dem, mut clump, mut bodies) = setup_clump_test();
+        let (mut atoms, registry, mut bodies) = setup_clump_test();
         let def = make_dimer_def();
 
         insert_clump(
             &mut atoms,
-            &mut dem,
-            &mut clump,
+            &registry,
             &mut bodies,
             &def,
             [0.0, 0.0, 0.0],
@@ -2060,10 +2110,6 @@ region = { type = "block", min = [1.0, 1.0, 1.0], max = [1.0, 2.0, 2.0] }
         );
 
         bodies.bodies[0].omega = [0.0, 0.0, 100.0];
-
-        let mut registry = AtomDataRegistry::new();
-        registry.try_register(dem, atoms.len()).unwrap();
-        registry.try_register(clump, atoms.len()).unwrap();
 
         let mut app = App::new();
         app.add_resource(atoms);
@@ -2086,13 +2132,12 @@ region = { type = "block", min = [1.0, 1.0, 1.0], max = [1.0, 2.0, 2.0] }
 
     #[test]
     fn test_contact_on_one_sphere_creates_torque() {
-        let (mut atoms, mut dem, mut clump, mut bodies) = setup_clump_test();
+        let (mut atoms, registry, mut bodies) = setup_clump_test();
         let def = make_dimer_def();
 
         insert_clump(
             &mut atoms,
-            &mut dem,
-            &mut clump,
+            &registry,
             &mut bodies,
             &def,
             [0.0, 0.0, 0.0],
@@ -2104,10 +2149,6 @@ region = { type = "block", min = [1.0, 1.0, 1.0], max = [1.0, 2.0, 2.0] }
 
         // Force in y on right sub-sphere (at x = +0.0015)
         atoms.force[1] = [0.0, 5.0, 0.0];
-
-        let mut registry = AtomDataRegistry::new();
-        registry.try_register(dem, atoms.len()).unwrap();
-        registry.try_register(clump, atoms.len()).unwrap();
 
         let mut app = App::new();
         app.add_resource(atoms);

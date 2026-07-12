@@ -52,6 +52,7 @@ impl ContactEntry {
 
 /// Contact history + per-particle quiescence state. Registered as [`AtomData`]
 /// so all per-atom vectors follow spatial-sort permutations and MPI exchange.
+#[derive(Clone)]
 pub struct QcStore {
     /// Per-atom contact entries keyed by partner tag.
     pub contacts: Vec<Vec<ContactEntry>>,
@@ -135,6 +136,18 @@ impl AtomData for QcStore {
     }
     fn as_any_mut(&mut self) -> &mut dyn Any {
         self
+    }
+
+    fn snapshot(&self) -> Box<dyn AtomData> {
+        Box::new(self.clone())
+    }
+
+    fn len(&self) -> usize {
+        self.contacts.len()
+    }
+
+    fn push_default(&mut self) {
+        self.ensure_len(self.len() + 1);
     }
 
     fn truncate(&mut self, n: usize) {

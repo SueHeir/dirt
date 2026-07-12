@@ -129,7 +129,7 @@ fn make_registry(sc: &ScenarioCfg) -> AtomDataRegistry {
     dem.torque.push([0.0; 3]);
     dem.body_id.push(0.0);
     let mut registry = AtomDataRegistry::new();
-    registry.register(dem);
+    registry.try_register(dem, 1).unwrap();
     registry
 }
 
