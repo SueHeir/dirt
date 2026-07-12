@@ -167,6 +167,12 @@ fn record_cell(
         .iter()
         .find(|w| w.name.as_deref() == Some(LOWER_WALL))
         .expect("Guo cell requires lower_drive");
+    // Plane walls are replicated on every rank whereas contacts are local.
+    // Use the complete-wall reactions for both the normal-load protocol and
+    // the reported stress; otherwise rank zero would qualify and report a
+    // different physical cell from the one the other ranks advance.
+    let lid_force = comm.all_reduce_sum_f64(lid.force_accumulator);
+    let lower_x_reaction = comm.all_reduce_sum_f64(lower.force_vector[0]);
     let dem = registry.expect::<DemAtom>("guo2018_cell_recorder");
     let mut solid = 0.0;
     for i in 0..atoms.nlocal as usize {
@@ -176,9 +182,6 @@ fn record_cell(
     // `nlocal` is per-rank in a decomposed cell.  The campaign contract is
     // about the physical fibre population, so record the global count.
     let global_atoms = comm.all_reduce_sum_f64(atoms.nlocal as f64).round() as usize;
-    if comm.rank() != 0 {
-        return;
-    }
     let area = (domain.boundaries_high[0] - domain.boundaries_low[0])
         * (domain.boundaries_high[2] - domain.boundaries_low[2]);
     // During the explicit gravity-settle stage the lid is intentionally static;
@@ -190,7 +193,12 @@ fn record_cell(
     };
     let height = lid.point_y - lower.point_y;
     if let Some(target_force) = target_force {
-        qualification.observe(lid.force_accumulator / area, target_force / area);
+        // Every rank must acquire the same qualification state before its
+        // local lower-wall copy may begin translating.
+        qualification.observe(lid_force / area, target_force / area);
+    }
+    if comm.rank() != 0 {
+        return;
     }
     let out_dir = input
         .output_dir
@@ -223,10 +231,10 @@ fn record_cell(
         shear_start.step.map_or(0.0, |start| {
             lower.velocity[0] * step.saturating_sub(start) as f64 * atoms.dt / height
         }),
-        lid.force_accumulator,
-        lower.force_vector[0],
-        lid.force_accumulator / area,
-        lower.force_vector[0].abs() / area,
+        lid_force,
+        lower_x_reaction,
+        lid_force / area,
+        lower_x_reaction.abs() / area,
         solid / (area * height),
         height,
         global_atoms

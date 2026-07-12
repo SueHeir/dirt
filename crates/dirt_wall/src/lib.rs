@@ -163,7 +163,7 @@ use serde::Deserialize;
 
 use dirt_atom::{DemAtom, MaterialTable, SQRT_5_6};
 use soil_core::region::Region;
-use soil_core::{Accum, Atom, AtomDataRegistry, Config, ParticleSimScheduleSet};
+use soil_core::{Accum, Atom, AtomDataRegistry, CommResource, Config, ParticleSimScheduleSet};
 
 fn default_neg_inf() -> f64 {
     f64::NEG_INFINITY
@@ -1041,7 +1041,7 @@ fn validate_wall_plugin_config(app: &mut App) -> Result<(), AppError> {
 ///
 /// Runs in [`ParticleSimScheduleSet::PreInitialIntegration`] so walls are moved
 /// *before* the integration step each timestep. Advances `walls.time` by `dt`.
-pub fn wall_move(mut walls: ResMut<Walls>, atoms: Res<Atom>) {
+pub fn wall_move(mut walls: ResMut<Walls>, atoms: Res<Atom>, comm: Option<Res<CommResource>>) {
     let dt = atoms.dt;
     let time = walls.time;
 
@@ -1051,6 +1051,19 @@ pub fn wall_move(mut walls: ResMut<Walls>, atoms: Res<Atom>) {
             continue;
         }
 
+        // A servo target is a physical force on the complete wall, not a
+        // per-rank force.  In a decomposed domain each rank owns only part of
+        // the particle contacts, while every rank owns the same wall geometry.
+        // Reduce before updating the common geometry so all ranks apply the
+        // same feedback velocity.  `None` keeps focused unit tests, which
+        // construct a wall without a communicator, serial by construction.
+        let local_force = walls.planes[idx].force_accumulator;
+        let global_force = if matches!(walls.planes[idx].motion, WallMotion::Servo { .. }) {
+            comm.as_ref()
+                .map_or(local_force, |c| c.all_reduce_sum_f64(local_force))
+        } else {
+            local_force
+        };
         let wall = &mut walls.planes[idx];
         match wall.motion {
             WallMotion::Static => {}
@@ -1081,7 +1094,7 @@ pub fn wall_move(mut walls: ResMut<Walls>, atoms: Res<Atom>) {
                 max_velocity,
                 gain,
             } => {
-                let error = target_force - wall.force_accumulator;
+                let error = target_force - global_force;
                 let vel_mag = (gain * error).clamp(-max_velocity, max_velocity);
                 wall.velocity = [
                     vel_mag * wall.normal_x,

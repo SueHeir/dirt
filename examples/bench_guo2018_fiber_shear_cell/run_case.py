@@ -88,8 +88,14 @@ def main() -> None:
     config = materialize(args.pressure_pa, args.width_mm, args.output, args.ranks)
     print(f"prepared solver case: {config}")
     if not args.prepare_only:
-        subprocess.run(["cargo", "build", "--release", "--example", "bench_guo2018_fiber_shear_cell",
-                        "--no-default-features", "--features", "precision-double"], cwd=ROOT, check=True)
+        # The default DIRT feature set includes mpi_backend.  A serial-only
+        # binary launched through mpirun creates one independent one-rank
+        # communicator per process, so it must never be used for `--ranks > 1`.
+        # Building the same MPI-capable executable for rank one keeps the
+        # campaign command unambiguous and lets the manifest describe the
+        # communicator that actually ran the case.
+        subprocess.run(["cargo", "build", "--release", "--example", "bench_guo2018_fiber_shear_cell"],
+                       cwd=ROOT, check=True)
         solver = ROOT / "target/release/examples/bench_guo2018_fiber_shear_cell"
         command = [str(solver), str(config)]
         if args.ranks > 1:

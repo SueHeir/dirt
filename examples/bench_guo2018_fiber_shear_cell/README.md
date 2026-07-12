@@ -37,7 +37,8 @@ per-case manifest (including the horizontal MPI decomposition) before invoking
 DIRT. MPI ranks are decomposed only over the periodic horizontal axes; the
 normal wall direction remains local. This improves execution throughput
 without changing the source population, timestep, measurement window, or
-acceptance tolerances.
+acceptance tolerances. The runner builds DIRT with its default `mpi_backend`;
+it does not launch a serial-only binary under `mpirun`.
 
 ```bash
 python3 examples/bench_guo2018_fiber_shear_cell/run_campaign.py \
