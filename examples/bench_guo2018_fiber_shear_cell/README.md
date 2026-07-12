@@ -61,3 +61,15 @@ against the hash-bound local PDF. Approximate Fig. 6/7 values in
 not raw data. Codex AI assisted this audit and its documentation. Independent
 human verification of the primary pages and any future digitization remains
 necessary.
+
+## Boundary uncertainty, without curve fitting
+
+The missing wall-sphere diameter and tessellation make an exact source mesh
+unidentifiable, but they do not make the reported cell physics unknowable. A
+future campaign may therefore use a separately evidenced wall mesh, or a
+predeclared resolution-sensitivity ensemble. It must label that campaign as a
+non-equivalent reconstruction, retain all candidate runs, and select no mesh
+using the Figure 6/7 targets. `source_geometry_audit.py --verify` enforces the
+provenance rule for any proposed mesh. This is intentionally not a route to a
+replication PASS: the current tree has no such mesh, no solver history, and no
+DIRT-vs-reference result.

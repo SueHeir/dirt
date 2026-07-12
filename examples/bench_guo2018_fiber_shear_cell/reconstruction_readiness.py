@@ -4,8 +4,9 @@
 This is an independent, source-ledger check.  It verifies that the committed
 candidate carries the directly reported rubber-cord parameters, distinguishes
 the 96-mm population inference from a source fact, and reports the unresolved
-wall-body inputs that prevent a source-equivalent solver run.  It never emits a
-replication pass and it does not synthesize a wall geometry.
+wall-body inputs.  They prevent an *exact source-equivalent* wall mesh, not a
+predeclared non-calibrated sensitivity study.  It never emits a replication
+pass and it does not synthesize a wall geometry.
 """
 import argparse
 import hashlib
@@ -100,7 +101,8 @@ def main():
     mass = ledger["derived_inputs"]["upper_wall_gravity_mass_at_1735_pa_kg"]["value"]
     print("DERIVED LOAD: 1735 Pa on the reported 64-mm x 36-mm cell requires a "
           f"{mass:.12f} kg gravitational load.")
-    print("SOURCE LIMIT: a source-equivalent replication remains BLOCKED; missing " + unresolved + ".")
+    print("SOURCE LIMIT: an exact source-equivalent wall mesh remains unavailable; missing " + unresolved + ".")
+    print("A non-equivalent wall-resolution sensitivity study is permissible only under source_geometry_audit.py's no-calibration contract.")
     print("The 96-mm/750-fibre input is an explicitly derived sensitivity case, not a reported population.")
 
 

@@ -62,8 +62,14 @@ def require_published_control_cell(config: Path) -> None:
     mismatches = protocol_mismatches(config)
     if mismatches:
         raise RuntimeError("BLOCKED: source-equivalence is false:\n- " + "\n- ".join(mismatches))
-    from source_geometry_audit import require_reproducible_wall_body
-    require_reproducible_wall_body()
+    from source_geometry_audit import load_contract
+    missing = ", ".join(sorted(load_contract()["not_reported"]))
+    raise RuntimeError(
+        "BLOCKED: this audit has no declared wall realisation; an exact "
+        "source-equivalent mesh cannot be claimed while " + missing +
+        " are unreported. A separately declared non-calibrated sensitivity "
+        "study is governed by source_geometry_audit.py."
+    )
 
 
 def main() -> None:
@@ -102,7 +108,7 @@ class SourceContractTests(unittest.TestCase):
                 require_published_control_cell(Path(config.name))
 
     def test_audit_declaration_cannot_become_a_runnable_cell(self):
-        with self.assertRaisesRegex(RuntimeError, "cannot be uniquely transcribed"):
+        with self.assertRaisesRegex(RuntimeError, "no declared wall realisation"):
             require_published_control_cell(HERE / "config.toml")
 
     def test_sphere_spelling_cannot_certify_an_unaudited_implementation(self):
@@ -110,7 +116,7 @@ class SourceContractTests(unittest.TestCase):
             config.write('[[wall]]\ntype = "sphere"\n')
             config.flush()
             self.assertEqual(protocol_mismatches(Path(config.name)), [])
-            with self.assertRaisesRegex(RuntimeError, "cannot be uniquely transcribed"):
+            with self.assertRaisesRegex(RuntimeError, "no declared wall realisation"):
                 require_published_control_cell(Path(config.name))
 
 
