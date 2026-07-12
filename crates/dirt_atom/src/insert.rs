@@ -45,7 +45,8 @@ use serde::Deserialize;
 use grass_scheduler::prelude::CurrentState;
 use soil_core::{
     deep_merge, Atom, AtomDataRegistry, CommResource, CommState, Config, Domain, DomainConfig,
-    ParticleSimScheduleSet, Real, Region, RunConfig, RunState, ScheduleSetupSet, StageOverrides,
+    ParticleSimScheduleSet, ParticleStore, Real, Region, RunConfig, RunState, ScheduleSetupSet,
+    StageOverrides,
 };
 
 use crate::{DemAtom, MaterialTable, RadiusSpec};
@@ -848,12 +849,15 @@ fn validate_file_insert(
     materials: &MaterialTable,
 ) -> Result<(), InsertFileError> {
     let mut atom = Atom::default();
-    let mut dem_data = DemAtom::default();
+    let mut registry = AtomDataRegistry::new();
+    registry
+        .try_register(DemAtom::default(), 0)
+        .expect("fresh registry accepts DemAtom");
     let mut max_tag = 0;
     insert_from_file(
         insert,
         &mut atom,
-        &mut dem_data,
+        &registry,
         materials,
         &Domain::default(),
         &mut max_tag,
@@ -867,9 +871,10 @@ fn validate_file_insert(
 /// Computes mass from density and radius (solid sphere: m = ρ·4/3·π·r³), and inverse
 /// moment of inertia (I = 2/5·m·r² for a solid sphere). Initializes quaternion to identity
 /// and angular velocity/momentum/torque to zero.
-fn insert_single_particle(
-    atom: &mut Atom,
-    dem_data: &mut DemAtom,
+/// Typed initialization record for a newly-created DEM SoA row.  The store owns
+/// structural synchronization; this record only supplies DIRT-specific values.
+#[derive(Clone, Copy, Debug)]
+struct DemParticle {
     pos: [f64; 3],
     vel: [f64; 3],
     radius: f64,
@@ -877,34 +882,63 @@ fn insert_single_particle(
     density: f64,
     mat_idx: u32,
     tag: u32,
-) {
-    atom.natoms += 1;
-    atom.nlocal += 1;
-    atom.tag.push(tag);
-    atom.origin_index.push(0);
-    atom.cutoff_radius
-        .push((radius + cutoff_padding.max(0.0)) as Real);
-    atom.image.push([0, 0, 0]);
-    atom.is_ghost.push(false);
-    atom.pos
-        .push([pos[0] as Real, pos[1] as Real, pos[2] as Real]);
-    atom.vel
-        .push([vel[0] as Real, vel[1] as Real, vel[2] as Real]);
-    atom.force.push([0.0; 3]);
-    let mass = density * 4.0 / 3.0 * PI * radius.powi(3);
-    atom.mass.push(mass as Real);
-    atom.inv_mass.push((1.0 / mass) as Real);
-    atom.atom_type.push(mat_idx);
-    dem_data.radius.push(radius);
-    dem_data.density.push(density);
-    dem_data
-        .inv_inertia
-        .push(1.0 / (0.4 * mass * radius * radius));
-    dem_data.quaternion.push([1.0, 0.0, 0.0, 0.0]);
-    dem_data.omega.push([0.0; 3]);
-    dem_data.ang_mom.push([0.0; 3]);
-    dem_data.torque.push([0.0; 3]);
-    dem_data.body_id.push(0.0);
+}
+
+impl DemParticle {
+    fn mass(self) -> f64 {
+        self.density * 4.0 / 3.0 * PI * self.radius.powi(3)
+    }
+
+    /// Populate the already-reserved core row.  Structural changes belong to
+    /// `ParticleStore`; this method deliberately only writes an existing row.
+    fn write_core(self, atom: &mut Atom, i: usize, mass: f64) {
+        atom.tag[i] = self.tag;
+        atom.origin_index[i] = 0;
+        atom.cutoff_radius[i] = (self.radius + self.cutoff_padding.max(0.0)) as Real;
+        atom.image[i] = [0, 0, 0];
+        atom.is_ghost[i] = false;
+        atom.pos[i] = [
+            self.pos[0] as Real,
+            self.pos[1] as Real,
+            self.pos[2] as Real,
+        ];
+        atom.vel[i] = [
+            self.vel[0] as Real,
+            self.vel[1] as Real,
+            self.vel[2] as Real,
+        ];
+        atom.force[i] = [0.0; 3];
+        atom.mass[i] = mass as Real;
+        atom.inv_mass[i] = (1.0 / mass) as Real;
+        atom.atom_type[i] = self.mat_idx;
+    }
+
+    /// Populate the matching, already-reserved DEM extension row.
+    fn write_dem(self, dem: &mut DemAtom, i: usize, mass: f64) {
+        dem.radius[i] = self.radius;
+        dem.density[i] = self.density;
+        dem.inv_inertia[i] = 1.0 / (0.4 * mass * self.radius * self.radius);
+        dem.quaternion[i] = [1.0, 0.0, 0.0, 0.0];
+        dem.omega[i] = [0.0; 3];
+        dem.ang_mom[i] = [0.0; 3];
+        dem.torque[i] = [0.0; 3];
+        dem.body_id[i] = 0.0;
+    }
+}
+
+fn insert_single_particle(atom: &mut Atom, registry: &AtomDataRegistry, row: DemParticle) {
+    let global_natoms = atom
+        .natoms
+        .checked_add(1)
+        .expect("global particle count overflow during DEM insertion");
+    ParticleStore::new(atom, registry)
+        .push_default_local(global_natoms)
+        .expect("registered DEM rows must accept transactional insertion");
+    let i = atom.len() - 1;
+    let mass = row.mass();
+    row.write_core(atom, i, mass);
+    let mut dem_data = registry.expect_mut::<DemAtom>("insert_single_particle");
+    row.write_dem(&mut dem_data, i, mass);
 }
 
 // ── Helper: subdomain ownership ─────────────────────────────────────────────
@@ -1031,7 +1065,6 @@ pub fn dem_insert_atoms(
     // and likewise filtered to the local subdomain.
     if let Some(ref inserts) = particles_config.insert {
         {
-            let mut dem_data = registry.expect_mut::<DemAtom>("dem_insert_atoms");
             // Tags must be globally unique and identical across ranks, so seed the
             // running tag from the global max (reduced) rather than the local max.
             // (No all_reduce_max in the backend, so reduce -max with min and negate.)
@@ -1044,7 +1077,7 @@ pub fn dem_insert_atoms(
                     insert_from_file(
                         insert,
                         &mut atom,
-                        &mut dem_data,
+                        &registry,
                         &material_table,
                         &domain,
                         &mut max_tag,
@@ -1180,14 +1213,16 @@ pub fn dem_insert_atoms(
                         if owns_position(&domain, &candidate) {
                             insert_single_particle(
                                 &mut atom,
-                                &mut dem_data,
-                                candidate,
-                                vel,
-                                radius,
-                                cutoff_padding,
-                                density,
-                                mat_idx,
-                                tag,
+                                &registry,
+                                DemParticle {
+                                    pos: candidate,
+                                    vel,
+                                    radius,
+                                    cutoff_padding,
+                                    density,
+                                    mat_idx,
+                                    tag,
+                                },
                             );
                         }
                         inserted += 1;
@@ -1210,7 +1245,7 @@ pub fn dem_insert_atoms(
 fn insert_from_file(
     insert: &InsertConfig,
     atom: &mut Atom,
-    dem_data: &mut DemAtom,
+    registry: &AtomDataRegistry,
     material_table: &MaterialTable,
     domain: &Domain,
     max_tag: &mut u32,
@@ -1235,7 +1270,7 @@ fn insert_from_file(
             insert,
             file_path,
             atom,
-            dem_data,
+            registry,
             material_table,
             domain,
             max_tag,
@@ -1244,7 +1279,7 @@ fn insert_from_file(
             insert,
             file_path,
             atom,
-            dem_data,
+            registry,
             material_table,
             domain,
             max_tag,
@@ -1253,7 +1288,7 @@ fn insert_from_file(
             insert,
             file_path,
             atom,
-            dem_data,
+            registry,
             material_table,
             domain,
             max_tag,
@@ -1268,7 +1303,7 @@ fn read_csv_particles(
     insert: &InsertConfig,
     file_path: &str,
     atom: &mut Atom,
-    dem_data: &mut DemAtom,
+    registry: &AtomDataRegistry,
     material_table: &MaterialTable,
     domain: &Domain,
     max_tag: &mut u32,
@@ -1386,14 +1421,16 @@ fn read_csv_particles(
         if owns_position(domain, &[x, y, z]) {
             insert_single_particle(
                 atom,
-                dem_data,
-                [x, y, z],
-                [vx, vy, vz],
-                radius,
-                cutoff_padding,
-                density,
-                row_mat_idx,
-                *max_tag,
+                registry,
+                DemParticle {
+                    pos: [x, y, z],
+                    vel: [vx, vy, vz],
+                    radius,
+                    cutoff_padding,
+                    density,
+                    mat_idx: row_mat_idx,
+                    tag: *max_tag,
+                },
             );
             count += 1;
         }
@@ -1411,7 +1448,7 @@ fn read_lammps_dump_particles(
     insert: &InsertConfig,
     file_path: &str,
     atom: &mut Atom,
-    dem_data: &mut DemAtom,
+    registry: &AtomDataRegistry,
     material_table: &MaterialTable,
     domain: &Domain,
     max_tag: &mut u32,
@@ -1572,14 +1609,16 @@ fn read_lammps_dump_particles(
             if owns_position(domain, &[x, y, z]) {
                 insert_single_particle(
                     atom,
-                    dem_data,
-                    [x, y, z],
-                    [vx, vy, vz],
-                    radius,
-                    cutoff_padding,
-                    density,
-                    row_mat_idx,
-                    *max_tag,
+                    registry,
+                    DemParticle {
+                        pos: [x, y, z],
+                        vel: [vx, vy, vz],
+                        radius,
+                        cutoff_padding,
+                        density,
+                        mat_idx: row_mat_idx,
+                        tag: *max_tag,
+                    },
                 );
                 count += 1;
             }
@@ -1618,7 +1657,7 @@ fn read_lammps_data_particles(
     insert: &InsertConfig,
     file_path: &str,
     atom: &mut Atom,
-    dem_data: &mut DemAtom,
+    registry: &AtomDataRegistry,
     material_table: &MaterialTable,
     domain: &Domain,
     max_tag: &mut u32,
@@ -1843,14 +1882,16 @@ fn read_lammps_data_particles(
         if owns_position(domain, &pa.pos) {
             insert_single_particle(
                 atom,
-                dem_data,
-                pa.pos,
-                vel,
-                pa.radius,
-                cutoff_padding,
-                pa.density,
-                row_mat_idx,
-                *max_tag,
+                registry,
+                DemParticle {
+                    pos: pa.pos,
+                    vel,
+                    radius: pa.radius,
+                    cutoff_padding,
+                    density: pa.density,
+                    mat_idx: row_mat_idx,
+                    tag: *max_tag,
+                },
             );
             count += 1;
         }
@@ -1927,12 +1968,15 @@ pub fn dem_rate_insert(
     // New atoms are appended at atom.len(), which must equal nlocal so that
     // the subsequent borders() truncate_to_nlocal() doesn't discard them.
     if atom.nghost > 0 {
-        atom.truncate_to_nlocal();
-        registry.truncate_all(atom.nlocal as usize);
-        atom.nghost = 0;
+        // Keep the core ghost suffix and every DIRT extension in one
+        // transaction.  In particular, a plugin registered after setup has a
+        // row here too; truncating Atom and AtomDataRegistry separately would
+        // leave a panic/error window between the two mutations.
+        ParticleStore::new(&mut atom, &registry)
+            .discard_ghosts()
+            .expect("rate insertion requires an aligned local/ghost particle layout");
     }
 
-    let mut dem_data = registry.expect_mut::<DemAtom>("dem_rate_insert");
     // Base tag must be globally consistent across ranks. (No all_reduce_max in
     // the backend, so reduce -max with min and negate.) Each attempt this step
     // consumes one tag slot regardless of acceptance so tags stay unique across
@@ -2088,14 +2132,16 @@ pub fn dem_rate_insert(
             if owns_position(&domain, &candidate) {
                 insert_single_particle(
                     &mut atom,
-                    &mut dem_data,
-                    candidate,
-                    vel,
-                    radius,
-                    cutoff_padding,
-                    density,
-                    mat_idx,
-                    tag,
+                    &registry,
+                    DemParticle {
+                        pos: candidate,
+                        vel,
+                        radius,
+                        cutoff_padding,
+                        density,
+                        mat_idx,
+                        tag,
+                    },
                 );
                 local_inserted += 1;
             }
@@ -2174,7 +2220,261 @@ fn calculate_delta_time(
 mod tests {
     use super::*;
     use crate::RadiusDistribution;
-    use soil_core::toml;
+    use soil_core::{toml, AtomData, AtomDataRegistry, ParticleStoreError};
+    use soil_derive::AtomData;
+
+    /// A second extension registered after construction.  This represents an
+    /// optional DIRT plugin arriving after particles were inserted.
+    #[derive(Default, AtomData)]
+    struct LateProbe {
+        rows: Vec<f64>,
+    }
+
+    /// Deliberately refuses to create a default row, exercising the facade's
+    /// rollback boundary from the DIRT insertion caller's side.
+    #[derive(Default)]
+    struct BrokenDefaults;
+
+    impl AtomData for BrokenDefaults {
+        fn as_any(&self) -> &dyn std::any::Any {
+            self
+        }
+        fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+            self
+        }
+        fn snapshot(&self) -> Box<dyn AtomData> {
+            Box::new(Self)
+        }
+        fn len(&self) -> usize {
+            0
+        }
+        fn push_default(&mut self) {}
+        fn truncate(&mut self, _: usize) {}
+        fn swap_remove(&mut self, _: usize) {}
+        fn pack(&self, _: usize, _: &mut Vec<f64>) {}
+        fn unpack(&mut self, _: &[f64]) -> usize {
+            0
+        }
+        fn apply_permutation(&mut self, _: &[usize], _: usize) {}
+    }
+
+    fn test_dem_registry() -> AtomDataRegistry {
+        let mut registry = AtomDataRegistry::new();
+        registry.try_register(DemAtom::new(), 0).unwrap();
+        registry
+    }
+
+    #[test]
+    fn particle_store_construction_covers_immediate_and_rate_rows() {
+        let mut atoms = Atom::new();
+        let registry = test_dem_registry();
+
+        // This is the shared materialization endpoint reached by both the
+        // immediate and periodic rate candidate loops.  Use distinct defaults
+        // so a future path-specific field regression is observable here.
+        for (tag, pos, velocity, radius, material) in [
+            (7, [0.1, 0.2, 0.3], [1.0, 0.0, -1.0], 0.002, 3),
+            (8, [0.4, 0.5, 0.6], [0.0, 2.0, -2.0], 0.003, 4),
+        ] {
+            insert_single_particle(
+                &mut atoms,
+                &registry,
+                DemParticle {
+                    pos,
+                    vel: velocity,
+                    radius,
+                    cutoff_padding: 0.0004,
+                    density: 2500.0,
+                    mat_idx: material,
+                    tag,
+                },
+            );
+        }
+
+        let dem = registry.expect::<DemAtom>("particle-store construction test");
+        assert_eq!((atoms.nlocal, atoms.nghost, atoms.natoms), (2, 0, 2));
+        assert_eq!(atoms.tag, vec![7, 8]);
+        assert_eq!(atoms.atom_type, vec![3, 4]);
+        assert_eq!(atoms.cutoff_radius, vec![0.002 + 0.0004, 0.003 + 0.0004]);
+        assert_eq!(dem.radius, vec![0.002, 0.003]);
+        assert_eq!(dem.body_id, vec![0.0, 0.0]);
+        assert_eq!(dem.quaternion, vec![[1.0, 0.0, 0.0, 0.0]; 2]);
+        assert!(registry.validate_rows(atoms.len()));
+    }
+
+    #[test]
+    fn particle_store_construction_backfills_late_extensions_and_rolls_back() {
+        let mut atoms = Atom::new();
+        let mut registry = test_dem_registry();
+        insert_single_particle(
+            &mut atoms,
+            &registry,
+            DemParticle {
+                pos: [0.0; 3],
+                vel: [0.0; 3],
+                radius: 0.001,
+                cutoff_padding: 0.0,
+                density: 2500.0,
+                mat_idx: 0,
+                tag: 1,
+            },
+        );
+        registry
+            .try_register(LateProbe::default(), atoms.len())
+            .unwrap();
+        assert_eq!(
+            registry.expect::<LateProbe>("late extension").rows,
+            vec![0.0]
+        );
+
+        insert_single_particle(
+            &mut atoms,
+            &registry,
+            DemParticle {
+                pos: [1.0; 3],
+                vel: [0.0; 3],
+                radius: 0.001,
+                cutoff_padding: 0.0,
+                density: 2500.0,
+                mat_idx: 0,
+                tag: 2,
+            },
+        );
+        assert_eq!(
+            registry.expect::<LateProbe>("late extension").rows,
+            vec![0.0, 0.0]
+        );
+        assert!(registry.validate_rows(atoms.len()));
+
+        let mut rollback_atoms = Atom::new();
+        let mut rollback_registry = AtomDataRegistry::new();
+        rollback_registry.try_register(BrokenDefaults, 0).unwrap();
+        assert_eq!(
+            ParticleStore::new(&mut rollback_atoms, &rollback_registry).push_default_local(1),
+            Err(ParticleStoreError::MalformedExtensionRecord)
+        );
+        assert!(rollback_atoms.is_empty());
+        assert_eq!((rollback_atoms.nlocal, rollback_atoms.natoms), (0, 0));
+        assert!(rollback_registry.validate_rows(0));
+    }
+
+    #[test]
+    fn particle_store_restart_rejection_preserves_dem_construction() {
+        let mut atoms = Atom::new();
+        let registry = test_dem_registry();
+        insert_single_particle(
+            &mut atoms,
+            &registry,
+            DemParticle {
+                pos: [0.25; 3],
+                vel: [0.0; 3],
+                radius: 0.001,
+                cutoff_padding: 0.0,
+                density: 2500.0,
+                mat_idx: 0,
+                tag: 17,
+            },
+        );
+        let before_tags = atoms.tag.clone();
+        let before_radius = registry
+            .expect::<DemAtom>("restart snapshot")
+            .radius
+            .clone();
+        let mut malformed = atoms.clone();
+        malformed.mass.clear();
+        assert_eq!(
+            ParticleStore::new(&mut atoms, &registry).replace_from_restart(malformed, &[]),
+            Err(ParticleStoreError::InvalidStructuralOperation)
+        );
+        assert_eq!(atoms.tag, before_tags);
+        assert_eq!(
+            registry.expect::<DemAtom>("restart rollback").radius,
+            before_radius
+        );
+        assert!(registry.validate_rows(atoms.len()));
+    }
+
+    #[test]
+    fn rate_insertion_ghost_cleanup_keeps_dem_rows_synchronized() {
+        // Reproduce the layout rate insertion sees after a communication pass:
+        // one local row followed by a received ghost carrying real DemAtom
+        // fields.  This uses the SOIL framing path rather than manufacturing a
+        // matching extension vector by hand.
+        let source_registry = test_dem_registry();
+        let mut source = Atom::new();
+        insert_single_particle(
+            &mut source,
+            &source_registry,
+            DemParticle {
+                pos: [0.75, 0.0, 0.0],
+                vel: [0.0; 3],
+                radius: 0.003,
+                cutoff_padding: 0.0,
+                density: 2500.0,
+                mat_idx: 2,
+                tag: 22,
+            },
+        );
+        let mut packed = Vec::new();
+        ParticleStore::new(&mut source, &source_registry)
+            .pack_migrant(0, &mut packed)
+            .unwrap();
+
+        let registry = test_dem_registry();
+        let mut atoms = Atom::new();
+        insert_single_particle(
+            &mut atoms,
+            &registry,
+            DemParticle {
+                pos: [0.25, 0.0, 0.0],
+                vel: [0.0; 3],
+                radius: 0.001,
+                cutoff_padding: 0.0,
+                density: 1000.0,
+                mat_idx: 1,
+                tag: 11,
+            },
+        );
+        ParticleStore::new(&mut atoms, &registry)
+            .append_ghost_records(&packed, 1)
+            .unwrap();
+        assert_eq!((atoms.nlocal, atoms.nghost), (1, 1));
+        assert_eq!(
+            registry.expect::<DemAtom>("ghost setup").radius,
+            vec![0.001, 0.003]
+        );
+
+        ParticleStore::new(&mut atoms, &registry)
+            .discard_ghosts()
+            .unwrap();
+        assert_eq!((atoms.nlocal, atoms.nghost, atoms.len()), (1, 0, 1));
+        assert_eq!(
+            registry.expect::<DemAtom>("ghost cleanup").radius,
+            vec![0.001]
+        );
+        assert!(registry.validate_rows(atoms.len()));
+    }
+
+    #[test]
+    fn ownership_partition_is_exact_at_multirank_boundaries() {
+        let mut low = Domain::new();
+        low.sub_domain_low = [0.0, 0.0, 0.0];
+        low.sub_domain_high = [0.5, 1.0, 1.0];
+        let mut high = Domain::new();
+        high.sub_domain_low = [0.5, 0.0, 0.0];
+        high.sub_domain_high = [1.0, 1.0, 1.0];
+        for point in [
+            [0.0, 0.5, 0.5],
+            [0.499999, 0.5, 0.5],
+            [0.5, 0.5, 0.5],
+            [0.999999, 0.5, 0.5],
+        ] {
+            assert_eq!(
+                owns_position(&low, &point) as u8 + owns_position(&high, &point) as u8,
+                1
+            );
+        }
+    }
 
     #[test]
     fn bounded_sampling_draws_a_candidate_and_exhaustion_rejects_one() {

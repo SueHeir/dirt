@@ -154,7 +154,7 @@ fn make_registry(radius: f64) -> AtomDataRegistry {
     dem.body_id.push(0.0);
 
     let mut registry = AtomDataRegistry::new();
-    registry.register(dem);
+    registry.try_register(dem, 1).unwrap();
     registry
 }
 

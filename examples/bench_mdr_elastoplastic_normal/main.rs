@@ -69,8 +69,8 @@ fn main() {
     history.contacts.resize_with(2, Vec::new);
 
     let mut registry = AtomDataRegistry::new();
-    registry.register(dem);
-    registry.register(history);
+    registry.try_register(dem, atom.len()).unwrap();
+    registry.try_register(history, atom.len()).unwrap();
 
     let mut neighbor = Neighbor::new();
     neighbor.neighbor_offsets = vec![0, 1, 1];

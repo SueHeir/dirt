@@ -82,6 +82,12 @@ impl AtomData for ContactHistoryStore {
         self
     }
 
+    fn snapshot(&self) -> Box<dyn AtomData> {
+        Box::new(ContactHistoryStore {
+            contacts: self.contacts.clone(),
+        })
+    }
+
     fn len(&self) -> usize {
         self.contacts.len()
     }

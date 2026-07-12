@@ -1786,8 +1786,8 @@ mod tests {
             nb.neighbor_offsets = vec![0, 2, 2, 2];
             nb.neighbor_indices = vec![1, 2];
             let mut reg = AtomDataRegistry::new();
-            reg.register(dem);
-            reg.register(hist);
+            reg.try_register(dem, atom.len()).unwrap();
+            reg.try_register(hist, atom.len()).unwrap();
             (atom, nb, reg)
         };
         let mt = make_material_table();
@@ -1840,8 +1840,8 @@ mod tests {
         neighbor.neighbor_indices = vec![1];
 
         let mut registry = AtomDataRegistry::new();
-        registry.register(dem);
-        registry.register(hist);
+        registry.try_register(dem, atom.len()).unwrap();
+        registry.try_register(hist, atom.len()).unwrap();
 
         app.add_resource(atom);
         app.add_resource(neighbor);
@@ -1890,8 +1890,8 @@ mod tests {
         neighbor.neighbor_indices = vec![1];
 
         let mut registry = AtomDataRegistry::new();
-        registry.register(dem);
-        registry.register(hist);
+        registry.try_register(dem, atom.len()).unwrap();
+        registry.try_register(hist, atom.len()).unwrap();
 
         app.add_resource(atom);
         app.add_resource(neighbor);
@@ -1947,8 +1947,8 @@ mod tests {
             nb.neighbor_offsets = vec![0, 1, 1];
             nb.neighbor_indices = vec![1];
             let mut reg = AtomDataRegistry::new();
-            reg.register(dem);
-            reg.register(hist);
+            reg.try_register(dem, atom.len()).unwrap();
+            reg.try_register(hist, atom.len()).unwrap();
             (atom, nb, reg)
         };
         let spring_mag = |reg: &AtomDataRegistry| -> f64 {
@@ -2015,8 +2015,8 @@ mod tests {
         neighbor.neighbor_indices = vec![1];
 
         let mut registry = AtomDataRegistry::new();
-        registry.register(dem);
-        registry.register(hist);
+        registry.try_register(dem, atom.len()).unwrap();
+        registry.try_register(hist, atom.len()).unwrap();
 
         app.add_resource(atom);
         app.add_resource(neighbor);
@@ -2072,8 +2072,8 @@ mod tests {
         neighbor.neighbor_indices = vec![1];
 
         let mut registry = AtomDataRegistry::new();
-        registry.register(dem);
-        registry.register(hist);
+        registry.try_register(dem, atom.len()).unwrap();
+        registry.try_register(hist, atom.len()).unwrap();
 
         app.add_resource(atom);
         app.add_resource(neighbor);
@@ -2117,8 +2117,8 @@ mod tests {
             neighbor.neighbor_offsets = vec![0, 1, 1];
             neighbor.neighbor_indices = vec![1];
             let mut registry = AtomDataRegistry::new();
-            registry.register(dem);
-            registry.register(hist);
+            registry.try_register(dem, atom.len()).unwrap();
+            registry.try_register(hist, atom.len()).unwrap();
             app.add_resource(atom);
             app.add_resource(neighbor);
             app.add_resource(registry);
@@ -2191,8 +2191,8 @@ mod tests {
         neighbor.neighbor_indices = vec![1];
 
         let mut registry = AtomDataRegistry::new();
-        registry.register(dem);
-        registry.register(hist);
+        registry.try_register(dem, atom.len()).unwrap();
+        registry.try_register(hist, atom.len()).unwrap();
 
         let mt = make_material_table_jkr();
         app.add_resource(atom);
@@ -2251,8 +2251,8 @@ mod tests {
         neighbor.neighbor_indices = vec![1];
 
         let mut registry = AtomDataRegistry::new();
-        registry.register(dem);
-        registry.register(hist);
+        registry.try_register(dem, atom.len()).unwrap();
+        registry.try_register(hist, atom.len()).unwrap();
 
         app.add_resource(atom);
         app.add_resource(neighbor);
@@ -2303,8 +2303,8 @@ mod tests {
         neighbor.neighbor_indices = vec![1];
 
         let mut registry = AtomDataRegistry::new();
-        registry.register(dem);
-        registry.register(hist);
+        registry.try_register(dem, atom.len()).unwrap();
+        registry.try_register(hist, atom.len()).unwrap();
 
         app.add_resource(atom);
         app.add_resource(neighbor);
@@ -2355,8 +2355,8 @@ mod tests {
             neighbor.neighbor_offsets = vec![0, 1, 1];
             neighbor.neighbor_indices = vec![1];
             let mut registry = AtomDataRegistry::new();
-            registry.register(dem);
-            registry.register(hist);
+            registry.try_register(dem, atom.len()).unwrap();
+            registry.try_register(hist, atom.len()).unwrap();
             app.add_resource(atom);
             app.add_resource(neighbor);
             app.add_resource(registry);
@@ -2402,8 +2402,8 @@ mod tests {
         neighbor.neighbor_indices = vec![1];
 
         let mut registry = AtomDataRegistry::new();
-        registry.register(dem);
-        registry.register(hist);
+        registry.try_register(dem, atom.len()).unwrap();
+        registry.try_register(hist, atom.len()).unwrap();
 
         app.add_resource(atom);
         app.add_resource(neighbor);
@@ -2448,8 +2448,8 @@ mod tests {
         neighbor.neighbor_indices = vec![1];
 
         let mut registry = AtomDataRegistry::new();
-        registry.register(dem);
-        registry.register(hist);
+        registry.try_register(dem, atom.len()).unwrap();
+        registry.try_register(hist, atom.len()).unwrap();
 
         app.add_resource(atom);
         app.add_resource(neighbor);
@@ -2496,8 +2496,8 @@ mod tests {
         neighbor.neighbor_indices = vec![1];
 
         let mut registry = AtomDataRegistry::new();
-        registry.register(dem);
-        registry.register(hist);
+        registry.try_register(dem, atom.len()).unwrap();
+        registry.try_register(hist, atom.len()).unwrap();
 
         app.add_resource(atom);
         app.add_resource(neighbor);
@@ -2547,8 +2547,8 @@ mod tests {
         neighbor.neighbor_indices = vec![1];
 
         let mut registry = AtomDataRegistry::new();
-        registry.register(dem);
-        registry.register(hist);
+        registry.try_register(dem, atom.len()).unwrap();
+        registry.try_register(hist, atom.len()).unwrap();
 
         app.add_resource(atom);
         app.add_resource(neighbor);
@@ -2626,8 +2626,8 @@ mod tests {
         neighbor.neighbor_indices = vec![1];
 
         let mut registry = AtomDataRegistry::new();
-        registry.register(dem);
-        registry.register(hist);
+        registry.try_register(dem, atom.len()).unwrap();
+        registry.try_register(hist, atom.len()).unwrap();
 
         app.add_resource(atom);
         app.add_resource(neighbor);
@@ -2685,8 +2685,8 @@ mod tests {
             neighbor.neighbor_indices = vec![1];
 
             let mut registry = AtomDataRegistry::new();
-            registry.register(dem);
-            registry.register(hist);
+            registry.try_register(dem, atom.len()).unwrap();
+            registry.try_register(hist, atom.len()).unwrap();
 
             app.add_resource(atom);
             app.add_resource(neighbor);
@@ -2743,8 +2743,8 @@ mod tests {
         neighbor.neighbor_indices = vec![1];
 
         let mut registry = AtomDataRegistry::new();
-        registry.register(dem);
-        registry.register(hist);
+        registry.try_register(dem, atom.len()).unwrap();
+        registry.try_register(hist, atom.len()).unwrap();
 
         let mt = make_material_table_sds_rolling();
         let mu_r = mt.rolling_friction_ij[0][0];
@@ -2811,8 +2811,8 @@ mod tests {
         neighbor.neighbor_indices = vec![1];
 
         let mut registry = AtomDataRegistry::new();
-        registry.register(dem);
-        registry.register(hist);
+        registry.try_register(dem, atom.len()).unwrap();
+        registry.try_register(hist, atom.len()).unwrap();
 
         app.add_resource(atom);
         app.add_resource(neighbor);
@@ -2867,8 +2867,8 @@ mod tests {
             neighbor.neighbor_indices = vec![1];
 
             let mut registry = AtomDataRegistry::new();
-            registry.register(dem);
-            registry.register(hist);
+            registry.try_register(dem, atom.len()).unwrap();
+            registry.try_register(hist, atom.len()).unwrap();
 
             app.add_resource(atom);
             app.add_resource(neighbor);
@@ -2961,8 +2961,8 @@ mod tests {
         neighbor.neighbor_indices = vec![1];
 
         let mut registry = AtomDataRegistry::new();
-        registry.register(dem);
-        registry.register(hist);
+        registry.try_register(dem, atom.len()).unwrap();
+        registry.try_register(hist, atom.len()).unwrap();
 
         app.add_resource(atom);
         app.add_resource(neighbor);
@@ -3087,8 +3087,8 @@ mod tests {
         mt.build_pair_tables();
 
         let mut registry = AtomDataRegistry::new();
-        registry.register(dem);
-        registry.register(hist);
+        registry.try_register(dem, atom.len()).unwrap();
+        registry.try_register(hist, atom.len()).unwrap();
 
         app.add_resource(atom);
         app.add_resource(neighbor);
@@ -3167,8 +3167,8 @@ mod tests {
         neighbor.neighbor_indices = vec![1];
 
         let mut registry = AtomDataRegistry::new();
-        registry.register(dem);
-        registry.register(hist);
+        registry.try_register(dem, atom.len()).unwrap();
+        registry.try_register(hist, atom.len()).unwrap();
 
         app.add_resource(atom);
         app.add_resource(neighbor);
@@ -3225,8 +3225,8 @@ mod tests {
         neighbor.neighbor_indices = vec![1];
 
         let mut registry = AtomDataRegistry::new();
-        registry.register(dem);
-        registry.register(hist);
+        registry.try_register(dem, atom.len()).unwrap();
+        registry.try_register(hist, atom.len()).unwrap();
 
         app.add_resource(atom);
         app.add_resource(neighbor);
@@ -3291,8 +3291,8 @@ mod tests {
         neighbor.neighbor_indices = vec![1];
 
         let mut registry = AtomDataRegistry::new();
-        registry.register(dem);
-        registry.register(hist);
+        registry.try_register(dem, atom.len()).unwrap();
+        registry.try_register(hist, atom.len()).unwrap();
 
         app.add_resource(atom);
         app.add_resource(neighbor);
@@ -3345,8 +3345,8 @@ mod tests {
         neighbor.neighbor_indices = vec![1];
 
         let mut registry = AtomDataRegistry::new();
-        registry.register(dem);
-        registry.register(hist);
+        registry.try_register(dem, atom.len()).unwrap();
+        registry.try_register(hist, atom.len()).unwrap();
 
         // Use JKR material table (default adhesion_model = "jkr")
         app.add_resource(atom);
@@ -3394,8 +3394,8 @@ mod tests {
             neighbor.neighbor_offsets = vec![0, 1, 1];
             neighbor.neighbor_indices = vec![1];
             let mut registry = AtomDataRegistry::new();
-            registry.register(dem);
-            registry.register(hist);
+            registry.try_register(dem, atom.len()).unwrap();
+            registry.try_register(hist, atom.len()).unwrap();
             app.add_resource(atom);
             app.add_resource(neighbor);
             app.add_resource(registry);
@@ -3448,8 +3448,8 @@ mod tests {
             neighbor.neighbor_offsets = vec![0, 1, 1];
             neighbor.neighbor_indices = vec![1];
             let mut registry = AtomDataRegistry::new();
-            registry.register(dem);
-            registry.register(hist);
+            registry.try_register(dem, atom.len()).unwrap();
+            registry.try_register(hist, atom.len()).unwrap();
             app.add_resource(atom);
             app.add_resource(neighbor);
             app.add_resource(registry);
@@ -3502,8 +3502,8 @@ mod tests {
         neighbor.neighbor_offsets = vec![0, 1, 1];
         neighbor.neighbor_indices = vec![1];
         let mut registry = AtomDataRegistry::new();
-        registry.register(dem);
-        registry.register(hist);
+        registry.try_register(dem, atom.len()).unwrap();
+        registry.try_register(hist, atom.len()).unwrap();
 
         let mt = make_material_table();
         let e_eff = mt.e_eff_ij[0][0];
@@ -3579,8 +3579,8 @@ mod tests {
         neighbor.neighbor_offsets = vec![0, 1, 1];
         neighbor.neighbor_indices = vec![1];
         let mut registry = AtomDataRegistry::new();
-        registry.register(dem);
-        registry.register(hist);
+        registry.try_register(dem, atom.len()).unwrap();
+        registry.try_register(hist, atom.len()).unwrap();
 
         let mut app = App::new();
         app.add_resource(atom);
@@ -3660,8 +3660,8 @@ mod tests {
         neighbor.neighbor_offsets = vec![0, 1, 1];
         neighbor.neighbor_indices = vec![1];
         let mut registry = AtomDataRegistry::new();
-        registry.register(dem);
-        registry.register(hist);
+        registry.try_register(dem, atom.len()).unwrap();
+        registry.try_register(hist, atom.len()).unwrap();
 
         app.add_resource(atom);
         app.add_resource(neighbor);
