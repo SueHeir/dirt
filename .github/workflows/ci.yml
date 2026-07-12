@@ -40,6 +40,36 @@ env:
   DIRT_FEATURES: precision-double
 
 jobs:
+  ecosystem-head:
+    name: GRASS → SOIL → DIRT HEAD compatibility
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: dirt
+
+      # These clean main checkouts are intentionally passed as paths to the
+      # script below; Cargo's temporary patch prevents Cargo.lock from hiding
+      # a cross-tier API change behind an older git revision.
+      - uses: actions/checkout@v4
+        with:
+          repository: SueHeir/grass
+          ref: main
+          path: grass
+
+      - uses: actions/checkout@v4
+        with:
+          repository: SueHeir/soil
+          ref: main
+          path: soil
+
+      - name: Install Rust toolchain (stable)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Check compatible GRASS, SOIL, and DIRT heads
+        working-directory: dirt
+        run: ci/ecosystem-head-check.sh --grass ../grass --soil ../soil
+
   test:
     name: build + test + validation + clippy
     runs-on: ubuntu-latest
