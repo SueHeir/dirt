@@ -26,10 +26,23 @@ uses periodic lateral boundaries, an explicit gravity-settle stage, a measured
 normal-load qualification before it enables the 20-mm/s lower-wall drive, and
 records live lid reactions and solid fraction to `cell_history.csv`.
 
+**Current source-geometry gate — no campaign is runnable yet.** An independent
+volume audit of the declared 8,500-bead, 64-mm topology gives a represented
+solid fraction of 0.534 at the configured 50-mm initial lid gap.  Every
+digitized rubber-cord Fig. 7 experiment is at or below 0.380.  Because the
+configured servo begins above a falling bed and then compacts it, it cannot
+make that represented packing less dense. `run_case.py` therefore refuses to
+run the geometry instead of producing a misleading comparison. This is not a
+result or a calibration failure: the missing input is the paper's published
+annular-cell geometry/initial gap (and the mapping from overlapping DEM beads
+to physical cord volume). It must be recovered independently; changing the
+gap to fit Fig. 7 would be back-fitting and is prohibited.
+
 ```bash
 python3 examples/bench_guo2018_fiber_shear_cell/run_case.py \
   --pressure-pa 651 --width-mm 64 --output /tmp/guo-p651-w64 --ranks 8 --prepare-only
-# Omit --prepare-only to run DIRT; the gamma >= 0.5 case is intentionally long.
+# Omit --prepare-only only after the source-geometry gate is resolved; the
+# gamma >= 0.5 case is intentionally long.
 ```
 
 For the complete campaign, `run_campaign.py` writes a campaign manifest and a
@@ -81,12 +94,15 @@ predeclared state. This is provenance checking, not a substitute for retaining
 the full independently reproducible solver run.
 
 Digitization error, finite size, wall roughness, and representing rubber cord
-as bonded spheres remain limitations.  A passing gate supports this specified
-model-to-experiment comparison; it does not establish material calibration or
-general rubber-cord mechanics. Until a DIRT run supplies all six histories,
-there is no replication result or result graph to claim. The deterministic
-starting placement is a documented solver initial condition, not a claim that
-the paper's unreported packing microstate was recovered.
+as bonded spheres remain limitations.  In addition, the current Cartesian
+prototype is blocked on source geometry and bead-to-cord volume equivalence;
+it must not be presented as the paper's Schulze ring-shear geometry. A passing
+future gate supports only the specified model-to-experiment comparison, not
+material calibration or general rubber-cord mechanics. Until a DIRT run
+supplies all six histories, there is no replication result or result graph to
+claim. The deterministic starting placement is a documented solver initial
+condition, not a claim that the paper's unreported packing microstate was
+recovered.
 
 ```bash
 python3 examples/bench_guo2018_fiber_shear_cell/validate.py --self-test

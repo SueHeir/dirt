@@ -6,6 +6,7 @@ audited topology, writes a case-specific DIRT configuration, and invokes the
 solver.  It does not fabricate histories or call the acceptance validator.
 """
 import argparse
+import csv
 import hashlib
 import json
 import math
@@ -18,6 +19,33 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
 DEPTH_M = 0.036
+REFERENCE = HERE / "data" / "guo_2019_rubber_cord.csv"
+
+
+def geometry_gate(source: dict) -> None:
+    """Reject a protocol whose initial represented packing cannot reach Fig. 7.
+
+    This is a source/reference compatibility check, not a result calculation.
+    The force servo starts with no lid contact and can only compact the falling
+    bed, so it cannot turn an initially over-full represented cell into the
+    lower solid fractions reported by Guo et al.  The bound comes directly
+    from the independently digitized experimental Fig. 7 points.
+    """
+    with REFERENCE.open(newline="") as stream:
+        external_phi = [float(row["value"]) for row in csv.DictReader(stream)
+                        if row["source"] == "experiment" and row["material"] == "rubber_cord"
+                        and row["observable"] == "solid_fraction"]
+    if not external_phi:
+        raise ValueError("external Fig. 7 solid-fraction reference is missing")
+    phi0 = source["represented_solid_fraction_at_initial_lid"]
+    if phi0 > max(external_phi):
+        raise ValueError(
+            "source geometry is not comparable to Guo Fig. 7: represented "
+            f"solid fraction at the fixed {source['initial_lid_height_m']:.3f} m lid "
+            f"is {phi0:.3f}, above every external rubber-cord point "
+            f"(max {max(external_phi):.3f}). Refusing a solver run; recover the "
+            "published annular-cell geometry/initial gap instead of fitting it to these points."
+        )
 
 
 def decomposition(ranks: int) -> tuple[int, int]:
@@ -58,6 +86,7 @@ def materialize(pressure_pa: float, width_mm: int, output: Path, ranks: int) -> 
     path = output / "case.toml"
     path.write_text(config)
     source = json.loads((output / "source_parameters.json").read_text())
+    geometry_gate(source)
     (output / "case_manifest.json").write_text(json.dumps({
         "pressure_pa": pressure_pa,
         "width_mm": width_mm,

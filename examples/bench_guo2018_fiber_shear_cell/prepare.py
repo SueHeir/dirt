@@ -22,6 +22,10 @@ YOUNGS_MODULUS = 6.28e6
 TIMESTEP = 2.3e-7
 DEPTH = 0.036
 BED_HEIGHT = 0.045
+# This is the lid gap in config.toml.  It is deliberately an input to the
+# audit rather than a fitted quantity: the source topology must be capable of
+# reaching the external solid-fraction range before spending a long solver run.
+INITIAL_LID_HEIGHT = 0.050
 LANES = {64: (500, 2), 96: (750, 3)}
 
 
@@ -54,13 +58,21 @@ def write_case(width_mm, output):
         for fibre in range(fibres):
             for bead in range(BEADS - 1):
                 stream.write(f"{fibre * (BEADS - 1) + bead + 1} 1 {fibre * BEADS + bead} {fibre * BEADS + bead + 1}\n")
+    bead_volume = len(points) * 4.0 * math.pi * (DIAMETER / 2.0) ** 3 / 3.0
+    initial_cell_volume = width * DEPTH * INITIAL_LID_HEIGHT
     metadata = {"paper": "Guo et al., AIChE J. 65 (2019), doi:10.1002/aic.16397, Table 2",
                 "width_m": width, "depth_m": DEPTH, "n_fibres": fibres,
                 "n_atoms": len(points), "n_bonds": fibres * (BEADS - 1),
                 "bead_diameter_m": DIAMETER, "fibre_length_m": LENGTH,
                 "beads_per_fibre": BEADS, "bond_spacing_m": SPACING,
                 "density_kg_m3": DENSITY, "youngs_modulus_pa": YOUNGS_MODULUS,
-                "timestep_s": TIMESTEP}
+                "timestep_s": TIMESTEP,
+                # DIRT's current recorder sums the represented DEM spheres.
+                # This is not the physical cord-volume correction; retaining
+                # both quantities makes that modelling choice auditable.
+                "represented_bead_volume_m3": bead_volume,
+                "initial_lid_height_m": INITIAL_LID_HEIGHT,
+                "represented_solid_fraction_at_initial_lid": bead_volume / initial_cell_volume}
     (output / "source_parameters.json").write_text(json.dumps(metadata, indent=2) + "\n")
     return metadata
 
@@ -75,6 +87,12 @@ def audit(output):
     bonds = (output / "pack.bonds").read_text().splitlines()[0]
     if bonds != f'{metadata["n_bonds"]} bonds':
         raise ValueError("bond count disagrees with source topology")
+    expected_volume = metadata["n_atoms"] * 4.0 * math.pi * (metadata["bead_diameter_m"] / 2.0) ** 3 / 3.0
+    if not math.isclose(metadata["represented_bead_volume_m3"], expected_volume, rel_tol=1e-12):
+        raise ValueError("represented bead volume disagrees with source topology")
+    expected_phi = expected_volume / (metadata["width_m"] * DEPTH * metadata["initial_lid_height_m"])
+    if not math.isclose(metadata["represented_solid_fraction_at_initial_lid"], expected_phi, rel_tol=1e-12):
+        raise ValueError("initial represented solid fraction disagrees with source topology")
     return metadata
 
 
