@@ -38,6 +38,8 @@ python3 examples/bench_guo2018_fiber_shear_cell/reconstruction_readiness.py \
 
 `AUDIT OK` means only that this independent transcription and the topology
 constants agree.  It is explicitly not a physics result or a replication pass.
+This ledger and its audit were authored with Codex AI assistance; the cited
+primary pages still require independent human review.
 
 ## Execution and validation boundary
 
