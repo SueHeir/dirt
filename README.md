@@ -15,11 +15,14 @@ that DIRT shares its state, lifecycle, and schedule model with the rest of the
 GRASS ecosystem.
 
 Run DIRT as a standalone DEM application, and add or replace its DEM physics as
-ordinary systems. The same underlying GRASS and SOIL composition model is a
-foundation for future multi-solver work, but DIRT does not yet ship or validate a
-cross-substrate coupling case. Such a case belongs in a dedicated
-`dev_couple_*` repository, where its exchange and validation can be assessed on
-their own terms.
+ordinary systems. Cross-substrate cases live in dedicated `dev_couple_*` repos,
+where the exchange and validation can be assessed independently. The current
+DEM-CFD repo includes a resolved bonded-fiber case using DIRT and an unresolved
+SOIL-particle path; see
+[`cfd_ibm_fiber`](https://github.com/SueHeir/dev_couple_dem_cfd/tree/main/examples/cfd_ibm_fiber)
+and the distributed
+[`routed_trajectory_3x2`](https://github.com/SueHeir/dev_couple_dem_cfd/blob/main/crates/dem_cfd/tests/routed_trajectory_3x2.rs)
+ownership-crossing test.
 
 DIRT is a ground-up Rust reimplementation building on roughly two years of prior
 DEM development (formerly MDDEM).
@@ -65,12 +68,18 @@ DIRT is organized around a common composition layer:
 - SOIL owns reusable parallel particle infrastructure.
 - DIRT owns DEM physics.
 - GRASS owns scheduling, lifecycle, I/O, and solver composition.
-- A future dedicated coupling can own the exchange between participating solvers.
+- A dedicated coupling repo owns the exchange between participating solvers.
 
 Validation remains essential evidence for individual DEM claims, but it is not
 evidence of an unbuilt coupling capability. The architecture keeps the relevant
 solver seams explicit; whether they support a particular coupling remains to be
 demonstrated in a dedicated, validated case.
+
+In those coupled runs, DIRT remains an ordinary App. The parent coupling code
+reads public resources between ticks (or named exported scheduler seams); DIRT
+systems do not reach sideways into another child App. A TOML topology can assign
+roles and ranks to the same executable, so local and MPI layouts do not require
+separate solver programs.
 
 > Prefer config files to code? A prebuilt driver runs the shipped scenarios and
 > parameter sweeps from TOML with no recompile — see
