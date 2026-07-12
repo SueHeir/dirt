@@ -8,10 +8,10 @@ periodic x/z boundaries, a vertically mobile loaded lid, and 4/2-mm lid/base
 blades.  Conflating the apparatus with this published DEM reduction was the
 previous branch's central source error.
 
-This checker is intentionally a protocol gate, not a result gate.  It permits
-solver execution only after the configured numerical boundary conditions are
-source-compatible; it cannot turn a topology audit or a solver history into a
-successful Fig. 6/7 replication.
+This checker is intentionally a protocol gate, not a result gate. It cannot
+turn a topology audit or a solver history into a successful Fig. 6/7
+replication. The primary source specifies walls made from rigidly connected
+spheres; smooth finite planes are not an equivalent rough-wall model.
 """
 import argparse
 import json
@@ -76,6 +76,10 @@ def require_published_control_cell(config: Path) -> None:
                          "upper_blade_pos": "upper_plate", "upper_blade_neg": "upper_plate"}
     if any(by_name.get(name, {}).get("assembly") != assembly for name, assembly in expected_assembly.items()):
         failures.append("blade arrays must be rigidly attached to their translating or servo-controlled plate")
+    if any(wall.get("type") == "plane" for wall in walls):
+        failures.append(
+            "the source uses rigidly connected sphere walls and blades; DIRT's smooth plane-wall assembly is not source-equivalent"
+        )
     if failures:
         raise RuntimeError("BLOCKED: current DIRT input is not the published periodic control cell: " + "; ".join(failures))
 
@@ -101,6 +105,10 @@ def main() -> None:
 
 
 class SourceContractTests(unittest.TestCase):
+    def test_rejects_smooth_plane_surrogate_for_sphere_built_walls(self):
+        with self.assertRaisesRegex(RuntimeError, "rigidly connected sphere walls"):
+            require_published_control_cell(HERE / "config.toml")
+
     def test_rejects_a_blade_array_that_is_not_materialized_in_solver_input(self):
         """A four-template input must not be accepted as the 32-face source cell."""
         text = (HERE / "config.toml").read_text().replace("repeat_x_count = 8", "repeat_x_count = 1", 1)

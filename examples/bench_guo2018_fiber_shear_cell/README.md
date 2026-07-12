@@ -22,28 +22,23 @@ python3 examples/bench_guo2018_fiber_shear_cell/source_contract.py --verify-doi 
 
 ## Execution and validation boundary
 
-`dirt_wall` supports rigid named plane-wall assemblies: follower planes
-translate with the displacement and velocity of one driver, including a
-force-servo driver.  The four blade-face entries in `config.toml` declare
-eight 8-mm-pitch copies each; the generic input loader materializes all 32
-finite faces before integration. Lower blades follow the translating base and
-upper blades follow the mobile lid. This is a wall geometry/motion facility,
-not a fitted rheology closure.
+The primary paper states that its plates and blades are *rigidly connected
+spheres*. The current DIRT input instead uses smooth finite plane walls. A
+plane array can reproduce nominal blade locations but not the reported rough
+wall contact topology, so the source-contract checker blocks solver execution.
+
+The missing capability is a rigid assembly of wall spheres whose lower plate
+can translate and whose upper plate can be force-servoed while retaining the
+individual sphere contacts and reporting the plate resultant. That must exist
+and be independently checked before a Fig. 6/7 campaign can be run.
 
 ```bash
-python3 examples/bench_guo2018_fiber_shear_cell/run_campaign.py --output /tmp/guo-campaign --ranks 1
-python3 examples/bench_guo2018_fiber_shear_cell/validate.py \
-  --case 651:64:/tmp/guo-campaign/p651_w64 \
-  --case 1735:64:/tmp/guo-campaign/p1735_w64 \
-  --case 3470:64:/tmp/guo-campaign/p3470_w64 \
-  --case 651:96:/tmp/guo-campaign/p651_w96 \
-  --case 1735:96:/tmp/guo-campaign/p1735_w96 \
-  --case 3470:96:/tmp/guo-campaign/p3470_w96
+python3 examples/bench_guo2018_fiber_shear_cell/source_contract.py --require-runnable
 ```
 
-No solver history, comparison plot, or replication PASS is committed by this
-revision.  The validator accepts only solver-receipted histories with measured
-normal-load qualification, a post-drive steady-strain window, all three loads,
-and the independent Fig. 6/7 digitization plus the 64/96-mm sensitivity check.
-The authorship assistance for this implementation is AI-assisted; the absence
-of a completed full campaign is a validation limit, not evidence of agreement.
+This command is expected to fail until that representation exists. No solver
+history, comparison plot, or replication PASS is committed. The retained
+validator is deliberately fail-closed and accepts only solver-receipted
+histories with measured normal-load qualification, a post-drive steady-strain
+window, all three loads, and the independent Fig. 6/7 digitization plus the
+64/96-mm sensitivity check.
