@@ -2051,9 +2051,10 @@ pub fn dem_rate_insert(
     }
 
     // Base tag must be globally consistent across ranks. (No all_reduce_max in
-    // the backend, so reduce -max with min and negate.) Each attempt this step
-    // consumes one tag slot regardless of acceptance so tags stay unique across
-    // ranks without any extra collective.
+    // the backend, so reduce -max with min and negate.) Tags advance only for
+    // accepted candidates, matching immediate insertion. Acceptance is globally
+    // replicated, so this remains rank-count invariant without another
+    // collective and rejected attempts cannot leave gaps in the accepted stream.
     let local_max_tag = if atom.tag.is_empty() {
         -1.0
     } else {
@@ -2131,14 +2132,13 @@ pub fn dem_rate_insert(
         let max_attempts = to_insert * 100;
 
         while inserted < to_insert && attempts < max_attempts {
-            // Every attempt consumes one tag slot so tags stay globally unique.
-            let tag = tag_cursor;
-            tag_cursor = tag_cursor.wrapping_add(1);
             attempts += 1;
 
             let Some(candidate) = candidates.next(prepared) else {
                 continue;
             };
+            let tag = tag_cursor;
+            tag_cursor = tag_cursor.wrapping_add(1);
 
             // Store only if this rank owns the position.
             if owns_position(&domain, &candidate.pos) {
@@ -2297,12 +2297,11 @@ mod tests {
         mut atom: Atom,
         registry: AtomDataRegistry,
         domain: Domain,
-        seed: u64,
-    ) -> (Atom, usize, u32) {
+        config: InsertConfig,
+    ) -> (Atom, usize, u32, CommState) {
         let mut materials = MaterialTable::new();
         let _ = materials.add_material("glass", 8.7e9, 0.3, 0.9, 0.5, 0.0, 0.0);
         materials.build_pair_tables();
-        let config = rate_config(seed);
         let prepared = prepare_random_insert(
             &config,
             &materials,
@@ -2338,7 +2337,67 @@ mod tests {
             .get::<LateProbe>()
             .map_or(0, |probe| probe.rows.len());
         let inserted = app.get_resource_ref::<RateInsertState>().unwrap().entries[0].total_inserted;
-        (atom, late_rows, inserted)
+        let comm_state = app.get_resource_ref::<CurrentState<CommState>>().unwrap().0;
+        (atom, late_rows, inserted, comm_state)
+    }
+
+    fn run_immediate_once(domain: Domain, config: &InsertConfig) -> Atom {
+        // Exercise the production setup system through App scheduling, with the
+        // same TOML-shaped StageOverrides used by a normal first run stage.
+        let mut insert = toml::Table::new();
+        insert.insert("source".into(), toml::Value::String("random".into()));
+        insert.insert(
+            "material".into(),
+            toml::Value::String(config.material.clone().unwrap()),
+        );
+        insert.insert(
+            "count".into(),
+            toml::Value::Integer(config.count.unwrap().into()),
+        );
+        insert.insert(
+            "radius".into(),
+            toml::Value::Float(match config.radius.as_ref().unwrap() {
+                RadiusSpec::Fixed(radius) => *radius,
+                other => panic!("test requires a fixed radius, got {other:?}"),
+            }),
+        );
+        insert.insert(
+            "density".into(),
+            toml::Value::Float(config.density.unwrap()),
+        );
+        insert.insert(
+            "seed".into(),
+            toml::Value::Integer(config.seed.unwrap().try_into().unwrap()),
+        );
+        let mut particles = toml::Table::new();
+        particles.insert(
+            "insert".into(),
+            toml::Value::Array(vec![toml::Value::Table(insert)]),
+        );
+        let mut stage_table = toml::Table::new();
+        stage_table.insert("particles".into(), toml::Value::Table(particles));
+
+        let mut materials = MaterialTable::new();
+        let _ = materials.add_material("glass", 8.7e9, 0.3, 0.9, 0.5, 0.0, 0.0);
+        materials.build_pair_tables();
+        let mut app = App::new();
+        app.add_resource(CommResource(Box::new(soil_core::SingleProcessComm::new())));
+        app.add_resource(domain);
+        app.add_resource(Atom::new());
+        app.add_resource(test_dem_registry());
+        app.add_resource(materials);
+        app.add_resource(StageOverrides { table: stage_table });
+        app.add_resource(RunConfig::default());
+        app.add_resource(SchedulerManager::default());
+        app.add_resource(RateInsertState::default());
+        app.add_update_system(
+            dem_insert_atoms,
+            ParticleSimScheduleSet::PreInitialIntegration,
+        );
+        app.organize_systems();
+        app.run();
+        let atom = app.get_resource_ref::<Atom>().unwrap().clone();
+        atom
     }
 
     fn unit_domain(low_x: f64, high_x: f64) -> Domain {
@@ -2365,9 +2424,8 @@ mod tests {
             .expect("well-formed insertion should prepare once for both schedules");
 
         // A rate event at step zero / entry zero uses the configured seed, exactly
-        // like immediate insertion.  The shared generator must therefore produce
-        // bit-identical accepted particles; tags remain consecutive under each
-        // schedule's documented policy when no candidates are rejected.
+        // like immediate insertion. The shared generator must therefore produce
+        // bit-identical accepted particles.
         let mut immediate = CandidateGenerator::new(&prepared, &domain, prepared.seed, 6);
         let mut rate = CandidateGenerator::new(&prepared, &domain, prepared.seed, 6);
         let immediate_rows: Vec<_> = (10..16)
@@ -2400,6 +2458,97 @@ mod tests {
         let error = prepare_random_insert(&config, &materials, &unit_domain(0.0, 1.0), "test")
             .expect_err("prepared insertion must reject incomplete config");
         assert!(error.contains("requires 'density'"));
+    }
+
+    #[test]
+    fn production_immediate_and_rate_match_accepted_rows_tags_after_rejection() {
+        // Find a fixed seed with an overlap rejection between two accepted
+        // candidates. This specifically guards the former rate-only tag gap:
+        // both actual scheduled systems must assign tags after acceptance.
+        let domain = unit_domain(0.0, 1.0);
+        let mut immediate_config = rate_config(0);
+        immediate_config.count = Some(2);
+        immediate_config.rate = None;
+        immediate_config.rate_interval = None;
+        immediate_config.rate_start = None;
+        immediate_config.rate_end = None;
+        immediate_config.rate_limit = None;
+        immediate_config.radius = Some(RadiusSpec::Fixed(0.25));
+        immediate_config.region = None;
+
+        let mut materials = MaterialTable::new();
+        let _ = materials.add_material("glass", 8.7e9, 0.3, 0.9, 0.5, 0.0, 0.0);
+        materials.build_pair_tables();
+        let seed = (0..10_000u64)
+            .find(|&seed| {
+                immediate_config.seed = Some(seed);
+                let prepared =
+                    prepare_random_insert(&immediate_config, &materials, &domain, "test insertion")
+                        .unwrap();
+                let mut candidates = CandidateGenerator::new(&prepared, &domain, seed, 2);
+                candidates.next(&prepared).is_some()
+                    && candidates.next(&prepared).is_none()
+                    && candidates.next(&prepared).is_some()
+            })
+            .expect("a bounded fixed-radius stream should expose an overlap rejection");
+        immediate_config.seed = Some(seed);
+
+        let immediate = run_immediate_once(unit_domain(0.0, 1.0), &immediate_config);
+        assert_eq!(immediate.tag, vec![0, 1]);
+
+        let mut rate_config = immediate_config.clone();
+        rate_config.count = None;
+        rate_config.rate = Some(2);
+        rate_config.rate_interval = Some(1);
+        rate_config.rate_start = Some(0);
+        rate_config.rate_end = Some(0);
+        rate_config.rate_limit = Some(2);
+        let (rate, _, _, serial_comm_state) = run_rate_once(
+            Atom::new(),
+            test_dem_registry(),
+            unit_domain(0.0, 1.0),
+            rate_config.clone(),
+        );
+        assert_eq!(rate.tag, vec![0, 1]);
+        assert_eq!(serial_comm_state, CommState::FullRebuild);
+        assert_eq!(
+            immediate.tag.iter().zip(&immediate.pos).collect::<Vec<_>>(),
+            rate.tag.iter().zip(&rate.pos).collect::<Vec<_>>(),
+            "the scheduled immediate and rate paths must retain the same accepted tag/row stream"
+        );
+
+        // The rate system's replicated acceptance stream must still partition
+        // exactly once across two half-open ownership domains.
+        let (low, _, _, low_comm_state) = run_rate_once(
+            Atom::new(),
+            test_dem_registry(),
+            unit_domain(0.0, 0.5),
+            rate_config.clone(),
+        );
+        let (high, _, _, high_comm_state) = run_rate_once(
+            Atom::new(),
+            test_dem_registry(),
+            unit_domain(0.5, 1.0),
+            rate_config,
+        );
+        assert_eq!(low_comm_state, serial_comm_state);
+        assert_eq!(high_comm_state, serial_comm_state);
+        let mut partitioned: Vec<_> = low
+            .tag
+            .iter()
+            .zip(&low.pos)
+            .chain(high.tag.iter().zip(&high.pos))
+            .map(|(tag, pos)| (*tag, *pos))
+            .collect();
+        let mut serial: Vec<_> = rate
+            .tag
+            .iter()
+            .zip(&rate.pos)
+            .map(|(tag, pos)| (*tag, *pos))
+            .collect();
+        partitioned.sort_by_key(|row| row.0);
+        serial.sort_by_key(|row| row.0);
+        assert_eq!(partitioned, serial);
     }
 
     #[test]
@@ -2447,22 +2596,38 @@ mod tests {
             .try_register(LateProbe::default(), atom.len())
             .unwrap();
 
-        let (atom, late_rows, inserted) =
-            run_rate_once(atom, registry, unit_domain(0.0, 1.0), 20260712);
+        let (atom, late_rows, inserted, _) =
+            run_rate_once(atom, registry, unit_domain(0.0, 1.0), rate_config(20260712));
         assert_eq!(inserted, 8);
         assert_eq!((atom.nlocal, atom.nghost, atom.len()), (9, 0, 9));
         assert_eq!(atom.tag[0], 41, "the local prefix survives ghost removal");
         assert_eq!(late_rows, atom.len());
 
-        let (_, _, full_inserted) =
-            run_rate_once(Atom::new(), test_dem_registry(), unit_domain(0.0, 1.0), 99);
+        let (_, _, full_inserted, _) = run_rate_once(
+            Atom::new(),
+            test_dem_registry(),
+            unit_domain(0.0, 1.0),
+            rate_config(99),
+        );
         assert_eq!(full_inserted, 8);
-        let (low, _, _) =
-            run_rate_once(Atom::new(), test_dem_registry(), unit_domain(0.0, 0.5), 99);
-        let (high, _, _) =
-            run_rate_once(Atom::new(), test_dem_registry(), unit_domain(0.5, 1.0), 99);
-        let (full, _, _) =
-            run_rate_once(Atom::new(), test_dem_registry(), unit_domain(0.0, 1.0), 99);
+        let (low, _, _, _) = run_rate_once(
+            Atom::new(),
+            test_dem_registry(),
+            unit_domain(0.0, 0.5),
+            rate_config(99),
+        );
+        let (high, _, _, _) = run_rate_once(
+            Atom::new(),
+            test_dem_registry(),
+            unit_domain(0.5, 1.0),
+            rate_config(99),
+        );
+        let (full, _, _, _) = run_rate_once(
+            Atom::new(),
+            test_dem_registry(),
+            unit_domain(0.0, 1.0),
+            rate_config(99),
+        );
         let mut partitioned: Vec<_> = low
             .tag
             .iter()
