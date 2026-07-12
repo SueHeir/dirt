@@ -70,12 +70,12 @@ CONFIG="$TMP/config.toml"
 METADATA="$TMP/metadata.json"
 
 {
-  echo '[patch."ssh://git@192.168.0.170:2222/SueHeir/grass.git"]'
+  echo '[patch."https://github.com/SueHeir/grass.git"]'
   for crate in grass_app grass_derive grass_io grass_mpi grass_scheduler; do
     printf '%s = { path = "%s" }\n' "$crate" "$GRASS_DIR/crates/$crate"
   done
   echo
-  echo '[patch."ssh://git@192.168.0.170:2222/SueHeir/soil.git"]'
+  echo '[patch."https://github.com/SueHeir/soil.git"]'
   for crate in soil_core soil_deform soil_derive soil_fixes soil_print soil_verlet; do
     printf '%s = { path = "%s" }\n' "$crate" "$SOIL_DIR/crates/$crate"
   done
