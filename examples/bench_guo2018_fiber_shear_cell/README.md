@@ -22,7 +22,22 @@ history, comparison plot, or replication PASS is committed.
 python3 examples/bench_guo2018_fiber_shear_cell/source_contract.py --verify-doi
 python3 examples/bench_guo2018_fiber_shear_cell/evidence_contract.py --self-test
 python3 examples/bench_guo2018_fiber_shear_cell/source_geometry_audit.py --verify
+python3 examples/bench_guo2018_fiber_shear_cell/reconstruction_readiness.py --verify
 ```
+
+`data/reconstruction_ledger.json` is a separate, page-receipted transcription
+of the direct Table-2/cell facts used by the candidate.  Its audit checks those
+facts against `prepare.py`, marks the 96-mm/750-fibre input as a derived
+sensitivity choice, and reports the missing body inputs without turning a
+default into source evidence.  Given the local primary artifact, run:
+
+```bash
+python3 examples/bench_guo2018_fiber_shear_cell/reconstruction_readiness.py \
+  --verify --source-pdf /path/to/guo-aic-16397.pdf
+```
+
+`AUDIT OK` means only that this independent transcription and the topology
+constants agree.  It is explicitly not a physics result or a replication pass.
 
 ## Execution and validation boundary
 
