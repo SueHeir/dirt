@@ -186,8 +186,6 @@ fn make_plane_walls(sc: &ScenarioCfg) -> Walls {
         normal_z: 0.0,
         material_index: 0,
         name: None,
-        assembly: None,
-        assembly_driver: false,
         bound_x_low: f64::NEG_INFINITY,
         bound_x_high: f64::INFINITY,
         bound_y_low: f64::NEG_INFINITY,
@@ -198,7 +196,6 @@ fn make_plane_walls(sc: &ScenarioCfg) -> Walls {
         motion: WallMotion::Static,
         origin: [sc.wall_radius, 0.0, 0.0],
         force_accumulator: 0.0,
-        force_vector: [0.0; 3],
         temperature: None,
     });
     walls.active.push(true);
