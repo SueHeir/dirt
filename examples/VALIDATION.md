@@ -24,18 +24,19 @@ its curve-level check is still against the rigid-body/Maw theory those experimen
 points confirmed, because the paper's per-point scatter lives only in paywalled
 figures.
 
-## `bench_guo2018_fiber_shear_cell` — pending external-reference replication
+## `bench_guo2018_fiber_shear_cell` — source audit; replication blocked
 
 The Guo rubber-cord directory hash-binds the primary paper and its approximate
 manual Fig. 6/7 digitization. The paper's numerical setup is periodic and
-planar—not the experimental Schulze-ring annulus—but it builds walls and blades
-from rigidly connected spheres. The retained DIRT draft uses plane walls, so it
-is deliberately blocked as non-equivalent and is not a Guo simulation. A
-completed result must first implement and independently exercise the
-sphere-built assembly, then supply six solver-receipted histories, measured
-normal-load qualification, a post-drive steady window, and two Fig. 6/7
-comparisons at three loads plus a 64/96-mm sensitivity check. No solver result,
-figure, or PASS is committed yet.
+planar—not the experimental Schulze-ring annulus—and builds walls and blades
+from rigidly connected spheres under a gravity-weighted upper body. Its
+wall-sphere diameter/layout and upper-body mass are not reported, so this
+directory intentionally contains only source and candidate-topology audits,
+not a DIRT solver draft. A completed result requires citable recovery of those
+inputs, an independently exercised sphere-built gravity-loaded assembly, six
+solver-receipted histories, measured normal-load qualification, a post-drive
+steady window, and two Fig. 6/7 comparisons at three loads plus a 64/96-mm
+sensitivity check. No solver result, figure, or PASS is committed.
 
 ## `material_pair_table_validation` — typed Material compatibility
 

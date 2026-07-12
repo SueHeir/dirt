@@ -163,7 +163,7 @@ use serde::Deserialize;
 
 use dirt_atom::{DemAtom, MaterialTable, SQRT_5_6};
 use soil_core::region::Region;
-use soil_core::{Accum, Atom, AtomDataRegistry, CommResource, Config, ParticleSimScheduleSet};
+use soil_core::{Accum, Atom, AtomDataRegistry, Config, ParticleSimScheduleSet};
 
 fn default_neg_inf() -> f64 {
     f64::NEG_INFINITY
@@ -307,22 +307,6 @@ pub struct WallDef {
     /// and [`Walls::activate_by_name`].
     #[serde(default)]
     pub name: Option<String>,
-    /// Optional rigid assembly identifier for a plane wall.  Members follow
-    /// the displacement and velocity of the single `assembly_driver` plane.
-    #[serde(default)]
-    pub assembly: Option<String>,
-    /// Marks the plane whose motion drives an [`WallDef::assembly`].
-    #[serde(default)]
-    pub assembly_driver: bool,
-    /// Number of equally spaced copies of a finite plane wall along x.
-    ///
-    /// This is evaluated while reading the input, so a repeated wall is part
-    /// of the solver topology rather than benchmark-side runtime setup.
-    #[serde(default = "default_repeat_count")]
-    pub repeat_x_count: usize,
-    /// X spacing in metres between copies of a repeated finite plane wall.
-    #[serde(default)]
-    pub repeat_x_pitch: f64,
     /// Lower X bound for the plane wall's active region (default: −∞).
     #[serde(default = "default_neg_inf")]
     pub bound_x_low: f64,
@@ -358,14 +342,9 @@ pub struct WallDef {
     pub temperature: Option<f64>,
 }
 
-fn default_repeat_count() -> usize {
-    1
-}
-
 // ── Runtime types ───────────────────────────────────────────────────────────
 
 /// Wall motion mode at runtime (plane walls only).
-#[derive(Clone)]
 pub enum WallMotion {
     /// Wall is stationary.
     Static,
@@ -406,7 +385,6 @@ pub enum WallMotion {
 /// The signed distance from the particle center to the wall plane is
 /// `dot(pos - point, normal)`. Overlap is `delta = radius - distance`.
 /// Force is applied only when `delta > 0` (or within JKR adhesion range).
-#[derive(Clone)]
 pub struct WallPlane {
     /// Current X-coordinate of a point on the plane (updated by motion).
     pub point_x: f64,
@@ -424,10 +402,6 @@ pub struct WallPlane {
     pub material_index: usize,
     /// Optional name for runtime enable/disable.
     pub name: Option<String>,
-    /// Rigid assembly membership, if configured.
-    pub assembly: Option<String>,
-    /// Whether this plane supplies the assembly motion.
-    pub assembly_driver: bool,
     /// Lower X bound of the wall's active region.
     pub bound_x_low: f64,
     /// Upper X bound of the wall's active region.
@@ -449,12 +423,6 @@ pub struct WallPlane {
     /// Accumulated scalar contact force this timestep (along normal),
     /// used by the servo controller to compute the feedback error.
     pub force_accumulator: f64,
-    /// Vector contact force exerted by this wall on particles this timestep.
-    ///
-    /// Unlike [`Self::force_accumulator`], this retains tangential components
-    /// and is therefore suitable for a wall-shear measurement. It is reset in
-    /// the same pre-force pass as the scalar servo feedback force.
-    pub force_vector: [f64; 3],
     /// Wall temperature in K (None = no wall heat transfer).
     pub temperature: Option<f64>,
 }
@@ -526,7 +494,6 @@ pub struct WallCylinder {
 ///
 /// For `inside = true`, the normal points inward (toward the center).
 /// For `inside = false`, the normal points outward (away from the center).
-#[derive(Clone)]
 pub struct WallSphere {
     /// Sphere center `[x, y, z]` (meters).
     pub center: [f64; 3],
@@ -539,19 +506,8 @@ pub struct WallSphere {
     pub material_index: usize,
     /// Optional name for runtime enable/disable.
     pub name: Option<String>,
-    /// Translational velocity of this rigid wall sphere.  This is subtracted
-    /// from the particle contact velocity, so moving sphere-built tooling has
-    /// the same dissipative and tangential-contact semantics as moving planes.
-    pub velocity: [f64; 3],
-    /// Optional identifier of a rigid multi-sphere assembly.  The wall module
-    /// does not prescribe a controller; an application may translate all
-    /// members as one constrained body.
-    pub assembly: Option<String>,
     /// Accumulated scalar contact force this timestep.
     pub force_accumulator: f64,
-    /// Vector contact force exerted by this sphere on particles this step.
-    /// The opposite of the sum over an assembly is its measured reaction.
-    pub force_vector: [f64; 3],
     /// Wall temperature in K (None = no wall heat transfer).
     pub temperature: Option<f64>,
 }
@@ -845,10 +801,7 @@ impl Plugin for WallPlugin {
                             inside,
                             material_index: mat_idx,
                             name: w.name.clone(),
-                            velocity: w.velocity.unwrap_or([0.0; 3]),
-                            assembly: w.assembly.clone(),
                             force_accumulator: 0.0,
-                            force_vector: [0.0; 3],
                             temperature: w.temperature,
                         });
                     }
@@ -906,44 +859,27 @@ impl Plugin for WallPlugin {
                             (WallMotion::Static, [0.0; 3])
                         };
 
-                        let repeat_count = w.repeat_x_count;
-                        if repeat_count == 0 {
-                            panic!("plane wall repeat_x_count must be at least one");
-                        }
-                        for copy in 0..repeat_count {
-                            let offset = copy as f64 * w.repeat_x_pitch;
-                            let name = w.name.as_ref().map(|name| {
-                                if repeat_count == 1 {
-                                    name.clone()
-                                } else {
-                                    format!("{name}_{copy}")
-                                }
-                            });
-                            planes.push(WallPlane {
-                                point_x: w.point_x + offset,
-                                point_y: w.point_y,
-                                point_z: w.point_z,
-                                normal_x: nx,
-                                normal_y: ny,
-                                normal_z: nz,
-                                material_index: mat_idx,
-                                name,
-                                assembly: w.assembly.clone(),
-                                assembly_driver: w.assembly_driver,
-                                bound_x_low: w.bound_x_low + offset,
-                                bound_x_high: w.bound_x_high + offset,
-                                bound_y_low: w.bound_y_low,
-                                bound_y_high: w.bound_y_high,
-                                bound_z_low: w.bound_z_low,
-                                bound_z_high: w.bound_z_high,
-                                velocity,
-                                motion: motion.clone(),
-                                origin: [w.point_x + offset, w.point_y, w.point_z],
-                                force_accumulator: 0.0,
-                                force_vector: [0.0; 3],
-                                temperature: w.temperature,
-                            });
-                        }
+                        planes.push(WallPlane {
+                            point_x: w.point_x,
+                            point_y: w.point_y,
+                            point_z: w.point_z,
+                            normal_x: nx,
+                            normal_y: ny,
+                            normal_z: nz,
+                            material_index: mat_idx,
+                            name: w.name.clone(),
+                            bound_x_low: w.bound_x_low,
+                            bound_x_high: w.bound_x_high,
+                            bound_y_low: w.bound_y_low,
+                            bound_y_high: w.bound_y_high,
+                            bound_z_low: w.bound_z_low,
+                            bound_z_high: w.bound_z_high,
+                            velocity,
+                            motion,
+                            origin: [w.point_x, w.point_y, w.point_z],
+                            force_accumulator: 0.0,
+                            temperature: w.temperature,
+                        });
                     }
                     other => {
                         eprintln!(
@@ -1098,32 +1034,17 @@ fn validate_wall_plugin_config(app: &mut App) -> Result<(), AppError> {
 ///
 /// Runs in [`ParticleSimScheduleSet::PreInitialIntegration`] so walls are moved
 /// *before* the integration step each timestep. Advances `walls.time` by `dt`.
-pub fn wall_move(mut walls: ResMut<Walls>, atoms: Res<Atom>, comm: Option<Res<CommResource>>) {
+pub fn wall_move(mut walls: ResMut<Walls>, atoms: Res<Atom>) {
     let dt = atoms.dt;
     let time = walls.time;
 
     let nplanes = walls.planes.len();
-    let mut assembly_displacements = std::collections::HashMap::new();
     for idx in 0..nplanes {
         if !walls.active[idx] {
             continue;
         }
 
-        // A servo target is a physical force on the complete wall, not a
-        // per-rank force.  In a decomposed domain each rank owns only part of
-        // the particle contacts, while every rank owns the same wall geometry.
-        // Reduce before updating the common geometry so all ranks apply the
-        // same feedback velocity.  `None` keeps focused unit tests, which
-        // construct a wall without a communicator, serial by construction.
-        let local_force = walls.planes[idx].force_accumulator;
-        let global_force = if matches!(walls.planes[idx].motion, WallMotion::Servo { .. }) {
-            comm.as_ref()
-                .map_or(local_force, |c| c.all_reduce_sum_f64(local_force))
-        } else {
-            local_force
-        };
         let wall = &mut walls.planes[idx];
-        let before = [wall.point_x, wall.point_y, wall.point_z];
         match wall.motion {
             WallMotion::Static => {}
             WallMotion::ConstantVelocity => {
@@ -1153,7 +1074,7 @@ pub fn wall_move(mut walls: ResMut<Walls>, atoms: Res<Atom>, comm: Option<Res<Co
                 max_velocity,
                 gain,
             } => {
-                let error = target_force - global_force;
+                let error = target_force - wall.force_accumulator;
                 let vel_mag = (gain * error).clamp(-max_velocity, max_velocity);
                 wall.velocity = [
                     vel_mag * wall.normal_x,
@@ -1164,60 +1085,6 @@ pub fn wall_move(mut walls: ResMut<Walls>, atoms: Res<Atom>, comm: Option<Res<Co
                 wall.point_y += wall.velocity[1] * dt;
                 wall.point_z += wall.velocity[2] * dt;
             }
-        }
-        if wall.assembly_driver {
-            if let Some(assembly) = &wall.assembly {
-                assembly_displacements.insert(
-                    assembly.clone(),
-                    (
-                        [
-                            wall.point_x - before[0],
-                            wall.point_y - before[1],
-                            wall.point_z - before[2],
-                        ],
-                        wall.velocity,
-                    ),
-                );
-            }
-        }
-    }
-
-    // A blade, baffle, or other finite plane is a part of its parent plate,
-    // not an independently integrated wall.  Translate its contact point and
-    // finite active bounds by the driver's actual displacement (including a
-    // servo displacement) so the whole assembly stays rigid.
-    for wall in &mut walls.planes {
-        if wall.assembly_driver {
-            continue;
-        }
-        let Some(assembly) = &wall.assembly else {
-            continue;
-        };
-        let Some((delta, velocity)) = assembly_displacements.get(assembly) else {
-            continue;
-        };
-        wall.point_x += delta[0];
-        wall.point_y += delta[1];
-        wall.point_z += delta[2];
-        wall.bound_x_low += delta[0];
-        wall.bound_x_high += delta[0];
-        wall.bound_y_low += delta[1];
-        wall.bound_y_high += delta[1];
-        wall.bound_z_low += delta[2];
-        wall.bound_z_high += delta[2];
-        wall.velocity = *velocity;
-    }
-
-    // Sphere-built tooling is commonly a rigid collection.  The owning
-    // application sets a common velocity after applying its own constrained
-    // body law (for example a gravity-loaded, y-only upper plate); advancing
-    // each member here preserves its relative geometry exactly.
-    let sphere_active = walls.sphere_active.clone();
-    for (sphere, active) in walls.spheres.iter_mut().zip(sphere_active) {
-        if active {
-            sphere.center[0] += sphere.velocity[0] * dt;
-            sphere.center[1] += sphere.velocity[1] * dt;
-            sphere.center[2] += sphere.velocity[2] * dt;
         }
     }
 
@@ -1232,14 +1099,12 @@ pub fn wall_move(mut walls: ResMut<Walls>, atoms: Res<Atom>, comm: Option<Res<Co
 pub fn wall_zero_force_accumulators(mut walls: ResMut<Walls>) {
     for wall in &mut walls.planes {
         wall.force_accumulator = 0.0;
-        wall.force_vector = [0.0; 3];
     }
     for wall in &mut walls.cylinders {
         wall.force_accumulator = 0.0;
     }
     for wall in &mut walls.spheres {
         wall.force_accumulator = 0.0;
-        wall.force_vector = [0.0; 3];
     }
     for wall in &mut walls.regions {
         wall.force_accumulator = 0.0;
@@ -1544,7 +1409,6 @@ pub fn wall_contact_force(
     // Collect per-wall forces to accumulate after the loop
     let nwalls = walls.planes.len();
     let mut wall_forces = vec![0.0f64; nwalls];
-    let mut wall_force_vectors = vec![[0.0f64; 3]; nwalls];
 
     for (wall_idx, wall) in walls.planes.iter().enumerate() {
         if !walls.active[wall_idx] {
@@ -1635,14 +1499,9 @@ pub fn wall_contact_force(
             };
 
             // Force direction: along wall normal (pushes atom away from wall)
-            let mut force_on_atom = [
-                f_net * wall.normal_x,
-                f_net * wall.normal_y,
-                f_net * wall.normal_z,
-            ];
-            atoms.force[i][0] += force_on_atom[0] as Accum;
-            atoms.force[i][1] += force_on_atom[1] as Accum;
-            atoms.force[i][2] += force_on_atom[2] as Accum;
+            atoms.force[i][0] += (f_net * wall.normal_x) as Accum;
+            atoms.force[i][1] += (f_net * wall.normal_y) as Accum;
+            atoms.force[i][2] += (f_net * wall.normal_z) as Accum;
 
             // Twisting friction torque (wall-particle)
             if delta > 0.0 {
@@ -1685,9 +1544,6 @@ pub fn wall_contact_force(
                 atoms.force[i][0] += ft[0] as Accum;
                 atoms.force[i][1] += ft[1] as Accum;
                 atoms.force[i][2] += ft[2] as Accum;
-                force_on_atom[0] += ft[0];
-                force_on_atom[1] += ft[1];
-                force_on_atom[2] += ft[2];
                 dem.torque[i][0] += tau[0];
                 dem.torque[i][1] += tau[1];
                 dem.torque[i][2] += tau[2];
@@ -1724,16 +1580,12 @@ pub fn wall_contact_force(
 
             // Accumulate wall force for servo control
             wall_forces[wall_idx] += f_net;
-            wall_force_vectors[wall_idx][0] += force_on_atom[0];
-            wall_force_vectors[wall_idx][1] += force_on_atom[1];
-            wall_force_vectors[wall_idx][2] += force_on_atom[2];
         }
     }
 
     // Write accumulated forces back to walls
     for (idx, &f) in wall_forces.iter().enumerate() {
         walls.planes[idx].force_accumulator += f;
-        walls.planes[idx].force_vector = wall_force_vectors[idx];
     }
 
     // ── Cylinder walls ──────────────────────────────────────────────────
@@ -1908,7 +1760,6 @@ pub fn wall_contact_force(
     // ── Sphere walls ────────────────────────────────────────────────────
     let nsph = walls.spheres.len();
     let mut sph_forces = vec![0.0f64; nsph];
-    let mut sph_force_vectors = vec![[0.0f64; 3]; nsph];
     for (sph_idx, sph) in walls.spheres.iter().enumerate() {
         if !walls.sphere_active[sph_idx] {
             continue;
@@ -1950,14 +1801,9 @@ pub fn wall_contact_force(
             let delta = delta.min(0.5 * radius);
 
             let m_r = atoms.mass[i] as f64;
-            let relative_velocity = [
-                atoms.vel[i][0] as f64 - sph.velocity[0],
-                atoms.vel[i][1] as f64 - sph.velocity[1],
-                atoms.vel[i][2] as f64 - sph.velocity[2],
-            ];
-            let v_n = relative_velocity[0] * nx
-                + relative_velocity[1] * ny
-                + relative_velocity[2] * nz;
+            let v_n = atoms.vel[i][0] as f64 * nx
+                + atoms.vel[i][1] as f64 * ny
+                + atoms.vel[i][2] as f64 * nz;
             let f_net = wall_normal_force(
                 &material_table,
                 mat_i,
@@ -1972,9 +1818,6 @@ pub fn wall_contact_force(
             atoms.force[i][0] += (f_net * nx) as Accum;
             atoms.force[i][1] += (f_net * ny) as Accum;
             atoms.force[i][2] += (f_net * nz) as Accum;
-            sph_force_vectors[sph_idx][0] += f_net * nx;
-            sph_force_vectors[sph_idx][1] += f_net * ny;
-            sph_force_vectors[sph_idx][2] += f_net * nz;
 
             // Twisting friction torque (sphere wall is static).
             let mu_tw = material_table.twisting_friction_ij[mat_i][wall_mat];
@@ -1994,7 +1837,11 @@ pub fn wall_contact_force(
                 let old = old_springs.get(&key).copied().unwrap_or([0.0; 3]);
                 let (ft, tau, ns) = wall_tangential_force(
                     [nx, ny, nz],
-                    relative_velocity,
+                    [
+                        atoms.vel[i][0] as f64,
+                        atoms.vel[i][1] as f64,
+                        atoms.vel[i][2] as f64,
+                    ],
                     dem.omega[i],
                     radius,
                     delta,
@@ -2009,9 +1856,6 @@ pub fn wall_contact_force(
                 atoms.force[i][0] += ft[0] as Accum;
                 atoms.force[i][1] += ft[1] as Accum;
                 atoms.force[i][2] += ft[2] as Accum;
-                sph_force_vectors[sph_idx][0] += ft[0];
-                sph_force_vectors[sph_idx][1] += ft[1];
-                sph_force_vectors[sph_idx][2] += ft[2];
                 dem.torque[i][0] += tau[0];
                 dem.torque[i][1] += tau[1];
                 dem.torque[i][2] += tau[2];
@@ -2051,7 +1895,6 @@ pub fn wall_contact_force(
     }
     for (idx, &f) in sph_forces.iter().enumerate() {
         walls.spheres[idx].force_accumulator += f;
-        walls.spheres[idx].force_vector = sph_force_vectors[idx];
     }
 
     // ── Region walls ────────────────────────────────────────────────────
@@ -2230,8 +2073,6 @@ mod tests {
             normal_z: normal_z / mag,
             material_index: 0,
             name: None,
-            assembly: None,
-            assembly_driver: false,
             bound_x_low: f64::NEG_INFINITY,
             bound_x_high: f64::INFINITY,
             bound_y_low: f64::NEG_INFINITY,
@@ -2242,7 +2083,6 @@ mod tests {
             motion: WallMotion::Static,
             origin: [point_x, point_y, point_z],
             force_accumulator: 0.0,
-            force_vector: [0.0; 3],
             temperature: None,
         }
     }
@@ -2281,10 +2121,6 @@ mod tests {
             inside: None,
             material: material.to_string(),
             name: None,
-            assembly: None,
-            assembly_driver: false,
-            repeat_x_count: 1,
-            repeat_x_pitch: 0.0,
             bound_x_low: f64::NEG_INFINITY,
             bound_x_high: f64::INFINITY,
             bound_y_low: f64::NEG_INFINITY,
@@ -2368,10 +2204,7 @@ mod tests {
                 inside: true,
                 material_index: 0,
                 name: None,
-                velocity: [0.0; 3],
-                assembly: None,
                 force_accumulator: 0.0,
-                force_vector: [0.0; 3],
                 temperature: None,
             }),
             pos,
@@ -2531,11 +2364,6 @@ mod tests {
         );
         assert!((atom.force[0][0]).abs() < 1e-15);
         assert!((atom.force[0][1]).abs() < 1e-15);
-        let walls = app.get_resource_ref::<Walls>().unwrap();
-        assert!(
-            (walls.planes[0].force_vector[2] - atom.force[0][2] as f64).abs() < 1e-15,
-            "wall measurement must retain the force it applied to the particle"
-        );
     }
 
     #[test]
@@ -2734,58 +2562,6 @@ mod tests {
             walls.planes[0].point_z
         );
         assert!((walls.time - 0.001).abs() < 1e-15);
-    }
-
-    #[test]
-    fn sphere_tooling_translates_as_a_rigid_member() {
-        let mut atom = Atom::new();
-        atom.dt = 0.001;
-        let mut sphere = WallSphere {
-            center: [0.01, 0.02, 0.03], radius: 0.004, inside: false,
-            material_index: 0, name: Some("upper_tool".into()),
-            velocity: [0.0, -0.02, 0.0], assembly: Some("upper".into()),
-            force_accumulator: 0.0, force_vector: [0.0; 3], temperature: None,
-        };
-        let mut walls = make_walls_with_sphere(sphere.clone());
-        walls.spheres.push(sphere);
-        walls.sphere_active.push(true);
-        let mut app = App::new();
-        app.add_resource(atom);
-        app.add_resource(walls);
-        app.add_update_system(wall_move, ParticleSimScheduleSet::PreInitialIntegration);
-        app.organize_systems();
-        app.run();
-        let walls = app.get_resource_ref::<Walls>().unwrap();
-        assert_eq!(walls.spheres[0].center, [0.01, 0.01998, 0.03]);
-        assert_eq!(walls.spheres[1].center, [0.01, 0.01998, 0.03]);
-    }
-
-    #[test]
-    fn rigid_assembly_follower_tracks_driver_point_bounds_and_velocity() {
-        let mut atom = Atom::new();
-        atom.dt = 0.001;
-        let mut driver = make_wall_plane(0.0, 0.0, 0.0, 0.0, 1.0, 0.0);
-        driver.assembly = Some("plate".to_owned());
-        driver.assembly_driver = true;
-        driver.velocity = [0.02, 0.0, 0.0];
-        driver.motion = WallMotion::ConstantVelocity;
-        let mut blade = make_wall_plane(0.008, 0.002, 0.0, 1.0, 0.0, 0.0);
-        blade.assembly = Some("plate".to_owned());
-        blade.bound_y_low = 0.0;
-        blade.bound_y_high = 0.002;
-
-        let mut app = App::new();
-        app.add_resource(atom);
-        app.add_resource(make_walls(vec![driver, blade]));
-        app.add_update_system(wall_move, ParticleSimScheduleSet::PreInitialIntegration);
-        app.organize_systems();
-        app.run();
-
-        let walls = app.get_resource_ref::<Walls>().unwrap();
-        let blade = &walls.planes[1];
-        assert!((blade.point_x - 0.00802).abs() < 1e-15);
-        assert!((blade.bound_y_high - 0.002).abs() < 1e-15);
-        assert_eq!(blade.velocity, [0.02, 0.0, 0.0]);
     }
 
     #[test]
@@ -3054,10 +2830,7 @@ mod tests {
                 inside: true,
                 material_index: 0,
                 name: Some(name.to_string()),
-                velocity: [0.0; 3],
-                assembly: None,
                 force_accumulator: 0.0,
-                force_vector: [0.0; 3],
                 temperature: None,
             }],
             sphere_active: vec![true],
@@ -3235,10 +3008,7 @@ mod tests {
             inside: true,
             material_index: 0,
             name: None,
-            velocity: [0.0; 3],
-            assembly: None,
             force_accumulator: 0.0,
-            force_vector: [0.0; 3],
             temperature: None,
         });
 
@@ -3282,10 +3052,7 @@ mod tests {
             inside: true,
             material_index: 0,
             name: None,
-            velocity: [0.0; 3],
-            assembly: None,
             force_accumulator: 0.0,
-            force_vector: [0.0; 3],
             temperature: None,
         });
 
@@ -3500,10 +3267,7 @@ mod tests {
                 inside: true,
                 material_index: 0,
                 name: None,
-                velocity: [0.0; 3],
-                assembly: None,
                 force_accumulator: 0.0,
-                force_vector: [0.0; 3],
                 temperature: None,
             });
 
@@ -3850,10 +3614,7 @@ mod tests {
                 inside: true,
                 material_index: 0,
                 name: None,
-                velocity: [0.0; 3],
-                assembly: None,
                 force_accumulator: 0.0,
-                force_vector: [0.0; 3],
                 temperature: None,
             });
             let mut app = App::new();

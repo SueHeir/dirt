@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Guard a source-receipted but protocol-non-equivalent Guo draft.
+"""Guard a source-receipted but not-yet-reconstructible Guo replication.
 
-The primary article is now hash-bound by ``evidence_contract.py``.  It states
-that its periodic control-cell walls and blades are built from rigidly connected
-spheres (pp. 5-6).  The retained DIRT input uses finite plane walls, so it is
-not source-equivalent and must not run as a Guo replication.  This is neither
-a physics validation nor a substitute for the two published-observable gates.
+The primary article is hash-bound by ``evidence_contract.py``. It states that
+its periodic control-cell walls and blades are built from rigidly connected
+spheres (pp. 5-6), but it omits their geometry and the upper-body mass. This
+audit therefore has no DIRT solver input. It rejects a hypothetical plane/servo
+substitute and never certifies an unimplemented sphere-built cell.
 """
 import argparse
 import json
@@ -86,7 +86,21 @@ def main() -> None:
 
 class SourceContractTests(unittest.TestCase):
     def test_rejects_plane_walls_and_servo_against_primary_protocol(self):
-        with self.assertRaisesRegex(RuntimeError, "(?s)rigidly connected spheres.*force-feedback servo"):
+        with tempfile.NamedTemporaryFile("w", suffix=".toml") as config:
+            config.write(
+                '[[wall]]\n'
+                'type = "plane"\n'
+                '[wall.servo]\n'
+                'target_force = 1.0\n'
+            )
+            config.flush()
+            with self.assertRaisesRegex(
+                RuntimeError, "(?s)rigidly connected spheres.*force-feedback servo"
+            ):
+                require_published_control_cell(Path(config.name))
+
+    def test_audit_declaration_cannot_become_a_runnable_cell(self):
+        with self.assertRaisesRegex(RuntimeError, "cannot be uniquely transcribed"):
             require_published_control_cell(HERE / "config.toml")
 
     def test_sphere_spelling_cannot_certify_an_unaudited_implementation(self):
