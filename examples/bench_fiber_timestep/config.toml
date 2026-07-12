@@ -1,0 +1,23 @@
+[material]
+youngs_modulus = 1.0e9
+shear_modulus = 4.0e8
+density = 2500.0
+sphere_radius = 0.001
+bond_radius = 0.001
+bond_length = 0.002
+nodes = 16
+
+[probe]
+axial_velocity = 1.0e-3
+bending_velocity = 1.0e-3
+steps = 800
+
+[acceptance]
+# Six-decade growth diagnostic for the fixed-free pulse; it is not a fitted
+# safety factor and does not replace the cited Guo bound.
+max_tip_displacement = 1.0e3
+transition_bracket = 0.02
+guo_lattice_relative_tolerance = 0.01
+
+[sweep]
+dt_over_guo = [0.80, 0.90, 0.91, 0.92, 0.93, 0.94, 0.95, 0.96, 0.97, 0.98, 0.99, 1.00, 1.01, 1.02]

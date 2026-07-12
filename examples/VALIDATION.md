@@ -1505,6 +1505,16 @@ will need a benchmark when re-added.)
 
 ## Summary table
 
+## Bonded-fiber integration timestep
+
+[`bench_fiber_timestep`](bench_fiber_timestep/README.md) checks fixed--free
+16-sphere axial and coupled bending/translation limits against independently
+assembled discrete-lattice spectra. Its axial limit agrees with Guo et al.
+(2013), Eq. 41; the figure shows DIRT's measured stable/failure brackets and
+the declared growth diagnostic.
+
+![DIRT fiber timestep stability](bench_fiber_timestep/plots/fiber_timestep_stability.png)
+
 | Example | Reference | Tier | Status / main gap |
 |---|---|---|---|
 | hertz_rebound | Hertz + LAMMPS | analytical (strong) | PASS; damped vs elastic only; damping mapping calibrated |
