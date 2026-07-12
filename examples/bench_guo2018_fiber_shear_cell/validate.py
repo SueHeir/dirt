@@ -131,12 +131,13 @@ def main():
     if args.self_test:
         suite = unittest.defaultTestLoader.loadTestsFromTestCase(ValidatorTests)
         raise SystemExit(not unittest.TextTestRunner(verbosity=2).run(suite).wasSuccessful())
-    # A manifest/receipt can establish provenance of a DIRT run, but cannot
-    # transform the plane-driven cup into the DOI's ring-shear experiment.
-    # Keep the numerical gate unavailable until the apparatus is implemented.
+    # A manifest/receipt can establish provenance only after the input matches
+    # the paper's stated periodic planar DEM reduction.  This is distinct from
+    # the experimental ring apparatus and prevents the current cylindrical
+    # cup surrogate from being compared to Figs. 6/7.
     if args.case:
-        from source_contract import require_runnable_ring_protocol
-        require_runnable_ring_protocol(HERE / "config.toml")
+        from source_contract import require_published_control_cell
+        require_published_control_cell(HERE / "config.toml")
     cases = {}
     for encoded in args.case:
         pressure, width, path = parse_case(encoded)

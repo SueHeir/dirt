@@ -19,11 +19,11 @@ HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
 
 
-def require_published_apparatus() -> None:
-    """Keep a runnable surrogate from acquiring an experimental claim."""
+def require_published_control_cell() -> None:
+    """Refuse an input that differs from the paper's published DEM reduction."""
     sys.path.insert(0, str(HERE))
-    from source_contract import require_runnable_ring_protocol
-    require_runnable_ring_protocol(HERE / "config.toml")
+    from source_contract import require_published_control_cell as require_protocol
+    require_protocol(HERE / "config.toml")
 
 
 
@@ -97,10 +97,10 @@ def main() -> None:
     parser.add_argument("--prepare-only", action="store_true", help="write and audit input but do not invoke DIRT")
     args = parser.parse_args()
     # The source fibre topology can be prepared and audited, but a solver run
-    # would currently be a plane-driven cup, not the paper's ring-shear test.
-    # Keep preparation available for independent topology checks only.
+    # is forbidden until the input matches the paper's *periodic planar DEM
+    # control cell* (not the experimental annulus).
     if not args.prepare_only:
-        require_published_apparatus()
+        require_published_control_cell()
     config = materialize(args.pressure_pa, args.width_mm, args.output, args.ranks)
     print(f"prepared solver case: {config}")
     if not args.prepare_only:

@@ -1,5 +1,6 @@
-# Guo et al. (AIChE J. 65(1), 2019) normal-stress-fixed wall cell.
-# `run_case.py` materializes the deterministic 500-fiber, 17-bead input before run.
+# This is a legacy cylindrical-cup topology audit, not Guo et al.'s published
+# numerical control cell.  `source_contract.py --require-runnable` rejects it:
+# the primary source specifies periodic x/z boundaries and bladed planar walls.
 [comm]
 processors_x = 1
 processors_y = 1
@@ -12,9 +13,9 @@ y_low = 0.0
 y_high = 0.050
 z_low = 0.0
 z_high = 0.064
-boundary_x = "fixed"
+boundary_x = "fixed" # intentionally blocked: source requires periodic
 boundary_y = "fixed"
-boundary_z = "fixed"
+boundary_z = "fixed" # intentionally blocked: source requires periodic
 
 [neighbor]
 skin_fraction = 1.2

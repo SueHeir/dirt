@@ -20,13 +20,20 @@ python3 examples/bench_guo2018_fiber_shear_cell/prepare.py \
 python3 examples/bench_guo2018_fiber_shear_cell/prepare.py --audit /tmp/guo64
 ```
 
-The current configuration is **not a valid Guo experimental protocol**. The
-publisher-indexed abstract identifies the apparatus as a **Schulze ring shear
-tester**. DIRT's configuration instead has a translating planar base inside a
-cylindrical cup. Those boundary motions are not interchangeable: a numerical
-agreement would not validate the experiment. `source_contract.py` queries the
-independent Crossref DOI record and `run_case.py` blocks every solver run; it
-permits `--prepare-only` solely for the Table-2 topology audit.
+The source makes an important distinction. The **experiment** uses a Schulze
+ring shear tester, but the paper's **DEM comparison** deliberately replaces
+the whole ring with a small planar control cell: periodic x/z boundaries, a
+weight-loaded vertically mobile lid, a lower wall translating in x, and 4-mm
+upper/2-mm lower blade arrays (Computational Set-up, pp. 5--7). Therefore a
+rotating annulus is not a requirement for reproducing the published numerical
+protocol. The previous branch incorrectly treated the experimental apparatus
+as the DEM boundary contract.
+
+The current configuration remains blocked, for a different and source-faithful
+reason: it is a fixed-boundary cylindrical cup with unbladed planes, so it is
+neither the SRST nor the paper's periodic planar DEM reduction. The contract
+checker rejects it before DIRT runs. `--prepare-only` remains available solely
+for the Table-2 topology audit.
 
 **What remains valid.** The preparation script auditablely reproduces the
 declared Table-2 bead/bond/material/timestep representation. Its cup planform,
@@ -39,35 +46,23 @@ python3 examples/bench_guo2018_fiber_shear_cell/run_case.py \
   --pressure-pa 651 --width-mm 64 --output /tmp/guo-p651-w64 --ranks 8 --prepare-only
 ```
 
-An actual campaign is blocked until (1) the ring's annular dimensions and
-rotating-member motion are independently recovered from the paper or its
-supplement and (2) DIRT can impose that annular rotational shear while measuring
-the correct torque/area stress. This is a missing capability/source-data issue,
-not a calibration parameter to tune.
+An actual campaign is blocked until a DIRT input implements the paper's
+periodic planar control-cell boundary conditions and source-described blade
+arrays, and until its population/cell dimensions are independently recovered
+rather than inherited from this legacy circular-cup surrogate. This is a
+protocol/source-data issue, not a calibration parameter to tune.
 
 `validate.py` is retained as a future fail-closed history validator, but cannot
-be invoked honestly until the apparatus contract above is implemented. Its
-stored figure points are not a substitute for ring geometry or a DIRT result.
+be invoked honestly until the numerical control-cell contract above is
+implemented. Its stored figure points are not a substitute for a DIRT result.
 
-Run all six solver cases with `run_case.py` (the 96-mm cases contain 1,125
-17-bead fibres), then validate their histories:
-
-```bash
-python3 examples/bench_guo2018_fiber_shear_cell/validate.py \
-  --case 651:64:generated/p651_w64 \
-  --case 1735:64:generated/p1735_w64 \
-  --case 3470:64:generated/p3470_w64 \
-  --case 651:96:generated/p651_w96 \
-  --case 1735:96:generated/p1735_w96 \
-  --case 3470:96:generated/p3470_w96
-```
-
-Limitations: the full paper figures/supplement are not available locally for
-independent geometric recovery; digitized points have not been sufficient to
-establish the annular kinematics; and bonded overlapping spheres still differ
-from physical cord. There is no solver result, comparison plot, acceptance
-PASS, or claim of replication. The deterministic starting placement is only a
-documented topology input, not a recovered experimental microstate.
+Limitations: the primary paper is available locally and establishes the DEM
+boundary protocol, but the present topology audit does not recover its control
+cell population or dimensions. Digitized figure points are not a substitute for
+that source recovery, and bonded overlapping spheres still differ from physical
+cord. There is no solver result, comparison plot, acceptance PASS, or claim of
+replication. The deterministic starting placement is only a documented topology
+input, not a recovered experimental microstate.
 
 ```bash
 python3 examples/bench_guo2018_fiber_shear_cell/validate.py --self-test
