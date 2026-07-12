@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Guard a source-receipted but geometrically non-equivalent Guo draft.
+"""Guard a source-receipted but protocol-non-equivalent Guo draft.
 
 The primary article is now hash-bound by ``evidence_contract.py``.  It states
 that its periodic control-cell walls and blades are built from rigidly connected
@@ -9,6 +9,8 @@ a physics validation nor a substitute for the two published-observable gates.
 """
 import argparse
 import json
+import tempfile
+import tomllib
 import unittest
 import urllib.request
 from pathlib import Path
@@ -28,17 +30,39 @@ def published_record() -> dict:
     return {"title": title, "doi": record["DOI"]}
 
 
-def require_published_control_cell(config: Path) -> None:
-    """Reject the retained plane-wall draft against the paper's wall topology."""
-    text = config.read_text()
-    if 'type = "plane"' in text:
-        raise RuntimeError(
-            "BLOCKED: Guo pp. 5-6 specifies walls/blades built from rigidly connected spheres, "
-            "but config.toml uses plane walls; this is not a source-equivalent Guo control cell"
+def protocol_mismatches(config: Path) -> list[str]:
+    """Return source-visible mismatches; never infer an unimplemented equivalence.
+
+    The primary article specifies both contact geometry and normal loading.
+    Replacing the former by analytic planes or the latter by a feedback servo
+    changes the boundary-value problem, even if a nominal normal force happens
+    to be the same.  This check deliberately identifies only disproven
+    equivalence; a clean list is *not* a runnable certification.
+    """
+    parsed = tomllib.loads(config.read_text())
+    walls = parsed.get("wall", [])
+    mismatches = []
+    if any(wall.get("type") == "plane" for wall in walls):
+        mismatches.append(
+            "Guo pp. 5-6 specifies walls/blades built from rigidly connected spheres, "
+            "but the draft uses analytic plane walls"
         )
+    if any("servo" in wall for wall in walls):
+        mismatches.append(
+            "Guo p. 5 prescribes normal stress by assigning a weight to the upper wall, "
+            "but the draft uses a force-feedback servo"
+        )
+    return mismatches
+
+
+def require_published_control_cell(config: Path) -> None:
+    """Reject a known mismatch; do not certify an unimplemented source cell."""
+    mismatches = protocol_mismatches(config)
+    if mismatches:
+        raise RuntimeError("BLOCKED: source-equivalence is false:\n- " + "\n- ".join(mismatches))
     raise RuntimeError(
-        "BLOCKED: source-equivalence is not established for this control-cell configuration; "
-        "do not run it as a Guo replication"
+        "BLOCKED: no source-equivalent DIRT wall/body implementation has been audited; "
+        "absence of these known mismatches is not a runnable certification"
     )
 
 
@@ -63,9 +87,17 @@ def main() -> None:
 
 
 class SourceContractTests(unittest.TestCase):
-    def test_rejects_plane_walls_against_primary_wall_topology(self):
-        with self.assertRaisesRegex(RuntimeError, "rigidly connected spheres"):
+    def test_rejects_plane_walls_and_servo_against_primary_protocol(self):
+        with self.assertRaisesRegex(RuntimeError, "(?s)rigidly connected spheres.*force-feedback servo"):
             require_published_control_cell(HERE / "config.toml")
+
+    def test_sphere_spelling_cannot_certify_an_unaudited_implementation(self):
+        with tempfile.NamedTemporaryFile("w", suffix=".toml") as config:
+            config.write('[[wall]]\ntype = "sphere"\n')
+            config.flush()
+            self.assertEqual(protocol_mismatches(Path(config.name)), [])
+            with self.assertRaisesRegex(RuntimeError, "not a runnable certification"):
+                require_published_control_cell(Path(config.name))
 
 
 if __name__ == "__main__":

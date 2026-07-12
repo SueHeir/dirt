@@ -7,9 +7,11 @@ That receipt authenticates the cited source pages and the approximate manual
 Fig. 6/7 digitization; it does **not** authenticate the existing DIRT geometry.
 
 The source describes a periodic planar numerical control cell, but explicitly
-builds its walls and blades from rigidly connected spheres (pp. 5-6). The
-retained DIRT input uses plane-wall assemblies. It is therefore **not a
-source-equivalent Guo case** and is deliberately non-runnable as a replication.
+builds its walls and blades from rigidly connected spheres and applies the
+normal stress through the *weight* of the upper wall (pp. 5-6). The retained
+DIRT input instead uses plane-wall assemblies and a force-feedback lid servo.
+Both changes alter the published boundary-value problem. It is therefore **not
+a source-equivalent Guo case** and is deliberately non-runnable as a replication.
 The configuration is retained only as an implementation sketch; no solver
 history, comparison plot, or replication PASS is committed.
 
@@ -26,9 +28,11 @@ writes a solver input. `prepare.py` can only write a separately labelled
 candidate topology after an explicit `--candidate-only` acknowledgement; it
 cannot be represented as a prepared replication case.
 
-Before any future campaign, implement and audit a sphere-built wall/blade
-assembly equivalent to the source, then independently test it before a Fig. 6/7
-campaign. The PDF receipt is necessary evidence, not a waiver of this work.
+Before any future campaign, implement and audit a rigid sphere-built
+wall/blade assembly *and* a weighted, vertically free upper-wall body with its
+horizontal and rotational constraints stated and tested. Then independently
+test that boundary machinery before a Fig. 6/7 campaign. The PDF receipt is
+necessary evidence, not a waiver of this work.
 
 ```bash
 python3 examples/bench_guo2018_fiber_shear_cell/source_contract.py --require-runnable
