@@ -7,12 +7,15 @@ measurements are compared with the committed contract in
 `nlocal`/`natoms`, one material's built pair-table dimensions, the declared CSR
 offset/index streams, and the conservative timestep.
 
-Run `python3 examples/simulation_fixture_validation/sweep.py` to compile and
+Run `python3 -S examples/simulation_fixture_validation/sweep.py` to compile and
 execute the public API, compare the output to the fixed contract, and regenerate
-the figure. This is a structural utility check, not a DEM physics calibration;
-the normal-contact and wall benchmarks remain the independent physics evidence.
+the figure. `-S` demonstrates that the driver needs only Python's standard
+library; it writes its tracked SVG directly rather than relying on an undeclared
+plotting package. This is a structural utility check, not a DEM physics
+calibration; the normal-contact and wall benchmarks remain the independent
+physics evidence.
 
-![SimulationFixture measurements versus contract](plots/fixture_contract.png)
+![SimulationFixture measurements versus contract](plots/fixture_contract.svg)
 
 *PASS: all 20 public structural measurements, including two CSR streams, match
 the declared fixture contract exactly; the dashed line is the visible `1e-15`

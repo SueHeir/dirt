@@ -46,7 +46,7 @@ Atom/DEM rows, `nlocal`/`natoms`, material pair-table dimensions, declared CSR
 offsets/indices, and the stable default timestep through the public API. It is a
 test-fixture integrity check, not an independent DEM physics calibration.
 
-![SimulationFixture structural contract](simulation_fixture_validation/plots/fixture_contract.png)
+![SimulationFixture structural contract](simulation_fixture_validation/plots/fixture_contract.svg)
 
 *PASS: 20/20 measured scalar and CSR contract checks match exactly; the dashed
 line is the `1e-15` relative-error pass limit.*
