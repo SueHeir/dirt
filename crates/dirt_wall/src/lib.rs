@@ -2051,7 +2051,7 @@ pub fn wall_contact_force(
 mod tests {
     use super::*;
     use dirt_atom::DemAtom;
-    use dirt_test_utils::{make_material_table, push_dem_test_atom};
+    use dirt_test_utils::{make_material_table, push_dem_test_atom, ParticleFixture, ParticleSpec};
     use soil_core::region::Region;
     use soil_core::{Atom, AtomDataRegistry};
 
@@ -2151,16 +2151,12 @@ mod tests {
     }
 
     fn run_wall_twist_case(walls: Walls, pos: [f64; 3], omega: [f64; 3]) -> [f64; 3] {
-        let mut atom = Atom::new();
-        let mut dem = DemAtom::new();
-        push_dem_test_atom(&mut atom, &mut dem, 0, pos, 0.001);
-        dem.omega[0] = omega;
-        atom.nlocal = 1;
-        atom.natoms = 1;
-
-        let mut registry = AtomDataRegistry::new();
-        registry.try_register(dem, atom.len()).unwrap();
-
+        let fixture = ParticleFixture::single(ParticleSpec::new(0, pos, 0.001)).build();
+        fixture
+            .registry
+            .expect_mut::<DemAtom>("run_wall_twist_case")
+            .omega[0] = omega;
+        let (atom, _neighbor, registry, _materials) = fixture.into_parts();
         let mut app = App::new();
         app.add_resource(atom);
         app.add_resource(registry);

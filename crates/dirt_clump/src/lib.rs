@@ -1498,6 +1498,7 @@ pub fn is_body_atom(clump_data: &ClumpAtom, i: usize) -> bool {
 mod tests {
     use super::*;
     use dirt_atom::{DemAtom, DemAtomPlugin};
+    use dirt_test_utils::{ParticleFixture, ParticleSpec};
     use soil_core::{Atom, AtomData, AtomDataRegistry, ParticleStoreError, SingleProcessComm};
 
     /// A deliberately malformed extension used to prove that clump construction
@@ -1550,6 +1551,17 @@ mod tests {
         registry.try_register(DemAtom::new(), 0).unwrap();
         registry.try_register(ClumpAtom::new(), 0).unwrap();
         (Atom::new(), registry, MultisphereBodyStore::new())
+    }
+
+    #[test]
+    fn fixture_registers_clump_extension_with_matching_rows() {
+        let mut fixture = ParticleFixture::single(ParticleSpec::new(7, [0.0; 3], 0.001)).build();
+        let mut clump = ClumpAtom::new();
+        clump.body_id.push(3.0);
+        clump.body_offset.push([0.0; 3]);
+        fixture.register_atom_data(clump);
+        let clump = fixture.registry.expect::<ClumpAtom>("fixture clump");
+        assert!(is_body_atom(&clump, 0));
     }
 
     #[test]
