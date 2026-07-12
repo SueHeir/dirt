@@ -22,18 +22,18 @@ repository = "https://github.com/SueHeir/dirt"
 # manifests retain only their local feature/default-feature choices.
 [workspace.dependencies]
 # GRASS framework
-grass_app = { git = "ssh://git@192.168.0.170:2222/SueHeir/grass.git", branch = "main" }
-grass_derive = { git = "ssh://git@192.168.0.170:2222/SueHeir/grass.git", branch = "main" }
-grass_scheduler = { git = "ssh://git@192.168.0.170:2222/SueHeir/grass.git", branch = "main" }
+grass_app = { git = "https://github.com/SueHeir/grass.git", branch = "main" }
+grass_derive = { git = "https://github.com/SueHeir/grass.git", branch = "main" }
+grass_scheduler = { git = "https://github.com/SueHeir/grass.git", branch = "main" }
 # SOIL particle substrate
 # Keep every SOIL crate on one audited revision so particle layout, migration,
 # and scheduler contracts cannot drift independently.
-soil_core = { git = "ssh://git@192.168.0.170:2222/SueHeir/soil.git", rev = "988bf6b", default-features = false }
-soil_deform = { git = "ssh://git@192.168.0.170:2222/SueHeir/soil.git", rev = "988bf6b", default-features = false }
-soil_derive = { git = "ssh://git@192.168.0.170:2222/SueHeir/soil.git", rev = "988bf6b" }
-soil_fixes = { git = "ssh://git@192.168.0.170:2222/SueHeir/soil.git", rev = "988bf6b", default-features = false }
-soil_print = { git = "ssh://git@192.168.0.170:2222/SueHeir/soil.git", rev = "988bf6b", default-features = false }
-soil_verlet = { git = "ssh://git@192.168.0.170:2222/SueHeir/soil.git", rev = "988bf6b", default-features = false }
+soil_core = { git = "https://github.com/SueHeir/soil.git", rev = "988bf6b", default-features = false }
+soil_deform = { git = "https://github.com/SueHeir/soil.git", rev = "988bf6b", default-features = false }
+soil_derive = { git = "https://github.com/SueHeir/soil.git", rev = "988bf6b" }
+soil_fixes = { git = "https://github.com/SueHeir/soil.git", rev = "988bf6b", default-features = false }
+soil_print = { git = "https://github.com/SueHeir/soil.git", rev = "988bf6b", default-features = false }
+soil_verlet = { git = "https://github.com/SueHeir/soil.git", rev = "988bf6b", default-features = false }
 # DIRT workspace members
 dirt_atom = { path = "crates/dirt_atom", version = "0.1.3" }
 dirt_bond = { path = "crates/dirt_bond", version = "0.1.3" }
