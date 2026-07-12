@@ -1,0 +1,12 @@
+# Reviewed compatibility baseline and deliberately newer SOIL revision used by
+# the matrix.  The latter added AtomData tuple queries; this DIRT revision must
+# reject it until its two AtomData implementations are migrated.
+[sources]
+grass_repo = "~/projects/grass"
+soil_repo = "~/projects/soil"
+grass_commit = "7b385076"
+soil_compatible_commit = "e37078c"
+soil_drift_commit = "72622c1"
+
+[expect]
+drift_diagnostic = "snapshot"

@@ -1505,6 +1505,19 @@ will need a benchmark when re-added.)
 
 ## Summary table
 
+## `ecosystem_head_compatibility` — GRASS → SOIL → DIRT source resolution
+
+[`ecosystem_head_compatibility`](ecosystem_head_compatibility/README.md) records
+the temporary-path-patch gate with a reviewed passing source tuple and a newer
+SOIL revision that must expose the `AtomData::snapshot` migration drift in
+`dirt_granular` and `dirt_bond`.
+
+![GRASS → SOIL → DIRT compatibility matrix](ecosystem_head_compatibility/plots/ecosystem_head_compatibility_matrix.png)
+
+Current result: PASS—the compatible tuple completes metadata and the non-MPI
+precision-double check, while the intentionally incompatible tuple is rejected
+with visible API diagnostics.
+
 ## Bonded-fiber integration timestep
 
 [`bench_fiber_timestep`](bench_fiber_timestep/README.md) checks fixed--free
