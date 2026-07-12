@@ -20,21 +20,30 @@ SPACING = 0.0012
 DENSITY = 1157.5
 YOUNGS_MODULUS = 6.28e6
 TIMESTEP = 2.3e-7
-DEPTH = 0.036
 BED_HEIGHT = 0.045
 # This is the lid gap in config.toml.  It is deliberately an input to the
 # audit rather than a fitted quantity: the source topology must be capable of
 # reaching the external solid-fraction range before spending a long solver run.
 INITIAL_LID_HEIGHT = 0.050
-LANES = {64: (500, 2), 96: (750, 3)}
+# The reported lateral sizes are diameters, not one side of an invented
+# periodic rectangle.  The finite-size population therefore scales with the
+# circular planform area.
+FIBRES_AT_64_MM = 500
 
 
 def write_case(width_mm, output):
-    if width_mm not in LANES:
+    if width_mm not in (64, 96):
         raise ValueError("width must be 64 or 96 mm")
-    fibres, lanes = LANES[width_mm]
-    width = width_mm / 1000.0
+    diameter = width_mm / 1000.0
+    radius = diameter / 2.0
+    fibres = FIBRES_AT_64_MM * width_mm ** 2 // 64 ** 2
     output.mkdir(parents=True, exist_ok=True)
+    # Stagger long, x-aligned chains in separated lanes.  A planar x/z grid
+    # would place collinear chains on top of one another because each chain is
+    # 21.6 mm long; this layout keeps the source chains non-overlapping before
+    # gravity settling.
+    lanes, x_offset, lane_spacing = ((2, 0.010, 0.022)
+                                     if width_mm == 64 else (5, 0.005, 0.015))
     rows = math.ceil(fibres / (lanes * 14))
     y_spacing = (BED_HEIGHT - DIAMETER) / (rows - 1)
     if y_spacing < DIAMETER:
@@ -46,9 +55,9 @@ def write_case(width_mm, output):
                 if len(points) // BEADS == fibres:
                     break
                 for bead in range(BEADS):
-                    points.append((DIAMETER / 2 + lane * 0.032 + bead * SPACING,
+                    points.append((x_offset + DIAMETER / 2 + lane * lane_spacing + bead * SPACING,
                                    DIAMETER / 2 + iy * y_spacing,
-                                   (iz + 0.5) * DEPTH / 14))
+                                   (diameter - 0.036) / 2.0 + (iz + 0.5) * 0.036 / 14))
     if len(points) != fibres * BEADS:
         raise ValueError("incomplete fibre population")
     with (output / "pack.csv").open("w", newline="") as stream:
@@ -67,9 +76,11 @@ def write_case(width_mm, output):
     raw_bead_volume = len(points) * 4.0 * math.pi * (DIAMETER / 2.0) ** 3 / 3.0
     fibre_volume = math.pi * (DIAMETER / 2.0) ** 2 * (LENGTH - DIAMETER) + 4.0 * math.pi * (DIAMETER / 2.0) ** 3 / 3.0
     physical_cord_volume = fibres * fibre_volume
-    initial_cell_volume = width * DEPTH * INITIAL_LID_HEIGHT
+    planform_area = math.pi * radius ** 2
+    initial_cell_volume = planform_area * INITIAL_LID_HEIGHT
     metadata = {"paper": "Guo et al., AIChE J. 65 (2019), doi:10.1002/aic.16397, Table 2",
-                "width_m": width, "depth_m": DEPTH, "n_fibres": fibres,
+                "cell_diameter_m": diameter, "planform_area_m2": planform_area,
+                "n_fibres": fibres,
                 "n_atoms": len(points), "n_bonds": fibres * (BEADS - 1),
                 "bead_diameter_m": DIAMETER, "fibre_length_m": LENGTH,
                 "beads_per_fibre": BEADS, "bond_spacing_m": SPACING,
@@ -91,6 +102,10 @@ def audit(output):
     points = list(csv.reader((output / "pack.csv").open()))
     if len(points) != metadata["n_atoms"] or metadata["n_atoms"] != metadata["n_fibres"] * BEADS:
         raise ValueError("atom count disagrees with source topology")
+    radius = metadata["cell_diameter_m"] / 2.0
+    for x, _, z in points:
+        if (float(x) - radius) ** 2 + (float(z) - radius) ** 2 > (radius - metadata["bead_diameter_m"] / 2.0) ** 2 + 1e-15:
+            raise ValueError("a bead centre lies outside the cylindrical sidewall")
     if not math.isclose((BEADS - 1) * metadata["bond_spacing_m"] + metadata["bead_diameter_m"], metadata["fibre_length_m"], abs_tol=1e-12):
         raise ValueError("bead chain does not reproduce the cited fibre length")
     bonds = (output / "pack.bonds").read_text().splitlines()[0]
@@ -105,7 +120,7 @@ def audit(output):
         + 4.0 * math.pi * (metadata["bead_diameter_m"] / 2.0) ** 3 / 3.0)
     if not math.isclose(metadata["physical_cord_volume_m3"], expected_physical_volume, rel_tol=1e-12):
         raise ValueError("physical cord volume disagrees with Table-2 fibre geometry")
-    expected_phi = expected_physical_volume / (metadata["width_m"] * DEPTH * metadata["initial_lid_height_m"])
+    expected_phi = expected_physical_volume / (metadata["planform_area_m2"] * metadata["initial_lid_height_m"])
     if not math.isclose(metadata["physical_cord_solid_fraction_at_initial_lid"], expected_phi, rel_tol=1e-12):
         raise ValueError("initial physical solid fraction disagrees with source topology")
     return metadata
@@ -113,7 +128,7 @@ def audit(output):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--width-mm", type=int, choices=LANES)
+    parser.add_argument("--width-mm", type=int, choices=(64, 96))
     parser.add_argument("--output", type=Path)
     parser.add_argument("--audit", type=Path)
     args = parser.parse_args()

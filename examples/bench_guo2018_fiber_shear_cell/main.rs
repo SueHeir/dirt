@@ -187,8 +187,11 @@ fn record_cell(
     // `nlocal` is per-rank in a decomposed cell.  The campaign contract is
     // about the physical fibre population, so record the global count.
     let global_atoms = comm.all_reduce_sum_f64(atoms.nlocal as f64).round() as usize;
-    let area = (domain.boundaries_high[0] - domain.boundaries_low[0])
-        * (domain.boundaries_high[2] - domain.boundaries_low[2]);
+    // `width_mm` is the cell diameter.  The static y-axis cylinder is the
+    // lateral boundary, so stresses use its circular planform, not the
+    // enclosing square used for domain decomposition.
+    let radius = (domain.boundaries_high[0] - domain.boundaries_low[0]) / 2.0;
+    let area = std::f64::consts::PI * radius.powi(2);
     // During the explicit gravity-settle stage the lid is intentionally static;
     // only servo-stage measurements may qualify the normal load.
     let target_force = match &lid.motion {

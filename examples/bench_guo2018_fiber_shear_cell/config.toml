@@ -11,10 +11,10 @@ x_high = 0.064
 y_low = 0.0
 y_high = 0.050
 z_low = 0.0
-z_high = 0.036
-boundary_x = "periodic"
+z_high = 0.064
+boundary_x = "fixed"
 boundary_y = "fixed"
-boundary_z = "periodic"
+boundary_z = "fixed"
 
 [neighbor]
 skin_fraction = 1.2
@@ -51,6 +51,15 @@ beta_normal = 1.0
 beta_shear = 1.0
 beta_twist = 1.0
 beta_bending = 1.0
+
+[[wall]]
+type = "cylinder"
+axis = "y"
+center = [0.032, 0.032]
+radius = 0.032
+inside = true
+material = "rubber_cord"
+name = "cylindrical_sidewall"
 
 [[wall]]
 type = "plane"

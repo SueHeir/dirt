@@ -8,7 +8,7 @@ doi:10.1002/aic.16397, report the
 rubber-cord measurements digitized in `data/guo_2019_rubber_cord.csv`: Fig. 6
 steady shear stress and Fig. 7 solid fraction at 651, 1735, and 3470 Pa.
 
-The prepared 64-mm and 96-mm populations and the executable's material,
+The prepared 64-mm and 96-mm-diameter circular-cell populations and the executable's material,
 bond, and timestep fields use the reported rubber-cord Table 2
 representation: 17 beads of 2.4-mm diameter at 1.2-mm spacing, 21.6-mm fibre
 length, 1157.5-kg/m³ density, 6.28-MPa modulus, and a 2.3e-7-s time step.
@@ -22,35 +22,30 @@ python3 examples/bench_guo2018_fiber_shear_cell/prepare.py --audit /tmp/guo64
 
 To create an auditable DIRT input for one of the six cases, use the executable
 path rather than hand-editing a topology or requested force. The default run
-uses periodic lateral boundaries, an explicit gravity-settle stage, a measured
+uses a cylindrical lateral boundary, an explicit gravity-settle stage, a measured
 normal-load qualification before it enables the 20-mm/s lower-wall drive, and
 records live lid reactions and solid fraction to `cell_history.csv`.
 
-**Current source-geometry gate — no campaign is runnable yet.** The 17 spheres
-per fibre overlap; their raw summed volume is not the physical rubber-cord
-volume used by Fig. 7. An independent Table-2 spherocylinder audit corrects
-that error and still gives 0.408 physical-cord solid fraction for the declared
-8,500-bead, 64-mm Cartesian topology at its largest allowed (50-mm) lid gap.
-Every digitized rubber-cord Fig. 7 experiment is at or below 0.380.
-`run_case.py` therefore refuses to run the geometry instead of producing a
-misleading comparison. This is not a result or a calibration failure: the
-missing input is the paper's published annular-cell geometry/initial gap. It
-must be recovered independently; changing the gap to fit Fig. 7 would be
-back-fitting and is prohibited.
+**Geometry correction.** Earlier revisions treated 64/96 mm as one side of a
+64-by-36-mm periodic rectangle. That invented a depth and inflated the initial
+64-mm physical-cord fraction to 0.408. The executable now uses DIRT's static
+y-axis cylindrical sidewall and circular planform (`A = pi D^2/4`) with the
+stated diameter. The initial 64-mm physical-cord fraction is 0.292, derived
+only from the Table-2 cord volume, 500 fibres, the 64-mm diameter, and the
+50-mm initial lid gap—not from Fig. 7. The 96-mm finite-size case uses 1,125
+fibres, preserving that fraction by area scaling. This removes the geometry
+rejection, but is not a completed replication: all six DIRT histories and the
+external comparison still have to be run and retained.
 
 ```bash
 python3 examples/bench_guo2018_fiber_shear_cell/run_case.py \
   --pressure-pa 651 --width-mm 64 --output /tmp/guo-p651-w64 --ranks 8 --prepare-only
-# Omit --prepare-only only after the source-geometry gate is resolved; the
-# gamma >= 0.5 case is intentionally long.
+# Omit --prepare-only to execute the solver; the gamma >= 0.5 case is long.
 ```
 
 For the complete campaign, `run_campaign.py` writes a campaign manifest and a
-per-case manifest (including the horizontal MPI decomposition) before invoking
-DIRT. MPI ranks are decomposed only over the periodic horizontal axes; the
-normal wall direction remains local. This improves execution throughput
-without changing the source population, timestep, measurement window, or
-acceptance tolerances. The runner builds DIRT with its default `mpi_backend`;
+per-case manifest before invoking DIRT. The normal wall direction remains
+local. The runner builds DIRT with its default `mpi_backend`;
 it does not launch a serial-only binary under `mpirun`.
 
 ```bash
@@ -65,7 +60,7 @@ with a gravity-settle stage, at least 40 measured-load samples within 15% of
 the requested pressure, and at least 40 driven-shear samples at engineering
 strain >= 0.50.  The final shear window must retain the measured load.
 
-Run all six solver cases with `run_case.py` (the 96-mm cases contain 750
+Run all six solver cases with `run_case.py` (the 96-mm cases contain 1,125
 17-bead fibres), then validate their histories:
 
 ```bash
