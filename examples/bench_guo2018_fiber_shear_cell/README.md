@@ -10,14 +10,18 @@ The source describes a periodic planar numerical control cell, but explicitly
 builds its walls and blades from rigidly connected spheres and applies the
 normal stress through the *weight* of the upper wall (pp. 5-6). The retained
 DIRT input instead uses plane-wall assemblies and a force-feedback lid servo.
-Both changes alter the published boundary-value problem. It is therefore **not
-a source-equivalent Guo case** and is deliberately non-runnable as a replication.
+Both changes alter the published boundary-value problem. More importantly, the
+paper does not report the wall-sphere diameter/layout or upper-wall mass, so a
+sphere-built, gravity-loaded body cannot be uniquely reconstructed from the
+primary PDF. It is therefore **not a source-equivalent Guo case** and is
+deliberately non-runnable as a replication.
 The configuration is retained only as an implementation sketch; no solver
 history, comparison plot, or replication PASS is committed.
 
 ```bash
 python3 examples/bench_guo2018_fiber_shear_cell/source_contract.py --verify-doi
 python3 examples/bench_guo2018_fiber_shear_cell/evidence_contract.py --self-test
+python3 examples/bench_guo2018_fiber_shear_cell/source_geometry_audit.py --verify
 ```
 
 ## Execution and validation boundary
@@ -28,11 +32,12 @@ writes a solver input. `prepare.py` can only write a separately labelled
 candidate topology after an explicit `--candidate-only` acknowledgement; it
 cannot be represented as a prepared replication case.
 
-Before any future campaign, implement and audit a rigid sphere-built
-wall/blade assembly *and* a weighted, vertically free upper-wall body with its
-horizontal and rotational constraints stated and tested. Then independently
-test that boundary machinery before a Fig. 6/7 campaign. The PDF receipt is
-necessary evidence, not a waiver of this work.
+Before any future campaign, obtain the omitted wall-body data from the authors
+or an archival supplement, then implement and audit a rigid sphere-built
+wall/blade assembly and weighted, vertically free upper-wall body. A plausible
+tessellation or mass is not source evidence. Then independently test that
+boundary machinery before a Fig. 6/7 campaign. The PDF receipt is necessary
+evidence, not a waiver of this work.
 
 ```bash
 python3 examples/bench_guo2018_fiber_shear_cell/source_contract.py --require-runnable

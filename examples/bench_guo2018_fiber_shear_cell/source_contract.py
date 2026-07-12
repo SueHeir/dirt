@@ -60,10 +60,8 @@ def require_published_control_cell(config: Path) -> None:
     mismatches = protocol_mismatches(config)
     if mismatches:
         raise RuntimeError("BLOCKED: source-equivalence is false:\n- " + "\n- ".join(mismatches))
-    raise RuntimeError(
-        "BLOCKED: no source-equivalent DIRT wall/body implementation has been audited; "
-        "absence of these known mismatches is not a runnable certification"
-    )
+    from source_geometry_audit import require_reproducible_wall_body
+    require_reproducible_wall_body()
 
 
 def main() -> None:
@@ -96,7 +94,7 @@ class SourceContractTests(unittest.TestCase):
             config.write('[[wall]]\ntype = "sphere"\n')
             config.flush()
             self.assertEqual(protocol_mismatches(Path(config.name)), [])
-            with self.assertRaisesRegex(RuntimeError, "not a runnable certification"):
+            with self.assertRaisesRegex(RuntimeError, "cannot be uniquely transcribed"):
                 require_published_control_cell(Path(config.name))
 
 

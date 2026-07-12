@@ -1,0 +1,20 @@
+{
+  "reported": {
+    "sphere_built_walls": "Walls are rigidly connected spheres.",
+    "upper_blade_length_mm": 4,
+    "lower_blade_length_mm": 2,
+    "blade_pitch_mm": 8,
+    "upper_wall_constraints": "fixed in x and z; vertically free under gravity and bed contact",
+    "periodic_cell_mm": [64, 36]
+  },
+  "not_reported": {
+    "wall_sphere_diameter_mm": "NOT_REPORTED",
+    "wall_sphere_layout": "NOT_REPORTED",
+    "upper_wall_mass_kg": "NOT_REPORTED"
+  },
+  "source_pages": {
+    "wall_and_motion": [5, 6],
+    "cell_dimensions": [8],
+    "table_2": [24]
+  }
+}
