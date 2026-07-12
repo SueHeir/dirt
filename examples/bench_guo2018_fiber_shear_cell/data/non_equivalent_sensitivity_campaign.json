@@ -1,0 +1,48 @@
+{
+  "schema": 1,
+  "campaign_label": "guo-2019-rubber-cord-wall-resolution-preregistration",
+  "source_equivalent": false,
+  "replication_claim": false,
+  "selection_basis": "predeclared_sensitivity",
+  "reference_observables_consulted_for_mesh_selection": [],
+  "normal_stress_pa": [651, 1735, 3470],
+  "required_observables": ["shear_stress_pa", "solid_fraction"],
+  "steady_window": {
+    "start_shear_strain": 10.0,
+    "end_shear_strain": 20.0,
+    "basis": "Predeclared before any DIRT-vs-Fig. 6/7 comparison; the window is a campaign-analysis choice, not a fitted value."
+  },
+  "wall_realisations": [
+    {
+      "label": "square-pitch-0p6mm",
+      "source_equivalent": false,
+      "selection_basis": "predeclared_sensitivity",
+      "diameter_mm": 0.6,
+      "layout": "square lattice; rigidly joined spheres; blade geometry must retain the reported dimensions",
+      "reference_observables_consulted": []
+    },
+    {
+      "label": "square-pitch-1p2mm",
+      "source_equivalent": false,
+      "selection_basis": "predeclared_sensitivity",
+      "diameter_mm": 1.2,
+      "layout": "square lattice; rigidly joined spheres; blade geometry must retain the reported dimensions",
+      "reference_observables_consulted": []
+    },
+    {
+      "label": "square-pitch-2p4mm",
+      "source_equivalent": false,
+      "selection_basis": "predeclared_sensitivity",
+      "diameter_mm": 2.4,
+      "layout": "square lattice; rigidly joined spheres; blade geometry must retain the reported dimensions",
+      "reference_observables_consulted": []
+    }
+  ],
+  "required_result_artifacts": [
+    "solver_input",
+    "cell_history",
+    "observable_summary",
+    "provenance_receipt"
+  ],
+  "result_selection_rule": "Report every declared wall realisation and every declared normal stress. Do not select a wall realisation using Fig. 6/7 or omit an unfavourable run."
+}

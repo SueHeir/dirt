@@ -28,6 +28,8 @@ python3 examples/bench_guo2018_fiber_shear_cell/source_contract.py --verify-doi
 python3 examples/bench_guo2018_fiber_shear_cell/source_contract.py --self-test
 python3 examples/bench_guo2018_fiber_shear_cell/evidence_contract.py --self-test
 python3 examples/bench_guo2018_fiber_shear_cell/source_geometry_audit.py --verify
+python3 examples/bench_guo2018_fiber_shear_cell/campaign_preflight.py
+python3 examples/bench_guo2018_fiber_shear_cell/campaign_preflight.py --self-test
 python3 examples/bench_guo2018_fiber_shear_cell/reconstruction_readiness.py --verify
 python3 examples/bench_guo2018_fiber_shear_cell/normal_load_audit.py --self-test
 ```
@@ -73,3 +75,14 @@ using the Figure 6/7 targets. `source_geometry_audit.py --verify` enforces the
 provenance rule for any proposed mesh. This is intentionally not a route to a
 replication PASS: the current tree has no such mesh, no solver history, and no
 DIRT-vs-reference result.
+
+`data/non_equivalent_sensitivity_campaign.json` now makes the permissible
+fallback concrete without pretending it resolves the source omission: it
+pre-registers three distinct sphere-wall resolutions, all three digitized
+normal-stress cases, both eventual observables, and a fixed strain window.
+`campaign_preflight.py --require-results RESULT_ROOT` refuses any later result
+claim unless each wall/load case supplies its solver input, history, observable
+summary, and provenance receipt. It deliberately does not compare a result to
+Fig. 6/7; that comparison belongs only after the complete, non-selected
+ensemble exists. The values are a sensitivity bracket, **not** reported wall
+dimensions, not calibration parameters, and not a replication result.
