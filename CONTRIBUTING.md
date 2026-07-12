@@ -108,6 +108,22 @@ cargo build --release
 cargo test --workspace
 ```
 
+### Cross-tier HEAD compatibility
+
+From a DIRT checkout, run this one command to check its current commit against
+the clean local HEADs of GRASS and SOIL (the default locations are
+`~/projects/grass` and `~/projects/soil`):
+
+```bash
+ci/ecosystem-head-check.sh
+```
+
+It prints each repository's commit and remote, patches Cargo only for that run,
+then runs `cargo metadata` and the non-MPI `precision-double` workspace check.
+Use `--grass PATH --soil PATH` to check isolated worktrees or another pair of
+candidate commits. The Gitea CI workflow runs the same command after checking
+out the three `main` heads.
+
 If you touched physics, run the relevant benchmark and cite the verdict:
 
 ```bash
