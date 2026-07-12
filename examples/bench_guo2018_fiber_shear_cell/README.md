@@ -20,21 +20,29 @@ python3 examples/bench_guo2018_fiber_shear_cell/prepare.py --audit /tmp/guo64
 python3 examples/bench_guo2018_fiber_shear_cell/source_contract.py --verify-doi --require-runnable
 ```
 
-## Present limitation (fail closed)
+## Execution and validation boundary
 
-The config records planar plates and the required blade dimensions, but DIRT's
-current wall model has only independent planes: it cannot yet attach the full
-eight-position blade arrays to the translating base and vertically mobile lid
-as rigid assemblies.  A single bounded-plane pair is not an array, so
-`source_contract.py --require-runnable` deliberately rejects this input.  The
-runner therefore cannot produce a history that `validate.py` would compare
-with Fig. 6 (steady shear stress) and Fig. 7 (solid fraction).
+`dirt_wall` now supports rigid named plane-wall assemblies: follower planes
+translate with the displacement and velocity of one driver, including a
+force-servo driver.  At setup, `main.rs` expands the four declarative blade
+templates into the paper's eight stations at 8-mm pitch; lower blades follow
+the translating base and upper blades follow the mobile lid.  This is a wall
+geometry/motion facility, not a fitted rheology closure.
 
-This is an explicit software capability boundary, not a failed numerical fit:
-no solver history, comparison plot, or replication PASS is claimed.  The next
-implementation must add a reusable rigid wall-assembly/motion facility (or an
-equivalent source-faithful wall geometry), then run independent realizations
-and compare measured lid reaction and physical cord volume fraction to the
-digitized experimental points.  The existing validator remains fail-closed:
-it accepts only solver-receipted histories, measured load, all three loads,
-and the external Fig. 6/7 data.
+```bash
+python3 examples/bench_guo2018_fiber_shear_cell/run_campaign.py --output /tmp/guo-campaign --ranks 1
+python3 examples/bench_guo2018_fiber_shear_cell/validate.py \
+  --case 651:64:/tmp/guo-campaign/p651_w64 \
+  --case 1735:64:/tmp/guo-campaign/p1735_w64 \
+  --case 3470:64:/tmp/guo-campaign/p3470_w64 \
+  --case 651:96:/tmp/guo-campaign/p651_w96 \
+  --case 1735:96:/tmp/guo-campaign/p1735_w96 \
+  --case 3470:96:/tmp/guo-campaign/p3470_w96
+```
+
+No solver history, comparison plot, or replication PASS is committed by this
+revision.  The validator accepts only solver-receipted histories with measured
+normal-load qualification, a post-drive steady-strain window, all three loads,
+and the independent Fig. 6/7 digitization plus the 64/96-mm sensitivity check.
+The authorship assistance for this implementation is AI-assisted; the absence
+of a completed full campaign is a validation limit, not evidence of agreement.

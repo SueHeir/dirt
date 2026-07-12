@@ -1,10 +1,8 @@
 #!/usr/bin/env python3
-"""Prepare the source-derived periodic control-cell cases.
+"""Run the source-derived periodic control-cell campaign.
 
-Execution remains intentionally blocked: DIRT has no rigid wall-assembly
-primitive for the paper's 8-mm-pitch blade arrays moving with their plates.
-The blocker is not the experimental annulus; Guo et al.'s DEM comparator is a
-periodic planar cell.
+Each case is materialized, topology-audited, and executed through ``run_case``;
+the acceptance validator remains separate and fail-closed on missing histories.
 """
 import argparse
 import json
@@ -22,11 +20,6 @@ def main() -> None:
     parser.add_argument("--ranks", type=int, default=1)
     parser.add_argument("--prepare-only", action="store_true")
     args = parser.parse_args()
-    if not args.prepare_only:
-        raise SystemExit(
-            "BLOCKED: DIRT cannot attach the required rigid blade arrays to the "
-            "mobile/translating plates; use --prepare-only only."
-        )
     args.output.mkdir(parents=True, exist_ok=True)
     manifest = {"cases": [{"pressure_pa": p, "width_mm": w} for p, w in CASES],
                 "ranks_per_case": args.ranks, "validator": "validate.py"}
@@ -36,7 +29,7 @@ def main() -> None:
                         "--pressure-pa", str(pressure), "--width-mm", str(width),
                         "--output", str(args.output / f"p{pressure}_w{width}"),
                         "--ranks", str(args.ranks),
-                        *( ["--prepare-only"] if args.prepare_only else [])], check=True)
+                        *(["--prepare-only"] if args.prepare_only else [])], check=True)
 
 
 if __name__ == "__main__":

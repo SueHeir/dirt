@@ -307,6 +307,13 @@ pub struct WallDef {
     /// and [`Walls::activate_by_name`].
     #[serde(default)]
     pub name: Option<String>,
+    /// Optional rigid assembly identifier for a plane wall.  Members follow
+    /// the displacement and velocity of the single `assembly_driver` plane.
+    #[serde(default)]
+    pub assembly: Option<String>,
+    /// Marks the plane whose motion drives an [`WallDef::assembly`].
+    #[serde(default)]
+    pub assembly_driver: bool,
     /// Lower X bound for the plane wall's active region (default: −∞).
     #[serde(default = "default_neg_inf")]
     pub bound_x_low: f64,
@@ -345,6 +352,7 @@ pub struct WallDef {
 // ── Runtime types ───────────────────────────────────────────────────────────
 
 /// Wall motion mode at runtime (plane walls only).
+#[derive(Clone)]
 pub enum WallMotion {
     /// Wall is stationary.
     Static,
@@ -385,6 +393,7 @@ pub enum WallMotion {
 /// The signed distance from the particle center to the wall plane is
 /// `dot(pos - point, normal)`. Overlap is `delta = radius - distance`.
 /// Force is applied only when `delta > 0` (or within JKR adhesion range).
+#[derive(Clone)]
 pub struct WallPlane {
     /// Current X-coordinate of a point on the plane (updated by motion).
     pub point_x: f64,
@@ -402,6 +411,10 @@ pub struct WallPlane {
     pub material_index: usize,
     /// Optional name for runtime enable/disable.
     pub name: Option<String>,
+    /// Rigid assembly membership, if configured.
+    pub assembly: Option<String>,
+    /// Whether this plane supplies the assembly motion.
+    pub assembly_driver: bool,
     /// Lower X bound of the wall's active region.
     pub bound_x_low: f64,
     /// Upper X bound of the wall's active region.
@@ -874,6 +887,8 @@ impl Plugin for WallPlugin {
                             normal_z: nz,
                             material_index: mat_idx,
                             name: w.name.clone(),
+                            assembly: w.assembly.clone(),
+                            assembly_driver: w.assembly_driver,
                             bound_x_low: w.bound_x_low,
                             bound_x_high: w.bound_x_high,
                             bound_y_low: w.bound_y_low,
@@ -1046,6 +1061,7 @@ pub fn wall_move(mut walls: ResMut<Walls>, atoms: Res<Atom>, comm: Option<Res<Co
     let time = walls.time;
 
     let nplanes = walls.planes.len();
+    let mut assembly_displacements = std::collections::HashMap::new();
     for idx in 0..nplanes {
         if !walls.active[idx] {
             continue;
@@ -1065,6 +1081,7 @@ pub fn wall_move(mut walls: ResMut<Walls>, atoms: Res<Atom>, comm: Option<Res<Co
             local_force
         };
         let wall = &mut walls.planes[idx];
+        let before = [wall.point_x, wall.point_y, wall.point_z];
         match wall.motion {
             WallMotion::Static => {}
             WallMotion::ConstantVelocity => {
@@ -1106,6 +1123,47 @@ pub fn wall_move(mut walls: ResMut<Walls>, atoms: Res<Atom>, comm: Option<Res<Co
                 wall.point_z += wall.velocity[2] * dt;
             }
         }
+        if wall.assembly_driver {
+            if let Some(assembly) = &wall.assembly {
+                assembly_displacements.insert(
+                    assembly.clone(),
+                    (
+                        [
+                            wall.point_x - before[0],
+                            wall.point_y - before[1],
+                            wall.point_z - before[2],
+                        ],
+                        wall.velocity,
+                    ),
+                );
+            }
+        }
+    }
+
+    // A blade, baffle, or other finite plane is a part of its parent plate,
+    // not an independently integrated wall.  Translate its contact point and
+    // finite active bounds by the driver's actual displacement (including a
+    // servo displacement) so the whole assembly stays rigid.
+    for wall in &mut walls.planes {
+        if wall.assembly_driver {
+            continue;
+        }
+        let Some(assembly) = &wall.assembly else {
+            continue;
+        };
+        let Some((delta, velocity)) = assembly_displacements.get(assembly) else {
+            continue;
+        };
+        wall.point_x += delta[0];
+        wall.point_y += delta[1];
+        wall.point_z += delta[2];
+        wall.bound_x_low += delta[0];
+        wall.bound_x_high += delta[0];
+        wall.bound_y_low += delta[1];
+        wall.bound_y_high += delta[1];
+        wall.bound_z_low += delta[2];
+        wall.bound_z_high += delta[2];
+        wall.velocity = *velocity;
     }
 
     walls.time += dt;
@@ -2107,6 +2165,8 @@ mod tests {
             normal_z: normal_z / mag,
             material_index: 0,
             name: None,
+            assembly: None,
+            assembly_driver: false,
             bound_x_low: f64::NEG_INFINITY,
             bound_x_high: f64::INFINITY,
             bound_y_low: f64::NEG_INFINITY,
@@ -2156,6 +2216,8 @@ mod tests {
             inside: None,
             material: material.to_string(),
             name: None,
+            assembly: None,
+            assembly_driver: false,
             bound_x_low: f64::NEG_INFINITY,
             bound_x_high: f64::INFINITY,
             bound_y_low: f64::NEG_INFINITY,
@@ -2602,6 +2664,34 @@ mod tests {
             walls.planes[0].point_z
         );
         assert!((walls.time - 0.001).abs() < 1e-15);
+    }
+
+    #[test]
+    fn rigid_assembly_follower_tracks_driver_point_bounds_and_velocity() {
+        let mut atom = Atom::new();
+        atom.dt = 0.001;
+        let mut driver = make_wall_plane(0.0, 0.0, 0.0, 0.0, 1.0, 0.0);
+        driver.assembly = Some("plate".to_owned());
+        driver.assembly_driver = true;
+        driver.velocity = [0.02, 0.0, 0.0];
+        driver.motion = WallMotion::ConstantVelocity;
+        let mut blade = make_wall_plane(0.008, 0.002, 0.0, 1.0, 0.0, 0.0);
+        blade.assembly = Some("plate".to_owned());
+        blade.bound_y_low = 0.0;
+        blade.bound_y_high = 0.002;
+
+        let mut app = App::new();
+        app.add_resource(atom);
+        app.add_resource(make_walls(vec![driver, blade]));
+        app.add_update_system(wall_move, ParticleSimScheduleSet::PreInitialIntegration);
+        app.organize_systems();
+        app.run();
+
+        let walls = app.get_resource_ref::<Walls>().unwrap();
+        let blade = &walls.planes[1];
+        assert!((blade.point_x - 0.00802).abs() < 1e-15);
+        assert!((blade.bound_y_high - 0.002).abs() < 1e-15);
+        assert_eq!(blade.velocity, [0.02, 0.0, 0.0]);
     }
 
     #[test]

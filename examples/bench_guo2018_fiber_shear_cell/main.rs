@@ -37,10 +37,66 @@ fn main() {
     app.add_resource(LoadQualification::default());
     app.add_resource(ShearStart::default());
     app.add_resource(LidStage::default());
+    app.add_update_system(expand_source_blades, ParticleSimScheduleSet::Setup);
     app.add_update_system(stage_lid, ParticleSimScheduleSet::Setup);
     app.add_update_system(enable_shear, ParticleSimScheduleSet::PreInitialIntegration);
     app.add_update_system(record_cell, ParticleSimScheduleSet::PostFinalIntegration);
     app.start();
+}
+
+/// Materialize the source's eight stations from the four declarative finite
+/// plane templates.  The wall crate then moves each copy rigidly with its
+/// named plate assembly; this keeps the source geometry explicit without
+/// adding benchmark-specific wall primitives to library code.
+fn expand_source_blades(mut walls: ResMut<Walls>) {
+    if walls
+        .planes
+        .iter()
+        .any(|wall| wall.name.as_deref() == Some("upper_blade_pos_7"))
+    {
+        return;
+    }
+    let templates: Vec<_> = walls
+        .planes
+        .iter()
+        .filter(|wall| {
+            wall.name
+                .as_deref()
+                .is_some_and(|name| name.ends_with("_template"))
+        })
+        .cloned()
+        .collect();
+    assert_eq!(
+        templates.len(),
+        4,
+        "Guo cell requires four blade-face templates"
+    );
+    walls.planes.retain(|wall| {
+        !wall
+            .name
+            .as_deref()
+            .is_some_and(|name| name.ends_with("_template"))
+    });
+    let retained_planes = walls.planes.len();
+    walls.active.truncate(retained_planes);
+    for template in templates {
+        let stem = template
+            .name
+            .as_deref()
+            .unwrap()
+            .trim_end_matches("_template");
+        for station in 0..8 {
+            let mut blade = template.clone();
+            let offset = station as f64 * 0.008;
+            blade.point_x += offset;
+            blade.bound_x_low += offset;
+            blade.bound_x_high += offset;
+            blade.origin[0] += offset;
+            blade.name = Some(format!("{stem}_{station}"));
+            walls.planes.push(blade);
+            walls.active.push(true);
+        }
+    }
 }
 
 /// Captured servo settings while the lid is deliberately held during gravity

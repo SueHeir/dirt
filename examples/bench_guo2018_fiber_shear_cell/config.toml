@@ -62,6 +62,8 @@ normal_y = 1.0
 material = "rubber_cord"
 name = "lower_drive"
 velocity = [0.0, 0.0, 0.0]
+assembly = "lower_plate"
+assembly_driver = true
 
 [[wall]]
 type = "plane"
@@ -70,6 +72,8 @@ normal_y = -1.0
 material = "rubber_cord"
 name = "normal_load_lid"
 servo = { target_force = 1499.904, max_velocity = 0.050, gain = 1.0e-1 }
+assembly = "upper_plate"
+assembly_driver = true
 
 [[wall]]
 type = "plane"
@@ -80,7 +84,8 @@ bound_y_high = 0.002
 bound_z_low = 0.0
 bound_z_high = 0.036
 material = "rubber_cord"
-name = "lower_blades_pos"
+name = "lower_blade_pos_template"
+assembly = "lower_plate"
 
 [[wall]]
 type = "plane"
@@ -91,7 +96,8 @@ bound_y_high = 0.002
 bound_z_low = 0.0
 bound_z_high = 0.036
 material = "rubber_cord"
-name = "lower_blades_neg"
+name = "lower_blade_neg_template"
+assembly = "lower_plate"
 
 [[wall]]
 type = "plane"
@@ -102,7 +108,8 @@ bound_y_high = 0.050
 bound_z_low = 0.0
 bound_z_high = 0.036
 material = "rubber_cord"
-name = "upper_blades_pos"
+name = "upper_blade_pos_template"
+assembly = "upper_plate"
 
 [[wall]]
 type = "plane"
@@ -113,7 +120,13 @@ bound_y_high = 0.050
 bound_z_low = 0.0
 bound_z_high = 0.036
 material = "rubber_cord"
-name = "upper_blades_neg"
+name = "upper_blade_neg_template"
+assembly = "upper_plate"
+
+[guo_blades]
+# Computational Set-up, Guo et al. (2019): eight blade stations, 8-mm pitch.
+stations = 8
+pitch_x_m = 0.008
 
 [output]
 dir = "examples/bench_guo2018_fiber_shear_cell/generated"

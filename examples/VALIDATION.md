@@ -24,20 +24,17 @@ its curve-level check is still against the rigid-body/Maw theory those experimen
 points confirmed, because the paper's per-point scatter lives only in paywalled
 figures.
 
-## `bench_guo2018_fiber_shear_cell` — blocked external-reference replication
+## `bench_guo2018_fiber_shear_cell` — pending external-reference replication
 
-The Guo rubber-cord directory audits the paper's Table 2 bead, bond, material,
-and timestep representation. Its independent DOI metadata check establishes a
-Schulze ring shear apparatus, while the present DIRT configuration is a
-plane-driven cylindrical cup. Solver execution is therefore blocked: six cup
-histories would not be a Guo replication. A future validator must receive
-verified annular geometry, rotational ring shear, complete histories, a
-measured normal-load qualification, and a steady driven-shear window. Only
-then may it compare an independently recovered ring-cell result against
-digitized experimental Fig. 6/7 values and use a second ring size as a size
-sensitivity check. No solver result or PASS claim is committed. See its
-README for the protocol and its explicit digitization, finite-size, wall, and
-bonded-sphere limitations.
+The Guo rubber-cord directory audits Table 2's bead, bond, material, and
+timestep representation, then models the paper's *numerical* periodic planar
+control cell—not the experimental Schulze-ring annulus.  Its mobile lid and
+translated base carry source-specified 4/2-mm blade arrays through DIRT's
+rigid plane-wall assemblies.  A completed result must still supply six
+solver-receipted histories, measured normal-load qualification, a post-drive
+steady window, and two Fig. 6/7 comparisons at three loads plus a 64/96-mm
+sensitivity check. No solver result, figure, or PASS is committed yet; this is
+an implementation prerequisite rather than an external replication result.
 
 ## `material_pair_table_validation` — typed Material compatibility
 

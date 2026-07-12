@@ -53,12 +53,12 @@ def require_published_control_cell(config: Path) -> None:
     if domain.get("x_high") != 0.064 or domain.get("z_high") != 0.036:
         failures.append("the baseline control cell must be Lx=64 mm and Lz=36 mm")
     names = {wall.get("name") for wall in walls}
-    if not {"upper_blades_pos", "upper_blades_neg", "lower_blades_pos", "lower_blades_neg"} <= names:
+    if not {"upper_blade_pos_template", "upper_blade_neg_template", "lower_blade_pos_template", "lower_blade_neg_template"} <= names:
         failures.append("the published numerical cell requires paired 4-mm upper and 2-mm lower blade faces")
     by_name = {wall.get("name"): wall for wall in walls}
-    for prefix, height in (("upper_blades", 0.004), ("lower_blades", 0.002)):
+    for prefix, height in (("upper_blade", 0.004), ("lower_blade", 0.002)):
         for side in ("pos", "neg"):
-            wall = by_name.get(f"{prefix}_{side}", {})
+            wall = by_name.get(f"{prefix}_{side}_template", {})
             if abs((wall.get("bound_y_high", 0.0) - wall.get("bound_y_low", 0.0)) - height) > 1e-12:
                 failures.append(f"{prefix} must have {height * 1000:g}-mm vertical extent")
     # A plane face at one x coordinate is only one blade.  The source's 64-mm
@@ -66,10 +66,13 @@ def require_published_control_cell(config: Path) -> None:
     # remain rigidly registered to the translating/servo plates.  Current
     # DIRT plane walls are independent, so do not let a token pair of faces
     # masquerade as this source-critical assembly.
-    upper_positions = {wall.get("point_x") for wall in walls if str(wall.get("name", "")).startswith("upper_blade_")}
-    lower_positions = {wall.get("point_x") for wall in walls if str(wall.get("name", "")).startswith("lower_blade_")}
-    if len(upper_positions) != 8 or len(lower_positions) != 8:
-        failures.append("the source requires eight 8-mm-pitch blade positions per wall; independent plane faces are not a rigid blade array")
+    blades = input_config.get("guo_blades", {})
+    if blades.get("stations") != 8 or abs(blades.get("pitch_x_m", 0.0) - 0.008) > 1e-12:
+        failures.append("the source requires eight 8-mm-pitch blade positions per wall")
+    expected_assembly = {"lower_blade_pos_template": "lower_plate", "lower_blade_neg_template": "lower_plate",
+                         "upper_blade_pos_template": "upper_plate", "upper_blade_neg_template": "upper_plate"}
+    if any(by_name.get(name, {}).get("assembly") != assembly for name, assembly in expected_assembly.items()):
+        failures.append("blade templates must be rigidly attached to their translating or servo-controlled plate")
     if failures:
         raise RuntimeError("BLOCKED: current DIRT input is not the published periodic control cell: " + "; ".join(failures))
 
