@@ -314,6 +314,15 @@ pub struct WallDef {
     /// Marks the plane whose motion drives an [`WallDef::assembly`].
     #[serde(default)]
     pub assembly_driver: bool,
+    /// Number of equally spaced copies of a finite plane wall along x.
+    ///
+    /// This is evaluated while reading the input, so a repeated wall is part
+    /// of the solver topology rather than benchmark-side runtime setup.
+    #[serde(default = "default_repeat_count")]
+    pub repeat_x_count: usize,
+    /// X spacing in metres between copies of a repeated finite plane wall.
+    #[serde(default)]
+    pub repeat_x_pitch: f64,
     /// Lower X bound for the plane wall's active region (default: −∞).
     #[serde(default = "default_neg_inf")]
     pub bound_x_low: f64,
@@ -347,6 +356,10 @@ pub struct WallDef {
     /// Wall temperature in K (None = no wall heat transfer).
     #[serde(default)]
     pub temperature: Option<f64>,
+}
+
+fn default_repeat_count() -> usize {
+    1
 }
 
 // ── Runtime types ───────────────────────────────────────────────────────────
@@ -878,30 +891,44 @@ impl Plugin for WallPlugin {
                             (WallMotion::Static, [0.0; 3])
                         };
 
-                        planes.push(WallPlane {
-                            point_x: w.point_x,
-                            point_y: w.point_y,
-                            point_z: w.point_z,
-                            normal_x: nx,
-                            normal_y: ny,
-                            normal_z: nz,
-                            material_index: mat_idx,
-                            name: w.name.clone(),
-                            assembly: w.assembly.clone(),
-                            assembly_driver: w.assembly_driver,
-                            bound_x_low: w.bound_x_low,
-                            bound_x_high: w.bound_x_high,
-                            bound_y_low: w.bound_y_low,
-                            bound_y_high: w.bound_y_high,
-                            bound_z_low: w.bound_z_low,
-                            bound_z_high: w.bound_z_high,
-                            velocity,
-                            motion,
-                            origin: [w.point_x, w.point_y, w.point_z],
-                            force_accumulator: 0.0,
-                            force_vector: [0.0; 3],
-                            temperature: w.temperature,
-                        });
+                        let repeat_count = w.repeat_x_count;
+                        if repeat_count == 0 {
+                            panic!("plane wall repeat_x_count must be at least one");
+                        }
+                        for copy in 0..repeat_count {
+                            let offset = copy as f64 * w.repeat_x_pitch;
+                            let name = w.name.as_ref().map(|name| {
+                                if repeat_count == 1 {
+                                    name.clone()
+                                } else {
+                                    format!("{name}_{copy}")
+                                }
+                            });
+                            planes.push(WallPlane {
+                                point_x: w.point_x + offset,
+                                point_y: w.point_y,
+                                point_z: w.point_z,
+                                normal_x: nx,
+                                normal_y: ny,
+                                normal_z: nz,
+                                material_index: mat_idx,
+                                name,
+                                assembly: w.assembly.clone(),
+                                assembly_driver: w.assembly_driver,
+                                bound_x_low: w.bound_x_low + offset,
+                                bound_x_high: w.bound_x_high + offset,
+                                bound_y_low: w.bound_y_low,
+                                bound_y_high: w.bound_y_high,
+                                bound_z_low: w.bound_z_low,
+                                bound_z_high: w.bound_z_high,
+                                velocity,
+                                motion: motion.clone(),
+                                origin: [w.point_x + offset, w.point_y, w.point_z],
+                                force_accumulator: 0.0,
+                                force_vector: [0.0; 3],
+                                temperature: w.temperature,
+                            });
+                        }
                     }
                     other => {
                         eprintln!(
@@ -2218,6 +2245,8 @@ mod tests {
             name: None,
             assembly: None,
             assembly_driver: false,
+            repeat_x_count: 1,
+            repeat_x_pitch: 0.0,
             bound_x_low: f64::NEG_INFINITY,
             bound_x_high: f64::INFINITY,
             bound_y_low: f64::NEG_INFINITY,

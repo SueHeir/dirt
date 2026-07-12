@@ -52,9 +52,9 @@ beta_shear = 1.0
 beta_twist = 1.0
 beta_bending = 1.0
 
-# Plates plus paired, finite vertical-plane faces.  The latter represent the
-# 4-mm lid and 2-mm base blades; `main.rs` keeps each array registered to its
-# moving plate.  Centres are 8 mm apart in x, as stated by the paper.
+# Plates plus paired, finite vertical-plane faces. The source's eight stations
+# are declared here and expanded by the generic wall-input loader before the
+# simulation begins, so the executed contact topology is auditable from TOML.
 [[wall]]
 type = "plane"
 point_y = 0.0
@@ -84,8 +84,10 @@ bound_y_high = 0.002
 bound_z_low = 0.0
 bound_z_high = 0.036
 material = "rubber_cord"
-name = "lower_blade_pos_template"
+name = "lower_blade_pos"
 assembly = "lower_plate"
+repeat_x_count = 8
+repeat_x_pitch = 0.008
 
 [[wall]]
 type = "plane"
@@ -96,8 +98,10 @@ bound_y_high = 0.002
 bound_z_low = 0.0
 bound_z_high = 0.036
 material = "rubber_cord"
-name = "lower_blade_neg_template"
+name = "lower_blade_neg"
 assembly = "lower_plate"
+repeat_x_count = 8
+repeat_x_pitch = 0.008
 
 [[wall]]
 type = "plane"
@@ -108,8 +112,10 @@ bound_y_high = 0.050
 bound_z_low = 0.0
 bound_z_high = 0.036
 material = "rubber_cord"
-name = "upper_blade_pos_template"
+name = "upper_blade_pos"
 assembly = "upper_plate"
+repeat_x_count = 8
+repeat_x_pitch = 0.008
 
 [[wall]]
 type = "plane"
@@ -120,13 +126,10 @@ bound_y_high = 0.050
 bound_z_low = 0.0
 bound_z_high = 0.036
 material = "rubber_cord"
-name = "upper_blade_neg_template"
+name = "upper_blade_neg"
 assembly = "upper_plate"
-
-[guo_blades]
-# Computational Set-up, Guo et al. (2019): eight blade stations, 8-mm pitch.
-stations = 8
-pitch_x_m = 0.008
+repeat_x_count = 8
+repeat_x_pitch = 0.008
 
 [output]
 dir = "examples/bench_guo2018_fiber_shear_cell/generated"

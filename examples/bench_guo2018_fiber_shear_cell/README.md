@@ -22,12 +22,13 @@ python3 examples/bench_guo2018_fiber_shear_cell/source_contract.py --verify-doi 
 
 ## Execution and validation boundary
 
-`dirt_wall` now supports rigid named plane-wall assemblies: follower planes
+`dirt_wall` supports rigid named plane-wall assemblies: follower planes
 translate with the displacement and velocity of one driver, including a
-force-servo driver.  At setup, `main.rs` expands the four declarative blade
-templates into the paper's eight stations at 8-mm pitch; lower blades follow
-the translating base and upper blades follow the mobile lid.  This is a wall
-geometry/motion facility, not a fitted rheology closure.
+force-servo driver.  The four blade-face entries in `config.toml` declare
+eight 8-mm-pitch copies each; the generic input loader materializes all 32
+finite faces before integration. Lower blades follow the translating base and
+upper blades follow the mobile lid. This is a wall geometry/motion facility,
+not a fitted rheology closure.
 
 ```bash
 python3 examples/bench_guo2018_fiber_shear_cell/run_campaign.py --output /tmp/guo-campaign --ranks 1
