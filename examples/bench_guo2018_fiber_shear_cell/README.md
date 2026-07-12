@@ -51,6 +51,27 @@ python3 examples/bench_guo2018_fiber_shear_cell/prepare.py --audit /tmp/guo64-ca
 not a physics result. The 96-mm/750-fibre population is explicitly marked as a
 derived sensitivity candidate, not a reported source input.
 
+## Sphere-built boundary candidates
+
+`wall_realisation.py` now materializes three predeclared, non-calibrated
+sphere-built wall/blade meshes (0.6, 1.2, and 2.4 mm). They enforce the paper's
+64 x 36-mm periodic planform, 8-mm blade pitch, and 2/4-mm lower/upper blade
+lengths, while preserving the unresolved sphere diameter and lattice as a
+non-equivalence. For example:
+
+```bash
+python3 examples/bench_guo2018_fiber_shear_cell/wall_realisation.py \
+  --diameter-mm 1.2 --output /tmp/guo-wall-1p2
+python3 examples/bench_guo2018_fiber_shear_cell/source_geometry_audit.py \
+  --verify --wall-realisation /tmp/guo-wall-1p2/wall_realisation.json
+```
+
+These artifacts are generated geometry and provenance only: they do not drive
+the current DIRT wall API, produce a history, or support a Fig. 6/7 comparison.
+They make the missing implementation boundary precise: a future solver must
+consume every predeclared candidate through rigid moving assemblies, retain all
+histories, and report sensitivity rather than choose a target-fitting mesh.
+
 ## What would unblock replication
 
 Obtain the missing sphere-wall dimensions/layout from the authors, an archival

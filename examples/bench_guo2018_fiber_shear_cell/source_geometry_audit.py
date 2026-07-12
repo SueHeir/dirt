@@ -46,7 +46,8 @@ def validate_wall_realisation(manifest):
     item = json.loads(Path(manifest).read_text())
     required = {"label", "source_equivalent", "selection_basis", "diameter_mm",
                 "layout", "reference_observables_consulted"}
-    if set(item) != required:
+    optional_generated = {"counts", "source_constraints"}
+    if not required <= set(item) or set(item) - required - optional_generated:
         raise ValueError("wall realisation schema changed")
     if item["source_equivalent"]:
         raise ValueError("unreported wall discretisation cannot be labelled source-equivalent")
@@ -58,6 +59,8 @@ def validate_wall_realisation(manifest):
         raise ValueError("wall layout must be declared")
     if item["reference_observables_consulted"]:
         raise ValueError("wall choice must not consult Fig. 6/7 observables")
+    if "counts" in item and (not all(isinstance(v, int) and v > 0 for v in item["counts"].values())):
+        raise ValueError("generated wall counts must be positive integers")
     return item
 
 
