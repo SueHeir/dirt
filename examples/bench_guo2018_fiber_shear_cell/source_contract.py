@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
-"""Guard this unreceipted draft against being called a Guo replication.
+"""Guard a source-receipted but geometrically non-equivalent Guo draft.
 
-Crossref can verify the DOI/title, but the primary article is not available in
-this checkout.  Therefore no numerical-control-cell detail in ``config.toml``
-is source-authenticated.  The historical draft must not execute or be used to
-make a geometry claim until ``evidence_contract.py`` accepts a primary-source
-receipt.  This is not a physics validation or a substitute for the two
-published-observable comparisons required by the goal.
+The primary article is now hash-bound by ``evidence_contract.py``.  It states
+that its periodic control-cell walls and blades are built from rigidly connected
+spheres (pp. 5-6).  The retained DIRT input uses finite plane walls, so it is
+not source-equivalent and must not run as a Guo replication.  This is neither
+a physics validation nor a substitute for the two published-observable gates.
 """
 import argparse
 import json
@@ -30,11 +29,16 @@ def published_record() -> dict:
 
 
 def require_published_control_cell(config: Path) -> None:
-    """Always reject the historical draft before it reaches a solver."""
-    del config
+    """Reject the retained plane-wall draft against the paper's wall topology."""
+    text = config.read_text()
+    if 'type = "plane"' in text:
+        raise RuntimeError(
+            "BLOCKED: Guo pp. 5-6 specifies walls/blades built from rigidly connected spheres, "
+            "but config.toml uses plane walls; this is not a source-equivalent Guo control cell"
+        )
     raise RuntimeError(
-        "BLOCKED: no primary-source receipt authenticates the control-cell geometry or wall construction; "
-        "the historical input is not runnable as a Guo replication"
+        "BLOCKED: source-equivalence is not established for this control-cell configuration; "
+        "do not run it as a Guo replication"
     )
 
 
@@ -53,14 +57,14 @@ def main() -> None:
     if args.verify_doi:
         record = published_record()
         print(f"EXTERNAL BIBLIOGRAPHY: {record['doi']} — {record['title']}")
-        print("No primary-source method detail is authenticated in this checkout.")
+        print("Bibliography is independently checked; method evidence is hash-bound in reference_provenance.json.")
     if args.require_runnable:
         require_published_control_cell(args.config)
 
 
 class SourceContractTests(unittest.TestCase):
-    def test_rejects_unreceipted_historical_geometry(self):
-        with self.assertRaisesRegex(RuntimeError, "no primary-source receipt"):
+    def test_rejects_plane_walls_against_primary_wall_topology(self):
+        with self.assertRaisesRegex(RuntimeError, "rigidly connected spheres"):
             require_published_control_cell(HERE / "config.toml")
 
 

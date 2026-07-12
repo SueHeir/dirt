@@ -159,9 +159,9 @@ def main():
 
 
 class ValidatorTests(unittest.TestCase):
-    def test_external_digitization_agrees_with_printed_figure_fit(self):
+    def test_external_digitization_rejects_an_unreceipted_artifact(self):
         with tempfile.NamedTemporaryFile() as pdf:
-            with self.assertRaisesRegex(ValueError, "provenance is incomplete"):
+            with self.assertRaisesRegex(ValueError, "hash"):
                 reference(Path(pdf.name))
 
     def history(self, normal=651.0, stages=True):

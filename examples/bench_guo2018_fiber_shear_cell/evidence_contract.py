@@ -90,14 +90,14 @@ def main() -> None:
 
 
 class EvidenceContractTests(unittest.TestCase):
-    def test_rejects_inherited_unverified_transcription(self):
+    def test_rejects_arbitrary_pdf_instead_of_receipted_primary(self):
         with tempfile.NamedTemporaryFile() as pdf:
-            with self.assertRaisesRegex(ValueError, "provenance is incomplete"):
+            with self.assertRaisesRegex(ValueError, "hash"):
                 verify_reference_data(Path(pdf.name))
 
-    def test_rejects_unverified_primary_before_any_method_transcription(self):
+    def test_rejects_arbitrary_pdf_before_any_method_transcription(self):
         with tempfile.NamedTemporaryFile() as pdf:
-            with self.assertRaisesRegex(ValueError, "provenance is incomplete"):
+            with self.assertRaisesRegex(ValueError, "hash"):
                 verify_primary_reference(Path(pdf.name))
 
     def test_rejects_pdf_that_does_not_match_a_completed_record(self):

@@ -24,8 +24,11 @@ def main() -> None:
     args = parser.parse_args()
     # Fail before writing a campaign manifest or any pseudo-source topology.
     # `run_case.py` repeats this check for direct callers.
-    from run_case import require_primary_reference
+    from run_case import require_primary_reference, require_published_control_cell
     require_primary_reference(args.source_pdf)
+    # Check source equivalence once, before creating even the campaign
+    # directory.  Individual cases repeat the check for direct callers.
+    require_published_control_cell()
     args.output.mkdir(parents=True, exist_ok=True)
     manifest = {"cases": [{"pressure_pa": p, "width_mm": w} for p, w in CASES],
                 "ranks_per_case": args.ranks, "validator": "validate.py"}

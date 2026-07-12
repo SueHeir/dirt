@@ -117,8 +117,11 @@ def main() -> None:
     # Both preparation and execution need an authenticated method source. A
     # solver receipt cannot repair an unauditable input geometry afterwards.
     require_primary_reference(args.source_pdf)
-    if not args.prepare_only:
-        require_published_control_cell()
+    # Preparation itself creates an allegedly source-derived topology and
+    # case.toml.  Do not let --prepare-only bypass the geometry-equivalence
+    # boundary: a non-equivalent input is misleading even without a solver
+    # history, and could later be mistaken for a runnable campaign case.
+    require_published_control_cell()
     config = materialize(args.pressure_pa, args.width_mm, args.output, args.ranks)
     print(f"prepared solver case: {config}")
     if not args.prepare_only:

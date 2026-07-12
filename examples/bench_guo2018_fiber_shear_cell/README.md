@@ -1,17 +1,17 @@
 # Guo flexible-fibre normal-stress-fixed shear cell
 
 Guo et al., *AIChE Journal* 65 (2019), doi:10.1002/aic.16397, is the intended
-external reference. Crossref independently confirms the DOI and title, but
-that only proves bibliographic identity. It does **not** authenticate the
-inherited numerical geometry, material values, or Figure 6/7 values in this
-directory.
+external reference. Crossref independently confirms the DOI/title, and the
+local primary PDF is now hash-bound in `data/reference_provenance.json`.
+That receipt authenticates the cited source pages and the approximate manual
+Fig. 6/7 digitization; it does **not** authenticate the existing DIRT geometry.
 
-The primary PDF is not in the local reference library and the publisher
-returned an access challenge during this rescue. Consequently this directory
-has **no source-authenticated geometry** and no runnable Guo case. Every
-numerical detail in the retained configuration and preparer is an unverified
-historical artifact, including the cell dimensions, wall shape, blade layout,
-material constants, loading, and timestep. It is not a replication setup.
+The source describes a periodic planar numerical control cell, but explicitly
+builds its walls and blades from rigidly connected spheres (pp. 5-6). The
+retained DIRT input uses plane-wall assemblies. It is therefore **not a
+source-equivalent Guo case** and is deliberately non-runnable as a replication.
+The configuration is retained only as an implementation sketch; no solver
+history, comparison plot, or replication PASS is committed.
 
 ```bash
 python3 examples/bench_guo2018_fiber_shear_cell/source_contract.py --verify-doi
@@ -20,58 +20,48 @@ python3 examples/bench_guo2018_fiber_shear_cell/evidence_contract.py --self-test
 
 ## Execution and validation boundary
 
-No claim about the paper's wall, blade, or loading construction is made here:
-the branch does not have the source artifact needed to support one. The runner
-therefore rejects the historical draft before it writes a solver input.
+The source receipt identifies what must be implemented, and also exposes the
+current mismatch. The runner therefore rejects the plane-wall draft before it
+writes a solver input.
 
-Before any future campaign, the primary source must be recorded through the
-receipt below. Only then may an implementer derive and audit wall construction,
-normal-load control, domain geometry, and shear protocol; a source-equivalent
-implementation must then be independently tested before a Fig. 6/7 campaign.
+Before any future campaign, implement and audit a sphere-built wall/blade
+assembly equivalent to the source, then independently test it before a Fig. 6/7
+campaign. The PDF receipt is necessary evidence, not a waiver of this work.
 
 ```bash
 python3 examples/bench_guo2018_fiber_shear_cell/source_contract.py --require-runnable
 ```
 
 `run_case.py` and `run_campaign.py`, including `--prepare-only`, are expected
-to fail now. They may proceed only after a legitimate local PDF is recorded
-with its SHA-256, digitizer, date, method-page evidence, and Fig. 6/7 pages in
-`reference_provenance.json`; the validator also rejects an artifact that is not
-a PDF. The DOI/title remains independently checked through Crossref; the
-receipt is not a claim that bibliography alone proves any methods. No solver
-history, comparison plot, or replication PASS is committed. The retained validator is
-deliberately fail-closed and accepts only solver-receipted histories with
+to fail now because the geometry is non-equivalent. A future campaign must pass
+the same hash-bound PDF receipt; the validator also rejects an artifact that is
+not a PDF. The DOI/title remains independently checked through Crossref; the
+receipt is not a claim that bibliography alone proves a DIRT implementation.
+No solver history, comparison plot, or replication PASS is committed. The
+retained validator is deliberately fail-closed and accepts only solver-receipted histories with
 measured normal-load qualification, a post-drive steady-strain window, all
 three loads, two independent Fig. 6/7 comparisons, and the 64/96-mm sensitivity
 check.
 
 ## Evidence boundary
 
-The six values in `data/guo_2019_rubber_cord.csv` were inherited without a
-primary-PDF hash or digitizer record.  They therefore are **not currently an
-external reference** and cannot be used to report this replication.  Agreement
-with the printed Fig. 6 line is only an internal transcription check; it does
-not authenticate the Fig. 6/7 points.
+The six values in `data/guo_2019_rubber_cord.csv` are an approximate,
+AI-assisted manual digitization of the experimental rubber-cord series in
+Figs. 6(b) and 7 (PDF pp. 30-31). They are hash-bound to the local source PDF
+and Fig. 6 is cross-checked against its printed fit. They are not raw data and
+must be independently inspected before using them to support a result.
 
-`evidence_contract.py` requires a local copy of the primary paper, a committed
+`evidence_contract.py` requires the matching local primary paper, committed
 SHA-256/digitizer/date record, page evidence for each method claim and both
-figures, and PDF artifact check before `validate.py` will even read the
-reference CSV. The runner uses the same guard before it writes input, so an
-unaudited method transcription cannot be mistaken for a source-derived
-campaign. The present manifest intentionally says `UNVERIFIED`, so this fails
-closed:
+figures, and PDF artifact check before `validate.py` will read the reference
+CSV. The runner uses the same guard before it writes input.
 
 ```bash
 python3 examples/bench_guo2018_fiber_shear_cell/evidence_contract.py \
   --source-pdf /path/to/guo-aic-16397.pdf
 ```
 
-Once a legitimate source copy is available, record its content hash,
-digitization details, the pages used for each method claim, and the figure
-pages; retain only values visibly read from Figs. 6/7, and run the validator
-with `--source-pdf` for every comparison. Do not replace the source artifact
-with a fitted relation or with DIRT output.
+Do not replace the source artifact with a fitted relation or with DIRT output.
 
 This rescue revision is AI-assisted. Its checks establish only the stated
-provenance and protocol boundaries; it makes no physics-correctness claim and
-does not ask a reviewer to supply one.
+provenance and protocol boundaries; it makes no physics-correctness claim.

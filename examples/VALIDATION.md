@@ -26,15 +26,16 @@ figures.
 
 ## `bench_guo2018_fiber_shear_cell` — pending external-reference replication
 
-The Guo rubber-cord directory audits Table 2's bead, bond, material, and
-timestep representation, then models the paper's *numerical* periodic planar
-control cell—not the experimental Schulze-ring annulus.  Its mobile lid and
-translated base carry source-specified 4/2-mm blade arrays through DIRT's
-rigid plane-wall assemblies.  A completed result must still supply six
-solver-receipted histories, measured normal-load qualification, a post-drive
-steady window, and two Fig. 6/7 comparisons at three loads plus a 64/96-mm
-sensitivity check. No solver result, figure, or PASS is committed yet; this is
-an implementation prerequisite rather than an external replication result.
+The Guo rubber-cord directory hash-binds the primary paper and its approximate
+manual Fig. 6/7 digitization. The paper's numerical setup is periodic and
+planar—not the experimental Schulze-ring annulus—but it builds walls and blades
+from rigidly connected spheres. The retained DIRT draft uses plane walls, so it
+is deliberately blocked as non-equivalent and is not a Guo simulation. A
+completed result must first implement and independently exercise the
+sphere-built assembly, then supply six solver-receipted histories, measured
+normal-load qualification, a post-drive steady window, and two Fig. 6/7
+comparisons at three loads plus a 64/96-mm sensitivity check. No solver result,
+figure, or PASS is committed yet.
 
 ## `material_pair_table_validation` — typed Material compatibility
 
