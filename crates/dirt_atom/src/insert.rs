@@ -311,8 +311,8 @@ impl std::error::Error for InsertFileError {}
 pub struct RateInsertEntry {
     /// The originating insertion configuration for this rate stream.
     pub config: InsertConfig,
-    /// Resolved material-table index for the inserted particles.
-    pub mat_idx: u32,
+    /// Validated, domain-aware insertion inputs shared with immediate insertion.
+    prepared: PreparedInsert,
     /// Running count of particles inserted so far by this entry.
     pub total_inserted: u32,
 }
@@ -329,6 +329,73 @@ impl Default for RateInsertState {
             entries: Vec::new(),
         }
     }
+}
+
+/// Inputs common to random immediate and rate insertion after validation.
+///
+/// Keeping this private prevents a rate entry from retaining an unvalidated
+/// configuration and makes both insertion policies use exactly the same
+/// material lookup, region construction, radius bounds, and velocity setup.
+#[derive(Clone, Debug)]
+struct PreparedInsert {
+    mat_idx: u32,
+    density: f64,
+    radius: RadiusSpec,
+    max_radius: f64,
+    region: Region,
+    cutoff_padding: f64,
+    velocity_base: [f64; 3],
+    velocity_normal: Option<Normal<f64>>,
+    seed: u64,
+}
+
+fn prepare_random_insert(
+    insert: &InsertConfig,
+    materials: &MaterialTable,
+    domain: &Domain,
+    context: &str,
+) -> Result<PreparedInsert, String> {
+    let material = insert
+        .material
+        .as_deref()
+        .ok_or_else(|| format!("{context} requires 'material'"))?;
+    let mat_idx = resolve_material(materials, material)?;
+    let radius = insert
+        .radius
+        .as_ref()
+        .ok_or_else(|| format!("{context} requires 'radius'"))?
+        .clone();
+    let density = insert
+        .density
+        .ok_or_else(|| format!("{context} requires 'density'"))?;
+    let max_radius = radius
+        .try_max_radius()
+        .map_err(|error| format!("invalid radius in {context}: {error}"))?;
+    let random_velocity = insert.velocity.unwrap_or(0.0);
+    validate_insert_velocity(random_velocity, context)?;
+    let region = insert
+        .region
+        .clone()
+        .unwrap_or(default_insert_region(domain, max_radius, context)?);
+    validate_insert_region(&region, context)?;
+    Ok(PreparedInsert {
+        mat_idx,
+        density,
+        radius,
+        max_radius,
+        region,
+        cutoff_padding: materials.liquid_bridge_cutoff_padding(mat_idx),
+        velocity_base: [
+            insert.velocity_x.unwrap_or(0.0),
+            insert.velocity_y.unwrap_or(0.0),
+            insert.velocity_z.unwrap_or(0.0),
+        ],
+        velocity_normal: (random_velocity > 0.0).then(|| {
+            Normal::new(0.0, random_velocity)
+                .expect("validated insertion velocity must create a Normal distribution")
+        }),
+        seed: insert.seed.unwrap_or(0),
+    })
 }
 
 fn validate_insert_velocity(rand_vel: f64, context: &str) -> Result<(), String> {
@@ -601,6 +668,78 @@ impl SpatialHash {
         }
 
         false
+    }
+}
+
+/// One globally replicated accepted candidate.  Every rank constructs this
+/// record before ownership filtering, so RNG consumption and tag assignment are
+/// independent of the domain decomposition.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct InsertCandidate {
+    pos: [f64; 3],
+    radius: f64,
+    vel: [f64; 3],
+}
+
+impl InsertCandidate {
+    fn particle(self, prepared: &PreparedInsert, tag: u32) -> DemParticle {
+        DemParticle {
+            pos: self.pos,
+            vel: self.vel,
+            radius: self.radius,
+            cutoff_padding: prepared.cutoff_padding,
+            density: prepared.density,
+            mat_idx: prepared.mat_idx,
+            tag,
+        }
+    }
+}
+
+/// Shared deterministic candidate stream for both random insertion schedules.
+/// A call consumes the same random draws on every rank and returns `None` for a
+/// rejected attempt; callers deliberately keep their distinct tag policies.
+struct CandidateGenerator {
+    rng: StdRng,
+    spatial_hash: SpatialHash,
+    positions: Vec<[f64; 3]>,
+    radii: Vec<f64>,
+    pbc: PeriodicBox,
+}
+
+impl CandidateGenerator {
+    fn new(prepared: &PreparedInsert, domain: &Domain, seed: u64, capacity: usize) -> Self {
+        Self {
+            rng: StdRng::seed_from_u64(seed),
+            spatial_hash: SpatialHash::new((2.0 * prepared.max_radius * 1.1).max(1e-10)),
+            positions: Vec::with_capacity(capacity),
+            radii: Vec::with_capacity(capacity),
+            pbc: PeriodicBox::from_domain(domain),
+        }
+    }
+
+    fn next(&mut self, prepared: &PreparedInsert) -> Option<InsertCandidate> {
+        let pos = try_sample_insertion_point(&prepared.region, &mut self.rng)?;
+        let radius = prepared
+            .radius
+            .try_sample(&mut self.rng)
+            .expect("PreparedInsert only contains a validated radius specification");
+        if self
+            .spatial_hash
+            .has_overlap(&pos, radius, &self.positions, &self.radii, &self.pbc)
+        {
+            return None;
+        }
+        let mut vel = prepared.velocity_base;
+        if let Some(normal) = &prepared.velocity_normal {
+            vel[0] += normal.sample(&mut self.rng);
+            vel[1] += normal.sample(&mut self.rng);
+            vel[2] += normal.sample(&mut self.rng);
+        }
+        let index = self.positions.len();
+        self.spatial_hash.insert(index, &pos);
+        self.positions.push(pos);
+        self.radii.push(radius);
+        Some(InsertCandidate { pos, radius, vel })
     }
 }
 
@@ -1088,8 +1227,13 @@ pub fn dem_insert_atoms(
                     let mat_name = insert.material.as_deref().expect(
                         "rate insertion material was validated during fallible plugin preflight",
                     );
-                    let mat_idx = resolve_material(&material_table, mat_name)
-                        .expect("rate insertion was validated before setup");
+                    let prepared = prepare_random_insert(
+                        insert,
+                        &material_table,
+                        &domain,
+                        "rate-based [[particles.insert]]",
+                    )
+                    .expect("rate insertion was validated before setup");
                     let (rate, _, _) =
                         validate_rate_insert_config(insert, "Rate-based [[particles.insert]]")
                             .expect(
@@ -1103,7 +1247,7 @@ pub fn dem_insert_atoms(
                     );
                     rate_state.entries.push(RateInsertEntry {
                         config: insert.clone(),
-                        mat_idx,
+                        prepared,
                         total_inserted: 0,
                     });
                 } else {
@@ -1111,118 +1255,48 @@ pub fn dem_insert_atoms(
                     let mat_name = insert.material.as_deref().expect(
                         "random insertion material was validated during fallible plugin preflight",
                     );
-                    let mat_idx = resolve_material(&material_table, mat_name)
-                        .expect("random insertion was validated before setup");
-                    let cutoff_padding = material_table.liquid_bridge_cutoff_padding(mat_idx);
                     let count = insert.count.expect(
                         "random insertion count was validated during fallible plugin preflight",
                     );
-                    let radius_spec = insert.radius.as_ref().expect(
-                        "random insertion radius was validated during fallible plugin preflight",
-                    );
-                    let density = insert.density.expect(
-                        "random insertion density was validated during fallible plugin preflight",
-                    );
-
-                    let max_r = radius_spec.try_max_radius().expect(
-                        "random insertion radius was validated during fallible plugin preflight",
-                    );
+                    let prepared = prepare_random_insert(
+                        insert,
+                        &material_table,
+                        &domain,
+                        "[[particles.insert]]",
+                    )
+                    .expect("random insertion was validated during fallible plugin preflight");
                     if comm.rank() == 0 {
                         println!(
                             "DemAtomInsert: inserting {} particles of material '{}' (r={}, rho={}, E={}, nu={})",
                             count,
                             mat_name,
-                            max_r,
-                            density,
-                            material_table.youngs_mod[mat_idx as usize],
-                            material_table.poisson_ratio[mat_idx as usize]
+                            prepared.max_radius,
+                            prepared.density,
+                            material_table.youngs_mod[prepared.mat_idx as usize],
+                            material_table.poisson_ratio[prepared.mat_idx as usize]
                         );
                     }
-
-                    // Use explicit region or default to domain bounds inset by max radius.
-                    let region = insert
-                        .region
-                        .clone()
-                        .map(Ok)
-                        .unwrap_or_else(|| {
-                            default_insert_region(&domain, max_r, "[[particles.insert]]")
-                        })
-                        .expect("random insertion region was validated during fallible plugin preflight");
-
-                    // Velocity setup (drawn deterministically per accepted atom).
-                    let rand_vel = insert.velocity.unwrap_or(0.0);
-                    let normal = (rand_vel > 0.0).then(|| {
-                        Normal::new(0.0, rand_vel)
-                            .expect("insert velocity was validated before Normal construction")
-                    });
-                    let vx = insert.velocity_x.unwrap_or(0.0);
-                    let vy = insert.velocity_y.unwrap_or(0.0);
-                    let vz = insert.velocity_z.unwrap_or(0.0);
-
-                    // Seeded RNG: identical candidate stream on every rank.
-                    let seed = insert.seed.unwrap_or(0);
-                    let mut rng = StdRng::seed_from_u64(seed);
-
-                    // Replicated scratch of ALL accepted (position, radius) — every
-                    // rank maintains the full packing for globally-correct overlap
-                    // checks. A spatial hash keeps the cost O(N)/rank instead of
-                    // P×O(N²). Cell size ~ 2× max diameter so the 3×3×3 neighborhood
-                    // covers every possible overlap.
-                    let pbc = PeriodicBox::from_domain(&domain);
-                    let cell_size = (2.0 * max_r * 1.1).max(1e-10);
-                    let mut spatial_hash = SpatialHash::new(cell_size);
-                    let mut all_pos: Vec<[f64; 3]> = Vec::with_capacity(count as usize);
-                    let mut all_rad: Vec<f64> = Vec::with_capacity(count as usize);
+                    let mut candidates =
+                        CandidateGenerator::new(&prepared, &domain, prepared.seed, count as usize);
 
                     let mut inserted = 0u32;
                     let mut attempts = 0u64;
                     let max_attempts = count as u64 * 1_000_000;
                     while inserted < count && attempts < max_attempts {
                         attempts += 1;
-                        // Advance the shared RNG identically on every rank.
-                        let Some([x, y, z]) = try_sample_insertion_point(&region, &mut rng) else {
+                        let Some(candidate) = candidates.next(&prepared) else {
                             continue;
                         };
-                        let radius = radius_spec.try_sample(&mut rng)
-                            .expect("random insertion radius was validated during fallible plugin preflight");
-                        let candidate = [x, y, z];
-
-                        if spatial_hash.has_overlap(&candidate, radius, &all_pos, &all_rad, &pbc) {
-                            continue;
-                        }
-
-                        // Accepted: draw velocity + assign tag in GLOBAL order so the
-                        // RNG advances identically on every rank.
-                        let mut vel = [vx, vy, vz];
-                        if let Some(ref n) = normal {
-                            vel[0] += n.sample(&mut rng);
-                            vel[1] += n.sample(&mut rng);
-                            vel[2] += n.sample(&mut rng);
-                        }
                         let tag = max_tag;
                         max_tag += 1;
 
-                        // Replicate into the global packing scratch (all ranks).
-                        let new_idx = all_pos.len();
-                        spatial_hash.insert(new_idx, &candidate);
-                        all_pos.push(candidate);
-                        all_rad.push(radius);
-
                         // Materialize into the Atom arrays only if this rank owns the
                         // position (half-open interval, matching exchange() ownership).
-                        if owns_position(&domain, &candidate) {
+                        if owns_position(&domain, &candidate.pos) {
                             insert_single_particle(
                                 &mut atom,
                                 &registry,
-                                DemParticle {
-                                    pos: candidate,
-                                    vel,
-                                    radius,
-                                    cutoff_padding,
-                                    density,
-                                    mat_idx,
-                                    tag,
-                                },
+                                candidate.particle(&prepared, tag),
                             );
                         }
                         inserted += 1;
@@ -1919,7 +1993,6 @@ pub fn dem_rate_insert(
     mut atom: ResMut<Atom>,
     registry: Res<AtomDataRegistry>,
     run_state: Res<RunState>,
-    material_table: Res<MaterialTable>,
     mut rate_state: ResMut<RateInsertState>,
     mut comm_state: ResMut<CurrentState<CommState>>,
 ) {
@@ -1995,7 +2068,7 @@ pub fn dem_rate_insert(
             .rate_interval
             .unwrap_or(1);
         let start = rate_state.entries[entry_idx].config.rate_start.unwrap_or(0);
-        let (rate, radius_spec, density) = validate_rate_insert_config(
+        let (rate, _, _) = validate_rate_insert_config(
             &rate_state.entries[entry_idx].config,
             "rate-based [[particles.insert]]",
         )
@@ -2026,49 +2099,13 @@ pub fn dem_rate_insert(
             to_insert = to_insert.min(remaining);
         }
 
-        let mat_idx = rate_state.entries[entry_idx].mat_idx;
-        let cutoff_padding = material_table.liquid_bridge_cutoff_padding(mat_idx);
-
-        let max_r = radius_spec
-            .try_max_radius()
-            .expect("rate insertion radius was validated during fallible plugin preflight");
-        let region = rate_state.entries[entry_idx]
-            .config
-            .region
-            .clone()
-            .map(Ok)
-            .unwrap_or_else(|| {
-                default_insert_region(&domain, max_r, "rate-based [[particles.insert]]")
-            })
-            .expect("rate insertion region was validated during fallible plugin preflight");
-
-        // Velocity parameters (drawn deterministically per accepted candidate).
-        let config_seed = rate_state.entries[entry_idx].config.seed.unwrap_or(0);
-        let rand_vel = rate_state.entries[entry_idx].config.velocity.unwrap_or(0.0);
-        let vel_normal = (rand_vel > 0.0).then(|| {
-            Normal::new(0.0, rand_vel)
-                .expect("rate insertion velocity was validated before Normal construction")
-        });
-        let vx = rate_state.entries[entry_idx]
-            .config
-            .velocity_x
-            .unwrap_or(0.0);
-        let vy = rate_state.entries[entry_idx]
-            .config
-            .velocity_y
-            .unwrap_or(0.0);
-        let vz = rate_state.entries[entry_idx]
-            .config
-            .velocity_z
-            .unwrap_or(0.0);
+        let prepared = &rate_state.entries[entry_idx].prepared;
 
         // Seed the candidate stream from (config seed, step, entry) so it is
         // identical on every rank yet varies between insertion events.
-        let mut rng = StdRng::seed_from_u64(
-            config_seed
-                ^ (step as u64).wrapping_mul(0x9E3779B97F4A7C15)
-                ^ (entry_idx as u64).wrapping_mul(0xD1B54A32D192ED03),
-        );
+        let stream_seed = prepared.seed
+            ^ (step as u64).wrapping_mul(0x9E3779B97F4A7C15)
+            ^ (entry_idx as u64).wrapping_mul(0xD1B54A32D192ED03);
 
         // Replicated overlap scratch: ONLY the positions/radii accepted THIS step
         // (the global set of new atoms). It is identical on every rank because the
@@ -2085,11 +2122,8 @@ pub fn dem_rate_insert(
         // contact model resolves that initial overlap via repulsion. Rate-insert
         // regions are normally placed in free space (e.g. above a settled bed),
         // so this is rare in practice.
-        let cell_size = (2.0 * max_r * 1.1).max(1e-10);
-        let pbc = PeriodicBox::from_domain(&domain);
-        let mut spatial_hash = SpatialHash::new(cell_size);
-        let mut all_pos: Vec<[f64; 3]> = Vec::new();
-        let mut all_rad: Vec<f64> = Vec::new();
+        let mut candidates =
+            CandidateGenerator::new(prepared, &domain, stream_seed, to_insert as usize);
 
         let mut inserted = 0u32; // accepted globally
         let mut local_inserted = 0u32; // stored on this rank
@@ -2102,47 +2136,13 @@ pub fn dem_rate_insert(
             tag_cursor = tag_cursor.wrapping_add(1);
             attempts += 1;
 
-            let Some([x, y, z]) = try_sample_insertion_point(&region, &mut rng) else {
+            let Some(candidate) = candidates.next(prepared) else {
                 continue;
             };
-            let radius = radius_spec
-                .try_sample(&mut rng)
-                .expect("rate insertion radius was validated during fallible plugin preflight");
-            let candidate = [x, y, z];
-
-            if spatial_hash.has_overlap(&candidate, radius, &all_pos, &all_rad, &pbc) {
-                continue;
-            }
-
-            // Accepted: draw velocity (advances RNG identically on every rank).
-            let mut vel = [vx, vy, vz];
-            if let Some(ref n) = vel_normal {
-                vel[0] += n.sample(&mut rng);
-                vel[1] += n.sample(&mut rng);
-                vel[2] += n.sample(&mut rng);
-            }
-
-            // Replicate into the global new-atom scratch on every rank.
-            let scratch_idx = all_pos.len();
-            spatial_hash.insert(scratch_idx, &candidate);
-            all_pos.push(candidate);
-            all_rad.push(radius);
 
             // Store only if this rank owns the position.
-            if owns_position(&domain, &candidate) {
-                insert_single_particle(
-                    &mut atom,
-                    &registry,
-                    DemParticle {
-                        pos: candidate,
-                        vel,
-                        radius,
-                        cutoff_padding,
-                        density,
-                        mat_idx,
-                        tag,
-                    },
-                );
+            if owns_position(&domain, &candidate.pos) {
+                insert_single_particle(&mut atom, &registry, candidate.particle(prepared, tag));
                 local_inserted += 1;
             }
             inserted += 1;
@@ -2300,8 +2300,16 @@ mod tests {
         seed: u64,
     ) -> (Atom, usize, u32) {
         let mut materials = MaterialTable::new();
-        materials.add_material("glass", 8.7e9, 0.3, 0.9, 0.5, 0.0, 0.0);
+        let _ = materials.add_material("glass", 8.7e9, 0.3, 0.9, 0.5, 0.0, 0.0);
         materials.build_pair_tables();
+        let config = rate_config(seed);
+        let prepared = prepare_random_insert(
+            &config,
+            &materials,
+            &domain,
+            "rate-based [[particles.insert]]",
+        )
+        .unwrap();
         let mut app = App::new();
         app.add_resource(CommResource(Box::new(soil_core::SingleProcessComm::new())));
         app.add_resource(domain);
@@ -2311,8 +2319,8 @@ mod tests {
         app.add_resource(materials);
         app.add_resource(RateInsertState {
             entries: vec![RateInsertEntry {
-                config: rate_config(seed),
-                mat_idx: 0,
+                config,
+                prepared,
                 total_inserted: 0,
             }],
         });
@@ -2343,6 +2351,55 @@ mod tests {
         domain.sub_length = [high_x - low_x, 1.0, 1.0];
         domain.volume = high_x - low_x;
         domain
+    }
+
+    #[test]
+    fn immediate_and_rate_share_fixed_seed_candidate_and_tag_streams() {
+        let mut materials = MaterialTable::new();
+        let _ = materials.add_material("glass", 8.7e9, 0.3, 0.9, 0.5, 0.0, 0.0);
+        materials.build_pair_tables();
+        let domain = unit_domain(0.0, 1.0);
+        let mut config = rate_config(20260712);
+        config.count = Some(6);
+        let prepared = prepare_random_insert(&config, &materials, &domain, "test insertion")
+            .expect("well-formed insertion should prepare once for both schedules");
+
+        // A rate event at step zero / entry zero uses the configured seed, exactly
+        // like immediate insertion.  The shared generator must therefore produce
+        // bit-identical accepted particles; tags remain consecutive under each
+        // schedule's documented policy when no candidates are rejected.
+        let mut immediate = CandidateGenerator::new(&prepared, &domain, prepared.seed, 6);
+        let mut rate = CandidateGenerator::new(&prepared, &domain, prepared.seed, 6);
+        let immediate_rows: Vec<_> = (10..16)
+            .map(|tag| (tag, immediate.next(&prepared).unwrap()))
+            .collect();
+        let rate_rows: Vec<_> = (10..16)
+            .map(|tag| (tag, rate.next(&prepared).unwrap()))
+            .collect();
+        assert_eq!(immediate_rows, rate_rows);
+
+        // Ownership filtering cannot affect the replicated stream: combining two
+        // half-open partitions recovers each accepted tag exactly once.
+        for (tag, candidate) in &immediate_rows {
+            assert_eq!(
+                owns_position(&unit_domain(0.0, 0.5), &candidate.pos) as u8
+                    + owns_position(&unit_domain(0.5, 1.0), &candidate.pos) as u8,
+                1,
+                "tag {tag} must have exactly one owner"
+            );
+        }
+    }
+
+    #[test]
+    fn prepared_insert_rejects_malformed_random_config_before_scheduling() {
+        let mut materials = MaterialTable::new();
+        let _ = materials.add_material("glass", 8.7e9, 0.3, 0.9, 0.5, 0.0, 0.0);
+        materials.build_pair_tables();
+        let mut config = rate_config(1);
+        config.density = None;
+        let error = prepare_random_insert(&config, &materials, &unit_domain(0.0, 1.0), "test")
+            .expect_err("prepared insertion must reject incomplete config");
+        assert!(error.contains("requires 'density'"));
     }
 
     #[test]
