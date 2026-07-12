@@ -526,6 +526,7 @@ pub struct WallCylinder {
 ///
 /// For `inside = true`, the normal points inward (toward the center).
 /// For `inside = false`, the normal points outward (away from the center).
+#[derive(Clone)]
 pub struct WallSphere {
     /// Sphere center `[x, y, z]` (meters).
     pub center: [f64; 3],
@@ -538,8 +539,19 @@ pub struct WallSphere {
     pub material_index: usize,
     /// Optional name for runtime enable/disable.
     pub name: Option<String>,
+    /// Translational velocity of this rigid wall sphere.  This is subtracted
+    /// from the particle contact velocity, so moving sphere-built tooling has
+    /// the same dissipative and tangential-contact semantics as moving planes.
+    pub velocity: [f64; 3],
+    /// Optional identifier of a rigid multi-sphere assembly.  The wall module
+    /// does not prescribe a controller; an application may translate all
+    /// members as one constrained body.
+    pub assembly: Option<String>,
     /// Accumulated scalar contact force this timestep.
     pub force_accumulator: f64,
+    /// Vector contact force exerted by this sphere on particles this step.
+    /// The opposite of the sum over an assembly is its measured reaction.
+    pub force_vector: [f64; 3],
     /// Wall temperature in K (None = no wall heat transfer).
     pub temperature: Option<f64>,
 }
@@ -833,7 +845,10 @@ impl Plugin for WallPlugin {
                             inside,
                             material_index: mat_idx,
                             name: w.name.clone(),
+                            velocity: w.velocity.unwrap_or([0.0; 3]),
+                            assembly: w.assembly.clone(),
                             force_accumulator: 0.0,
+                            force_vector: [0.0; 3],
                             temperature: w.temperature,
                         });
                     }
@@ -1193,6 +1208,19 @@ pub fn wall_move(mut walls: ResMut<Walls>, atoms: Res<Atom>, comm: Option<Res<Co
         wall.velocity = *velocity;
     }
 
+    // Sphere-built tooling is commonly a rigid collection.  The owning
+    // application sets a common velocity after applying its own constrained
+    // body law (for example a gravity-loaded, y-only upper plate); advancing
+    // each member here preserves its relative geometry exactly.
+    let sphere_active = walls.sphere_active.clone();
+    for (sphere, active) in walls.spheres.iter_mut().zip(sphere_active) {
+        if active {
+            sphere.center[0] += sphere.velocity[0] * dt;
+            sphere.center[1] += sphere.velocity[1] * dt;
+            sphere.center[2] += sphere.velocity[2] * dt;
+        }
+    }
+
     walls.time += dt;
 }
 
@@ -1211,6 +1239,7 @@ pub fn wall_zero_force_accumulators(mut walls: ResMut<Walls>) {
     }
     for wall in &mut walls.spheres {
         wall.force_accumulator = 0.0;
+        wall.force_vector = [0.0; 3];
     }
     for wall in &mut walls.regions {
         wall.force_accumulator = 0.0;
@@ -1879,6 +1908,7 @@ pub fn wall_contact_force(
     // ── Sphere walls ────────────────────────────────────────────────────
     let nsph = walls.spheres.len();
     let mut sph_forces = vec![0.0f64; nsph];
+    let mut sph_force_vectors = vec![[0.0f64; 3]; nsph];
     for (sph_idx, sph) in walls.spheres.iter().enumerate() {
         if !walls.sphere_active[sph_idx] {
             continue;
@@ -1920,9 +1950,14 @@ pub fn wall_contact_force(
             let delta = delta.min(0.5 * radius);
 
             let m_r = atoms.mass[i] as f64;
-            let v_n = atoms.vel[i][0] as f64 * nx
-                + atoms.vel[i][1] as f64 * ny
-                + atoms.vel[i][2] as f64 * nz;
+            let relative_velocity = [
+                atoms.vel[i][0] as f64 - sph.velocity[0],
+                atoms.vel[i][1] as f64 - sph.velocity[1],
+                atoms.vel[i][2] as f64 - sph.velocity[2],
+            ];
+            let v_n = relative_velocity[0] * nx
+                + relative_velocity[1] * ny
+                + relative_velocity[2] * nz;
             let f_net = wall_normal_force(
                 &material_table,
                 mat_i,
@@ -1937,6 +1972,9 @@ pub fn wall_contact_force(
             atoms.force[i][0] += (f_net * nx) as Accum;
             atoms.force[i][1] += (f_net * ny) as Accum;
             atoms.force[i][2] += (f_net * nz) as Accum;
+            sph_force_vectors[sph_idx][0] += f_net * nx;
+            sph_force_vectors[sph_idx][1] += f_net * ny;
+            sph_force_vectors[sph_idx][2] += f_net * nz;
 
             // Twisting friction torque (sphere wall is static).
             let mu_tw = material_table.twisting_friction_ij[mat_i][wall_mat];
@@ -1956,11 +1994,7 @@ pub fn wall_contact_force(
                 let old = old_springs.get(&key).copied().unwrap_or([0.0; 3]);
                 let (ft, tau, ns) = wall_tangential_force(
                     [nx, ny, nz],
-                    [
-                        atoms.vel[i][0] as f64,
-                        atoms.vel[i][1] as f64,
-                        atoms.vel[i][2] as f64,
-                    ],
+                    relative_velocity,
                     dem.omega[i],
                     radius,
                     delta,
@@ -1975,6 +2009,9 @@ pub fn wall_contact_force(
                 atoms.force[i][0] += ft[0] as Accum;
                 atoms.force[i][1] += ft[1] as Accum;
                 atoms.force[i][2] += ft[2] as Accum;
+                sph_force_vectors[sph_idx][0] += ft[0];
+                sph_force_vectors[sph_idx][1] += ft[1];
+                sph_force_vectors[sph_idx][2] += ft[2];
                 dem.torque[i][0] += tau[0];
                 dem.torque[i][1] += tau[1];
                 dem.torque[i][2] += tau[2];
@@ -2014,6 +2051,7 @@ pub fn wall_contact_force(
     }
     for (idx, &f) in sph_forces.iter().enumerate() {
         walls.spheres[idx].force_accumulator += f;
+        walls.spheres[idx].force_vector = sph_force_vectors[idx];
     }
 
     // ── Region walls ────────────────────────────────────────────────────
@@ -2330,7 +2368,10 @@ mod tests {
                 inside: true,
                 material_index: 0,
                 name: None,
+                velocity: [0.0; 3],
+                assembly: None,
                 force_accumulator: 0.0,
+                force_vector: [0.0; 3],
                 temperature: None,
             }),
             pos,
@@ -2696,6 +2737,30 @@ mod tests {
     }
 
     #[test]
+    fn sphere_tooling_translates_as_a_rigid_member() {
+        let mut atom = Atom::new();
+        atom.dt = 0.001;
+        let mut sphere = WallSphere {
+            center: [0.01, 0.02, 0.03], radius: 0.004, inside: false,
+            material_index: 0, name: Some("upper_tool".into()),
+            velocity: [0.0, -0.02, 0.0], assembly: Some("upper".into()),
+            force_accumulator: 0.0, force_vector: [0.0; 3], temperature: None,
+        };
+        let mut walls = make_walls_with_sphere(sphere.clone());
+        walls.spheres.push(sphere);
+        walls.sphere_active.push(true);
+        let mut app = App::new();
+        app.add_resource(atom);
+        app.add_resource(walls);
+        app.add_update_system(wall_move, ParticleSimScheduleSet::PreInitialIntegration);
+        app.organize_systems();
+        app.run();
+        let walls = app.get_resource_ref::<Walls>().unwrap();
+        assert_eq!(walls.spheres[0].center, [0.01, 0.01998, 0.03]);
+        assert_eq!(walls.spheres[1].center, [0.01, 0.01998, 0.03]);
+    }
+
+    #[test]
     fn rigid_assembly_follower_tracks_driver_point_bounds_and_velocity() {
         let mut atom = Atom::new();
         atom.dt = 0.001;
@@ -2989,7 +3054,10 @@ mod tests {
                 inside: true,
                 material_index: 0,
                 name: Some(name.to_string()),
+                velocity: [0.0; 3],
+                assembly: None,
                 force_accumulator: 0.0,
+                force_vector: [0.0; 3],
                 temperature: None,
             }],
             sphere_active: vec![true],
@@ -3167,7 +3235,10 @@ mod tests {
             inside: true,
             material_index: 0,
             name: None,
+            velocity: [0.0; 3],
+            assembly: None,
             force_accumulator: 0.0,
+            force_vector: [0.0; 3],
             temperature: None,
         });
 
@@ -3211,7 +3282,10 @@ mod tests {
             inside: true,
             material_index: 0,
             name: None,
+            velocity: [0.0; 3],
+            assembly: None,
             force_accumulator: 0.0,
+            force_vector: [0.0; 3],
             temperature: None,
         });
 
@@ -3426,7 +3500,10 @@ mod tests {
                 inside: true,
                 material_index: 0,
                 name: None,
+                velocity: [0.0; 3],
+                assembly: None,
                 force_accumulator: 0.0,
+                force_vector: [0.0; 3],
                 temperature: None,
             });
 
@@ -3773,7 +3850,10 @@ mod tests {
                 inside: true,
                 material_index: 0,
                 name: None,
+                velocity: [0.0; 3],
+                assembly: None,
                 force_accumulator: 0.0,
+                force_vector: [0.0; 3],
                 temperature: None,
             });
             let mut app = App::new();
