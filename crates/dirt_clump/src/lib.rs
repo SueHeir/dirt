@@ -130,7 +130,8 @@ use soil_derive::AtomData;
 
 use soil_core::{
     register_atom_data, Accum, Atom, AtomData, AtomDataRegistry, CommResource, Config, Domain,
-    ParticleSimScheduleSet, ParticleStore, Real, Region, RunState, ScheduleSetupSet,
+    ParticleSimScheduleSet, ParticleStore, ParticleStoreError, Real, Region, RunState,
+    ScheduleSetupSet,
 };
 
 #[cfg(feature = "mpi_backend")]
@@ -1300,7 +1301,7 @@ fn insert_clumps_with_rng<R: Rng>(
             [0.0; 3]
         };
 
-        insert_clump_with_cutoff_padding(
+        try_insert_clump_with_cutoff_padding(
             atoms,
             registry,
             body_store,
@@ -1311,7 +1312,8 @@ fn insert_clumps_with_rng<R: Rng>(
             mat_idx,
             cutoff_padding,
             next_clump_id,
-        );
+        )
+        .expect("validated clump configuration must accept transactional rows");
 
         com_positions.push(pos);
         next_clump_id += 1;
@@ -1340,13 +1342,14 @@ pub fn insert_clump(
     atom_type: u32,
     clump_id: u32,
 ) -> usize {
-    insert_clump_with_cutoff_padding(
+    try_insert_clump_with_cutoff_padding(
         atoms, registry, body_store, def, com_pos, com_vel, density, atom_type, 0.0, clump_id,
     )
+    .expect("registered clump rows must accept transactional insertion")
 }
 
 #[allow(clippy::too_many_arguments)]
-fn insert_clump_with_cutoff_padding(
+fn try_insert_clump_with_cutoff_padding(
     atoms: &mut Atom,
     registry: &AtomDataRegistry,
     body_store: &mut MultisphereBodyStore,
@@ -1357,7 +1360,7 @@ fn insert_clump_with_cutoff_padding(
     atom_type: u32,
     cutoff_padding: f64,
     clump_id: u32,
-) -> usize {
+) -> Result<usize, ParticleStoreError> {
     // Compute inertia tensor (auto-detect overlap)
     let (total_mass, tensor) = if has_overlap(&def.spheres) {
         compute_inertia_tensor_montecarlo(&def.spheres, density, 100_000)
@@ -1403,10 +1406,12 @@ fn insert_clump_with_cutoff_padding(
         sub_sphere_radii,
         sub_sphere_tags,
     };
-    body_store.bodies.push(body);
-    body_store.generate_map();
-
-    // Insert sub-sphere atoms (no parent atom)
+    // Insert sub-sphere atoms first.  The body is deliberately committed only
+    // after every ParticleStore row has accepted its default: an extension
+    // rejection must not leave an orphan body or a partially materialized
+    // clump.  Roll back already accepted rows through the facade as well.
+    let original_natoms = atoms.natoms;
+    let original_nlocal = atoms.nlocal;
     for (si, sphere) in def.spheres.iter().enumerate() {
         let sub_tag = base_tag + si as u32;
         let sub_pos = [
@@ -1418,9 +1423,16 @@ fn insert_clump_with_cutoff_padding(
         let sub_mass = density * (4.0 / 3.0) * PI * sphere.radius.powi(3);
 
         let global_natoms = atoms.natoms + 1;
-        ParticleStore::new(atoms, registry)
-            .push_default_local(global_natoms)
-            .expect("registered clump rows must accept transactional insertion");
+        if let Err(error) = ParticleStore::new(atoms, registry).push_default_local(global_natoms) {
+            while atoms.nlocal > original_nlocal {
+                let last = atoms.nlocal as usize - 1;
+                ParticleStore::new(atoms, registry)
+                    .swap_remove(last)
+                    .expect("previously accepted clump rows must remain removable");
+            }
+            atoms.natoms = original_natoms;
+            return Err(error);
+        }
         let i = atoms.len() - 1;
         atoms.tag[i] = sub_tag;
         atoms.atom_type[i] = atom_type;
@@ -1450,7 +1462,9 @@ fn insert_clump_with_cutoff_padding(
         let _ = si; // suppress unused warning
     }
 
-    def.spheres.len()
+    body_store.bodies.push(body);
+    body_store.generate_map();
+    Ok(def.spheres.len())
 }
 
 /// Check if two atoms belong to the same rigid body (for contact exclusion).
@@ -1484,7 +1498,35 @@ pub fn is_body_atom(clump_data: &ClumpAtom, i: usize) -> bool {
 mod tests {
     use super::*;
     use dirt_atom::{DemAtom, DemAtomPlugin};
-    use soil_core::{Atom, AtomDataRegistry, SingleProcessComm};
+    use soil_core::{Atom, AtomData, AtomDataRegistry, ParticleStoreError, SingleProcessComm};
+
+    /// A deliberately malformed extension used to prove that clump construction
+    /// never commits its body resource before all particle rows are accepted.
+    #[derive(Default)]
+    struct RejectDefaultRow;
+
+    impl AtomData for RejectDefaultRow {
+        fn as_any(&self) -> &dyn std::any::Any {
+            self
+        }
+        fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+            self
+        }
+        fn snapshot(&self) -> Box<dyn AtomData> {
+            Box::new(Self)
+        }
+        fn len(&self) -> usize {
+            0
+        }
+        fn push_default(&mut self) {}
+        fn truncate(&mut self, _: usize) {}
+        fn swap_remove(&mut self, _: usize) {}
+        fn pack(&self, _: usize, _: &mut Vec<f64>) {}
+        fn unpack(&mut self, _: &[f64]) -> usize {
+            0
+        }
+        fn apply_permutation(&mut self, _: &[usize], _: usize) {}
+    }
 
     /// Non-overlapping dimer (center distance > r1 + r2) for deterministic tests.
     fn make_dimer_def() -> ClumpDef {
@@ -1758,6 +1800,35 @@ region = { type = "block", min = [1.0, 1.0, 1.0], max = [1.0, 2.0, 2.0] }
 
         // Body has principal moments (diagonalized)
         assert!(bodies.bodies[0].principal_moments[0] > 0.0);
+    }
+
+    #[test]
+    fn clump_row_rejection_rolls_back_atoms_before_body_commit() {
+        let mut registry = AtomDataRegistry::new();
+        registry.try_register(DemAtom::new(), 0).unwrap();
+        registry.try_register(ClumpAtom::new(), 0).unwrap();
+        registry.try_register(RejectDefaultRow, 0).unwrap();
+        let mut atoms = Atom::new();
+        let mut bodies = MultisphereBodyStore::new();
+        let error = try_insert_clump_with_cutoff_padding(
+            &mut atoms,
+            &registry,
+            &mut bodies,
+            &make_dimer_def(),
+            [0.0; 3],
+            [0.0; 3],
+            2500.0,
+            0,
+            0.0,
+            7,
+        )
+        .unwrap_err();
+        assert_eq!(error, ParticleStoreError::MalformedExtensionRecord);
+        assert!(atoms.is_empty());
+        assert_eq!((atoms.nlocal, atoms.nghost, atoms.natoms), (0, 0, 0));
+        assert!(registry.validate_rows(0));
+        assert!(bodies.bodies.is_empty());
+        assert_eq!(bodies.find_by_id(7), None);
     }
 
     #[test]

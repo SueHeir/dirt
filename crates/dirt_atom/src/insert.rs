@@ -2264,6 +2264,176 @@ mod tests {
         registry
     }
 
+    fn rate_config(seed: u64) -> InsertConfig {
+        InsertConfig {
+            source: "random".to_string(),
+            material: Some("glass".to_string()),
+            count: None,
+            radius: Some(RadiusSpec::Fixed(0.001)),
+            density: Some(2500.0),
+            velocity: None,
+            velocity_x: Some(0.0),
+            velocity_y: Some(0.0),
+            velocity_z: Some(0.0),
+            region: Some(Region::Block {
+                min: [0.0; 3],
+                max: [1.0; 3],
+            }),
+            rate: Some(8),
+            rate_interval: Some(1),
+            rate_start: Some(0),
+            rate_end: Some(0),
+            rate_limit: Some(8),
+            file: None,
+            format: None,
+            columns: None,
+            type_map: None,
+            atom_style: None,
+            seed: Some(seed),
+        }
+    }
+
+    fn run_rate_once(
+        mut atom: Atom,
+        registry: AtomDataRegistry,
+        domain: Domain,
+        seed: u64,
+    ) -> (Atom, usize, u32) {
+        let mut materials = MaterialTable::new();
+        materials.add_material("glass", 8.7e9, 0.3, 0.9, 0.5, 0.0, 0.0);
+        materials.build_pair_tables();
+        let mut app = App::new();
+        app.add_resource(CommResource(Box::new(soil_core::SingleProcessComm::new())));
+        app.add_resource(domain);
+        app.add_resource(std::mem::take(&mut atom));
+        app.add_resource(registry);
+        app.add_resource(RunState::new());
+        app.add_resource(materials);
+        app.add_resource(RateInsertState {
+            entries: vec![RateInsertEntry {
+                config: rate_config(seed),
+                mat_idx: 0,
+                total_inserted: 0,
+            }],
+        });
+        app.add_resource(CurrentState(CommState::CommunicateOnly));
+        app.add_update_system(
+            dem_rate_insert,
+            ParticleSimScheduleSet::PreInitialIntegration,
+        );
+        app.organize_systems();
+        app.run();
+        let atom = app.get_resource_ref::<Atom>().unwrap().clone();
+        let late_rows = app
+            .get_resource_ref::<AtomDataRegistry>()
+            .unwrap()
+            .get::<LateProbe>()
+            .map_or(0, |probe| probe.rows.len());
+        let inserted = app.get_resource_ref::<RateInsertState>().unwrap().entries[0].total_inserted;
+        (atom, late_rows, inserted)
+    }
+
+    fn unit_domain(low_x: f64, high_x: f64) -> Domain {
+        let mut domain = Domain::new();
+        domain.sub_domain_low = [low_x, 0.0, 0.0];
+        domain.sub_domain_high = [high_x, 1.0, 1.0];
+        domain.boundaries_low = [0.0; 3];
+        domain.boundaries_high = [1.0; 3];
+        domain.size = [1.0; 3];
+        domain.sub_length = [high_x - low_x, 1.0, 1.0];
+        domain.volume = high_x - low_x;
+        domain
+    }
+
+    #[test]
+    fn production_rate_insert_partitions_exact_deterministic_tag_rows_and_cleans_late_ghosts() {
+        // This invokes the public production system, not its materialization helper.
+        // First create the exact local+ghost layout that a rate step receives.
+        let mut atom = Atom::new();
+        let mut registry = test_dem_registry();
+        insert_single_particle(
+            &mut atom,
+            &registry,
+            DemParticle {
+                pos: [0.1, 0.5, 0.5],
+                vel: [0.0; 3],
+                radius: 0.001,
+                cutoff_padding: 0.0,
+                density: 2500.0,
+                mat_idx: 0,
+                tag: 41,
+            },
+        );
+        let mut ghost = Atom::new();
+        let ghost_registry = test_dem_registry();
+        insert_single_particle(
+            &mut ghost,
+            &ghost_registry,
+            DemParticle {
+                pos: [0.9, 0.5, 0.5],
+                vel: [0.0; 3],
+                radius: 0.003,
+                cutoff_padding: 0.0,
+                density: 2500.0,
+                mat_idx: 0,
+                tag: 42,
+            },
+        );
+        let mut packed = Vec::new();
+        ParticleStore::new(&mut ghost, &ghost_registry)
+            .pack_migrant(0, &mut packed)
+            .unwrap();
+        ParticleStore::new(&mut atom, &registry)
+            .append_ghost_records(&packed, 1)
+            .unwrap();
+        registry
+            .try_register(LateProbe::default(), atom.len())
+            .unwrap();
+
+        let (atom, late_rows, inserted) =
+            run_rate_once(atom, registry, unit_domain(0.0, 1.0), 20260712);
+        assert_eq!(inserted, 8);
+        assert_eq!((atom.nlocal, atom.nghost, atom.len()), (9, 0, 9));
+        assert_eq!(atom.tag[0], 41, "the local prefix survives ghost removal");
+        assert_eq!(late_rows, atom.len());
+
+        let (_, _, full_inserted) =
+            run_rate_once(Atom::new(), test_dem_registry(), unit_domain(0.0, 1.0), 99);
+        assert_eq!(full_inserted, 8);
+        let (low, _, _) =
+            run_rate_once(Atom::new(), test_dem_registry(), unit_domain(0.0, 0.5), 99);
+        let (high, _, _) =
+            run_rate_once(Atom::new(), test_dem_registry(), unit_domain(0.5, 1.0), 99);
+        let (full, _, _) =
+            run_rate_once(Atom::new(), test_dem_registry(), unit_domain(0.0, 1.0), 99);
+        let mut partitioned: Vec<_> = low
+            .tag
+            .iter()
+            .zip(&low.pos)
+            .chain(high.tag.iter().zip(&high.pos))
+            .map(|(tag, pos)| (*tag, *pos))
+            .collect();
+        let mut serial: Vec<_> = full
+            .tag
+            .iter()
+            .zip(&full.pos)
+            .map(|(tag, pos)| (*tag, *pos))
+            .collect();
+        partitioned.sort_by_key(|row| row.0);
+        serial.sort_by_key(|row| row.0);
+        assert_eq!(
+            partitioned, serial,
+            "fixed-seed production rows/tags must be rank-count invariant"
+        );
+        for (_, pos) in &partitioned {
+            assert_eq!(
+                owns_position(&unit_domain(0.0, 0.5), pos) as u8
+                    + owns_position(&unit_domain(0.5, 1.0), pos) as u8,
+                1
+            );
+        }
+    }
+
     #[test]
     fn particle_store_construction_covers_immediate_and_rate_rows() {
         let mut atoms = Atom::new();
