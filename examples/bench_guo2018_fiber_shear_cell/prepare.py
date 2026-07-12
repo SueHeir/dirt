@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
-"""Prepare and audit a Guo flexible-fibre shear-cell solver input.
+"""Write and audit a *non-runnable* Guo fibre-topology candidate.
 
 This is intentionally not a synthetic rheology model.  It only writes the
-particle and bond topology which a DIRT executable must consume, and records
-the source parameters alongside it.  A campaign result still has to be made
-by the solver and passed to ``validate.py``.
+particle and bond topology which a future DIRT executable could consume, and
+records the source parameters alongside it.  It does not create a valid Guo
+solver input: the published sphere-built moving wall/blade assemblies have not
+been implemented.  The explicit ``--candidate-only`` acknowledgement keeps a
+topology audit from being mistaken for a materialized replication case.
 """
 import argparse
 import csv
@@ -78,6 +80,7 @@ def write_case(width_mm, output):
     planform_area = width * CELL_Z
     initial_cell_volume = planform_area * INITIAL_LID_HEIGHT
     metadata = {"paper": "Guo et al., AIChE J. 65 (2019), doi:10.1002/aic.16397, Table 2",
+                "artifact_status": "candidate topology only; not a runnable Guo shear-cell input",
                 "cell_x_m": width, "cell_z_m": CELL_Z, "planform_area_m2": planform_area,
                 "n_fibres": fibres,
                 "population_basis": "source Table 2" if width_mm == 64 else "derived: preserve 64-mm areal loading",
@@ -130,6 +133,8 @@ def main():
     parser.add_argument("--width-mm", type=int, choices=(64, 96))
     parser.add_argument("--output", type=Path)
     parser.add_argument("--audit", type=Path)
+    parser.add_argument("--candidate-only", action="store_true",
+                        help="acknowledge that output is a non-runnable topology candidate")
     args = parser.parse_args()
     if bool(args.width_mm is not None) == bool(args.audit is not None):
         parser.error("provide exactly one of --width-mm or --audit")
@@ -139,8 +144,10 @@ def main():
     else:
         if args.output is None:
             parser.error("--output is required with --width-mm")
+        if not args.candidate_only:
+            parser.error("--candidate-only is required: this writes a topology audit, not a Guo solver input")
         metadata = write_case(args.width_mm, args.output)
-        print(f"prepared {metadata['n_atoms']} beads and {metadata['n_bonds']} bonds")
+        print(f"candidate topology: {metadata['n_atoms']} beads and {metadata['n_bonds']} bonds (NOT RUNNABLE)")
 
 
 if __name__ == "__main__":

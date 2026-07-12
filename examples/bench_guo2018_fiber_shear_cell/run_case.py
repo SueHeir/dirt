@@ -64,7 +64,7 @@ def materialize(pressure_pa: float, width_mm: int, output: Path, ranks: int) -> 
     if output.exists():
         shutil.rmtree(output)
     subprocess.run([sys.executable, str(HERE / "prepare.py"), "--width-mm", str(width_mm),
-                    "--output", str(output)], check=True)
+                    "--candidate-only", "--output", str(output)], check=True)
     subprocess.run([sys.executable, str(HERE / "prepare.py"), "--audit", str(output)], check=True)
     width = width_mm / 1000.0
     # Primary source: Lx=64 mm (or 96-mm sensitivity case), Lz=36 mm.

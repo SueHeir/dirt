@@ -22,7 +22,9 @@ python3 examples/bench_guo2018_fiber_shear_cell/evidence_contract.py --self-test
 
 The source receipt identifies what must be implemented, and also exposes the
 current mismatch. The runner therefore rejects the plane-wall draft before it
-writes a solver input.
+writes a solver input. `prepare.py` can only write a separately labelled
+candidate topology after an explicit `--candidate-only` acknowledgement; it
+cannot be represented as a prepared replication case.
 
 Before any future campaign, implement and audit a sphere-built wall/blade
 assembly equivalent to the source, then independently test it before a Fig. 6/7
@@ -42,6 +44,14 @@ retained validator is deliberately fail-closed and accepts only solver-receipted
 measured normal-load qualification, a post-drive steady-strain window, all
 three loads, two independent Fig. 6/7 comparisons, and the 64/96-mm sensitivity
 check.
+
+For a topology-only audit (not a solver input or a result), use:
+
+```bash
+python3 examples/bench_guo2018_fiber_shear_cell/prepare.py \
+  --width-mm 64 --candidate-only --output /tmp/guo64-candidate
+python3 examples/bench_guo2018_fiber_shear_cell/prepare.py --audit /tmp/guo64-candidate
+```
 
 ## Evidence boundary
 
