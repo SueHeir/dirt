@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
-"""Prepare the historical surrogate cases; execution is intentionally blocked.
+"""Prepare the source-derived periodic control-cell cases.
 
-The 64/96-mm cup cases predate the independent apparatus audit.  They retain
-the Table-2 fibre-topology audit, but they are not Guo ring-shear cases and
-must only be materialized with ``--prepare-only``.  A future implementation
-needs verified annular geometry and a rotational annular drive before a DIRT
-history can enter the external-observable validator.
+Execution remains intentionally blocked: DIRT has no rigid wall-assembly
+primitive for the paper's 8-mm-pitch blade arrays moving with their plates.
+The blocker is not the experimental annulus; Guo et al.'s DEM comparator is a
+periodic planar cell.
 """
 import argparse
 import json
@@ -25,8 +24,8 @@ def main() -> None:
     args = parser.parse_args()
     if not args.prepare_only:
         raise SystemExit(
-            "BLOCKED: the current DIRT configuration is a translating planar cup, "
-            "not the DOI's Schulze ring shear apparatus; use --prepare-only only."
+            "BLOCKED: DIRT cannot attach the required rigid blade arrays to the "
+            "mobile/translating plates; use --prepare-only only."
         )
     args.output.mkdir(parents=True, exist_ok=True)
     manifest = {"cases": [{"pressure_pa": p, "width_mm": w} for p, w in CASES],

@@ -1,6 +1,5 @@
-# This is a legacy cylindrical-cup topology audit, not Guo et al.'s published
-# numerical control cell.  `source_contract.py --require-runnable` rejects it:
-# the primary source specifies periodic x/z boundaries and bladed planar walls.
+# Guo et al. (doi:10.1002/aic.16397), Computational Set-up, pp. 5--8.
+# This is the published *planar periodic* DEM reduction, not the SRST annulus.
 [comm]
 processors_x = 1
 processors_y = 1
@@ -10,12 +9,12 @@ processors_z = 1
 x_low = 0.0
 x_high = 0.064
 y_low = 0.0
-y_high = 0.050
+y_high = 0.060
 z_low = 0.0
-z_high = 0.064
-boundary_x = "fixed" # intentionally blocked: source requires periodic
+z_high = 0.036
+boundary_x = "periodic"
 boundary_y = "fixed"
-boundary_z = "fixed" # intentionally blocked: source requires periodic
+boundary_z = "periodic"
 
 [neighbor]
 skin_fraction = 1.2
@@ -53,15 +52,9 @@ beta_shear = 1.0
 beta_twist = 1.0
 beta_bending = 1.0
 
-[[wall]]
-type = "cylinder"
-axis = "y"
-center = [0.032, 0.032]
-radius = 0.032
-inside = true
-material = "rubber_cord"
-name = "cylindrical_sidewall"
-
+# Plates plus paired, finite vertical-plane faces.  The latter represent the
+# 4-mm lid and 2-mm base blades; `main.rs` keeps each array registered to its
+# moving plate.  Centres are 8 mm apart in x, as stated by the paper.
 [[wall]]
 type = "plane"
 point_y = 0.0
@@ -72,30 +65,61 @@ velocity = [0.0, 0.0, 0.0]
 
 [[wall]]
 type = "plane"
-# The executable holds this lid at its initial height while the loose packing
-# settles under gravity, then enables the servo. This prevents a descending
-# lid from chasing the free-falling bed.
 point_y = 0.050
 normal_y = -1.0
 material = "rubber_cord"
 name = "normal_load_lid"
-# The 50 mm/s cap is 0.012 micrometre per reported DEM step, below the particle radius.
-# After the explicit 100,000-step gravity-settle stage, the remaining run
-# budget establishes the force-controlled state before shearing begins.
-servo = { target_force = 1.499904, max_velocity = 0.050, gain = 1.0e-1 }
+servo = { target_force = 1499.904, max_velocity = 0.050, gain = 1.0e-1 }
 
-[gravity]
-gx = 0.0
-gy = -9.81
-gz = 0.0
+[[wall]]
+type = "plane"
+point_x = 0.008
+normal_x = 1.0
+bound_y_low = 0.0
+bound_y_high = 0.002
+bound_z_low = 0.0
+bound_z_high = 0.036
+material = "rubber_cord"
+name = "lower_blades_pos"
+
+[[wall]]
+type = "plane"
+point_x = 0.008
+normal_x = -1.0
+bound_y_low = 0.0
+bound_y_high = 0.002
+bound_z_low = 0.0
+bound_z_high = 0.036
+material = "rubber_cord"
+name = "lower_blades_neg"
+
+[[wall]]
+type = "plane"
+point_x = 0.008
+normal_x = 1.0
+bound_y_low = 0.046
+bound_y_high = 0.050
+bound_z_low = 0.0
+bound_z_high = 0.036
+material = "rubber_cord"
+name = "upper_blades_pos"
+
+[[wall]]
+type = "plane"
+point_x = 0.008
+normal_x = -1.0
+bound_y_low = 0.046
+bound_y_high = 0.050
+bound_z_low = 0.0
+bound_z_high = 0.036
+material = "rubber_cord"
+name = "upper_blades_neg"
 
 [output]
 dir = "examples/bench_guo2018_fiber_shear_cell/generated"
 
 [[run]]
 name = "settle_normal_load_and_shear"
-# The executable controls the stage transition. At 20 mm/s and a 50-mm initial
-# gap, gamma = 0.5 needs 1.25 s after the 100,000-step settle stage.
 steps = 6100000
 thermo = 10000
 dt = 2.3e-7

@@ -49,17 +49,16 @@ def materialize(pressure_pa: float, width_mm: int, output: Path, ranks: int) -> 
     subprocess.run([sys.executable, str(HERE / "prepare.py"), "--width-mm", str(width_mm),
                     "--output", str(output)], check=True)
     subprocess.run([sys.executable, str(HERE / "prepare.py"), "--audit", str(output)], check=True)
-    diameter = width_mm / 1000.0
-    area = math.pi * (diameter / 2.0) ** 2
+    width = width_mm / 1000.0
+    # Primary source: Lx=64 mm (or 96-mm sensitivity case), Lz=36 mm.
+    # This is a planar periodic cell, not the historical circular-cup area.
+    area = width * 0.036
     config = (HERE / "config.toml").read_text()
     processors_x, processors_z = decomposition(ranks)
     config = config.replace("processors_x = 1", f"processors_x = {processors_x}")
     config = config.replace("processors_z = 1", f"processors_z = {processors_z}")
-    config = config.replace("x_high = 0.064", f"x_high = {diameter:.3f}")
-    config = config.replace("z_high = 0.064", f"z_high = {diameter:.3f}")
-    config = config.replace("center = [0.032, 0.032]", f"center = [{diameter / 2.0:.3f}, {diameter / 2.0:.3f}]")
-    config = config.replace("radius = 0.032", f"radius = {diameter / 2.0:.3f}")
-    config = config.replace("target_force = 1.499904", f"target_force = {pressure_pa * area:.12g}")
+    config = config.replace("x_high = 0.064", f"x_high = {width:.3f}")
+    config = config.replace("target_force = 1499.904", f"target_force = {pressure_pa * area:.12g}")
     config = config.replace(
         "examples/bench_guo2018_fiber_shear_cell/generated/pack.csv", str(output / "pack.csv"))
     config = config.replace(

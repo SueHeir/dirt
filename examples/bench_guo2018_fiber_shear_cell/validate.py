@@ -61,7 +61,10 @@ def measure(path, pressure, width, expected_atoms=None):
     if not rows or not required <= set(rows[0]):
         raise ValueError(f"{path}: not a complete solver cell history")
     if expected_atoms is None:
-        expected_atoms = 8500 if width == 64 else 19125 if width == 96 else None
+        # 64-mm population is the Table-2 500-fibre case.  The 96-mm
+        # sensitivity input preserves areal loading (750 fibres); it is not
+        # presented as a primary-source population.
+        expected_atoms = 8500 if width == 64 else 12750 if width == 96 else None
     if expected_atoms is None or any(int(r["n_atoms"]) != expected_atoms for r in rows):
         raise ValueError(f"{path}: unexpected or changing fibre population")
     stages = {r["stage"] for r in rows}
