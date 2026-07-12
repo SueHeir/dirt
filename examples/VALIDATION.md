@@ -30,7 +30,7 @@ The Guo rubber-cord directory hash-binds the primary paper and its approximate
 manual Fig. 6/7 digitization. The paper's numerical setup is periodic and
 planar—not the experimental Schulze-ring annulus—and builds walls and blades
 from rigidly connected spheres under a gravity-weighted upper body. Its
-wall-sphere diameter/layout and upper-body mass are not reported, so this
+wall-sphere diameter/layout are not reported, so this
 directory intentionally contains only source and candidate-topology audits,
 not a DIRT solver draft. A completed result requires citable recovery of those
 inputs, an independently exercised sphere-built gravity-loaded assembly, six

@@ -9,12 +9,11 @@
   },
   "not_reported": {
     "wall_sphere_diameter_mm": "NOT_REPORTED",
-    "wall_sphere_layout": "NOT_REPORTED",
-    "upper_wall_mass_kg": "NOT_REPORTED"
+    "wall_sphere_layout": "NOT_REPORTED"
   },
   "source_pages": {
     "wall_and_motion": [5, 6],
-    "cell_dimensions": [8],
+    "cell_dimensions_and_printed_normal_stress": [8, 12],
     "table_2": [24]
   }
 }

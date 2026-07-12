@@ -3,7 +3,7 @@
 
 The article identifies sphere-built walls, blade lengths/pitch, their motion
 constraints, and the periodic control-cell dimensions.  It does not publish a
-wall-sphere radius, tessellation, upper-wall mass, or a construction drawing
+wall-sphere radius, tessellation, or a construction drawing
 from which those quantities can be recovered.  Those missing quantities alter
 the contact boundary and the gravity-loaded lid dynamics.  This script makes
 that limit executable: a configuration cannot be certified as a reproduction
@@ -26,7 +26,7 @@ def load_contract(path=CONTRACT):
     if not {"sphere_built_walls", "upper_blade_length_mm", "lower_blade_length_mm",
             "blade_pitch_mm", "upper_wall_constraints", "periodic_cell_mm"} <= set(record["reported"]):
         raise ValueError("geometry contract omits a reported source constraint")
-    missing = {"wall_sphere_diameter_mm", "wall_sphere_layout", "upper_wall_mass_kg"}
+    missing = {"wall_sphere_diameter_mm", "wall_sphere_layout"}
     if set(record["not_reported"]) != missing:
         raise ValueError("geometry contract must name every unresolved boundary quantity")
     if any(record["not_reported"][key] != "NOT_REPORTED" for key in missing):
@@ -66,7 +66,7 @@ def main():
 class AuditTests(unittest.TestCase):
     def test_contract_is_complete_and_explicit_about_missing_geometry(self):
         record = load_contract()
-        self.assertEqual(record["not_reported"]["upper_wall_mass_kg"], "NOT_REPORTED")
+        self.assertEqual(set(record["not_reported"]), {"wall_sphere_diameter_mm", "wall_sphere_layout"})
 
     def test_no_default_can_turn_missing_wall_data_into_a_reproduction(self):
         with self.assertRaisesRegex(RuntimeError, "cannot be uniquely transcribed"):

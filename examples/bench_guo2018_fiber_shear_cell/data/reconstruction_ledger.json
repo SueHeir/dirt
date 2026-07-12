@@ -6,6 +6,7 @@
   "directly_reported": {
     "control_cell_xz_mm": [64, 36],
     "dense_bed_depth_mm": 45,
+    "reported_normal_stress_pa": 1735,
     "rubber_cord": {
       "fiber_diameter_mm": 2.4,
       "fiber_length_mm": 21.6,
@@ -31,6 +32,10 @@
     }
   },
   "derived_inputs": {
+    "upper_wall_gravity_mass_at_1735_pa_kg": {
+      "value": 0.4074862385321101,
+      "basis": "m = sigma_xx * Lx * Lz / g, using the reported 64 mm by 36 mm periodic cell, the printed 1735 Pa case, and g = 9.81 m/s^2; this is the assigned gravitational load, not the physical mass of an unspecified sphere assembly"
+    },
     "96_mm_fiber_count": {
       "value": 750,
       "basis": "preserves the 64-mm areal loading; not reported by the article"
@@ -38,8 +43,7 @@
   },
   "unresolved_required_boundary_inputs": {
     "wall_sphere_diameter_mm": "not reported",
-    "wall_sphere_layout": "not reported",
-    "upper_wall_mass_kg": "not reported"
+    "wall_sphere_layout": "not reported"
   },
   "page_receipt": {
     "method_and_boundary": [5, 6],

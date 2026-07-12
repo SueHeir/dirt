@@ -5,11 +5,12 @@ This is an independent, source-ledger check.  It verifies that the committed
 candidate carries the directly reported rubber-cord parameters, distinguishes
 the 96-mm population inference from a source fact, and reports the unresolved
 wall-body inputs that prevent a source-equivalent solver run.  It never emits a
-replication pass and it does not synthesize a wall geometry or a lid mass.
+replication pass and it does not synthesize a wall geometry.
 """
 import argparse
 import hashlib
 import json
+import math
 import tempfile
 import unittest
 from pathlib import Path
@@ -31,13 +32,17 @@ def load_ledger(path=LEDGER):
                        "fiber_count", "time_step_s"}
     if set(rubber) != required_rubber:
         raise ValueError("ledger does not contain the complete Table-2 rubber-cord transcription")
-    unresolved = {"wall_sphere_diameter_mm", "wall_sphere_layout", "upper_wall_mass_kg"}
+    unresolved = {"wall_sphere_diameter_mm", "wall_sphere_layout"}
     if set(ledger["unresolved_required_boundary_inputs"]) != unresolved:
         raise ValueError("ledger must name every unresolved wall-body input")
     if any(value != "not reported" for value in ledger["unresolved_required_boundary_inputs"].values()):
         raise ValueError("unresolved inputs must not be replaced by defaults")
     if ledger["derived_inputs"]["96_mm_fiber_count"]["value"] != 750:
         raise ValueError("derived size-sensitivity population changed")
+    mass = ledger["derived_inputs"]["upper_wall_gravity_mass_at_1735_pa_kg"]["value"]
+    expected_mass = 1735 * 0.064 * 0.036 / 9.81
+    if not math.isclose(mass, expected_mass, rel_tol=0.0, abs_tol=1e-15):
+        raise ValueError("upper-wall gravity load is not derived from the reported stress and cell area")
     return ledger
 
 
@@ -92,6 +97,9 @@ def main():
     ledger = audit(args.source_pdf)
     unresolved = ", ".join(sorted(ledger["unresolved_required_boundary_inputs"]))
     print("AUDIT OK: candidate constants agree with direct Table-2 and cell facts.")
+    mass = ledger["derived_inputs"]["upper_wall_gravity_mass_at_1735_pa_kg"]["value"]
+    print("DERIVED LOAD: 1735 Pa on the reported 64-mm x 36-mm cell requires a "
+          f"{mass:.12f} kg gravitational load.")
     print("SOURCE LIMIT: a source-equivalent replication remains BLOCKED; missing " + unresolved + ".")
     print("The 96-mm/750-fibre input is an explicitly derived sensitivity case, not a reported population.")
 
@@ -100,14 +108,19 @@ class LedgerTests(unittest.TestCase):
     def test_candidate_constants_match_the_independently_transcribed_table(self):
         self.assertEqual(candidate_parameter_mismatches(load_ledger()), [])
 
-    def test_missing_wall_body_data_cannot_be_silently_promoted_to_a_default(self):
+    def test_missing_wall_topology_cannot_be_silently_promoted_to_a_default(self):
         with tempfile.TemporaryDirectory() as directory:
             altered = Path(directory) / "ledger.json"
             ledger = load_ledger()
-            ledger["unresolved_required_boundary_inputs"]["upper_wall_mass_kg"] = 1.0
+            ledger["unresolved_required_boundary_inputs"]["wall_sphere_diameter_mm"] = 2.4
             altered.write_text(json.dumps(ledger))
             with self.assertRaisesRegex(ValueError, "must not be replaced"):
                 load_ledger(altered)
+
+    def test_gravity_load_is_fixed_by_reported_normal_stress_and_cell_area(self):
+        ledger = load_ledger()
+        mass = ledger["derived_inputs"]["upper_wall_gravity_mass_at_1735_pa_kg"]["value"]
+        self.assertAlmostEqual(mass * 9.81 / (0.064 * 0.036), 1735.0, places=10)
 
     def test_unmatched_pdf_is_not_evidence_for_this_transcription(self):
         with tempfile.NamedTemporaryFile() as source:

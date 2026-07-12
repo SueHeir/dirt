@@ -11,12 +11,15 @@ blades, and a vertically free upper body whose gravity supplies the prescribed
 normal load. It must then compare two solver-derived observables against the
 paper across the declared cases with visible, pre-stated error bands.
 
-The primary PDF reports the fibre representation and cell dimensions but does
-not report the wall-sphere diameter/layout or upper-wall mass. Those omissions
-mean the published boundary-value problem cannot be uniquely instantiated from
-the available primary source. An analytic plane wall or force-feedback lid
-would be a different problem, so this audit deliberately rejects that
-substitution rather than running it under the Guo label.
+The primary PDF reports the fibre representation, cell dimensions, and that a
+prescribed normal stress is applied through the upper wall's weight. Thus the
+assigned gravity load is derivable as `mass = normal_stress * Lx * Lz / g`:
+the printed 1735-Pa case in the 64-mm x 36-mm cell requires
+0.407486238532 kg at `g = 9.81 m/s²`. It does **not** report the wall-sphere
+diameter or layout. Those omissions still prevent a unique sphere-built
+boundary reconstruction. An analytic plane wall or force-feedback lid would be
+a different problem, so this audit deliberately rejects that substitution
+rather than running it under the Guo label.
 
 ## Reproducible checks
 
@@ -26,6 +29,7 @@ python3 examples/bench_guo2018_fiber_shear_cell/source_contract.py --self-test
 python3 examples/bench_guo2018_fiber_shear_cell/evidence_contract.py --self-test
 python3 examples/bench_guo2018_fiber_shear_cell/source_geometry_audit.py --verify
 python3 examples/bench_guo2018_fiber_shear_cell/reconstruction_readiness.py --verify
+python3 examples/bench_guo2018_fiber_shear_cell/normal_load_audit.py --self-test
 ```
 
 The hash-bound receipt in `data/reference_provenance.json`, the page-receipted
@@ -45,8 +49,8 @@ derived sensitivity candidate, not a reported source input.
 
 ## What would unblock replication
 
-Obtain the missing wall-body dimensions and upper-body mass from the authors,
-an archival supplement, or another citable primary artifact. Then add a
+Obtain the missing sphere-wall dimensions/layout from the authors, an archival
+supplement, or another citable primary artifact. Then add a
 separately validated sphere-built, gravity-loaded wall implementation and run
 the complete campaign. Do not infer these values from DIRT output or tune them
 to the published curves.

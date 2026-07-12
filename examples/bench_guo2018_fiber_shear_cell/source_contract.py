@@ -3,9 +3,11 @@
 
 The primary article is hash-bound by ``evidence_contract.py``. It states that
 its periodic control-cell walls and blades are built from rigidly connected
-spheres (pp. 5-6), but it omits their geometry and the upper-body mass. This
-audit therefore has no DIRT solver input. It rejects a hypothetical plane/servo
-substitute and never certifies an unimplemented sphere-built cell.
+spheres (pp. 5-6), but it omits their geometry. The assigned gravity load is
+derivable from reported normal stress and periodic area, whereas wall geometry
+is not. This audit therefore has no DIRT solver input. It rejects a
+hypothetical plane/servo substitute and never certifies an unimplemented
+sphere-built cell.
 """
 import argparse
 import json
