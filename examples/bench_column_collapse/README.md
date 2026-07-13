@@ -57,8 +57,8 @@ exponents fitted per regime should approach **1** (linear) and **2/3** (power).
   records the actual pre-release particle coordinates. Analysis fits that measured
   release height, never an intended count or nominal height.
 - Each case runs two stages: `settle` (80 000 steps — pack the loosely-inserted
-  column against the gate) then `collapse` (200 000 steps — gate removed on the
-  first step, column spreads).
+  column against the gate) then `collapse` (1 000 000 steps / 4 s — gate removed
+  on the first step, column spreads and must meet the terminal-rest criterion).
 
 ## Validation Criteria
 
@@ -68,10 +68,13 @@ exponents fitted per regime should approach **1** (linear) and **2/3** (power).
 | Power-regime exponent (a ≥ 3) vs 2/3 | within ±0.25 |
 
 `graph` fits the runout exponent in each regime by least squares on log–log axes
-and exits non-zero if either fit is outside the band. It also rejects a CSV unless
-it contains exactly the configured 11 aspects and all 3 seeds, and `start` rejects
-any realization with a missing release snapshot, population mismatch, or terminal
-Froude number above 0.05. The exponent tolerance is unchanged.
+and exits non-zero if either fit is outside the band. It accepts only one row for
+each of the 11 scheduled aspects, with all three seeds and finite measured values.
+The scheduled aspect proves coverage; the fit itself uses the executable's measured
+pre-release height `H/L0`, so loose insertion and settling cannot silently shift a
+point horizontally. A LAMMPS overlay is emitted only for a complete, exact-population
+independent campaign. Fresh runout figures display each fitted exponent and its
+unchanged ±0.25 acceptance band directly on the plot.
 
 ## Status — current evidence required
 
@@ -170,25 +173,10 @@ LAMMPS's final deposit is dumped as `(id, x, y, z, radius)`, converted to the sa
 `x,y,z,radius` CSV the DIRT recorder writes, and the runout `L_f` is extracted with
 the **same** `measure_column()` — so the two codes are compared on equal footing.
 
-Both codes track the increasing runout and bracket the reference lines, but neither
-lands the linear-regime exponent inside the ±0.25 band. Fitted exponents (this run,
-seed-averaged DIRT, sub-diameter deposit-toe metric applied to both codes): linear
-regime (a ≤ 3) — DIRT **1.54**, LAMMPS **1.27** (target 1.0); power regime (a ≥ 3) —
-DIRT **0.59**, LAMMPS **0.97** (target 2/3). Only the DIRT-vs-theory exponents gate
-the result, and DIRT's linear-regime exponent is outside the band, so the bench FAILs
-(see *Status*). **The key point is that LAMMPS — an independent, authoritative granular
-DEM code run through the identical geometry, model, and measurement — misses the linear
-target the same way DIRT does.** A code-independent miss at fixed system size is strong
-evidence the limitation is the benchmark's finite size (few-grain-thick low-aspect
-deposits with no sharp front), not a DIRT model defect. Both codes reproduce the
-increasing, near-power-law runout and sit on the experimental band; they simply cannot
-resolve the continuum linear exponent at this deliberately small size.
-
-> Caveat: LAMMPS `create_atoms random` rejects overlapping placements, so the loose
-> insert column is sized (and the minimum separation relaxed) to seat all `N` grains;
-> the placed count matches DIRT to within a few percent. The two codes' loose-fill
-> microstructures still differ, which contributes to the point-by-point runout
-> differences.
+Historical LAMMPS values from the superseded small-system protocol are not evidence
+for the current geometry. A fresh overlay is written only after all 11 LAMMPS cases
+finish with the exact requested population; a partial campaign is discarded rather
+than used to support either a PASS or a failure diagnosis.
 
 ## Assumptions
 

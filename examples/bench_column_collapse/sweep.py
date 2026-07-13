@@ -474,8 +474,14 @@ def run_lammps_sweep(lammps):
         if not lammps_dump_to_csv(dump, deposit_csv):
             print(f"    a={a}: could not parse LAMMPS dump.")
             continue
+        # LAMMPS's random insertion may report success after seating fewer atoms
+        # than requested.  Such a deposit has a different initial aspect ratio
+        # and is not a valid code-to-code comparison.
+        if csv_particle_count(deposit_csv) != n_particles(a):
+            print(f"    a={a}: rejected incomplete LAMMPS deposit.")
+            continue
         h, lf = measure_column(deposit_csv)
-        rows.append({"aspect": a, "L0": L0, "H": h, "L_f": lf,
+        rows.append({"nominal_aspect": a, "aspect": a, "L0": L0, "H": h, "L_f": lf,
                      "runout_norm": (lf - L0) / L0})
     return rows
 
@@ -597,14 +603,16 @@ def start():
         rn = [(v - L0) / L0 for v in lfs]
         rn_mean = sum(rn) / len(rn)
         rn_std = (sum((v - rn_mean) ** 2 for v in rn) / len(rn)) ** 0.5 if len(rn) > 1 else 0.0
-        rows.append({"aspect": a, "L0": L0, "H": h_mean, "L_f": lf_mean,
+        # Fit against the measured, settled aspect ratio—not the count-derived
+        # scheduling label.  A valid release must therefore include all initial
+        # snapshots above.
+        rows.append({"nominal_aspect": a, "aspect": h_mean / L0,
+                     "L0": L0, "H": h_mean, "L_f": lf_mean,
                      "runout_norm": rn_mean, "runout_std": rn_std,
                      "n_seeds": len(lfs)})
 
-    if failures or len(rows) != len(ASPECTS):
+    if len(rows) != len(ASPECTS):
         print("\nERROR: incomplete or non-arrested ensemble; refusing to fit.")
-        for failure in failures:
-            print(f"  {failure}")
         sys.exit(1)
     os.makedirs(DATA_DIR, exist_ok=True)
     _write_runout(RUNOUT_CSV, rows)
@@ -618,11 +626,11 @@ def start():
         if os.path.isfile(LAMMPS_CSV):
             os.remove(LAMMPS_CSV)
         lrows = run_lammps_sweep(lammps)
-        if lrows:
+        if len(lrows) == len(ASPECTS):
             _write_runout(LAMMPS_CSV, lrows)
             print(f"LAMMPS: wrote {len(lrows)} runout rows -> {LAMMPS_CSV}")
         else:
-            print("LAMMPS: no deposits collected — skipping overlay.")
+            print("LAMMPS: incomplete independent campaign — refusing overlay.")
     else:
         print("LAMMPS: not found on PATH — running DIRT only.")
 
@@ -631,7 +639,7 @@ def _write_runout(path, rows):
     with open(path, "w", newline="") as f:
         w = csv.DictWriter(
             f,
-            fieldnames=["aspect", "L0", "H", "L_f", "runout_norm",
+            fieldnames=["nominal_aspect", "aspect", "L0", "H", "L_f", "runout_norm",
                         "runout_std", "n_seeds"],
             restval="", extrasaction="ignore",
         )
@@ -725,7 +733,8 @@ def load_runout():
         rows = list(csv.DictReader(f))
     expected = {float(a) for a in ASPECTS}
     seen = set()
-    required = {"aspect", "L0", "H", "L_f", "runout_norm", "runout_std", "n_seeds"}
+    required = {"nominal_aspect", "aspect", "L0", "H", "L_f", "runout_norm",
+                "runout_std", "n_seeds"}
     if len(rows) != len(ASPECTS):
         print("ERROR: runout CSV does not contain one row per scheduled aspect.")
         sys.exit(1)
@@ -734,17 +743,19 @@ def load_runout():
             print("ERROR: runout CSV has an incomplete schema.")
             sys.exit(1)
         try:
+            nominal = float(row["nominal_aspect"])
             aspect = float(row["aspect"])
             values = [float(row[k]) for k in ("L0", "H", "L_f", "runout_norm", "runout_std")]
             seeds = int(row["n_seeds"])
         except (TypeError, ValueError):
             print("ERROR: runout CSV contains non-numeric validation evidence.")
             sys.exit(1)
-        if (aspect not in expected or aspect in seen or seeds != len(SEEDS)
-                or not all(math.isfinite(v) for v in values) or values[1] <= 0.0):
+        if (nominal not in expected or nominal in seen or aspect <= 0.0
+                or seeds != len(SEEDS) or not all(math.isfinite(v) for v in values)
+                or values[1] <= 0.0):
             print("ERROR: runout CSV is incomplete, duplicated, or inadmissible.")
             sys.exit(1)
-        seen.add(aspect)
+        seen.add(nominal)
     if seen != expected:
         print("ERROR: runout CSV aspect set differs from the configured sweep.")
         sys.exit(1)
@@ -776,7 +787,7 @@ def validate(rows):
     print("=" * 66)
     print(f"  L0 = {L0*1000:.1f} mm, slab W = {W*1000:.1f} mm, d = {2*RADIUS*1000:.1f} mm")
     print(f"  E = {YOUNGS_MOD:.1e} Pa, e = {RESTITUTION}, mu = {FRICTION}\n")
-    print(f"  {'a':>5} {'H[mm]':>8} {'L_f[mm]':>9} {'(Lf-L0)/L0':>12} "
+    print(f"  {'a_nom':>5} {'a_rel':>6} {'H[mm]':>8} {'L_f[mm]':>9} {'(Lf-L0)/L0':>12} "
           f"{'seed_sd':>8} {'seeds':>6}")
 
     pairs = []
@@ -788,7 +799,7 @@ def validate(rows):
         sd = float(r["runout_std"]) if r.get("runout_std") not in (None, "") else float("nan")
         ns = r.get("n_seeds", "")
         pairs.append((a, rn))
-        print(f"  {a:>5.2f} {h*1000:>8.2f} {lf*1000:>9.2f} {rn:>12.3f} "
+        print(f"  {float(r['nominal_aspect']):>5.2f} {a:>6.3f} {h*1000:>8.2f} {lf*1000:>9.2f} {rn:>12.3f} "
               f"{sd:>8.3f} {str(ns):>6}")
 
     low = [(a, rn) for a, rn in pairs if a <= REGIME_SPLIT]
@@ -821,8 +832,8 @@ def validate(rows):
 def compare_codes(dirt_rows, lammps_rows):
     """Print a per-aspect DIRT-vs-LAMMPS normalized-runout comparison and the
     fitted exponents for both codes."""
-    dirt = {float(r["aspect"]): float(r["runout_norm"]) for r in dirt_rows}
-    lammps = {float(r["aspect"]): float(r["runout_norm"]) for r in lammps_rows}
+    dirt = {float(r["nominal_aspect"]): float(r["runout_norm"]) for r in dirt_rows}
+    lammps = {float(r["nominal_aspect"]): float(r["runout_norm"]) for r in lammps_rows}
     print("\n" + "=" * 58)
     print("Normalized runout (L_f-L0)/L0: DIRT vs LAMMPS")
     print("=" * 58)
@@ -884,6 +895,15 @@ def plot(rows, lammps_rows=None):
     ax.set_xlabel("Aspect ratio  a = H / L0")
     ax.set_ylabel(r"Normalized runout  $(L_f - L_0)/L_0$")
     ax.set_title("Column-Collapse Runout vs Aspect Ratio")
+    low, _ = fit_loglog([(float(r["aspect"]), float(r["runout_norm"]))
+                         for r in rows if float(r["aspect"]) <= REGIME_SPLIT])
+    high, _ = fit_loglog([(float(r["aspect"]), float(r["runout_norm"]))
+                          for r in rows if float(r["aspect"]) >= REGIME_SPLIT])
+    criterion = (f"exponent gate: low {low:.3f} vs 1.000 ± {EXP_TOL:.2f}; "
+                 f"high {high:.3f} vs 0.667 ± {EXP_TOL:.2f}")
+    ax.text(0.02, 0.02, criterion, transform=ax.transAxes, fontsize=8,
+            va="bottom", ha="left",
+            bbox={"facecolor": "white", "alpha": 0.85, "edgecolor": "0.5"})
     ax.legend(fontsize=9)
     ax.grid(True, which="both", alpha=0.3)
     fig.savefig(os.path.join(PLOT_DIR, "runout_scaling.png"), bbox_inches="tight")
