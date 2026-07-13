@@ -77,8 +77,8 @@ LAMMPS_BINS = ["lmp_serial", "lmp", "lmp_mpi", "lammps"]
 # ── Geometry / material (shared by every case) ───────────────────────────────
 RADIUS = 0.0015            # m (d = 3 mm; Lajeunesse used ~1–3 mm glass beads)
 DENSITY = 2500.0           # kg/m^3 (glass)
-L0 = 0.024                 # initial column width [m] (= 8 diameters)
-W = 0.009                  # slab width in y [m] (= 3 diameters, quasi-2D)
+L0 = 0.048                 # initial column width [m] (= 16 diameters)
+W = 0.018                  # slab width in y [m] (= 6 diameters, quasi-2D)
 # Canonical glass-bead (ballotini) material — measured properties, shared across
 # all DIRT calibrations (shear/cooling/conduction/collapse). E softened from the
 # real ~65 GPa (rigid-grain limit; keeps dt tractable). e and μ_p are measured
@@ -89,9 +89,13 @@ RESTITUTION = 0.926        # measured glass–glass COR
 FRICTION = 0.16            # measured glass–glass sliding friction
 DT = 4.0e-6               # s
 SETTLE_STEPS = 80000
-COLLAPSE_STEPS = 200000
+COLLAPSE_STEPS = 1000000   # 4 s: enough for a high-e glass bed to arrest
 
 PACKING = 0.60             # settled solid fraction used to size the particle count
+# This is deliberately a *loose insertion* density, not a fitted material
+# parameter.  It follows from the hard-sphere volume constraint: a randomized
+# non-overlap inserter needs enough empty volume to place every requested grain.
+INSERT_PACKING = 0.20
 
 # Aspect ratios to sweep. Spans both regimes (linear a<~2-3, power-law a>~3) so a
 # regime change is resolvable. The sweep is deliberately FINE — extra points in
@@ -139,6 +143,20 @@ def n_particles(aspect):
     return max(1, int(round(PACKING * L0 * W * h / vol_particle)))
 
 
+def loose_insert_top(count, aspect):
+    """Height of a capacity-safe loose fill, measured from z=0.
+
+    The old ``1.6 * H`` heuristic underfilled low columns, so their nominal
+    aspect ratios had no physical realization.  This lower bound is obtained
+    directly from grain volume and insertion footprint; it is independent of
+    the measured runout and cannot tune an exponent.
+    """
+    footprint = (L0 - RADIUS) * (W - 2.0 * RADIUS)
+    volume = (4.0 / 3.0) * math.pi * RADIUS**3
+    return max(0.02, 1.6 * aspect * L0,
+               RADIUS + count * volume / (INSERT_PACKING * footprint))
+
+
 def case_tag(aspect):
     return f"a{aspect:g}".replace(".", "p")
 
@@ -172,7 +190,7 @@ processors_z = 1
 x_low = -0.01
 x_high = 0.60
 y_low = -0.003
-y_high = 0.012
+y_high = {y_high}
 z_low = 0.0
 z_high = {z_high}
 boundary_x = "fixed"
@@ -205,7 +223,7 @@ count = {count}
 radius = {radius}
 density = {density}
 seed = {seed}
-region = {{ type = "block", min = [0.0015, 0.0015, 0.0015], max = [0.0225, 0.0075, {insert_top}] }}
+region = {{ type = "block", min = [{radius}, {radius}, {radius}], max = [{x_insert_high}, {y_insert_high}, {insert_top}] }}
 
 [[wall]]
 type = "plane"
@@ -230,14 +248,14 @@ name = "side_lo"
 
 [[wall]]
 type = "plane"
-point_y = 0.009
+point_y = {w}
 normal_y = -1.0
 material = "glass"
 name = "side_hi"
 
 [[wall]]
 type = "plane"
-point_x = 0.024
+point_x = {l0}
 normal_x = -1.0
 material = "glass"
 name = "gate"
@@ -267,9 +285,7 @@ def generate():
     n_cfg = 0
     for a in ASPECTS:
         n = n_particles(a)
-        h = a * L0
-        # Loose insert column ~1.6x the settled height; cap the box height.
-        insert_top = min(0.18, max(0.02, 1.6 * h))
+        insert_top = loose_insert_top(n, a)
         z_high = max(0.2, insert_top + 0.05)
         for s in SEEDS:
             cdir = case_dir_seed(a, s)
@@ -280,6 +296,9 @@ def generate():
                     youngs=YOUNGS_MOD, poisson=POISSON,
                     restitution=RESTITUTION, friction=FRICTION,
                     radius=RADIUS, density=DENSITY,
+                    x_insert_high=f"{L0 - RADIUS:.4f}",
+                    y_insert_high=f"{W - RADIUS:.4f}", l0=f"{L0:.4f}",
+                    w=f"{W:.4f}", y_high=f"{W + 0.003:.4f}",
                     insert_top=f"{insert_top:.4f}", z_high=f"{z_high:.4f}",
                     output_dir=cdir, dt=f"{DT:.3e}",
                     settle_steps=SETTLE_STEPS, collapse_steps=COLLAPSE_STEPS,
@@ -331,7 +350,7 @@ comm_modify     vel yes
 region          simbox block {x_low} {x_high} {y_low} {y_high} 0.0 {z_high} units box
 create_box      1 simbox
 
-region          colreg block 0.0015 0.0225 0.0015 0.0075 0.0015 {insert_top} units box
+region          colreg block {radius} {x_insert_high} {radius} {y_insert_high} {radius} {insert_top} units box
 create_atoms    1 random {count} {seed} colreg overlap {min_sep} maxtry 500 units box
 set             group all diameter {diam}
 set             group all density {density}
@@ -373,7 +392,7 @@ def write_lammps_input(path, aspect):
     # rejects overlapping placements, so the loose region must be tall enough to
     # hold all N grains — otherwise it silently places fewer than N (skewing the
     # effective column height and the runout).
-    footprint = (0.0225 - 0.0015) * (0.0075 - 0.0015)   # x*y of the insert region
+    footprint = (L0 - RADIUS) * (W - 2.0 * RADIUS)
     vol_particle = (4.0 / 3.0) * math.pi * RADIUS**3
     # 'create_atoms random' rejects overlaps, so a denser-but-plausible loose pack
     # (~0.45) sets the required loose-column height; the small initial overlaps the
@@ -381,7 +400,7 @@ def write_lammps_input(path, aspect):
     # all N grains so the count matches DIRT exactly.
     loose_pack = 0.45
     h_needed = n * vol_particle / (loose_pack * footprint)
-    insert_top = max(0.02, 1.6 * h, h_needed + 0.0015)
+    insert_top = max(loose_insert_top(n, aspect), h_needed + RADIUS)
     z_high = insert_top + 0.05
     # min center separation: slightly below d so the loose column packs densely
     # enough to place every grain (overlaps relax in the settle stage).
@@ -389,8 +408,10 @@ def write_lammps_input(path, aspect):
     with open(path, "w") as f:
         f.write(LMP_TEMPLATE.format(
             aspect=aspect, count=n, seed=12345,
-            x_low=-0.01, x_high=0.60, y_low=-0.003, y_high=0.012,
+            x_low=-0.01, x_high=0.60, y_low=-0.003, y_high=W + 0.003,
             z_high=f"{z_high:.4f}", insert_top=f"{insert_top:.4f}",
+            radius=f"{RADIUS:.4f}", x_insert_high=f"{L0 - RADIUS:.4f}",
+            y_insert_high=f"{W - RADIUS:.4f}",
             min_sep=f"{min_sep:.6f}",
             diam=2.0 * RADIUS, density=DENSITY,
             E=f"{YOUNGS_MOD:.6e}", e=RESTITUTION, nu=POISSON,
@@ -460,6 +481,46 @@ def run_lammps_sweep(lammps):
 
 
 # ── start ────────────────────────────────────────────────────────────────────
+REST_FROUDE_MAX = 0.05
+
+
+def csv_particle_count(path):
+    with open(path, newline="") as f:
+        return sum(1 for _ in csv.DictReader(f))
+
+
+def release_height(path):
+    """Measured released-bed height from the executable's pre-gate snapshot."""
+    with open(path, newline="") as f:
+        rows = list(csv.DictReader(f))
+    if not rows:
+        raise ValueError("empty release-state record")
+    try:
+        floor = min(float(r["z"]) - float(r["radius"]) for r in rows)
+        top = max(float(r["z"]) + float(r["radius"]) for r in rows)
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError("malformed release-state record") from exc
+    h = top - floor
+    if not math.isfinite(h) or h <= 0.0:
+        raise ValueError("non-positive release height")
+    return h
+
+
+def checked_final_state(path, expected_count):
+    with open(path, newline="") as f:
+        rows = list(csv.DictReader(f))
+    if len(rows) != 1 or set(rows[0]) != {"particle_count", "max_speed_m_s"}:
+        raise ValueError("malformed terminal-state record")
+    try:
+        count = int(rows[0]["particle_count"])
+        vmax = float(rows[0]["max_speed_m_s"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError("non-numeric terminal-state record") from exc
+    if count != expected_count or not math.isfinite(vmax) or vmax < 0.0:
+        raise ValueError(f"invalid terminal state {count}/{expected_count}, vmax={vmax}")
+    return vmax
+
+
 def start():
     os.makedirs(DATA_DIR, exist_ok=True)
     print(f"Building {EXAMPLE} (release)...", flush=True)
@@ -482,8 +543,11 @@ def start():
                 continue
             # Wipe stale deposit so old results can't be re-plotted.
             deposit = os.path.join(cdir, "data", "column_collapse_results.csv")
-            if os.path.isfile(deposit):
-                os.remove(deposit)
+            release = os.path.join(cdir, "data", "column_collapse_release.csv")
+            terminal = os.path.join(cdir, "data", "column_collapse_final_state.csv")
+            for stale in (deposit, release, terminal):
+                if os.path.isfile(stale):
+                    os.remove(stale)
             print(f"  [{k}/{n_runs}] a={a:<4} seed={s} N={n_particles(a)}", flush=True)
             log = os.path.join(cdir, "run.log")
             with open(log, "w") as lf:
@@ -491,23 +555,42 @@ def start():
                     ["cargo", "run", "--release", "--example", EXAMPLE,
                      "--no-default-features", "--features", "precision-double", "--", config],
                     cwd=REPO_ROOT, stdout=lf, stderr=subprocess.STDOUT, env=env,
+                    check=True,
                 )
 
-    # Average the runout over seeds for each aspect ratio.
+    # A nominal aspect is not evidence.  Every configured realization must have
+    # an exact population, a pre-release geometry record, and a terminal rest
+    # record before it may contribute to a fit.
     rows = []
+    failures = []
     for a in ASPECTS:
         lfs, hs = [], []
         for s in SEEDS:
-            deposit = os.path.join(case_dir_seed(a, s), "data",
-                                   "column_collapse_results.csv")
-            if not os.path.isfile(deposit):
-                print(f"  a={a} seed={s}: no deposit produced.")
+            case_data = os.path.join(case_dir_seed(a, s), "data")
+            deposit = os.path.join(case_data, "column_collapse_results.csv")
+            release = os.path.join(case_data, "column_collapse_release.csv")
+            terminal = os.path.join(case_data, "column_collapse_final_state.csv")
+            expected = n_particles(a)
+            if not all(os.path.isfile(p) for p in (deposit, release, terminal)):
+                failures.append(f"a={a} seed={s}: missing release, final, or terminal evidence")
                 continue
-            h, lf = measure_column(deposit)
+            if csv_particle_count(deposit) != expected or csv_particle_count(release) != expected:
+                failures.append(f"a={a} seed={s}: population is not {expected} at release/final")
+                continue
+            try:
+                vmax = checked_final_state(terminal, expected)
+            except ValueError as exc:
+                failures.append(f"a={a} seed={s}: {exc}")
+                continue
+            froude = vmax / math.sqrt(9.81 * 2.0 * RADIUS)
+            if froude > REST_FROUDE_MAX:
+                failures.append(f"a={a} seed={s}: terminal Fr={froude:.6g} > {REST_FROUDE_MAX}")
+                continue
+            h = release_height(release)
+            _, lf = measure_column(deposit)
             hs.append(h)
             lfs.append(lf)
-        if not lfs:
-            print(f"  a={a}: no deposits produced across any seed.")
+        if len(lfs) != len(SEEDS):
             continue
         lf_mean = sum(lfs) / len(lfs)
         h_mean = sum(hs) / len(hs)
@@ -518,8 +601,10 @@ def start():
                      "runout_norm": rn_mean, "runout_std": rn_std,
                      "n_seeds": len(lfs)})
 
-    if not rows:
-        print("\nERROR: no deposits collected.")
+    if failures or len(rows) != len(ASPECTS):
+        print("\nERROR: incomplete or non-arrested ensemble; refusing to fit.")
+        for failure in failures:
+            print(f"  {failure}")
         sys.exit(1)
     os.makedirs(DATA_DIR, exist_ok=True)
     _write_runout(RUNOUT_CSV, rows)
@@ -638,8 +723,30 @@ def load_runout():
         sys.exit(1)
     with open(RUNOUT_CSV) as f:
         rows = list(csv.DictReader(f))
-    if not rows:
-        print("ERROR: no runout data.")
+    expected = {float(a) for a in ASPECTS}
+    seen = set()
+    required = {"aspect", "L0", "H", "L_f", "runout_norm", "runout_std", "n_seeds"}
+    if len(rows) != len(ASPECTS):
+        print("ERROR: runout CSV does not contain one row per scheduled aspect.")
+        sys.exit(1)
+    for row in rows:
+        if not required.issubset(row):
+            print("ERROR: runout CSV has an incomplete schema.")
+            sys.exit(1)
+        try:
+            aspect = float(row["aspect"])
+            values = [float(row[k]) for k in ("L0", "H", "L_f", "runout_norm", "runout_std")]
+            seeds = int(row["n_seeds"])
+        except (TypeError, ValueError):
+            print("ERROR: runout CSV contains non-numeric validation evidence.")
+            sys.exit(1)
+        if (aspect not in expected or aspect in seen or seeds != len(SEEDS)
+                or not all(math.isfinite(v) for v in values) or values[1] <= 0.0):
+            print("ERROR: runout CSV is incomplete, duplicated, or inadmissible.")
+            sys.exit(1)
+        seen.add(aspect)
+    if seen != expected:
+        print("ERROR: runout CSV aspect set differs from the configured sweep.")
         sys.exit(1)
     return rows
 

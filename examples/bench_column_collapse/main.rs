@@ -61,9 +61,33 @@ fn open_gate(
     mut walls: ResMut<Walls>,
     run_state: Res<RunState>,
     comm: Res<CommResource>,
+    atoms: Res<Atom>,
+    registry: Res<AtomDataRegistry>,
+    input: Res<Input>,
 ) {
     if tracker.gate_opened {
         return;
+    }
+    // The released geometry is evidence, not an inferred nominal particle
+    // count.  Record it before support removal so analysis can fit the actual
+    // settled aspect ratio of each realization.
+    let dem = registry.expect::<DemAtom>("record_release_state");
+    let out_dir = input
+        .output_dir
+        .clone()
+        .unwrap_or_else(|| "examples/bench_column_collapse".to_string());
+    let data_dir = format!("{out_dir}/data");
+    fs::create_dir_all(&data_dir).expect("create release-state directory");
+    let path = format!("{data_dir}/column_collapse_release.csv");
+    let mut file = fs::File::create(&path).unwrap_or_else(|e| panic!("Cannot create {path}: {e}"));
+    writeln!(file, "x,y,z,radius").unwrap();
+    for i in 0..atoms.nlocal as usize {
+        writeln!(
+            file,
+            "{:.10e},{:.10e},{:.10e},{:.10e}",
+            atoms.pos[i][0], atoms.pos[i][1], atoms.pos[i][2], dem.radius[i]
+        )
+        .unwrap();
     }
     walls.deactivate_by_name(GATE_NAME);
     tracker.gate_opened = true;
@@ -122,4 +146,9 @@ fn dump_deposit(app: &App) {
         "FINAL: {} particles dumped -> {} (max |v| = {:.3e} m/s)",
         nlocal, results_file, vmax
     );
+    let state_file = format!("{data_dir}/column_collapse_final_state.csv");
+    let mut state =
+        fs::File::create(&state_file).unwrap_or_else(|e| panic!("Cannot create {state_file}: {e}"));
+    writeln!(state, "particle_count,max_speed_m_s").unwrap();
+    writeln!(state, "{nlocal},{vmax:.10e}").unwrap();
 }

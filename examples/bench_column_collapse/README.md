@@ -36,10 +36,10 @@ exponents fitted per regime should approach **1** (linear) and **2/3** (power).
 | Poisson's ratio ν | 0.25 | — |
 | Density ρ | 2500 | kg/m³ |
 | Radius R | 1.5 | mm (d = 3 mm) |
-| Restitution e | 0.5 | — |
-| Friction μ | 0.5 | — (particle–particle **and** particle–wall) |
-| Column width L0 | 24 | mm (8 diameters) |
-| Slab width W | 9 | mm (3 diameters, quasi-2D) |
+| Restitution e | 0.926 | — |
+| Friction μ | 0.16 | — (particle–particle **and** particle–wall) |
+| Column width L0 | 48 | mm (16 diameters) |
+| Slab width W | 18 | mm (6 diameters, quasi-2D) |
 | Timestep dt | 4 × 10⁻⁶ | s |
 
 ## Parameter Sweep
@@ -51,9 +51,11 @@ exponents fitted per regime should approach **1** (linear) and **2/3** (power).
   runout is averaged; the `seed` field on `[[particles.insert]]` sets the RNG.
   Single-seed packing scatter in this quasi-2D (3-diameter-deep) column is ~±20-25%
   of the runout, so averaging is needed for a stable exponent.
-- `a` is varied by the **particle count** (settled column height H) at fixed L0,
-  using a packing fraction of 0.60 to size N. Counts run from ~110 (a = 0.5) to
-  ~1100 (a = 5), kept modest so each case finishes in a few minutes.
+- `a` is varied by the **particle count** at fixed L0. The 16d × 6d cross-section
+  is eight times the old 8d × 3d population; counts run from ~880 (a = 0.5) to
+  ~8800 (a = 5). A capacity-derived loose-fill height is used, then the executable
+  records the actual pre-release particle coordinates. Analysis fits that measured
+  release height, never an intended count or nominal height.
 - Each case runs two stages: `settle` (80 000 steps — pack the loosely-inserted
   column against the gate) then `collapse` (200 000 steps — gate removed on the
   first step, column spreads).
@@ -66,19 +68,18 @@ exponents fitted per regime should approach **1** (linear) and **2/3** (power).
 | Power-regime exponent (a ≥ 3) vs 2/3 | within ±0.25 |
 
 `graph` fits the runout exponent in each regime by least squares on log–log axes
-and exits non-zero if either fit is outside the band. **It FAILs** (a known,
-now-characterised limitation — see *Status* below): with the hardened measurement
-the fitted exponents are **1.54** (linear regime, target 1.0 — **outside** ±0.25)
-and **0.59** (power regime, target 2/3 — inside ±0.25), so `graph` exits 1.
+and exits non-zero if either fit is outside the band. It also rejects a CSV unless
+it contains exactly the configured 11 aspects and all 3 seeds, and `start` rejects
+any realization with a missing release snapshot, population mismatch, or terminal
+Froude number above 0.05. The exponent tolerance is unchanged.
 
-## Status — known FAIL (genuine finite-size result, not a fit artifact)
+## Status — current evidence required
 
-This benchmark does **not** validate to tolerance and its gate exits non-zero; the
-docs here and in `examples/VALIDATION.md` reflect that FAIL rather than reporting it
-green. Adding particle–wall sliding friction to `dirt_wall` (see *Floor friction*)
-fixed the earlier failure mode where the released column slid into a one-grain-thick
-sheet that ran to the domain boundary — the deposit now arrests as a finite pile —
-but the fitted **linear-regime exponent stays outside the ±0.25 band**.
+The tracked figures are historical small-system output and are not evidence for this
+protocol. No exponent PASS is claimed until a fresh, complete 11 × 3 campaign has
+passed the release/population/rest gates and regenerated both figures. This avoids
+turning the historical 8d × 3d result into an implicit claim about the new continuum
+resolution.
 
 **The earlier "fit noise" hypothesis was tested and rejected.** The suspected causes
 — single seed, a coarse 6-point sweep, and diameter-scale runout quantization — were
