@@ -71,6 +71,9 @@ the current DIRT wall API, produce a history, or support a Fig. 6/7 comparison.
 They make the missing implementation boundary precise: a future solver must
 consume every predeclared candidate through rigid moving assemblies, retain all
 histories, and report sensitivity rather than choose a target-fitting mesh.
+Any wall selected from an archival artifact or independent measurement must
+also provide a locator and SHA-256 receipt; the geometry audit rejects an
+unsupported evidence label.
 
 ## What would unblock replication
 

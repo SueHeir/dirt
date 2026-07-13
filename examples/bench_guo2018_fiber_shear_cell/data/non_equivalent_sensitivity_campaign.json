@@ -17,6 +17,7 @@
       "label": "square-pitch-0p6mm",
       "source_equivalent": false,
       "selection_basis": "predeclared_sensitivity",
+      "selection_receipt": {"kind": "predeclared_campaign", "campaign_id": "guo-2019-rubber-cord-wall-resolution-preregistration"},
       "diameter_mm": 0.6,
       "layout": "square lattice; rigidly joined spheres; blade geometry must retain the reported dimensions",
       "reference_observables_consulted": []
@@ -25,6 +26,7 @@
       "label": "square-pitch-1p2mm",
       "source_equivalent": false,
       "selection_basis": "predeclared_sensitivity",
+      "selection_receipt": {"kind": "predeclared_campaign", "campaign_id": "guo-2019-rubber-cord-wall-resolution-preregistration"},
       "diameter_mm": 1.2,
       "layout": "square lattice; rigidly joined spheres; blade geometry must retain the reported dimensions",
       "reference_observables_consulted": []
@@ -33,6 +35,7 @@
       "label": "square-pitch-2p4mm",
       "source_equivalent": false,
       "selection_basis": "predeclared_sensitivity",
+      "selection_receipt": {"kind": "predeclared_campaign", "campaign_id": "guo-2019-rubber-cord-wall-resolution-preregistration"},
       "diameter_mm": 2.4,
       "layout": "square lattice; rigidly joined spheres; blade geometry must retain the reported dimensions",
       "reference_observables_consulted": []

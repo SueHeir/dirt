@@ -40,6 +40,8 @@ def make(diameter_mm, output):
         w=csv.writer(f); w.writerow(('x_m','y_m','z_m','part')); w.writerows((*p,'lower') for p in lower); w.writerows((*p,'upper') for p in upper); w.writerows((*p,'blade') for p in blades)
     manifest = {'label': f'predeclared square-lattice {diameter_mm:g}-mm candidate',
       'source_equivalent': False, 'selection_basis': 'predeclared_sensitivity',
+      'selection_receipt': {'kind': 'predeclared_campaign',
+                            'campaign_id': 'guo-2019-rubber-cord-wall-resolution-preregistration'},
       'diameter_mm': diameter_mm,
       'layout': 'one-sphere-thick square lattices; x-pitch 8-mm blade rows; lower/upper blade lengths 2/4 mm',
       'reference_observables_consulted': [], 'counts': {'lower':len(lower),'upper':len(upper),'blade':len(blades)},

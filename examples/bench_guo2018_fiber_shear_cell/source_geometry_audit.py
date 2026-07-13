@@ -44,8 +44,8 @@ def validate_wall_realisation(manifest):
     not accepted as a selection basis.
     """
     item = json.loads(Path(manifest).read_text())
-    required = {"label", "source_equivalent", "selection_basis", "diameter_mm",
-                "layout", "reference_observables_consulted"}
+    required = {"label", "source_equivalent", "selection_basis", "selection_receipt",
+                "diameter_mm", "layout", "reference_observables_consulted"}
     optional_generated = {"counts", "source_constraints"}
     if not required <= set(item) or set(item) - required - optional_generated:
         raise ValueError("wall realisation schema changed")
@@ -53,6 +53,20 @@ def validate_wall_realisation(manifest):
         raise ValueError("unreported wall discretisation cannot be labelled source-equivalent")
     if item["selection_basis"] not in {"independent_measurement", "archival_artifact", "predeclared_sensitivity"}:
         raise ValueError("wall choice needs independent evidence or a predeclared sensitivity basis")
+    receipt = item["selection_receipt"]
+    if not isinstance(receipt, dict):
+        raise ValueError("wall choice needs a structured selection receipt")
+    if item["selection_basis"] == "predeclared_sensitivity":
+        if set(receipt) != {"kind", "campaign_id"} or receipt["kind"] != "predeclared_campaign" \
+                or not isinstance(receipt["campaign_id"], str) or not receipt["campaign_id"].strip():
+            raise ValueError("a sensitivity wall needs its predeclared campaign receipt")
+    else:
+        if set(receipt) != {"kind", "locator", "sha256"} \
+                or receipt["kind"] != item["selection_basis"] \
+                or not isinstance(receipt["locator"], str) or not receipt["locator"].strip() \
+                or not isinstance(receipt["sha256"], str) or len(receipt["sha256"]) != 64 \
+                or any(c not in "0123456789abcdef" for c in receipt["sha256"].lower()):
+            raise ValueError("an evidence-selected wall needs a locator and SHA-256 receipt")
     if not isinstance(item["diameter_mm"], (int, float)) or item["diameter_mm"] <= 0:
         raise ValueError("wall sphere diameter must be a positive physical value")
     if not isinstance(item["layout"], str) or not item["layout"].strip():
@@ -91,7 +105,8 @@ class AuditTests(unittest.TestCase):
         import tempfile
         candidate = {"label": "bad", "source_equivalent": False,
                      "selection_basis": "predeclared_sensitivity", "diameter_mm": 2.4,
-                     "layout": "square", "reference_observables_consulted": ["Fig. 6"]}
+                     "layout": "square", "reference_observables_consulted": ["Fig. 6"],
+                     "selection_receipt": {"kind": "predeclared_campaign", "campaign_id": "test"}}
         with tempfile.NamedTemporaryFile("w") as f:
             json.dump(candidate, f); f.flush()
             with self.assertRaisesRegex(ValueError, "must not consult"):
@@ -101,10 +116,22 @@ class AuditTests(unittest.TestCase):
         import tempfile
         candidate = {"label": "bad", "source_equivalent": True,
                      "selection_basis": "archival_artifact", "diameter_mm": 2.4,
-                     "layout": "square", "reference_observables_consulted": []}
+                     "layout": "square", "reference_observables_consulted": [],
+                     "selection_receipt": {"kind": "archival_artifact", "locator": "doi:test", "sha256": "0" * 64}}
         with tempfile.NamedTemporaryFile("w") as f:
             json.dump(candidate, f); f.flush()
             with self.assertRaisesRegex(ValueError, "cannot be labelled"):
+                validate_wall_realisation(f.name)
+
+    def test_archival_label_without_receipted_artifact_is_rejected(self):
+        import tempfile
+        candidate = {"label": "unsupported", "source_equivalent": False,
+                     "selection_basis": "archival_artifact", "diameter_mm": 2.4,
+                     "layout": "square", "reference_observables_consulted": [],
+                     "selection_receipt": {"kind": "archival_artifact"}}
+        with tempfile.NamedTemporaryFile("w") as f:
+            json.dump(candidate, f); f.flush()
+            with self.assertRaisesRegex(ValueError, "locator and SHA-256"):
                 validate_wall_realisation(f.name)
 
 
