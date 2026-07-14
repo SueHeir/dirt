@@ -1,5 +1,16 @@
 # DIRT Validation Status
 
+## Typed scheduler contracts
+
+[`typed_schedule_validation`](typed_schedule_validation/README.md) independently
+executes five declared schedule contracts: standalone setforce, addforce/setforce
+ordering, rejection of a missing contact provider, acceptance of a supplied
+provider, and the shared Hooke/Hertz contact seam. The driver fails on any
+unexpected outcome and regenerates this result graph; it is schedule-integration
+evidence rather than a contact-physics calibration.
+
+![Typed scheduler contracts](typed_schedule_validation/plots/typed_schedule_contract.svg)
+
 This document records what the `bench_*` examples actually validate, and how to
 read each figure. Every benchmark couples a small DIRT simulation to a reference
 (an analytical result, an empirical correlation, or LAMMPS) and checks measured

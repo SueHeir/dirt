@@ -1,0 +1,4 @@
+# This validation case is driven by sweep.py.  The rows in
+# data/schedule_contract.csv are the declarative public contracts.
+[validation]
+name = "typed-schedule-contracts"
