@@ -19,7 +19,7 @@ use grass_app::prelude::*;
 use grass_scheduler::prelude::*;
 
 use dirt_atom::{DemAtom, MaterialTable};
-use soil_core::{Atom, AtomDataRegistry, ParticleSimScheduleSet};
+use soil_core::{Atom, ParticleSimScheduleSet, ParticlesWith, Write};
 
 /// Construct a unit quaternion `[w, x, y, z]` from a unit rotation axis and angle (radians).
 #[inline]
@@ -65,56 +65,58 @@ impl Plugin for RotationalDynamicsPlugin {
 /// sqrt + division + sin + cos + Hamilton product with no effect on the physics.
 pub fn initial_rotation(
     atoms: Res<Atom>,
-    registry: Res<AtomDataRegistry>,
+    particles: ParticlesWith<'_, Write<DemAtom>>,
     material_table: Res<MaterialTable>,
 ) {
-    let mut dem = registry.expect_mut::<DemAtom>("initial_rotation");
-    let dt = atoms.dt;
-    let nlocal = atoms.nlocal as usize;
-    let track_orientation = material_table.track_orientation;
+    particles.with(|mut dem| {
+        let dt = atoms.dt;
+        let nlocal = atoms.nlocal as usize;
+        let track_orientation = material_table.track_orientation;
 
-    for i in 0..nlocal {
-        let inv_inertia = dem.inv_inertia[i];
-        if inv_inertia == 0.0 {
-            continue;
-        } // Skip clump sub-spheres
+        for i in 0..nlocal {
+            let inv_inertia = dem.inv_inertia[i];
+            if inv_inertia == 0.0 {
+                continue;
+            } // Skip clump sub-spheres
 
-        dem.omega[i][0] += 0.5 * dt * dem.torque[i][0] * inv_inertia;
-        dem.omega[i][1] += 0.5 * dt * dem.torque[i][1] * inv_inertia;
-        dem.omega[i][2] += 0.5 * dt * dem.torque[i][2] * inv_inertia;
+            dem.omega[i][0] += 0.5 * dt * dem.torque[i][0] * inv_inertia;
+            dem.omega[i][1] += 0.5 * dt * dem.torque[i][1] * inv_inertia;
+            dem.omega[i][2] += 0.5 * dt * dem.torque[i][2] * inv_inertia;
 
-        if track_orientation {
-            let ox = dem.omega[i][0];
-            let oy = dem.omega[i][1];
-            let oz = dem.omega[i][2];
-            let omega_mag = (ox * ox + oy * oy + oz * oz).sqrt();
-            let angle = omega_mag * dt;
-            if angle > 1e-14 {
-                let inv = 1.0 / omega_mag;
-                let axis = [ox * inv, oy * inv, oz * inv];
-                let dq = quat_from_axis_angle(axis, angle);
-                dem.quaternion[i] = quat_mul(dq, dem.quaternion[i]);
+            if track_orientation {
+                let ox = dem.omega[i][0];
+                let oy = dem.omega[i][1];
+                let oz = dem.omega[i][2];
+                let omega_mag = (ox * ox + oy * oy + oz * oz).sqrt();
+                let angle = omega_mag * dt;
+                if angle > 1e-14 {
+                    let inv = 1.0 / omega_mag;
+                    let axis = [ox * inv, oy * inv, oz * inv];
+                    let dq = quat_from_axis_angle(axis, angle);
+                    dem.quaternion[i] = quat_mul(dq, dem.quaternion[i]);
+                }
             }
         }
-    }
+    });
 }
 
 /// Final half-step: advance angular velocity using updated torques.
-pub fn final_rotation(atoms: Res<Atom>, registry: Res<AtomDataRegistry>) {
-    let mut dem = registry.expect_mut::<DemAtom>("final_rotation");
-    let dt = atoms.dt;
-    let nlocal = atoms.nlocal as usize;
+pub fn final_rotation(atoms: Res<Atom>, particles: ParticlesWith<'_, Write<DemAtom>>) {
+    particles.with(|mut dem| {
+        let dt = atoms.dt;
+        let nlocal = atoms.nlocal as usize;
 
-    for i in 0..nlocal {
-        let inv_inertia = dem.inv_inertia[i];
-        if inv_inertia == 0.0 {
-            continue;
-        } // Skip clump sub-spheres
+        for i in 0..nlocal {
+            let inv_inertia = dem.inv_inertia[i];
+            if inv_inertia == 0.0 {
+                continue;
+            } // Skip clump sub-spheres
 
-        dem.omega[i][0] += 0.5 * dt * dem.torque[i][0] * inv_inertia;
-        dem.omega[i][1] += 0.5 * dt * dem.torque[i][1] * inv_inertia;
-        dem.omega[i][2] += 0.5 * dt * dem.torque[i][2] * inv_inertia;
-    }
+            dem.omega[i][0] += 0.5 * dt * dem.torque[i][0] * inv_inertia;
+            dem.omega[i][1] += 0.5 * dt * dem.torque[i][1] * inv_inertia;
+            dem.omega[i][2] += 0.5 * dt * dem.torque[i][2] * inv_inertia;
+        }
+    });
 }
 
 #[cfg(test)]

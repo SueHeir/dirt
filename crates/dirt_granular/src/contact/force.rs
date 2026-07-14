@@ -4,18 +4,29 @@ use super::*;
 pub fn hertz_mindlin_contact_force(
     mut atoms: ResMut<Atom>,
     neighbor: Res<Neighbor>,
-    registry: Res<AtomDataRegistry>,
+    particles: ParticlesWith<
+        '_,
+        (
+            Write<DemAtom>,
+            Write<ContactHistoryStore>,
+            Optional<Read<BondStore>>,
+        ),
+    >,
     material_table: Res<MaterialTable>,
     mut virial: Option<ResMut<VirialStress>>,
 ) {
-    contact_force_core(
-        &mut atoms,
-        &neighbor,
-        &registry,
-        &material_table,
-        virial.as_deref_mut(),
-        ForcePass::All,
-    );
+    particles.with(|(mut dem, mut history, bonds)| {
+        contact_force_core_views(
+            &mut atoms,
+            &neighbor,
+            &mut dem,
+            &mut history,
+            bonds.as_deref(),
+            &material_table,
+            virial.as_deref_mut(),
+            ForcePass::All,
+        );
+    });
 }
 
 /// Overlapped Hertz-Mindlin force (roadmap step 4): compute the interior pairs
@@ -77,13 +88,37 @@ pub fn contact_force_core(
     neighbor: &Neighbor,
     registry: &AtomDataRegistry,
     material_table: &MaterialTable,
+    virial: Option<&mut VirialStress>,
+    pass: ForcePass,
+) {
+    let mut dem = registry.expect_mut::<DemAtom>("contact_force_core");
+    let mut history = registry.expect_mut::<ContactHistoryStore>("contact_force_core");
+    let bonds = registry.get::<BondStore>();
+    contact_force_core_views(
+        atoms,
+        neighbor,
+        &mut dem,
+        &mut history,
+        bonds.as_deref(),
+        material_table,
+        virial,
+        pass,
+    );
+}
+
+/// Typed core used by scheduled contact systems after `ParticlesWith` has
+/// validated and borrowed the exact extension columns they require.
+pub fn contact_force_core_views(
+    atoms: &mut Atom,
+    neighbor: &Neighbor,
+    dem: &mut DemAtom,
+    history: &mut ContactHistoryStore,
+    bond_store: Option<&BondStore>,
+    material_table: &MaterialTable,
     mut virial: Option<&mut VirialStress>,
     pass: ForcePass,
 ) {
     let newton = neighbor.newton;
-    let mut dem = registry.expect_mut::<DemAtom>("contact_force_core");
-    let mut history = registry.expect_mut::<ContactHistoryStore>("contact_force_core");
-    let bond_store = registry.get::<BondStore>();
     let dt = atoms.dt;
 
     let natoms = atoms.len();
