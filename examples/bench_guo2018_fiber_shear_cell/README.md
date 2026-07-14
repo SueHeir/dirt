@@ -32,6 +32,7 @@ python3 examples/bench_guo2018_fiber_shear_cell/figure_scale_audit.py --verify
 python3 examples/bench_guo2018_fiber_shear_cell/figure_scale_audit.py --self-test
 python3 examples/bench_guo2018_fiber_shear_cell/campaign_preflight.py
 python3 examples/bench_guo2018_fiber_shear_cell/campaign_preflight.py --self-test
+python3 examples/bench_guo2018_fiber_shear_cell/result_evidence_contract.py --self-test
 python3 examples/bench_guo2018_fiber_shear_cell/reconstruction_readiness.py --verify
 python3 examples/bench_guo2018_fiber_shear_cell/normal_load_audit.py --self-test
 python3 examples/bench_guo2018_fiber_shear_cell/status_contract.py --verify
@@ -115,10 +116,16 @@ pre-registers three distinct sphere-wall resolutions, all three digitized
 normal-stress cases, both eventual observables, and a fixed strain window.
 `campaign_preflight.py --require-results RESULT_ROOT` refuses any later result
 claim unless each wall/load case supplies its solver input, history, observable
-summary, and provenance receipt. It deliberately does not compare a result to
+summary, retained wall manifest, and a SHA-256 receipt that identifies the
+solver revision and discloses AI authorship/limits. It deliberately does not compare a result to
 Fig. 6/7; that comparison belongs only after the complete, non-selected
 ensemble exists. The values are a sensitivity bracket, **not** reported wall
 dimensions, not calibration parameters, and not a replication result.
+
+The receipt check makes artifacts tamper-evident and attributable; it does not
+validate numerical correctness, convergence, or physical agreement. Those
+remain independent review tasks and cannot be satisfied by internally
+consistent files or by AI-generated assertions.
 
 `data/replication_status.json` records the scientific status in a
 machine-readable form. `status_contract.py` cross-checks it against the

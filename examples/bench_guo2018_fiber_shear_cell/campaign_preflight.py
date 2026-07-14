@@ -73,6 +73,8 @@ def require_results(campaign, result_root):
     This checks existence only; it deliberately does not score a run against
     Fig. 6/7.  Physics acceptance remains the later two-observable comparison.
     """
+    from result_evidence_contract import verify_case
+
     missing = []
     for wall in campaign["wall_realisations"]:
         for stress in campaign["normal_stress_pa"]:
@@ -85,6 +87,10 @@ def require_results(campaign, result_root):
             "no solver-backed sensitivity result is available for every preregistered case; "
             f"missing {len(missing)} artifact(s), first: {missing[0]}"
         )
+    for wall in campaign["wall_realisations"]:
+        for stress in campaign["normal_stress_pa"]:
+            case = Path(result_root) / wall["label"] / f"p{stress}"
+            verify_case(case, wall, stress)
 
 
 def main():
