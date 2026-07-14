@@ -689,6 +689,63 @@ def checked_final_state(path, expected_count):
     return vmax
 
 
+def derive_dirt_ensemble():
+    """Derive every fit input from the 11 x 3 executable witnesses.
+
+    ``runout.csv`` is a convenience artifact, never primary evidence.  Graphing
+    must therefore re-read every release, final, and terminal-state witness and
+    reproduce each seed average before it is allowed to fit or write a figure.
+    This makes a partial campaign and an edited summary equally inadmissible.
+    """
+    rows = []
+    failures = []
+    for a in ASPECTS:
+        lfs, hs = [], []
+        for s in SEEDS:
+            case_data = os.path.join(case_dir_seed(a, s), "data")
+            deposit = os.path.join(case_data, "column_collapse_results.csv")
+            release = os.path.join(case_data, "column_collapse_release.csv")
+            terminal = os.path.join(case_data, "column_collapse_final_state.csv")
+            expected = total_particles(a)
+            if not all(os.path.isfile(p) for p in (deposit, release, terminal)):
+                failures.append(f"a={a} seed={s}: missing release, final, or terminal evidence")
+                continue
+            try:
+                release_n = csv_particle_count(release)
+                deposit_n = csv_particle_count(deposit)
+                vmax = checked_final_state(terminal, expected)
+                h = release_height(release)
+                _, lf = measure_column(deposit)
+            except (OSError, ValueError, csv.Error) as exc:
+                failures.append(f"a={a} seed={s}: malformed witness ({exc})")
+                continue
+            if release_n != expected or deposit_n != expected:
+                failures.append(f"a={a} seed={s}: population is not {expected} at release/final")
+                continue
+            froude = vmax / math.sqrt(9.81 * 2.0 * RADIUS)
+            if froude > REST_FROUDE_MAX:
+                failures.append(f"a={a} seed={s}: terminal Fr={froude:.6g} > {REST_FROUDE_MAX}")
+                continue
+            if not all(math.isfinite(v) for v in (h, lf)):
+                failures.append(f"a={a} seed={s}: non-finite measured geometry")
+                continue
+            hs.append(h)
+            lfs.append(lf)
+        if len(lfs) != len(SEEDS):
+            continue
+        rn = [(v - L0) / L0 for v in lfs]
+        rn_mean = sum(rn) / len(rn)
+        rows.append({"nominal_aspect": a, "aspect": sum(hs) / len(hs) / L0,
+                     "L0": L0, "H": sum(hs) / len(hs), "L_f": sum(lfs) / len(lfs),
+                     "runout_norm": rn_mean,
+                     "runout_std": (sum((v - rn_mean) ** 2 for v in rn) / len(rn)) ** 0.5,
+                     "n_seeds": len(lfs), "protocol_sha256": protocol_fingerprint()})
+    if failures or len(rows) != len(ASPECTS):
+        detail = "; ".join(failures) if failures else "missing scheduled aspect"
+        raise ValueError(f"incomplete or non-arrested 11x3 ensemble: {detail}")
+    return rows
+
+
 def start():
     os.makedirs(DATA_DIR, exist_ok=True)
     print(f"Building {EXAMPLE} (release)...", flush=True)
@@ -726,56 +783,10 @@ def start():
                     check=True,
                 )
 
-    # A nominal aspect is not evidence.  Every configured realization must have
-    # an exact population, a pre-release geometry record, and a terminal rest
-    # record before it may contribute to a fit.
-    rows = []
-    failures = []
-    for a in ASPECTS:
-        lfs, hs = [], []
-        for s in SEEDS:
-            case_data = os.path.join(case_dir_seed(a, s), "data")
-            deposit = os.path.join(case_data, "column_collapse_results.csv")
-            release = os.path.join(case_data, "column_collapse_release.csv")
-            terminal = os.path.join(case_data, "column_collapse_final_state.csv")
-            expected = total_particles(a)
-            if not all(os.path.isfile(p) for p in (deposit, release, terminal)):
-                failures.append(f"a={a} seed={s}: missing release, final, or terminal evidence")
-                continue
-            if csv_particle_count(deposit) != expected or csv_particle_count(release) != expected:
-                failures.append(f"a={a} seed={s}: population is not {expected} at release/final")
-                continue
-            try:
-                vmax = checked_final_state(terminal, expected)
-            except ValueError as exc:
-                failures.append(f"a={a} seed={s}: {exc}")
-                continue
-            froude = vmax / math.sqrt(9.81 * 2.0 * RADIUS)
-            if froude > REST_FROUDE_MAX:
-                failures.append(f"a={a} seed={s}: terminal Fr={froude:.6g} > {REST_FROUDE_MAX}")
-                continue
-            h = release_height(release)
-            _, lf = measure_column(deposit)
-            hs.append(h)
-            lfs.append(lf)
-        if len(lfs) != len(SEEDS):
-            continue
-        lf_mean = sum(lfs) / len(lfs)
-        h_mean = sum(hs) / len(hs)
-        rn = [(v - L0) / L0 for v in lfs]
-        rn_mean = sum(rn) / len(rn)
-        rn_std = (sum((v - rn_mean) ** 2 for v in rn) / len(rn)) ** 0.5 if len(rn) > 1 else 0.0
-        # Fit against the measured, settled aspect ratio—not the count-derived
-        # scheduling label.  A valid release must therefore include all initial
-        # snapshots above.
-        rows.append({"nominal_aspect": a, "aspect": h_mean / L0,
-                     "L0": L0, "H": h_mean, "L_f": lf_mean,
-                     "runout_norm": rn_mean, "runout_std": rn_std,
-                     "n_seeds": len(lfs),
-                     "protocol_sha256": protocol_fingerprint()})
-
-    if len(rows) != len(ASPECTS):
-        print("\nERROR: incomplete or non-arrested ensemble; refusing to fit.")
+    try:
+        rows = derive_dirt_ensemble()
+    except ValueError as exc:
+        print(f"\nERROR: {exc}; refusing to fit.")
         sys.exit(1)
     os.makedirs(DATA_DIR, exist_ok=True)
     _write_runout(RUNOUT_CSV, rows)
@@ -926,7 +937,27 @@ def load_runout():
     if seen != expected:
         print("ERROR: runout CSV aspect set differs from the configured sweep.")
         sys.exit(1)
-    return rows
+    # The summary is intentionally not accepted on its own.  Reconstruct the
+    # full ensemble from all executable witnesses now, then require the cached
+    # CSV to agree field-for-field.  Thus `graph` cannot turn a partial campaign
+    # (or a manually edited CSV) into a PASS or an apparently fresh figure.
+    try:
+        witnessed = derive_dirt_ensemble()
+    except ValueError as exc:
+        print(f"ERROR: {exc}; refusing to graph summary-only evidence.")
+        sys.exit(1)
+    by_aspect = {float(r["nominal_aspect"]): r for r in rows}
+    numeric = ("aspect", "L0", "H", "L_f", "runout_norm", "runout_std")
+    for expected_row in witnessed:
+        summary = by_aspect[float(expected_row["nominal_aspect"])]
+        if (int(summary["n_seeds"]) != expected_row["n_seeds"]
+                or summary["protocol_sha256"] != expected_row["protocol_sha256"]
+                or any(not math.isclose(float(summary[key]), expected_row[key],
+                                        rel_tol=0.0, abs_tol=1.0e-12)
+                       for key in numeric)):
+            print("ERROR: runout CSV disagrees with its complete raw ensemble.")
+            sys.exit(1)
+    return witnessed
 
 
 def fit_loglog(pairs):

@@ -75,6 +75,10 @@ exponents fitted per regime should approach **1** (linear) and **2/3** (power).
 `graph` fits the runout exponent in each regime by least squares on log–log axes
 and exits non-zero if either fit is outside the band. It accepts only one row for
 each of the 11 scheduled aspects, with all three seeds and finite measured values.
+Before fitting, it independently re-derives every row from all **33** release,
+final-deposit, and terminal-rest witnesses; it rejects a missing witness or any
+summary value that disagrees with those raw measurements. Thus `runout.csv` is a
+cache, not evidence that can make a partial or edited campaign pass.
 The scheduled aspect proves coverage; the fit itself uses the executable's measured
 pre-release height `H/L0`, so loose insertion and settling cannot silently shift a
 point horizontally. A LAMMPS overlay is emitted only for a complete, exact-population
