@@ -44,6 +44,12 @@ seam!(
     "Clump insertion setup seam."
 );
 seam!(
+    ClumpPadColumns,
+    CLUMP_PAD_COLUMNS,
+    "pad_clump_atom_columns",
+    "Example seam that pads non-clump rows after clump insertion."
+);
+seam!(
     ClumpGhostCutoff,
     CLUMP_GHOST_CUTOFF,
     "extend_ghost_cutoff_for_clumps",
@@ -126,6 +132,18 @@ seam!(
     MEASURE_PLANE_ELAPSED,
     "measure_plane_accumulate_elapsed",
     "Measurement-plane elapsed-time seam."
+);
+seam!(
+    InteropLattice,
+    INTEROP_LATTICE,
+    "interop_lattice",
+    "Peridynamic/DEM interoperation lattice-creation seam."
+);
+seam!(
+    InteropFamilies,
+    INTEROP_FAMILIES,
+    "interop_families",
+    "Peridynamic/DEM interoperation family-construction seam."
 );
 seam!(
     MeasurePlaneReport,

@@ -34,6 +34,7 @@ use std::sync::Once;
 use dirt_core::dirt_atom::DemAtom;
 use dirt_core::prelude::*;
 use dirt_core::soil_core::Accum;
+use dirt_schedule::{CLUMP_INSERT, CLUMP_PAD_COLUMNS};
 
 fn main() {
     let mut app = App::new();
@@ -55,8 +56,8 @@ fn main() {
     // configs) rather than the library core.
     app.add_setup_system(
         pad_clump_atom_columns
-            .label("pad_clump_atom_columns")
-            .after("clump_insert_atoms"),
+            .label(CLUMP_PAD_COLUMNS)
+            .after(CLUMP_INSERT),
         ScheduleSetupSet::Setup,
     );
 

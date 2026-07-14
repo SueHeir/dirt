@@ -187,7 +187,7 @@ use dirt_schedule::{
 };
 use soil_core::{
     Atom, AtomData, AtomDataRegistry, BondEntry, BondStore, CommResource, Config, Domain,
-    ParticleSimScheduleSet, ScheduleSetupSet, VirialStress, VirialStressPlugin,
+    ParticleSimScheduleSet, ScheduleSetupSet, VirialStress, VirialStressPlugin, NEIGHBOR_SETUP,
 };
 use soil_print::Thermo;
 
@@ -873,7 +873,7 @@ impl Plugin for DemBondPlugin {
                 .label(BOND_GHOST_CUTOFF)
                 .after(AUTO_BOND)
                 .after(LOAD_BONDS)
-                .before("neighbor_setup")
+                .before(NEIGHBOR_SETUP)
                 .run_if(first_stage_only()),
             ScheduleSetupSet::PostSetup,
         );

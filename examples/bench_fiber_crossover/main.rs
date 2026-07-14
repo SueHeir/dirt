@@ -27,6 +27,7 @@
 
 use dirt_core::dirt_atom::DemAtom;
 use dirt_core::prelude::*;
+use dirt_schedule::{BOND_FORCE, CONTACT_FORCE};
 use std::fs::{self, File};
 use std::io::{BufWriter, Write as IoWrite};
 
@@ -65,9 +66,7 @@ fn main() {
     // upper-fiber force sum isolates the crossover contact (bonds cancel and
     // no PostForce fix has fired yet).
     app.add_update_system(
-        record_crossover
-            .after("hertz_mindlin_contact")
-            .after("dem_bond_force"),
+        record_crossover.after(CONTACT_FORCE).after(BOND_FORCE),
         ParticleSimScheduleSet::Force,
     );
     app.start();

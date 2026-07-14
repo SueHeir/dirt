@@ -55,6 +55,8 @@ use serde::Deserialize;
 use dirt_atom::DemAtom;
 use dirt_core::prelude::*;
 use dirt_core::{dirt_atom, soil_core, soil_verlet};
+use dirt_schedule::{INTEROP_FAMILIES, INTEROP_LATTICE};
+use soil_core::DOMAIN_READ_INPUT;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Config
@@ -196,14 +198,14 @@ fn main() {
     // Setup: lattice → family → dt.
     app.add_setup_system(
         lattice_insert
-            .after("domain_read_input")
-            .label("interop_lattice"),
+            .after(DOMAIN_READ_INPUT)
+            .label(INTEROP_LATTICE),
         ScheduleSetupSet::Setup,
     );
     // build_families runs in PostSetup, which the scheduler runs strictly after
     // the Setup phase where the lattice is laid down (no explicit .after needed).
     app.add_setup_system(
-        build_families.label("interop_families"),
+        build_families.label(INTEROP_FAMILIES),
         ScheduleSetupSet::PostSetup,
     );
     app.add_setup_system(set_timestep, ScheduleSetupSet::PostSetup);

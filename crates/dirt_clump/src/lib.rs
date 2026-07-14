@@ -131,7 +131,7 @@ use soil_derive::AtomData;
 use soil_core::{
     register_atom_data, Accum, Atom, AtomData, AtomDataRegistry, CommResource, Config, Domain,
     ParticleSimScheduleSet, ParticleStore, ParticleStoreError, Real, Region, RunState,
-    ScheduleSetupSet,
+    ScheduleSetupSet, EXCHANGE, REVERSE_SEND_FORCE,
 };
 
 #[cfg(feature = "mpi_backend")]
@@ -388,13 +388,13 @@ impl Plugin for ClumpPlugin {
             snap_subspheres_to_body_com
                 .label(CLUMP_SNAP)
                 .before(CLUMP_EXCHANGE)
-                .before("exchange"),
+                .before(EXCHANGE),
             ParticleSimScheduleSet::Exchange,
         );
 
         // Body exchange: migrate bodies whose COM left the local subdomain.
         app.add_update_system(
-            exchange_bodies.label(CLUMP_EXCHANGE).before("exchange"),
+            exchange_bodies.label(CLUMP_EXCHANGE).before(EXCHANGE),
             ParticleSimScheduleSet::Exchange,
         );
 
@@ -403,7 +403,7 @@ impl Plugin for ClumpPlugin {
         app.add_update_system(
             restore_subsphere_positions
                 .label(CLUMP_RESTORE)
-                .after("exchange"),
+                .after(EXCHANGE),
             ParticleSimScheduleSet::Exchange,
         );
 
@@ -440,7 +440,7 @@ impl Plugin for ClumpPlugin {
             aggregate_clump_forces
                 .label(CLUMP_FORCE_AGGREGATION)
                 .after(CONTACT_FORCE)
-                .after("reverse_send_force"),
+                .after(REVERSE_SEND_FORCE),
             ParticleSimScheduleSet::PostForce,
         );
 
