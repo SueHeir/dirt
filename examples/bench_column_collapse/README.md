@@ -73,10 +73,10 @@ exponents fitted per regime should approach **1** (linear) and **2/3** (power).
 - Each case runs two stages: `settle` (80 000 steps — pack the loosely-inserted
   column against the gate) then `collapse` (1 000 000 steps / 4 s — gate removed
   on the first step, column spreads and must meet the terminal-rest criterion).
-- The base is a frozen, close-packed monolayer of the same beads. This models a
-  rough granular substrate; the fixed layer is excluded from the released height
-  and deposit silhouette. A smooth Coulomb plane is not an interchangeable
-  representation of that experimental boundary condition.
+- The base is a frozen **hexagonally close-packed** monolayer of the same beads.
+  This models a rough granular substrate; the fixed layer is excluded from the
+  released height and deposit silhouette. A smooth Coulomb plane (or a square
+  bead grid) is not an interchangeable representation of that boundary condition.
 
 ## Validation Criteria
 

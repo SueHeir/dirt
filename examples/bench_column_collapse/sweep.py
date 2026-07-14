@@ -186,10 +186,33 @@ def loose_insert_top(count, aspect):
 
 
 def rough_base_positions():
-    """One glued, close-packed bead layer: the rough experimental substrate."""
-    return [((ix + 0.5) * 2.0 * RADIUS, (iy + 0.5) * 2.0 * RADIUS, RADIUS)
-            for ix in range(int(round(L0 / (2.0 * RADIUS))))
-            for iy in range(int(round(W / (2.0 * RADIUS))))]
+    """One glued hexagonal bead layer: the rough granular substrate.
+
+    A square grid has the right nearest-neighbour spacing in its cardinal
+    directions but is not close packed: its area fraction is pi/4, rather than
+    pi/(2 sqrt(3)).  That is a different basal topography and should not be
+    described as the close-packed rough bed used in granular-collapse work.
+    Alternate row registries give each mobile grain a genuine three-point rough
+    support while retaining a minimum centre separation of one diameter.
+    """
+    d = 2.0 * RADIUS
+    dy = math.sqrt(3.0) * d / 2.0
+    points = []
+    iy = 0
+    while True:
+        y = RADIUS + iy * dy
+        if y > W - RADIUS + 1e-12:
+            break
+        x0 = RADIUS + (0.5 * d if iy % 2 else 0.0)
+        ix = 0
+        while True:
+            x = x0 + ix * d
+            if x > L0 - RADIUS + 1e-12:
+                break
+            points.append((x, y, RADIUS))
+            ix += 1
+        iy += 1
+    return points
 
 
 def write_rough_base():
