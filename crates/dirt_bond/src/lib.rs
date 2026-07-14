@@ -2340,7 +2340,8 @@ Bonds
         assert_eq!(buf.len(), 1 + 17 * 2);
 
         let mut store2 = BondHistoryStore::new();
-        let consumed = store2.unpack(&buf);
+        // The fixture owns both the encoded record and the empty destination.
+        let consumed = unsafe { store2.unpack(&buf) };
         assert_eq!(consumed, buf.len());
         assert_eq!(store2.history[0].len(), 2);
         assert_eq!(store2.history[0][0].partner_tag, 5);

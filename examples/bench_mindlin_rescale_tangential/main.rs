@@ -76,7 +76,8 @@ fn build_system(
     atom.dt = sc.dt;
 
     for tag in [0u32, 1u32] {
-        atom.push_test_atom(tag, [0.0, 0.0, 0.0], r, mass);
+        // Each core row is paired with all extension rows below.
+        unsafe { atom.push_test_atom(tag, [0.0, 0.0, 0.0], r, mass) };
         dem.radius.push(r);
         dem.density.push(density);
         dem.inv_inertia.push(1.0 / (0.4 * mass * r * r));

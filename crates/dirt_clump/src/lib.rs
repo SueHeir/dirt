@@ -1517,14 +1517,14 @@ mod tests {
         fn len(&self) -> usize {
             0
         }
-        fn push_default(&mut self) {}
-        fn truncate(&mut self, _: usize) {}
-        fn swap_remove(&mut self, _: usize) {}
+        unsafe fn push_default(&mut self) {}
+        unsafe fn truncate(&mut self, _: usize) {}
+        unsafe fn swap_remove(&mut self, _: usize) {}
         fn pack(&self, _: usize, _: &mut Vec<f64>) {}
-        fn unpack(&mut self, _: &[f64]) -> usize {
+        unsafe fn unpack(&mut self, _: &[f64]) -> usize {
             0
         }
-        fn apply_permutation(&mut self, _: &[usize], _: usize) {}
+        unsafe fn apply_permutation(&mut self, _: &[usize], _: usize) {}
     }
 
     /// Non-overlapping dimer (center distance > r1 + r2) for deterministic tests.
@@ -1600,10 +1600,10 @@ region = { type = "block", min = [1.0, 1.0, 1.0], max = [1.0, 2.0, 2.0] }
 
     fn clump_state_bits(atoms: &Atom, bodies: &MultisphereBodyStore) -> Vec<u64> {
         let mut bits = Vec::new();
-        for pos in &atoms.pos {
+        for pos in atoms.pos.iter() {
             bits.extend(pos.iter().map(|x| (*x as f64).to_bits()));
         }
-        for vel in &atoms.vel {
+        for vel in atoms.vel.iter() {
             bits.extend(vel.iter().map(|x| (*x as f64).to_bits()));
         }
         for body in &bodies.bodies {

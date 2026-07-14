@@ -1549,7 +1549,8 @@ misspelled_force = 1.0
     fn make_gravity_atom(mass: f64) -> Atom {
         let mut atom = Atom::new();
         atom.dt = 1e-6;
-        atom.push_test_atom(0, [0.0; 3], 0.001, mass);
+        // This fixture has no registered extensions.
+        unsafe { atom.push_test_atom(0, [0.0; 3], 0.001, mass) };
         atom.nlocal = 1;
         atom.natoms = 1;
         atom
@@ -1584,7 +1585,8 @@ misspelled_force = 1.0
 
         let mut atom = make_gravity_atom(mass);
         // Add a ghost atom
-        atom.push_test_atom(1, [0.0; 3], 0.001, mass);
+        // This fixture has no registered extensions.
+        unsafe { atom.push_test_atom(1, [0.0; 3], 0.001, mass) };
         atom.is_ghost[1] = true;
         // nlocal stays 1, ghost is index 1
 

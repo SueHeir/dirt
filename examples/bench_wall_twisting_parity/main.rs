@@ -104,12 +104,15 @@ fn make_atom(sc: &ScenarioCfg) -> Atom {
     let mass = density * 4.0 / 3.0 * std::f64::consts::PI * sc.radius.powi(3);
     let mut atom = Atom::new();
     atom.dt = sc.dt;
-    atom.push_test_atom(
-        1,
-        [sc.wall_radius - sc.radius + sc.overlap, 0.0, 0.0],
-        sc.radius,
-        mass,
-    );
+    // No extension registry exists in this one-particle benchmark fixture.
+    unsafe {
+        atom.push_test_atom(
+            1,
+            [sc.wall_radius - sc.radius + sc.overlap, 0.0, 0.0],
+            sc.radius,
+            mass,
+        )
+    };
     atom.nlocal = 1;
     atom.natoms = 1;
     atom

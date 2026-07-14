@@ -96,7 +96,8 @@ fn build_system(
     atom.dt = sc.dt;
 
     for (tag, x) in [(0u32, 0.0f64), (1u32, 2.0 * r - sc.overlap)] {
-        atom.push_test_atom(tag, [x, 0.0, 0.0], r, mass);
+        // Each raw core row is paired with the Dem/history rows below.
+        unsafe { atom.push_test_atom(tag, [x, 0.0, 0.0], r, mass) };
         dem.radius.push(r);
         dem.density.push(density);
         dem.inv_inertia.push(1.0 / (0.4 * mass * r * r));

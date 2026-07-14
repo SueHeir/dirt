@@ -31,7 +31,8 @@ struct BenchConfig {
 
 fn push_sphere(atom: &mut Atom, dem: &mut DemAtom, tag: u32, x: f64, radius: f64, density: f64) {
     let mass = density * 4.0 / 3.0 * std::f64::consts::PI * radius.powi(3);
-    atom.push_test_atom(tag, [x, 0.0, 0.0], radius, mass);
+    // Each raw core row below is paired with every DemAtom row before use.
+    unsafe { atom.push_test_atom(tag, [x, 0.0, 0.0], radius, mass) };
     dem.radius.push(radius);
     dem.density.push(density);
     dem.inv_inertia.push(1.0 / (0.4 * mass * radius * radius));
@@ -119,7 +120,9 @@ fn main() {
             };
             atom.pos[0] = [0.0, 0.0, 0.0];
             atom.pos[1] = [(2.0 * cfg.radius - delta) as _, 0.0, 0.0];
-            atom.force.fill([0.0; 3]);
+            for force in atom.force.iter_mut() {
+                *force = [0.0; 3];
+            }
             {
                 let mut dem = registry.expect_mut::<DemAtom>("bench_mdr");
                 dem.torque.fill([0.0; 3]);

@@ -133,7 +133,8 @@ fn make_atom(radius: f64, overlap: f64, dt: f64) -> Atom {
 
     let mut atom = Atom::new();
     atom.dt = dt;
-    atom.push_test_atom(1, [0.0, 0.0, radius - overlap], radius, mass);
+    // No extension registry exists in this one-particle benchmark fixture.
+    unsafe { atom.push_test_atom(1, [0.0, 0.0, radius - overlap], radius, mass) };
     atom.nlocal = 1;
     atom.natoms = 1;
     atom

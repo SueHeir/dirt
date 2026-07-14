@@ -1858,7 +1858,9 @@ fn linear_momentum_conserved_during_elastic_contact() {
     app.add_update_system(
         |mut atoms: ResMut<Atom>, registry: Res<AtomDataRegistry>| {
             let n = atoms.len();
-            atoms.force[..n].fill([0.0; 3]);
+            for force in atoms.force.iter_mut().take(n) {
+                *force = [0.0; 3];
+            }
             registry.zero_all(n);
         },
         ParticleSimScheduleSet::PostInitialIntegration,

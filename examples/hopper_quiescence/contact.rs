@@ -147,11 +147,11 @@ impl AtomData for QcStore {
         self.contacts.len()
     }
 
-    fn push_default(&mut self) {
+    unsafe fn push_default(&mut self) {
         self.ensure_len(self.len() + 1);
     }
 
-    fn truncate(&mut self, n: usize) {
+    unsafe fn truncate(&mut self, n: usize) {
         self.contacts.resize_with(n, Vec::new);
         self.contacts.truncate(n);
         self.mode.resize(n, MODE_ACTIVE);
@@ -170,7 +170,7 @@ impl AtomData for QcStore {
         self.accum_scale.truncate(n);
     }
 
-    fn swap_remove(&mut self, i: usize) {
+    unsafe fn swap_remove(&mut self, i: usize) {
         if i < self.contacts.len() {
             self.contacts.swap_remove(i);
         }
@@ -197,7 +197,7 @@ impl AtomData for QcStore {
         }
     }
 
-    fn apply_permutation(&mut self, perm: &[usize], n: usize) {
+    unsafe fn apply_permutation(&mut self, perm: &[usize], n: usize) {
         self.ensure_len(n);
         let new_contacts: Vec<Vec<ContactEntry>> =
             perm.iter().map(|&p| self.contacts[p].clone()).collect();
@@ -239,7 +239,7 @@ impl AtomData for QcStore {
         }
     }
 
-    fn unpack(&mut self, buf: &[f64]) -> usize {
+    unsafe fn unpack(&mut self, buf: &[f64]) -> usize {
         let count = buf[0] as usize;
         let mut list = Vec::with_capacity(count);
         let mut pos = 1;
