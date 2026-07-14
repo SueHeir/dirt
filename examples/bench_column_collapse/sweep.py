@@ -59,6 +59,8 @@ import csv
 import math
 import shutil
 import subprocess
+import hashlib
+import json
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.abspath(os.path.join(SCRIPT_DIR, "..", ".."))
@@ -135,6 +137,29 @@ EXP_TOL = 0.25             # |fitted exponent - target| pass band
 LINEAR_TARGET = 1.0        # (L_f-L0)/L0 ~ a^1   for a <~ 2-3
 POWER_TARGET = 2.0 / 3.0   # (L_f-L0)/L0 ~ a^2/3 for a >~ 3
 REGIME_SPLIT = 3.0         # aspect ratio dividing the two regimes
+
+
+def protocol_fingerprint():
+    """Stable identity of the physical/measurement contract behind a campaign.
+
+    ``runout.csv`` is deliberately retained locally so graphing does not rerun a
+    costly ensemble.  It must therefore carry enough immutable context to reject
+    a CSV produced by a different base, material, geometry, seed plan, toe
+    estimator, or acceptance band.  This is not a fitted quantity and is not
+    included in any numerical result; it is an evidence provenance guard.
+    """
+    contract = {
+        "geometry": [RADIUS, DENSITY, L0, W, PACKING, INSERT_PACKING,
+                     BASE_Z, BASE_SELECT_Z],
+        "material": [YOUNGS_MOD, POISSON, RESTITUTION, FRICTION, DT],
+        "schedule": [SETTLE_STEPS, COLLAPSE_STEPS, ASPECTS, SEEDS],
+        "boundary": [rough_base_positions(), "frozen_close_packed_bead_layer"],
+        "measurement": [FINE_BINS, GAP_TOL_D, TOE_MIN_HEIGHT_D],
+        "validation": [EXP_TOL, LINEAR_TARGET, POWER_TARGET, REGIME_SPLIT,
+                       REST_FROUDE_MAX],
+    }
+    encoded = json.dumps(contract, sort_keys=True, separators=(",", ":")).encode()
+    return hashlib.sha256(encoded).hexdigest()
 
 
 def n_particles(aspect):
@@ -530,7 +555,8 @@ def run_lammps_sweep(lammps):
             continue
         h, lf = measure_column(deposit_csv)
         rows.append({"nominal_aspect": a, "aspect": a, "L0": L0, "H": h, "L_f": lf,
-                     "runout_norm": (lf - L0) / L0})
+                     "runout_norm": (lf - L0) / L0,
+                     "protocol_sha256": protocol_fingerprint()})
     return rows
 
 
@@ -660,7 +686,8 @@ def start():
         rows.append({"nominal_aspect": a, "aspect": h_mean / L0,
                      "L0": L0, "H": h_mean, "L_f": lf_mean,
                      "runout_norm": rn_mean, "runout_std": rn_std,
-                     "n_seeds": len(lfs)})
+                     "n_seeds": len(lfs),
+                     "protocol_sha256": protocol_fingerprint()})
 
     if len(rows) != len(ASPECTS):
         print("\nERROR: incomplete or non-arrested ensemble; refusing to fit.")
@@ -668,7 +695,7 @@ def start():
     os.makedirs(DATA_DIR, exist_ok=True)
     _write_runout(RUNOUT_CSV, rows)
     print(f"\nDIRT:   wrote {len(rows)} seed-averaged runout rows "
-          f"({len(SEEDS)} seeds/aspect) -> {RUNOUT_CSV}")
+          f"({len(SEEDS)} seeds/aspect; protocol {protocol_fingerprint()[:12]}) -> {RUNOUT_CSV}")
 
     # LAMMPS leg — optional cross-code overlay. Skipped entirely with no binary.
     lammps = find_lammps()
@@ -691,7 +718,7 @@ def _write_runout(path, rows):
         w = csv.DictWriter(
             f,
             fieldnames=["nominal_aspect", "aspect", "L0", "H", "L_f", "runout_norm",
-                        "runout_std", "n_seeds"],
+                        "runout_std", "n_seeds", "protocol_sha256"],
             restval="", extrasaction="ignore",
         )
         w.writeheader()
@@ -788,7 +815,8 @@ def load_runout():
     expected = {float(a) for a in ASPECTS}
     seen = set()
     required = {"nominal_aspect", "aspect", "L0", "H", "L_f", "runout_norm",
-                "runout_std", "n_seeds"}
+                "runout_std", "n_seeds", "protocol_sha256"}
+    fingerprint = protocol_fingerprint()
     if len(rows) != len(ASPECTS):
         print("ERROR: runout CSV does not contain one row per scheduled aspect.")
         sys.exit(1)
@@ -806,7 +834,7 @@ def load_runout():
             sys.exit(1)
         if (nominal not in expected or nominal in seen or aspect <= 0.0
                 or seeds != len(SEEDS) or not all(math.isfinite(v) for v in values)
-                or values[1] <= 0.0):
+                or values[1] <= 0.0 or row["protocol_sha256"] != fingerprint):
             print("ERROR: runout CSV is incomplete, duplicated, or inadmissible.")
             sys.exit(1)
         seen.add(nominal)

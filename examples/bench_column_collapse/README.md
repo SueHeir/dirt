@@ -80,6 +80,13 @@ point horizontally. A LAMMPS overlay is emitted only for a complete, exact-popul
 independent campaign. Fresh runout figures display each fitted exponent and its
 unchanged ±0.25 acceptance band directly on the plot.
 
+Each DIRT row also records a SHA-256 fingerprint of the complete physical and
+measurement contract: geometry, material, timestep/stages, frozen rough-base
+coordinates, aspects/seeds, toe estimator, Froude arrest limit, references, and
+the unchanged exponent band. `graph` refuses any CSV whose fingerprint differs.
+This makes it impossible to graph a smooth-base, partial, or prior-material
+campaign as evidence for the rough-base protocol merely by retaining its CSV.
+
 ## Status — current evidence required
 
 The tracked figures are historical smooth-base output and are not evidence for this
