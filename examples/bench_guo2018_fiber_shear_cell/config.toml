@@ -1,0 +1,18 @@
+# Evidence-audit declaration, not a DIRT solver configuration.
+# Guo et al. DOI 10.1002/aic.16397; see README.md for the reconstruction boundary.
+[source_audit]
+doi = "10.1002/aic.16397"
+source_equivalent = false
+reason = "Primary PDF omits wall-sphere geometry; the assigned gravity load is derived separately from normal stress and cell area"
+
+[reported_fibre]
+bead_diameter_m = 0.0024
+bond_spacing_m = 0.0012
+youngs_modulus_pa = 6.28e6
+density_kg_m3 = 1157.5
+timestep_s = 2.3e-7
+
+[candidate_topology]
+widths_mm = [64, 96]
+fibre_counts = [500, 750]
+candidate_only = true

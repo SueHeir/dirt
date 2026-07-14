@@ -1,0 +1,7 @@
+observable,normal_stress_pa,value,figure,material,source
+shear_stress_pa,651,480,6,rubber_cord,experiment
+shear_stress_pa,1735,1395,6,rubber_cord,experiment
+shear_stress_pa,3470,2885,6,rubber_cord,experiment
+solid_fraction,651,0.330,7,rubber_cord,experiment
+solid_fraction,1735,0.360,7,rubber_cord,experiment
+solid_fraction,3470,0.380,7,rubber_cord,experiment

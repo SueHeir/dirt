@@ -1,0 +1,20 @@
+{
+  "doi": "10.1002/aic.16397",
+  "citation": "Guo et al., Flexible Fiber Flows, AIChE Journal 65 (2019)",
+  "figures": [6, 7],
+  "primary_pdf_sha256": "36bad3433f3ec53e6f38a0c38fa03d12589006d2960097fe914cf4b0d369e255",
+  "digitizer": "Codex, AI-assisted manual axis reading; reviewer must independently inspect the cited PDF pages",
+  "digitized_on": "2026-07-12",
+  "method_pages": {
+    "control_cell": [5, 6, 8, 9],
+    "wall_construction": [5, 6, 7],
+    "normal_load": [5, 6],
+    "shear_protocol": [6, 8, 9],
+    "table_2": [24]
+  },
+  "figure_pages": {
+    "6": [30],
+    "7": [31]
+  },
+  "notes": "The local PDF is a primary-source artifact and its content hash is bound above. The six CSV values were manually read from the experimental rubber-cord series in Figs. 6(b) and 7; Fig. 6 values are additionally checked against the printed line in validate.py. They are approximate digitizations, not author-supplied raw data. This receipt authenticates the source and provenance only; it does not establish that DIRT's current plane-wall draft reproduces the paper's sphere-built wall assemblies or that any simulation result is valid. AI assistance was used to create this receipt and does not replace independent review of pages 5-9, 24, 30, and 31."
+}

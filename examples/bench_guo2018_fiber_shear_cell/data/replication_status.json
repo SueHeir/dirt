@@ -1,0 +1,11 @@
+{
+  "schema": 1,
+  "case": "Guo et al. 2019 flexible-fibre shear cell",
+  "doi": "10.1002/aic.16397",
+  "classification": "source-audit-only",
+  "source_equivalent_replication": false,
+  "solver_campaign_present": false,
+  "comparison_to_published_observables_present": false,
+  "blocking_source_inputs": ["wall_sphere_diameter_mm", "wall_sphere_layout"],
+  "reason": "The article reports sphere-built walls but not their discretisation. No solver result may be called a source-equivalent replication until a citable primary artifact resolves both inputs."
+}

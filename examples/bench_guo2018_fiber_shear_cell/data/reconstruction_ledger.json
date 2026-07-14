@@ -1,0 +1,54 @@
+{
+  "source": {
+    "doi": "10.1002/aic.16397",
+    "primary_pdf_sha256": "36bad3433f3ec53e6f38a0c38fa03d12589006d2960097fe914cf4b0d369e255"
+  },
+  "directly_reported": {
+    "control_cell_xz_mm": [64, 36],
+    "dense_bed_depth_mm": 45,
+    "reported_normal_stress_pa": 1735,
+    "rubber_cord": {
+      "fiber_diameter_mm": 2.4,
+      "fiber_length_mm": 21.6,
+      "fiber_density_kg_m3": 1157.5,
+      "spheres_per_fiber": 17,
+      "bonds_per_fiber": 16,
+      "bond_length_mm": 1.2,
+      "contact_and_bond_modulus_pa": 6280000.0,
+      "fiber_fiber_and_wall_friction": 1.4,
+      "fiber_count": 500,
+      "time_step_s": 2.3e-7
+    },
+    "boundary": {
+      "wall_construction": "rigidly connected spheres",
+      "normal_loading": "weight assigned to upper wall",
+      "upper_wall_horizontal_motion": "fixed",
+      "upper_wall_vertical_motion": "free",
+      "lower_wall_motion": "constant x velocity",
+      "periodic_axes": ["x", "z"],
+      "upper_blade_length_mm": 4,
+      "lower_blade_length_mm": 2,
+      "blade_pitch_mm": 8
+    }
+  },
+  "derived_inputs": {
+    "upper_wall_gravity_mass_at_1735_pa_kg": {
+      "value": 0.4074862385321101,
+      "basis": "m = sigma_xx * Lx * Lz / g, using the reported 64 mm by 36 mm periodic cell, the printed 1735 Pa case, and g = 9.81 m/s^2; this is the assigned gravitational load, not the physical mass of an unspecified sphere assembly"
+    },
+    "96_mm_fiber_count": {
+      "value": 750,
+      "basis": "preserves the 64-mm areal loading; not reported by the article"
+    }
+  },
+  "unresolved_required_boundary_inputs": {
+    "wall_sphere_diameter_mm": "not reported",
+    "wall_sphere_layout": "not reported"
+  },
+  "page_receipt": {
+    "method_and_boundary": [5, 6],
+    "cell_and_rate": [8, 9],
+    "table_2": [24],
+    "cell_figure": [26]
+  }
+}
