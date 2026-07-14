@@ -206,16 +206,22 @@ def active_column_positions(count, aspect, seed):
     ``count`` successful placements.  That makes the controlled initial volume
     stochastic before the DEM calculation begins, and a failed placement is not
     repaired by recording it after the fact.  Here the initializer is an
-    explicit source file: every requested grain is placed on a square horizontal
-    lattice, with layers separated by the capacity-derived loose-fill height.
-    A small *global* seed-dependent phase relative to the rough base gives the
-    ensemble distinct packings without allowing pair overlap or a seed-dependent
-    population.  Settling remains fully dynamical.
+    explicit source file: every requested grain is placed in a staggered
+    triangular layer, with layers separated by the capacity-derived loose-fill
+    height.  A square, layer-aligned source is a crystalline preparation:
+    translating it as the former "seed" did not make a new contact fabric.  The
+    triangular staggering and deterministic seed-dependent phase instead give
+    each realization a distinct admissible fabric while preserving exact
+    population and minimum centre separation.  Settling remains dynamical.
     """
     d = 2.0 * RADIUS
     margin = 0.10 * d
-    nx = int((L0 - 2.0 * RADIUS - 2.0 * margin) // d) + 1
-    ny = int((W - 2.0 * RADIUS - 2.0 * margin) // d) + 1
+    # Reserve the one-diameter cell inset/stagger and the largest seed phase at the
+    # right wall.  Capacity is derived before writing any source file, rather
+    # than relying on a later insertion failure to reveal an overfill.
+    nx = int((L0 - 2.0 * RADIUS - margin - 1.075 * d) // d) + 1
+    dy = math.sqrt(3.0) * 0.5 * d
+    ny = int((W - 2.0 * RADIUS - 2.0 * margin) // dy) + 1
     per_layer = nx * ny
     layers = int(math.ceil(count / per_layer))
     bottom = BASE_Z + RADIUS
@@ -223,15 +229,19 @@ def active_column_positions(count, aspect, seed):
     dz = (top - bottom) / max(layers, 1)
     if dz < d:
         raise ValueError("capacity-derived loose column would overlap vertically")
-    # A translation preserves all same-layer separations.  Keep it inside the
-    # plane walls and use an irrational-looking deterministic phase per seed.
-    phase = ((seed * 0.6180339887498949) % 1.0 - 0.5) * 0.20 * d
+    # Keep each phase within the wall clearance.  It changes the fabric's
+    # placement relative to the frozen rough layer without changing any
+    # inter-grain distance or crossing a wall.
+    phase_x = ((seed * 0.6180339887498949) % 1.0 - 0.5) * 0.15 * d
+    phase_y = ((seed * 0.4142135623730950) % 1.0 - 0.5) * 0.15 * d
     points = []
     for k in range(count):
         layer, slot = divmod(k, per_layer)
         ix, iy = divmod(slot, ny)
-        x = RADIUS + margin + ix * d + phase
-        y = RADIUS + margin + iy * d - phase
+        # Alternating rows by d/2 gives the standard triangular packing; its
+        # nearest-neighbour centre distance is d, not an overlapping shortcut.
+        x = RADIUS + margin + 0.5 * d + ix * d + 0.5 * d * (iy % 2) + phase_x
+        y = RADIUS + margin + 0.5 * dy + iy * dy + phase_y
         z = bottom + (layer + 0.5) * dz
         if not (RADIUS <= x <= L0 - RADIUS and RADIUS <= y <= W - RADIUS):
             raise ValueError("seed phase placed an active grain outside its walls")
