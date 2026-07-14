@@ -153,6 +153,10 @@ def protocol_fingerprint():
                      BASE_Z, BASE_SELECT_Z],
         "material": [YOUNGS_MOD, POISSON, RESTITUTION, FRICTION, DT],
         "schedule": [SETTLE_STEPS, COLLAPSE_STEPS, ASPECTS, SEEDS],
+        # Source preparation is part of the physical protocol: a campaign made
+        # with an earlier translated crystal cannot be relabelled as this
+        # fabric ensemble merely because its summary rows look compatible.
+        "initialization": ["deterministic-disordered-loose-grid-v1"],
         "boundary": [rough_base_positions(), "frozen_close_packed_bead_layer"],
         "measurement": [FINE_BINS, GAP_TOL_D, TOE_MIN_HEIGHT_D],
         "validation": [EXP_TOL, LINEAR_TARGET, POWER_TARGET, REGIME_SPLIT,
@@ -206,22 +210,29 @@ def active_column_positions(count, aspect, seed):
     ``count`` successful placements.  That makes the controlled initial volume
     stochastic before the DEM calculation begins, and a failed placement is not
     repaired by recording it after the fact.  Here the initializer is an
-    explicit source file: every requested grain is placed in a staggered
-    triangular layer, with layers separated by the capacity-derived loose-fill
-    height.  A square, layer-aligned source is a crystalline preparation:
-    translating it as the former "seed" did not make a new contact fabric.  The
-    triangular staggering and deterministic seed-dependent phase instead give
-    each realization a distinct admissible fabric while preserving exact
-    population and minimum centre separation.  Settling remains dynamical.
+    explicit source file: every requested grain is placed in a deliberately
+    loose, deterministic fabric, with layers separated by the capacity-derived
+    loose-fill height.  A rigid translation of a crystal is not a second
+    packing realization: it preserves every grain--grain contact candidate.
+    Instead, each seed has bounded, cell-local shifts and row offsets.  Their
+    amplitude is smaller than the clearance reserved between source cells, so
+    exact population and non-overlap are mathematical properties of the
+    generator rather than outcomes of a rejection sampler.  Settling remains
+    fully dynamical; the source fabric is not a material calibration.
     """
     d = 2.0 * RADIUS
     margin = 0.10 * d
-    # Reserve the one-diameter cell inset/stagger and the largest seed phase at the
-    # right wall.  Capacity is derived before writing any source file, rather
-    # than relying on a later insertion failure to reveal an overfill.
-    nx = int((L0 - 2.0 * RADIUS - margin - 1.075 * d) // d) + 1
-    dy = math.sqrt(3.0) * 0.5 * d
-    ny = int((W - 2.0 * RADIUS - 2.0 * margin) // dy) + 1
+    # Keep a positive clearance in both in-plane directions.  This is
+    # intentional: perturbing a close-packed triangular lattice would make it
+    # impossible to prove non-overlap without an after-the-fact repair.  The
+    # fixed grid is roomy enough for cell-local disorder while retaining 65
+    # grains per loose layer in the 16d x 6d column.
+    spacing = 1.08 * d
+    # Retain the established 65-grain loose layer while leaving wall clearance
+    # for the perturbations.  The caps make the fabric capacity explicit and
+    # stable if a caller changes a dimension only slightly.
+    nx = min(13, 1 + int((L0 - 2.0 * RADIUS - 2.0 * margin) // spacing))
+    ny = min(5, 1 + int((W - 2.0 * RADIUS - 2.0 * margin) // spacing))
     per_layer = nx * ny
     layers = int(math.ceil(count / per_layer))
     bottom = BASE_Z + RADIUS
@@ -229,19 +240,34 @@ def active_column_positions(count, aspect, seed):
     dz = (top - bottom) / max(layers, 1)
     if dz < d:
         raise ValueError("capacity-derived loose column would overlap vertically")
-    # Keep each phase within the wall clearance.  It changes the fabric's
-    # placement relative to the frozen rough layer without changing any
-    # inter-grain distance or crossing a wall.
-    phase_x = ((seed * 0.6180339887498949) % 1.0 - 0.5) * 0.15 * d
-    phase_y = ((seed * 0.4142135623730950) % 1.0 - 0.5) * 0.15 * d
+    # At most 0.02d cell jitter plus a 0.01d row offset variation leaves at
+    # least 1.02d between adjacent x/y cells.  Different rows/layers receive
+    # different offsets, so seeds cannot be reduced to a global translation.
+    # The unused wall margin is deliberately much larger than these shifts.
+    jitter = 0.02 * d
+    row_offset = 0.01 * d
+
+    def signed_unit(*indices):
+        """Stable pseudo-random value in [-1, 1] without mutable RNG state."""
+        phase = 0.0
+        for coefficient, index in zip((0.754877666, 0.569840291,
+                                       0.438579021, 0.316227766), indices):
+            phase += coefficient * (index + 1)
+        return 2.0 * (phase - math.floor(phase)) - 1.0
+
     points = []
     for k in range(count):
         layer, slot = divmod(k, per_layer)
         ix, iy = divmod(slot, ny)
-        # Alternating rows by d/2 gives the standard triangular packing; its
-        # nearest-neighbour centre distance is d, not an overlapping shortcut.
-        x = RADIUS + margin + 0.5 * d + ix * d + 0.5 * d * (iy % 2) + phase_x
-        y = RADIUS + margin + 0.5 * dy + iy * dy + phase_y
+        # A seed changes local fabric rather than only its location relative to
+        # the base.  The large fixed inset makes the following bounded shifts
+        # safe at both plane walls.
+        x = (RADIUS + margin + 0.15 * d + ix * spacing
+             + row_offset * signed_unit(seed, layer, iy, 0)
+             + jitter * signed_unit(seed, layer, ix, iy))
+        y = (RADIUS + margin + 0.15 * d + iy * spacing
+             + row_offset * signed_unit(seed, layer, ix, 1)
+             + jitter * signed_unit(seed, layer, iy, ix))
         z = bottom + (layer + 0.5) * dz
         if not (RADIUS <= x <= L0 - RADIUS and RADIUS <= y <= W - RADIUS):
             raise ValueError("seed phase placed an active grain outside its walls")

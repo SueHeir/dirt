@@ -52,11 +52,11 @@ exponents fitted per regime should approach **1** (linear) and **2/3** (power).
   least-squares exponent is fit from many points, not a coarse handful.
 - **Seed averaging.** Each aspect ratio is run at **3 deterministic initial
   fabrics** and the runout is averaged. `generate` writes one exact-count,
-  non-overlapping staggered (triangular-layer) source-file column per seed. The
-  seed phase places that fabric differently relative to the rough base before
-  the fully dynamical settling stage. This avoids both rejection-sampler
-  underfills and treating translated copies of a square crystal as independent
-  packing realizations.
+  non-overlapping loose source-file column per seed. Bounded deterministic
+  cell shifts and row offsets differ by seed, layer, and row; thus the seeds
+  are not rigid translations of one crystal. The shifts are smaller than the
+  grid clearance, so this avoids both rejection-sampler underfills and
+  unverified initial overlaps before the fully dynamical settling stage.
 - `a` is varied by the **particle count** at fixed L0. The 16d × 6d cross-section
   is eight times the old 8d × 3d population; counts run from ~880 (a = 0.5) to
   ~8800 (a = 5). A capacity-derived loose-fill height is used, then the executable
@@ -98,11 +98,11 @@ This makes it impossible to graph a smooth-base, partial, or prior-material
 campaign as evidence for the rough-base protocol merely by retaining its CSV.
 
 The initializer is deliberately part of that contract. For every scheduled
-aspect/seed it writes exactly `N` active coordinates in a staggered triangular
-fabric with centre spacings no smaller than one diameter, rather than asking a
-runtime random inserter to place `N` grains and discovering an underfill later.
-This is a preparation correction, not a change to the empirical reference,
-material, aspect range, toe metric, or ±0.25 exponent bands.
+aspect/seed it writes exactly `N` active coordinates in a deterministic,
+locally perturbed loose fabric with centre spacings no smaller than one diameter,
+rather than asking a runtime random inserter to place `N` grains and discovering
+an underfill later. This is a preparation correction, not a change to the
+empirical reference, material, aspect range, toe metric, or ±0.25 exponent bands.
 
 ## Status — current evidence required
 
