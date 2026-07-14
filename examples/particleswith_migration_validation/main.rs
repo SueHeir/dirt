@@ -5,5 +5,5 @@
 //! source revisions and checks their emitted CSVs byte-for-byte.
 
 fn main() {
-    println!("Run `python3 examples/particleswith_migration_validation/sweep.py graph`.");
+    println!("Run `$BENCH_PYTHON examples/particleswith_migration_validation/sweep.py`.");
 }

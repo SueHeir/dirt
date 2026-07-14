@@ -1,14 +1,17 @@
 # `particleswith_migration_validation`
 
-This compatibility check compares the emitted CSVs from `origin/main`
-(`41cb2f1`) and the typed `ParticlesWith` migration for representative
-contact/wall, BPM bond, and clump paths. Each case was executed in a separate
-isolated worktree with non-MPI `precision-double`; the full CSV SHA-256 hashes
-match, while the plotted observables show the actual before/after difference.
+This compatibility check runs representative contact/wall, BPM bond, and clump
+paths from scratch in a detached `41cb2f1` baseline worktree and the current
+typed-`ParticlesWith` checkout. It compares each emitted CSV by SHA-256 and its
+terminal observable, so a regression in either revision is visible to the
+runner.
 
-Run `python3 examples/particleswith_migration_validation/sweep.py` to regenerate
-the figure and fail if either the full outputs or the strict `1e-15` comparison
-changes.
+Run `$BENCH_PYTHON examples/particleswith_migration_validation/sweep.py` after
+`source ~/projects/.build-env`. The pinned Python plotting dependency is in
+`requirements.txt`; install it with `$BENCH_PYTHON -m pip install -r
+examples/particleswith_migration_validation/requirements.txt` if needed. The
+runner regenerates the CSV and figure and fails if either the full outputs or
+the strict `1e-15` comparison changes.
 
 ![Before/after compatibility](plots/before_after_compatibility.png)
 

@@ -112,7 +112,7 @@ use dirt_atom::DemAtom;
 use dirt_schedule::{CONTACT_ANALYSIS, CONTACT_FORCE};
 use soil_core::Neighbor;
 use soil_core::{
-    register_atom_data, Atom, AtomData, AtomDataRegistry, CommResource, Config, Input, Optional,
+    register_atom_data, Atom, AtomData, CommResource, Config, Input, Optional,
     ParticleSimScheduleSet, ParticlesWith, Read, RunState, Write as ParticleWrite,
 };
 use soil_print::{DumpRegistry, Thermo};
@@ -557,7 +557,7 @@ fn compute_contact_analysis(
 /// Push coordination statistics (avg, max, min) and rattler counts to thermo output.
 fn push_coordination_to_thermo(
     atoms: Res<Atom>,
-    registry: Res<AtomDataRegistry>,
+    particles: ParticlesWith<'_, Optional<Read<ContactAnalysis>>>,
     config: Res<ContactAnalysisConfig>,
     comm: Res<CommResource>,
     mut thermo: ResMut<Thermo>,
@@ -567,7 +567,10 @@ fn push_coordination_to_thermo(
         return;
     }
 
-    if let Some(ca) = registry.get::<ContactAnalysis>() {
+    particles.with(|ca| {
+        let Some(ca) = ca else {
+            return;
+        };
         let nlocal = atoms.nlocal as usize;
         let mut sum = 0.0;
         let mut max_val: f64 = 0.0;
@@ -622,7 +625,7 @@ fn push_coordination_to_thermo(
                 },
             );
         }
-    }
+    });
 }
 
 /// Normalize and push fabric tensor components from the accumulator to thermo.
@@ -741,8 +744,8 @@ fn dump_contact_csv(
 mod tests {
     use super::*;
     use grass_app::App;
-    use soil_core::Atom;
     use soil_core::Neighbor;
+    use soil_core::{Atom, AtomDataRegistry};
     use std::panic::{catch_unwind, AssertUnwindSafe};
 
     fn panic_message(panic: Box<dyn std::any::Any + Send>) -> String {

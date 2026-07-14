@@ -186,7 +186,7 @@ use dirt_schedule::{
     AUTO_BOND, BOND_BREAKAGE_INIT, BOND_FORCE, BOND_GHOST_CUTOFF, BOND_PLASTICITY_INIT, LOAD_BONDS,
 };
 use soil_core::{
-    Atom, AtomData, AtomDataRegistry, BondEntry, BondStore, CommResource, Config, Domain, Optional,
+    Atom, AtomData, BondEntry, BondStore, CommResource, Config, Domain, Optional,
     ParticleSimScheduleSet, ParticlesWith, Read, ScheduleSetupSet, VirialStress,
     VirialStressPlugin, Write, NEIGHBOR_SETUP,
 };
@@ -1127,7 +1127,7 @@ fn read_and_parse_bonds(
 /// **before** `neighbor_setup` (which locks `ghost_cutoff` into the bin
 /// grid and border skin).
 pub fn extend_ghost_cutoff_for_bonds(
-    registry: Res<AtomDataRegistry>,
+    particles: ParticlesWith<'_, Optional<Read<BondStore>>>,
     bond_config: Res<BondConfig>,
     mut domain: ResMut<Domain>,
     comm: Res<CommResource>,
@@ -1138,11 +1138,8 @@ pub fn extend_ghost_cutoff_for_bonds(
 
     // Global max r0 across all ranks (bonds currently only exist on the
     // rank(s) that auto-bonded or loaded them at setup).
-    let local_max_r0 = {
-        let bond_store = match registry.get::<BondStore>() {
-            Some(bs) => bs,
-            None => return,
-        };
+    let Some(local_max_r0) = particles.with(|bond_store| {
+        let bond_store = bond_store?;
         let mut m = 0.0f64;
         for list in &bond_store.bonds {
             for b in list {
@@ -1151,7 +1148,9 @@ pub fn extend_ghost_cutoff_for_bonds(
                 }
             }
         }
-        m
+        Some(m)
+    }) else {
+        return;
     };
     // all_reduce_max via negated min (only min is in the CommBackend trait).
     let global_max_r0 = -comm.all_reduce_min_f64(-local_max_r0);

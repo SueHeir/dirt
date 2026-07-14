@@ -1031,7 +1031,7 @@ pub fn update_clump_positions(
 fn check_lost_clump_atoms(
     atoms: Res<Atom>,
     bodies: Res<MultisphereBodyStore>,
-    registry: Res<AtomDataRegistry>,
+    particles: ParticlesWith<'_, Optional<Read<ClumpAtom>>>,
     comm: Res<CommResource>,
     run_state: Res<RunState>,
 ) {
@@ -1039,37 +1039,38 @@ fn check_lost_clump_atoms(
         return;
     }
 
-    let clump = match registry.get::<ClumpAtom>() {
-        Some(c) => c,
-        None => return,
-    };
+    particles.with(|clump| {
+        let Some(clump) = clump else {
+            return;
+        };
 
-    let nlocal = atoms.nlocal as usize;
-    let mut counts: HashMap<u32, usize> = HashMap::new();
+        let nlocal = atoms.nlocal as usize;
+        let mut counts: HashMap<u32, usize> = HashMap::new();
 
-    for i in 0..nlocal {
-        if i >= clump.body_id.len() {
-            break;
+        for i in 0..nlocal {
+            if i >= clump.body_id.len() {
+                break;
+            }
+            let bid = clump.body_id[i] as u32;
+            if bid > 0 {
+                *counts.entry(bid).or_default() += 1;
+            }
         }
-        let bid = clump.body_id[i] as u32;
-        if bid > 0 {
-            *counts.entry(bid).or_default() += 1;
-        }
-    }
 
-    for body in &bodies.bodies {
-        let expected = body.sub_sphere_tags.len();
-        let actual = counts.get(&body.id).copied().unwrap_or(0);
-        if actual != expected {
-            eprintln!(
-                "WARNING: Body {} has {}/{} atoms on rank {}",
-                body.id,
-                actual,
-                expected,
-                comm.rank()
-            );
+        for body in &bodies.bodies {
+            let expected = body.sub_sphere_tags.len();
+            let actual = counts.get(&body.id).copied().unwrap_or(0);
+            if actual != expected {
+                eprintln!(
+                    "WARNING: Body {} has {}/{} atoms on rank {}",
+                    body.id,
+                    actual,
+                    expected,
+                    comm.rank()
+                );
+            }
         }
-    }
+    });
 }
 
 // ── Clump insertion from config ──────────────────────────────────────────────
