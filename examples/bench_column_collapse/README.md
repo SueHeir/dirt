@@ -52,11 +52,11 @@ exponents fitted per regime should approach **1** (linear) and **2/3** (power).
   least-squares exponent is fit from many points, not a coarse handful.
 - **Seed averaging.** Each aspect ratio is run at **3 deterministic initial
   fabrics** and the runout is averaged. `generate` writes one exact-count,
-  non-overlapping loose source-file column per seed. Bounded deterministic
-  cell shifts and row offsets differ by seed, layer, and row; thus the seeds
-  are not rigid translations of one crystal. The shifts are smaller than the
-  grid clearance, so this avoids both rejection-sampler underfills and
-  unverified initial overlaps before the fully dynamical settling stage.
+  non-overlapping fcc source column per seed. The seed selects a distinct ABC
+  registry against the frozen rough base, rather than translating the entire
+  column. These are controlled lattice realizations, not a claim of random-bed
+  uncertainty; a completed dynamic campaign is still required before reporting
+  statistical agreement with the experiment.
 - **Release-width witness.** The source grid covers the declared 16d column
   width (rather than leaving a gate-side void), and `graph` rejects any run
   whose recorded pre-release active-grain envelopes span less than 95% of
@@ -64,11 +64,12 @@ exponents fitted per regime should approach **1** (linear) and **2/3** (power).
   used to normalize runout was physically present.
 - `a` is varied by the **particle count** at fixed L0. The 16d × 6d cross-section
   is eight times the old 8d × 3d population; counts run from ~880 (a = 0.5) to
-  ~8800 (a = 5). Each source is a compact non-overlapping loose grid: the earlier
-  20%-solid-fraction airborne cloud put tall cases about 0.9 m above the floor,
-  farther than they can fall in the fixed 0.32 s settling stage. The executable
-  records the actual pre-release coordinates; analysis fits that measured height,
-  never an intended count or nominal height.
+  ~8800 (a = 5). Sources use an fcc layer spacing, whose geometric packing
+  fraction (π/(3√2)) can represent the requested 0.60 column fraction. A
+  simple 15×5 cubic grid cannot: an isolated fresh a=0.5 replay released at
+  H/L0=0.817 rather than 0.5. The executable records the actual pre-release
+  coordinates and analysis fits that measured height, never an intended count
+  or nominal height.
 - Each case runs two stages: `settle` (80 000 steps — pack the loosely-inserted
   column against the gate) then `collapse` (1 000 000 steps / 4 s — gate removed
   on the first step, column spreads and must meet the terminal-rest criterion).
@@ -105,15 +106,14 @@ This makes it impossible to graph a smooth-base, partial, or prior-material
 campaign as evidence for the rough-base protocol merely by retaining its CSV.
 
 The initializer is deliberately part of that contract. For every scheduled
-aspect/seed it writes exactly `N` active coordinates in a deterministic,
-locally perturbed compact loose fabric with centre spacings no smaller than one
-diameter, rather than asking a runtime random inserter to place `N` grains and
-discovering an underfill later. Its 15 × 5 in-plane source grid spans the full
-release width and its 1.05-diameter vertical pitch keeps tall cases within the
-specified settling-time fall distance. The independently recorded release witness
-must confirm coverage before a fit is allowed. This is a preparation correction,
-not a change to the empirical reference, material, aspect range, toe metric, or
-±0.25 exponent bands.
+aspect/seed it writes exactly `N` active coordinates in a deterministic fcc
+fabric with centre spacings no smaller than one diameter, rather than asking a
+runtime random inserter to place `N` grains and discovering an underfill later.
+Its triangular layers span the full release width and use the fcc vertical
+spacing √(2/3)d, so count controls height at the requested volume fraction.
+The independently recorded release witness must confirm coverage before a fit
+is allowed. This is a preparation correction, not a change to the empirical
+reference, material, aspect range, toe metric, or ±0.25 exponent bands.
 
 ## Status — current evidence required
 

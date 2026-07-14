@@ -94,10 +94,10 @@ SETTLE_STEPS = 80000
 COLLAPSE_STEPS = 1000000   # 4 s: enough for a high-e glass bed to arrest
 
 PACKING = 0.60             # settled solid fraction used to size the particle count
-# This is deliberately a *loose insertion* density, not a fitted material
-# parameter.  It follows from the hard-sphere volume constraint: a randomized
-# non-overlap inserter needs enough empty volume to place every requested grain.
-INSERT_PACKING = 0.20
+# The source is a non-overlapping close packing, not a dilute airborne cloud.
+# Its packing fraction is fixed by fcc geometry; PACKING remains the requested
+# released-column fraction used to translate aspect ratio to particle count.
+INSERT_PACKING = math.pi / (3.0 * math.sqrt(2.0))
 BASE_Z = 2.0 * RADIUS
 BASE_SELECT_Z = 2.5 * RADIUS
 
@@ -156,7 +156,7 @@ def protocol_fingerprint():
         # Source preparation is part of the physical protocol: a campaign made
         # with an earlier translated crystal cannot be relabelled as this
         # fabric ensemble merely because its summary rows look compatible.
-        "initialization": ["deterministic-disordered-compact-grid-v3-full-width"],
+        "initialization": ["deterministic-fcc-source-v1-full-width"],
         "boundary": [rough_base_positions(), "frozen_close_packed_bead_layer"],
         "measurement": [FINE_BINS, GAP_TOL_D, TOE_MIN_HEIGHT_D],
         "validation": [EXP_TOL, LINEAR_TARGET, POWER_TARGET, REGIME_SPLIT,
@@ -175,18 +175,14 @@ def n_particles(aspect):
 
 
 def loose_insert_top(count, aspect):
-    """Top of the compact source fabric, measured from z=0.
+    """Conservative top bound of the fcc source, measured from z=0.
 
-    A source sized at ``INSERT_PACKING=0.20`` puts the a=5 grains about 0.9 m
-    above the floor, whose free-fall time already exceeds the declared 0.32 s
-    settle stage.  The recorded release is then not a supported column.  The
-    grid below instead uses 15 x 5 cells per layer and a 1.05d layer pitch:
-    still non-overlapping and loose, but physically able to settle in the
-    fixed stage.  It does not alter any empirical target or acceptance gate.
+    A simple-cubic source is only pi/6 dense, so it cannot represent the
+    requested 0.60 solid fraction without making the nominal column too tall.
+    The fcc stack has layer spacing sqrt(2/3)d and packing pi/(3 sqrt(2)).
     """
-    per_layer = 15 * 5
-    layers = int(math.ceil(count / per_layer))
-    return BASE_Z + RADIUS + layers * 1.05 * (2.0 * RADIUS)
+    layers = int(math.ceil(count / 75))
+    return BASE_Z + RADIUS + layers * math.sqrt(2.0 / 3.0) * (2.0 * RADIUS)
 
 
 def rough_base_positions():
@@ -205,73 +201,38 @@ def write_rough_base():
 
 
 def active_column_positions(count, aspect, seed):
-    """Return an exact, non-overlapping loose column for one realization.
+    """Return an exact fcc source whose geometry controls release aspect.
 
-    The former runtime rejection sampler was allowed to stop after fewer than
-    ``count`` successful placements.  That makes the controlled initial volume
-    stochastic before the DEM calculation begins, and a failed placement is not
-    repaired by recording it after the fact.  Here the initializer is an
-    explicit source file: every requested grain is placed in a deliberately
-    loose, deterministic fabric, with layers separated by the capacity-derived
-    loose-fill height.  A rigid translation of a crystal is not a second
-    packing realization: it preserves every grain--grain contact candidate.
-    Instead, each seed has bounded, cell-local shifts and row offsets.  Their
-    amplitude is smaller than the clearance reserved between source cells, so
-    exact population and non-overlap are mathematical properties of the
-    generator rather than outcomes of a rejection sampler.  Settling remains
-    fully dynamical; the source fabric is not a material calibration.
+    The prior 15-by-5 simple grid was non-overlapping but only pi/6 dense.  A
+    fresh nominal-a=0.5 replay therefore released at H/L0=0.817, invalidating
+    the requested aspect-ratio sweep.  This fcc construction has a strict
+    minimum centre separation d while its compactness is sufficient for the
+    target 0.60-volume-fraction column.  Seeds select distinct ABC registries
+    against the rough base, not rigid translations.
     """
     d = 2.0 * RADIUS
-    # The source fabric must occupy the declared 16d release width.  An earlier
-    # exact-count grid used only 13 x-cells, leaving nearly three diameters of
-    # empty space before the gate.  That silently changed the physical L0 while
-    # the fit still used the declared L0.  Use a near-contact loose grid across
-    # the full width instead.  It has a proved positive clearance, and falling
-    # under gravity still creates the actual packing/contact network.
-    spacing = 1.02 * d
-    nx, ny = 15, 5
-    per_layer = nx * ny
-    layers = int(math.ceil(count / per_layer))
-    bottom = BASE_Z + RADIUS
-    top = loose_insert_top(count, aspect)
-    dz = 1.05 * d
-    if dz < d:
-        raise ValueError("compact loose column would overlap vertically")
-    # At most 0.005d cell jitter plus a 0.005d row offset variation leaves at
-    # least 1.01d between adjacent x/y cells.  Different rows/layers receive
-    # different offsets, so seeds cannot be reduced to a global translation.
-    # The unused wall margin is deliberately much larger than these shifts.
-    jitter = 0.005 * d
-    row_offset = 0.005 * d
-
-    def signed_unit(*indices):
-        """Stable pseudo-random value in [-1, 1] without mutable RNG state."""
-        phase = 0.0
-        for coefficient, index in zip((0.754877666, 0.569840291,
-                                       0.438579021, 0.316227766), indices):
-            phase += coefficient * (index + 1)
-        return 2.0 * (phase - math.floor(phase)) - 1.0
-
+    dy = math.sqrt(3.0) * d / 2.0
+    dz = math.sqrt(2.0 / 3.0) * d
+    phases = ((0.0, 0.0), (0.5 * d, dy / 3.0), (d, 2.0 * dy / 3.0))
     points = []
-    for k in range(count):
-        layer, slot = divmod(k, per_layer)
-        ix, iy = divmod(slot, ny)
-        # A seed changes local fabric rather than only its location relative to
-        # the base.  The large fixed inset makes the following bounded shifts
-        # safe at both plane walls.
-        # The 0.510d origin retains a 0.5d hard wall clearance even at the
-        # extremal negative seed phase; the last x-cell's particle envelope
-        # reaches 95% of L0, which is checked again from the release witness.
-        x = (0.510 * d + ix * spacing
-             + row_offset * signed_unit(seed, layer, iy, 0)
-             + jitter * signed_unit(seed, layer, ix, iy))
-        y = (0.510 * d + iy * spacing
-             + row_offset * signed_unit(seed, layer, ix, 1)
-             + jitter * signed_unit(seed, layer, iy, ix))
-        z = bottom + (layer + 0.5) * dz
-        if not (RADIUS <= x <= L0 - RADIUS and RADIUS <= y <= W - RADIUS):
-            raise ValueError("seed phase placed an active grain outside its walls")
-        points.append((x, y, z))
+    layer = 0
+    while len(points) < count:
+        px, py = phases[(layer + seed) % len(phases)]
+        z = BASE_Z + RADIUS + layer * dz
+        for iy in range(6):
+            y = RADIUS + py + iy * dy
+            if y > W - RADIUS + 1e-12:
+                continue
+            for ix in range(16):
+                # Triangular in-layer registry: without this half-diameter row
+                # offset, neighbouring rows are only sqrt(3)/2 d apart.
+                x = RADIUS + px + ix * d + (0.5 * d if iy % 2 else 0.0)
+                if x > L0 - RADIUS + 1e-12:
+                    continue
+                points.append((x, y, z))
+                if len(points) == count:
+                    return points
+        layer += 1
     return points
 
 
