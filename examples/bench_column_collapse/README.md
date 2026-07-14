@@ -57,6 +57,11 @@ exponents fitted per regime should approach **1** (linear) and **2/3** (power).
   are not rigid translations of one crystal. The shifts are smaller than the
   grid clearance, so this avoids both rejection-sampler underfills and
   unverified initial overlaps before the fully dynamical settling stage.
+- **Release-width witness.** The source grid covers the declared 16d column
+  width (rather than leaving a gate-side void), and `graph` rejects any run
+  whose recorded pre-release active-grain envelopes span less than 95% of
+  `L0`. Population alone cannot establish that the controlled initial width
+  used to normalize runout was physically present.
 - `a` is varied by the **particle count** at fixed L0. The 16d × 6d cross-section
   is eight times the old 8d × 3d population; counts run from ~880 (a = 0.5) to
   ~8800 (a = 5). A capacity-derived loose-fill height is used, then the executable
@@ -101,7 +106,9 @@ The initializer is deliberately part of that contract. For every scheduled
 aspect/seed it writes exactly `N` active coordinates in a deterministic,
 locally perturbed loose fabric with centre spacings no smaller than one diameter,
 rather than asking a runtime random inserter to place `N` grains and discovering
-an underfill later. This is a preparation correction, not a change to the
+an underfill later. Its 15 × 5 in-plane source grid spans the full declared
+release width, and the independently recorded release witness must confirm that
+coverage before a fit is allowed. This is a preparation correction, not a change to the
 empirical reference, material, aspect range, toe metric, or ±0.25 exponent bands.
 
 ## Status — current evidence required

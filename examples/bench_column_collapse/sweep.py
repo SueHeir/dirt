@@ -156,7 +156,7 @@ def protocol_fingerprint():
         # Source preparation is part of the physical protocol: a campaign made
         # with an earlier translated crystal cannot be relabelled as this
         # fabric ensemble merely because its summary rows look compatible.
-        "initialization": ["deterministic-disordered-loose-grid-v1"],
+        "initialization": ["deterministic-disordered-loose-grid-v2-full-width"],
         "boundary": [rough_base_positions(), "frozen_close_packed_bead_layer"],
         "measurement": [FINE_BINS, GAP_TOL_D, TOE_MIN_HEIGHT_D],
         "validation": [EXP_TOL, LINEAR_TARGET, POWER_TARGET, REGIME_SPLIT,
@@ -221,18 +221,14 @@ def active_column_positions(count, aspect, seed):
     fully dynamical; the source fabric is not a material calibration.
     """
     d = 2.0 * RADIUS
-    margin = 0.10 * d
-    # Keep a positive clearance in both in-plane directions.  This is
-    # intentional: perturbing a close-packed triangular lattice would make it
-    # impossible to prove non-overlap without an after-the-fact repair.  The
-    # fixed grid is roomy enough for cell-local disorder while retaining 65
-    # grains per loose layer in the 16d x 6d column.
-    spacing = 1.08 * d
-    # Retain the established 65-grain loose layer while leaving wall clearance
-    # for the perturbations.  The caps make the fabric capacity explicit and
-    # stable if a caller changes a dimension only slightly.
-    nx = min(13, 1 + int((L0 - 2.0 * RADIUS - 2.0 * margin) // spacing))
-    ny = min(5, 1 + int((W - 2.0 * RADIUS - 2.0 * margin) // spacing))
+    # The source fabric must occupy the declared 16d release width.  An earlier
+    # exact-count grid used only 13 x-cells, leaving nearly three diameters of
+    # empty space before the gate.  That silently changed the physical L0 while
+    # the fit still used the declared L0.  Use a near-contact loose grid across
+    # the full width instead.  It has a proved positive clearance, and falling
+    # under gravity still creates the actual packing/contact network.
+    spacing = 1.02 * d
+    nx, ny = 15, 5
     per_layer = nx * ny
     layers = int(math.ceil(count / per_layer))
     bottom = BASE_Z + RADIUS
@@ -240,12 +236,12 @@ def active_column_positions(count, aspect, seed):
     dz = (top - bottom) / max(layers, 1)
     if dz < d:
         raise ValueError("capacity-derived loose column would overlap vertically")
-    # At most 0.02d cell jitter plus a 0.01d row offset variation leaves at
-    # least 1.02d between adjacent x/y cells.  Different rows/layers receive
+    # At most 0.005d cell jitter plus a 0.005d row offset variation leaves at
+    # least 1.01d between adjacent x/y cells.  Different rows/layers receive
     # different offsets, so seeds cannot be reduced to a global translation.
     # The unused wall margin is deliberately much larger than these shifts.
-    jitter = 0.02 * d
-    row_offset = 0.01 * d
+    jitter = 0.005 * d
+    row_offset = 0.005 * d
 
     def signed_unit(*indices):
         """Stable pseudo-random value in [-1, 1] without mutable RNG state."""
@@ -262,10 +258,13 @@ def active_column_positions(count, aspect, seed):
         # A seed changes local fabric rather than only its location relative to
         # the base.  The large fixed inset makes the following bounded shifts
         # safe at both plane walls.
-        x = (RADIUS + margin + 0.15 * d + ix * spacing
+        # The 0.510d origin retains a 0.5d hard wall clearance even at the
+        # extremal negative seed phase; the last x-cell's particle envelope
+        # reaches 95% of L0, which is checked again from the release witness.
+        x = (0.510 * d + ix * spacing
              + row_offset * signed_unit(seed, layer, iy, 0)
              + jitter * signed_unit(seed, layer, ix, iy))
-        y = (RADIUS + margin + 0.15 * d + iy * spacing
+        y = (0.510 * d + iy * spacing
              + row_offset * signed_unit(seed, layer, ix, 1)
              + jitter * signed_unit(seed, layer, iy, ix))
         z = bottom + (layer + 0.5) * dz
@@ -721,20 +720,41 @@ def total_particles(aspect):
     return n_particles(aspect) + len(rough_base_positions())
 
 
-def release_height(path):
-    """Measured released-bed height from the executable's pre-gate snapshot."""
+def release_geometry(path):
+    """Measured active-bed height and supported width before gate removal.
+
+    ``L0`` is a physical control variable in both normalized runout and aspect
+    ratio.  Therefore the recorded release fabric must actually span it; a
+    count-only check cannot detect an empty gap at the gate.  The rough base is
+    excluded by its fixed selection height.  We use particle envelopes, not
+    centres, because those are the physical extents of a granular column.
+    """
     with open(path, newline="") as f:
         rows = list(csv.DictReader(f))
     if not rows:
         raise ValueError("empty release-state record")
     try:
-        top = max(float(r["z"]) + float(r["radius"]) for r in rows)
+        active = [(float(r["x"]), float(r["z"]), float(r["radius"]))
+                  for r in rows if float(r["z"]) > BASE_SELECT_Z]
     except (KeyError, TypeError, ValueError) as exc:
         raise ValueError("malformed release-state record") from exc
+    if not active:
+        raise ValueError("release state has no active grains above rough base")
+    top = max(z + radius for _, z, radius in active)
     h = top - BASE_Z
     if not math.isfinite(h) or h <= 0.0:
         raise ValueError("non-positive release height")
-    return h
+    left = min(x - radius for x, _, radius in active)
+    right = max(x + radius for x, _, radius in active)
+    width = right - left
+    if not math.isfinite(width) or width < 0.95 * L0:
+        raise ValueError(f"release width {width / L0:.3f} L0 is below 0.95 L0")
+    return h, width
+
+
+def release_height(path):
+    """Compatibility wrapper for callers that only need the measured height."""
+    return release_geometry(path)[0]
 
 
 def checked_final_state(path, expected_count):
@@ -777,7 +797,7 @@ def derive_dirt_ensemble():
                 release_n = csv_particle_count(release)
                 deposit_n = csv_particle_count(deposit)
                 vmax = checked_final_state(terminal, expected)
-                h = release_height(release)
+                h, _ = release_geometry(release)
                 _, lf = measure_column(deposit)
             except (OSError, ValueError, csv.Error) as exc:
                 failures.append(f"a={a} seed={s}: malformed witness ({exc})")
