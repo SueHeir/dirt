@@ -64,9 +64,11 @@ exponents fitted per regime should approach **1** (linear) and **2/3** (power).
   used to normalize runout was physically present.
 - `a` is varied by the **particle count** at fixed L0. The 16d × 6d cross-section
   is eight times the old 8d × 3d population; counts run from ~880 (a = 0.5) to
-  ~8800 (a = 5). A capacity-derived loose-fill height is used, then the executable
-  records the actual pre-release particle coordinates. Analysis fits that measured
-  release height, never an intended count or nominal height.
+  ~8800 (a = 5). Each source is a compact non-overlapping loose grid: the earlier
+  20%-solid-fraction airborne cloud put tall cases about 0.9 m above the floor,
+  farther than they can fall in the fixed 0.32 s settling stage. The executable
+  records the actual pre-release coordinates; analysis fits that measured height,
+  never an intended count or nominal height.
 - Each case runs two stages: `settle` (80 000 steps — pack the loosely-inserted
   column against the gate) then `collapse` (1 000 000 steps / 4 s — gate removed
   on the first step, column spreads and must meet the terminal-rest criterion).
@@ -104,12 +106,14 @@ campaign as evidence for the rough-base protocol merely by retaining its CSV.
 
 The initializer is deliberately part of that contract. For every scheduled
 aspect/seed it writes exactly `N` active coordinates in a deterministic,
-locally perturbed loose fabric with centre spacings no smaller than one diameter,
-rather than asking a runtime random inserter to place `N` grains and discovering
-an underfill later. Its 15 × 5 in-plane source grid spans the full declared
-release width, and the independently recorded release witness must confirm that
-coverage before a fit is allowed. This is a preparation correction, not a change to the
-empirical reference, material, aspect range, toe metric, or ±0.25 exponent bands.
+locally perturbed compact loose fabric with centre spacings no smaller than one
+diameter, rather than asking a runtime random inserter to place `N` grains and
+discovering an underfill later. Its 15 × 5 in-plane source grid spans the full
+release width and its 1.05-diameter vertical pitch keeps tall cases within the
+specified settling-time fall distance. The independently recorded release witness
+must confirm coverage before a fit is allowed. This is a preparation correction,
+not a change to the empirical reference, material, aspect range, toe metric, or
+±0.25 exponent bands.
 
 ## Status — current evidence required
 

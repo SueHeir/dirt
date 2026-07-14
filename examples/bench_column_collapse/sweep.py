@@ -156,7 +156,7 @@ def protocol_fingerprint():
         # Source preparation is part of the physical protocol: a campaign made
         # with an earlier translated crystal cannot be relabelled as this
         # fabric ensemble merely because its summary rows look compatible.
-        "initialization": ["deterministic-disordered-loose-grid-v2-full-width"],
+        "initialization": ["deterministic-disordered-compact-grid-v3-full-width"],
         "boundary": [rough_base_positions(), "frozen_close_packed_bead_layer"],
         "measurement": [FINE_BINS, GAP_TOL_D, TOE_MIN_HEIGHT_D],
         "validation": [EXP_TOL, LINEAR_TARGET, POWER_TARGET, REGIME_SPLIT,
@@ -175,17 +175,18 @@ def n_particles(aspect):
 
 
 def loose_insert_top(count, aspect):
-    """Height of a capacity-safe loose fill, measured from z=0.
+    """Top of the compact source fabric, measured from z=0.
 
-    The old ``1.6 * H`` heuristic underfilled low columns, so their nominal
-    aspect ratios had no physical realization.  This lower bound is obtained
-    directly from grain volume and insertion footprint; it is independent of
-    the measured runout and cannot tune an exponent.
+    A source sized at ``INSERT_PACKING=0.20`` puts the a=5 grains about 0.9 m
+    above the floor, whose free-fall time already exceeds the declared 0.32 s
+    settle stage.  The recorded release is then not a supported column.  The
+    grid below instead uses 15 x 5 cells per layer and a 1.05d layer pitch:
+    still non-overlapping and loose, but physically able to settle in the
+    fixed stage.  It does not alter any empirical target or acceptance gate.
     """
-    footprint = (L0 - RADIUS) * (W - 2.0 * RADIUS)
-    volume = (4.0 / 3.0) * math.pi * RADIUS**3
-    return max(BASE_Z + RADIUS, BASE_Z + 1.6 * aspect * L0,
-               BASE_Z + RADIUS + count * volume / (INSERT_PACKING * footprint))
+    per_layer = 15 * 5
+    layers = int(math.ceil(count / per_layer))
+    return BASE_Z + RADIUS + layers * 1.05 * (2.0 * RADIUS)
 
 
 def rough_base_positions():
@@ -233,9 +234,9 @@ def active_column_positions(count, aspect, seed):
     layers = int(math.ceil(count / per_layer))
     bottom = BASE_Z + RADIUS
     top = loose_insert_top(count, aspect)
-    dz = (top - bottom) / max(layers, 1)
+    dz = 1.05 * d
     if dz < d:
-        raise ValueError("capacity-derived loose column would overlap vertically")
+        raise ValueError("compact loose column would overlap vertically")
     # At most 0.005d cell jitter plus a 0.005d row offset variation leaves at
     # least 1.01d between adjacent x/y cells.  Different rows/layers receive
     # different offsets, so seeds cannot be reduced to a global translation.
