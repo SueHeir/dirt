@@ -277,7 +277,8 @@ impl SimulationFixture {
 pub fn make_atoms(n: usize) -> Atom {
     let mut atom = Atom::new();
     for i in 0..n {
-        atom.push_test_atom(i as u32, [i as f64, 0.0, 0.0], 0.5, 1.0);
+        // `Atom` has no registered extensions in this core-only fixture.
+        unsafe { atom.push_test_atom(i as u32, [i as f64, 0.0, 0.0], 0.5, 1.0) };
     }
     atom.nlocal = n as u32;
     atom.natoms = n as u64;
@@ -364,7 +365,8 @@ pub fn push_dem_test_atom(
 ) {
     let density = 2500.0;
     let mass = density * 4.0 / 3.0 * std::f64::consts::PI * radius.powi(3);
-    atom.push_test_atom(tag, pos, radius, mass);
+    // The extension rows below are appended in the same transaction.
+    unsafe { atom.push_test_atom(tag, pos, radius, mass) };
     dem.radius.push(radius);
     dem.density.push(density);
     dem.inv_inertia.push(1.0 / (0.4 * mass * radius * radius));
