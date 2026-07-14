@@ -28,9 +28,10 @@ def load_contract(path=CONTRACT):
     if not reported <= set(record["reported"]):
         raise ValueError("geometry contract omits a reported source constraint")
     missing = {"wall_sphere_diameter_mm", "wall_sphere_layout"}
-    if set(record["not_reported"]) != missing:
-        raise ValueError("geometry contract must name every unresolved boundary quantity")
-    if any(record["not_reported"][key] != "NOT_REPORTED" for key in missing):
+    figure_limit = "figure_2_wall_mesh_scale"
+    if set(record["not_reported"]) != missing | {figure_limit}:
+        raise ValueError("geometry contract must name every unresolved boundary quantity and figure limit")
+    if any(record["not_reported"][key] != "NOT_REPORTED" for key in missing | {figure_limit}):
         raise ValueError("unpublished wall data must not be guessed as source facts")
     return record
 
@@ -99,7 +100,10 @@ def main():
 class AuditTests(unittest.TestCase):
     def test_contract_is_explicit_about_missing_discretisation(self):
         record = load_contract()
-        self.assertEqual(set(record["not_reported"]), {"wall_sphere_diameter_mm", "wall_sphere_layout"})
+        self.assertEqual(
+            set(record["not_reported"]),
+            {"wall_sphere_diameter_mm", "wall_sphere_layout", "figure_2_wall_mesh_scale"},
+        )
 
     def test_observable_fitting_cannot_select_a_wall(self):
         import tempfile

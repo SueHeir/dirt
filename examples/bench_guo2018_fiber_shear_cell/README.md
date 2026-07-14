@@ -28,6 +28,8 @@ python3 examples/bench_guo2018_fiber_shear_cell/source_contract.py --verify-doi
 python3 examples/bench_guo2018_fiber_shear_cell/source_contract.py --self-test
 python3 examples/bench_guo2018_fiber_shear_cell/evidence_contract.py --self-test
 python3 examples/bench_guo2018_fiber_shear_cell/source_geometry_audit.py --verify
+python3 examples/bench_guo2018_fiber_shear_cell/figure_scale_audit.py --verify
+python3 examples/bench_guo2018_fiber_shear_cell/figure_scale_audit.py --self-test
 python3 examples/bench_guo2018_fiber_shear_cell/campaign_preflight.py
 python3 examples/bench_guo2018_fiber_shear_cell/campaign_preflight.py --self-test
 python3 examples/bench_guo2018_fiber_shear_cell/reconstruction_readiness.py --verify
@@ -40,6 +42,11 @@ The hash-bound receipt in `data/reference_provenance.json`, the page-receipted
 `data/reconstruction_ledger.json`, and the candidate-only topology generator
 make the positive evidence auditable. The 64-mm candidate can be generated and
 audited without invoking a solver:
+
+`figure_scale_audit.py` separately records an important negative source fact:
+Figure 2 is a perspective rendering with no scale bar, camera calibration, or
+wall-sphere count. It confirms the sphere-built boundary class but cannot turn
+a pixel measurement into an exact wall diameter or lattice.
 
 ```bash
 python3 examples/bench_guo2018_fiber_shear_cell/prepare.py \

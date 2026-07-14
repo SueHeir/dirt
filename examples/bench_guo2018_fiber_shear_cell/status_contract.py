@@ -30,7 +30,10 @@ def load_status(path=STATUS):
 def verify_status(path=STATUS):
     status, ledger, geometry = load_status(path), load_ledger(), load_contract()
     unresolved = set(ledger["unresolved_required_boundary_inputs"])
-    missing_geometry = set(geometry["not_reported"])
+    # The Figure-2 scale entry is an evidentiary limitation, not an additional
+    # wall input.  The diameter and layout remain the two inputs that block a
+    # source-equivalent solver reconstruction.
+    missing_geometry = {"wall_sphere_diameter_mm", "wall_sphere_layout"}
     if set(status["blocking_source_inputs"]) != missing_geometry or not missing_geometry <= unresolved:
         raise ValueError("status blockers must exactly match the independently recorded missing wall geometry")
     if status["source_equivalent_replication"]:
