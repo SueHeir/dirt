@@ -199,6 +199,53 @@ def write_rough_base():
     return path
 
 
+def active_column_positions(count, aspect, seed):
+    """Return an exact, non-overlapping loose column for one realization.
+
+    The former runtime rejection sampler was allowed to stop after fewer than
+    ``count`` successful placements.  That makes the controlled initial volume
+    stochastic before the DEM calculation begins, and a failed placement is not
+    repaired by recording it after the fact.  Here the initializer is an
+    explicit source file: every requested grain is placed on a square horizontal
+    lattice, with layers separated by the capacity-derived loose-fill height.
+    A small *global* seed-dependent phase relative to the rough base gives the
+    ensemble distinct packings without allowing pair overlap or a seed-dependent
+    population.  Settling remains fully dynamical.
+    """
+    d = 2.0 * RADIUS
+    margin = 0.10 * d
+    nx = int((L0 - 2.0 * RADIUS - 2.0 * margin) // d) + 1
+    ny = int((W - 2.0 * RADIUS - 2.0 * margin) // d) + 1
+    per_layer = nx * ny
+    layers = int(math.ceil(count / per_layer))
+    bottom = BASE_Z + RADIUS
+    top = loose_insert_top(count, aspect)
+    dz = (top - bottom) / max(layers, 1)
+    if dz < d:
+        raise ValueError("capacity-derived loose column would overlap vertically")
+    # A translation preserves all same-layer separations.  Keep it inside the
+    # plane walls and use an irrational-looking deterministic phase per seed.
+    phase = ((seed * 0.6180339887498949) % 1.0 - 0.5) * 0.20 * d
+    points = []
+    for k in range(count):
+        layer, slot = divmod(k, per_layer)
+        ix, iy = divmod(slot, ny)
+        x = RADIUS + margin + ix * d + phase
+        y = RADIUS + margin + iy * d - phase
+        z = bottom + (layer + 0.5) * dz
+        if not (RADIUS <= x <= L0 - RADIUS and RADIUS <= y <= W - RADIUS):
+            raise ValueError("seed phase placed an active grain outside its walls")
+        points.append((x, y, z))
+    return points
+
+
+def write_active_column(path, count, aspect, seed):
+    points = active_column_positions(count, aspect, seed)
+    with open(path, "w", newline="") as f:
+        csv.writer(f).writerows(points)
+    return path
+
+
 def case_tag(aspect):
     return f"a{aspect:g}".replace(".", "p")
 
@@ -269,12 +316,13 @@ density = {density}
 columns = {{ x = 0, y = 1, z = 2 }}
 
 [[particles.insert]]
+source = "file"
+file = "{active_column}"
+format = "csv"
 material = "glass"
-count = {count}
 radius = {radius}
 density = {density}
-seed = {seed}
-region = {{ type = "block", min = [{radius}, {radius}, {active_z_low}], max = [{x_insert_high}, {y_insert_high}, {insert_top}] }}
+columns = {{ x = 0, y = 1, z = 2 }}
 
 [[group]]
 name = "rough_base"
@@ -350,18 +398,21 @@ def generate():
         for s in SEEDS:
             cdir = case_dir_seed(a, s)
             os.makedirs(cdir, exist_ok=True)
+            active_column = write_active_column(
+                os.path.join(cdir, "active_column.csv"), n, a, s
+            )
             with open(os.path.join(cdir, "config.toml"), "w") as f:
                 f.write(TOML_TEMPLATE.format(
                     aspect=a, count=n, seed=s,
                     youngs=YOUNGS_MOD, poisson=POISSON,
                     restitution=RESTITUTION, friction=FRICTION,
                     radius=RADIUS, density=DENSITY,
-                    x_insert_high=f"{L0 - RADIUS:.4f}",
-                    y_insert_high=f"{W - RADIUS:.4f}", l0=f"{L0:.4f}",
+                    l0=f"{L0:.4f}",
                     w=f"{W:.4f}", y_high=f"{W + 0.003:.4f}",
                     rough_base=rough_base, active_z_low=f"{BASE_Z + RADIUS:.4f}",
                     base_select_z=f"{BASE_SELECT_Z:.4f}",
                     insert_top=f"{insert_top:.4f}", z_high=f"{z_high:.4f}",
+                    active_column=active_column,
                     output_dir=cdir, dt=f"{DT:.3e}",
                     settle_steps=SETTLE_STEPS, collapse_steps=COLLAPSE_STEPS,
                 ))

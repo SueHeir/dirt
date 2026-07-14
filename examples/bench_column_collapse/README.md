@@ -47,10 +47,11 @@ exponents fitted per regime should approach **1** (linear) and **2/3** (power).
 - **Aspect ratio** `a = H/L0 ∈ {0.5, 0.75, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5}` —
   an **11-point** sweep (7 in the linear regime, 5 in the power regime) so each
   least-squares exponent is fit from many points, not a coarse handful.
-- **Seed averaging.** Each aspect ratio is run at **3 insertion seeds** and the
-  runout is averaged; the `seed` field on `[[particles.insert]]` sets the RNG.
-  Single-seed packing scatter in this quasi-2D (3-diameter-deep) column is ~±20-25%
-  of the runout, so averaging is needed for a stable exponent.
+- **Seed averaging.** Each aspect ratio is run at **3 deterministic initial phases**
+  and the runout is averaged. `generate` writes one exact-count, non-overlapping
+  source-file column per phase; the phase shifts the column relative to the rough
+  base before the fully dynamical settling stage. This removes rejection-sampler
+  underfills while retaining a packing-realization ensemble.
 - `a` is varied by the **particle count** at fixed L0. The 16d × 6d cross-section
   is eight times the old 8d × 3d population; counts run from ~880 (a = 0.5) to
   ~8800 (a = 5). A capacity-derived loose-fill height is used, then the executable
@@ -86,6 +87,13 @@ coordinates, aspects/seeds, toe estimator, Froude arrest limit, references, and
 the unchanged exponent band. `graph` refuses any CSV whose fingerprint differs.
 This makes it impossible to graph a smooth-base, partial, or prior-material
 campaign as evidence for the rough-base protocol merely by retaining its CSV.
+
+The initializer is deliberately part of that contract. For every scheduled
+aspect/phase it writes exactly `N` active coordinates with centre spacings no
+smaller than one diameter, rather than asking a runtime random inserter to place
+`N` grains and discovering an underfill later. This is a preparation correction,
+not a change to the empirical reference, material, aspect range, toe metric, or
+±0.25 exponent bands.
 
 ## Status — current evidence required
 
