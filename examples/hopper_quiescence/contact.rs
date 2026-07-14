@@ -19,6 +19,7 @@ use dirt_core::soil_core::{
     register_atom_data, Atom, AtomData, AtomDataRegistry, Neighbor, ParticleSimScheduleSet,
     VirialStress, VirialStressPlugin,
 };
+use dirt_schedule::CONTACT_FORCE;
 use std::any::Any;
 
 /// Particle region modes set by the quiescence module each step.
@@ -279,7 +280,7 @@ impl Plugin for QuiescentContactPlugin {
         app.add_plugins(VirialStressPlugin);
         register_atom_data!(app, QcStore::new());
         app.add_update_system(
-            quiescent_contact_force.label("hertz_mindlin_contact"),
+            quiescent_contact_force.label(CONTACT_FORCE),
             ParticleSimScheduleSet::Force,
         );
     }

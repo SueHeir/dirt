@@ -12,6 +12,7 @@ grass_app.workspace = true
 grass_scheduler.workspace = true
 soil_derive.workspace = true
 dirt_atom.workspace = true
+dirt_schedule.workspace = true
 serde.workspace = true
 toml.workspace = true
 rand.workspace = true

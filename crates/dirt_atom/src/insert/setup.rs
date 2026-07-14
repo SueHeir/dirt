@@ -50,7 +50,7 @@ density = 2500.0
         // bounds (sub_domain_low/high) are populated before atoms are placed —
         // parallel insertion filters candidates against those bounds.
         app.add_setup_system(
-            dem_insert_atoms.after("domain_read_input"),
+            dem_insert_atoms.after(soil_core::domain_read_input),
             ScheduleSetupSet::Setup,
         )
         .add_setup_system(calculate_delta_time, ScheduleSetupSet::PostSetup)

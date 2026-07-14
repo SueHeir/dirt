@@ -157,6 +157,7 @@
 // API intent here — do not add empty doc comments just to satisfy the lint.
 #![deny(missing_docs)]
 
+use dirt_schedule::WALL_CONTACT;
 use grass_app::prelude::*;
 use grass_scheduler::prelude::*;
 use serde::Deserialize;
@@ -918,7 +919,7 @@ impl Plugin for WallPlugin {
             ParticleSimScheduleSet::PreForce,
         );
         app.add_update_system(
-            wall_contact_force.label("wall_contact"),
+            wall_contact_force.label(WALL_CONTACT),
             ParticleSimScheduleSet::Force,
         );
     }

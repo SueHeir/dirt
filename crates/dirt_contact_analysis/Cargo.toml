@@ -19,6 +19,7 @@ grass_app.workspace = true
 grass_scheduler.workspace = true
 soil_print = { workspace = true, default-features = false }
 soil_derive.workspace = true
+dirt_schedule.workspace = true
 dirt_atom.workspace = true
 serde.workspace = true
 

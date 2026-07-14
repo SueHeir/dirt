@@ -18,6 +18,7 @@ precision-single = ["soil_core/precision-single"]
 soil_core = { workspace = true, default-features = false }
 grass_app.workspace = true
 grass_scheduler.workspace = true
+dirt_schedule.workspace = true
 dirt_atom.workspace = true
 soil_verlet = { workspace = true, default-features = false }
 

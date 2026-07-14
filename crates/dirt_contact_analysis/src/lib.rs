@@ -109,6 +109,7 @@ use serde::Deserialize;
 use soil_derive::AtomData;
 
 use dirt_atom::DemAtom;
+use dirt_schedule::{CONTACT_ANALYSIS, CONTACT_FORCE};
 use soil_core::Neighbor;
 use soil_core::{
     register_atom_data, Atom, AtomData, AtomDataRegistry, CommResource, Config, Input,
@@ -368,7 +369,7 @@ file_prefix = "contact""#,
 
             // Push coordination stats to thermo
             app.add_update_system(
-                push_coordination_to_thermo.after("contact_analysis"),
+                push_coordination_to_thermo.after(CONTACT_ANALYSIS),
                 ParticleSimScheduleSet::PostForce,
             );
         }
@@ -377,15 +378,14 @@ file_prefix = "contact""#,
         // hertz_mindlin_contact label is registered.
         app.add_update_system(
             contact_analysis_requires_hertz_mindlin_contact_add_granular_default_plugins
-                .after("hertz_mindlin_contact")
-                .requires_label("hertz_mindlin_contact"),
+                .requires(CONTACT_FORCE),
             ParticleSimScheduleSet::Force,
         );
 
         // Coordination + contact record collection + fabric tensor accumulation
         // (PostForce, after contact forces — single neighbor traversal)
         app.add_update_system(
-            compute_contact_analysis.label("contact_analysis"),
+            compute_contact_analysis.label(CONTACT_ANALYSIS),
             ParticleSimScheduleSet::PostForce,
         );
 
@@ -400,7 +400,7 @@ file_prefix = "contact""#,
         if config.fabric_tensor {
             // Fabric tensor thermo output reads the accumulator filled by compute_contact_analysis
             app.add_update_system(
-                push_fabric_tensor_to_thermo.after("contact_analysis"),
+                push_fabric_tensor_to_thermo.after(CONTACT_ANALYSIS),
                 ParticleSimScheduleSet::PostForce,
             );
         }
@@ -1111,7 +1111,7 @@ coordination = true
         app.add_resource(AtomDataRegistry::default());
         app.add_resource(RunState::new());
         app.add_update_system(
-            labeled_contact_force_for_ordering_test.label("hertz_mindlin_contact"),
+            labeled_contact_force_for_ordering_test.label(CONTACT_FORCE),
             ParticleSimScheduleSet::Force,
         );
         app.add_plugins(ContactAnalysisPlugin);

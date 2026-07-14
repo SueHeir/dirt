@@ -45,14 +45,12 @@ use grass_app::prelude::*;
 use grass_scheduler::prelude::*;
 use serde::Deserialize;
 
+use dirt_schedule::{ADD_FORCE, SET_FORCE};
 use soil_core::{
     Accum, Atom, AtomDataRegistry, CommResource, Config, GroupDef, GroupRegistry,
     ParticleSimScheduleSet, Real, ScheduleSetupSet,
 };
 use soil_print::Thermo;
-
-const ADDFORCE_SYSTEM_LABEL: &str = "dirt_fixes::addforce";
-const SETFORCE_SYSTEM_LABEL: &str = "dirt_fixes::setforce";
 
 // ── Config structs ─────────────────────────────────────────────────────────
 
@@ -404,15 +402,13 @@ impl Plugin for FixesPlugin {
         }
         if has_add {
             app.add_update_system(
-                apply_add_force.label(ADDFORCE_SYSTEM_LABEL),
+                apply_add_force.label(ADD_FORCE),
                 ParticleSimScheduleSet::PostForce,
             );
         }
         if has_set {
             app.add_update_system(
-                apply_set_force
-                    .label(SETFORCE_SYSTEM_LABEL)
-                    .after(ADDFORCE_SYSTEM_LABEL),
+                apply_set_force.label(SET_FORCE).after(ADD_FORCE),
                 ParticleSimScheduleSet::PostForce,
             );
         }
@@ -962,6 +958,70 @@ mod tests {
     use dirt_test_utils::{make_atoms, make_group_registry};
 
     #[test]
+    fn setforce_seam_does_not_require_an_addforce_provider() {
+        let mut app = App::new();
+        app.add_resource(make_atoms(1));
+        app.add_resource(make_group_registry("all", vec![true]));
+        app.add_resource(FixesRegistry {
+            add_forces: vec![],
+            set_forces: vec![],
+            move_linears: vec![],
+            freezes: vec![],
+            viscous: vec![],
+            cundall: vec![],
+            nve_limit: vec![],
+        });
+        app.add_update_system(
+            apply_set_force.label(SET_FORCE).after(ADD_FORCE),
+            ParticleSimScheduleSet::PostForce,
+        );
+        app.organize_systems();
+    }
+
+    #[test]
+    fn typed_force_seams_keep_setforce_as_the_final_writer() {
+        let mut atoms = make_atoms(1);
+        atoms.force[0] = [10.0, 0.0, 0.0];
+        let registry = FixesRegistry {
+            add_forces: vec![AddForceDef {
+                group: "all".into(),
+                fx: 5.0,
+                fy: 0.0,
+                fz: 0.0,
+            }],
+            set_forces: vec![SetForceDef {
+                group: "all".into(),
+                fx: 1.0,
+                fy: 2.0,
+                fz: 3.0,
+            }],
+            move_linears: vec![],
+            freezes: vec![],
+            viscous: vec![],
+            cundall: vec![],
+            nve_limit: vec![],
+        };
+        let mut app = App::new();
+        app.add_resource(atoms);
+        app.add_resource(make_group_registry("all", vec![true]));
+        app.add_resource(registry);
+        app.add_update_system(
+            apply_add_force.label(ADD_FORCE),
+            ParticleSimScheduleSet::PostForce,
+        );
+        app.add_update_system(
+            apply_set_force.label(SET_FORCE).after(ADD_FORCE),
+            ParticleSimScheduleSet::PostForce,
+        );
+        app.organize_systems();
+        app.run();
+        assert_eq!(
+            app.get_resource_ref::<Atom>().unwrap().force[0],
+            [1.0, 2.0, 3.0]
+        );
+    }
+
+    #[test]
     fn malformed_fix_is_a_typed_plugin_error() {
         let mut app = App::new();
         app.add_resource(Config::from_str(
@@ -1132,13 +1192,11 @@ misspelled_force = 1.0
         app.add_resource(groups);
         app.add_resource(registry);
         app.add_update_system(
-            apply_add_force.label(ADDFORCE_SYSTEM_LABEL),
+            apply_add_force.label(ADD_FORCE),
             ParticleSimScheduleSet::PostForce,
         );
         app.add_update_system(
-            apply_set_force
-                .label(SETFORCE_SYSTEM_LABEL)
-                .after(ADDFORCE_SYSTEM_LABEL),
+            apply_set_force.label(SET_FORCE).after(ADD_FORCE),
             ParticleSimScheduleSet::PostForce,
         );
         app.organize_systems();
