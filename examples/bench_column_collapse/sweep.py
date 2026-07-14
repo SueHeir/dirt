@@ -448,9 +448,10 @@ def find_lammps():
 #   fix gate ... xplane NULL {L0}; unfix gate  -> removable gate at x = L0, present
 #       during 'settle', unfix-ed at the start of 'collapse' (mirrors
 #       Walls::deactivate_by_name on the first collapse step in DIRT).
-# Atoms are seeded overlap-free into a tall loose column and settle under gravity,
-# the same loose-insert-then-settle that DIRT performs. The final deposit is dumped
-# as (id, x, y, z, radius); runout is then extracted with the SAME measure_column().
+# LAMMPS receives the exact active-column coordinate file consumed by DIRT,
+# including the deterministic per-seed phase relative to the same frozen rough
+# base. The final deposit is dumped as (id, x, y, z, radius); runout is then
+# extracted with the SAME measure_column().
 LMP_TEMPLATE = """\
 # Auto-generated LAMMPS input for the column-collapse sweep — aspect a = {aspect}
 units           si
@@ -463,8 +464,7 @@ comm_modify     vel yes
 region          simbox block {x_low} {x_high} {y_low} {y_high} 0.0 {z_high} units box
 create_box      1 simbox
 
-region          colreg block {radius} {x_insert_high} {radius} {y_insert_high} {active_z_low} {insert_top} units box
-create_atoms    1 random {count} {seed} colreg overlap {min_sep} maxtry 500 units box
+{active_atoms}
 {base_atoms}
 set             group all diameter {diam}
 set             group all density {density}
@@ -503,39 +503,66 @@ def lammps_dump_path(aspect, seed, stage):
     return os.path.join(case_dir_seed(aspect, seed), f"lammps_{stage}.txt")
 
 
+def lammps_create_atoms(points):
+    """Render one LAMMPS ``create_atoms single`` command per source coordinate.
+
+    DIRT reads these same coordinates from ``active_column.csv``.  Rendering
+    them directly is deliberately more verbose than LAMMPS's random inserter:
+    it makes code-to-code agreement a comparison of the contact/integration
+    implementations rather than of two different initial packings.  The
+    preflight count check below makes a truncated or stale source file fail
+    before LAMMPS is launched.
+    """
+    return "\n".join(
+        f"create_atoms    1 single {x:.10e} {y:.10e} {z:.10e} units box"
+        for x, y, z in points
+    )
+
+
+def active_column_from_file(path, expected_count):
+    """Read and validate the exact active-column source shared with DIRT."""
+    with open(path, newline="") as f:
+        rows = list(csv.reader(f))
+    if len(rows) != expected_count:
+        raise ValueError(
+            f"active-column source has {len(rows)} coordinates, expected {expected_count}"
+        )
+    points = []
+    for row in rows:
+        if len(row) != 3:
+            raise ValueError("active-column source row is not x,y,z")
+        try:
+            point = tuple(float(v) for v in row)
+        except ValueError as exc:
+            raise ValueError("active-column source contains non-numeric coordinate") from exc
+        if not all(math.isfinite(v) for v in point):
+            raise ValueError("active-column source contains non-finite coordinate")
+        points.append(point)
+    return points
+
+
 def write_lammps_input(path, aspect, seed):
-    """Write the LAMMPS input for one aspect ratio (same geometry as DIRT)."""
+    """Write a LAMMPS case from the exact DIRT active-column source.
+
+    Both solvers receive the identical active grains and frozen rough base.  A
+    seeded ensemble is still retained because each source file is a distinct
+    deterministic phase relative to the base; LAMMPS must not substitute a
+    different random realization for that phase.
+    """
     n = n_particles(aspect)
-    h = aspect * L0
-    # Loose insert column. Unlike DIRT's inserter, LAMMPS 'create_atoms random'
-    # rejects overlapping placements, so the loose region must be tall enough to
-    # hold all N grains — otherwise it silently places fewer than N (skewing the
-    # effective column height and the runout).
-    footprint = (L0 - RADIUS) * (W - 2.0 * RADIUS)
-    vol_particle = (4.0 / 3.0) * math.pi * RADIUS**3
-    # LAMMPS is an independent comparison, not a shortcut to a dense initial
-    # condition.  Use DIRT's loose packing bound and exclude a full diameter.
-    # The prior 0.85d placement deliberately introduced overlaps; installed LAMMPS
-    # then lost atoms during settling, so it never represented this protocol.
-    loose_pack = INSERT_PACKING
-    h_needed = n * vol_particle / (loose_pack * footprint)
-    insert_top = max(loose_insert_top(n, aspect), h_needed + RADIUS)
-    z_high = insert_top + 0.05
-    min_sep = 2.0 * RADIUS
+    source_path = os.path.join(case_dir_seed(aspect, seed), "active_column.csv")
+    active_points = active_column_from_file(source_path, n)
+    z_high = max(z for _, _, z in active_points) + RADIUS + 0.05
     base_atoms = "\n".join(
         f"create_atoms    1 single {x:.8f} {y:.8f} {z:.8f} units box"
         for x, y, z in rough_base_positions()
     )
     with open(path, "w") as f:
         f.write(LMP_TEMPLATE.format(
-            aspect=aspect, count=n, seed=12345 + seed,
+            aspect=aspect, count=n,
             x_low=-0.01, x_high=0.60, y_low=-0.003, y_high=W + 0.003,
-            z_high=f"{z_high:.4f}", insert_top=f"{insert_top:.4f}",
-            radius=f"{RADIUS:.4f}", x_insert_high=f"{L0 - RADIUS:.4f}",
-            y_insert_high=f"{W - RADIUS:.4f}",
-            active_z_low=f"{BASE_Z + RADIUS:.4f}",
+            z_high=f"{z_high:.4f}", active_atoms=lammps_create_atoms(active_points),
             base_atoms=base_atoms, base_select_z=f"{BASE_SELECT_Z:.4f}",
-            min_sep=f"{min_sep:.6f}",
             diam=2.0 * RADIUS, density=DENSITY,
             E=f"{YOUNGS_MOD:.6e}", e=RESTITUTION, nu=POISSON,
             tdamp=1.0, mu=FRICTION, g=9.81,

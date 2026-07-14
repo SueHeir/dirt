@@ -10,8 +10,11 @@ which is what arrests the spreading deposit and sets the runout.
 
 If a LAMMPS binary is on `PATH`, the same sweep is **also** run in LAMMPS with the
 equivalent granular model and overlaid on the runout-vs-aspect-ratio plot as a
-code-to-code cross-check (see *LAMMPS cross-check* below). LAMMPS is optional — the
-example runs and validates against the experimental laws with no LAMMPS present.
+code-to-code cross-check (see *LAMMPS cross-check* below). Both solvers receive the
+same generated active-grain coordinates for every seed, so this isolates solver
+behavior rather than conflating it with different random packings. LAMMPS is
+optional — the example runs and validates against the experimental laws with no
+LAMMPS present.
 
 ## Physics
 
@@ -181,7 +184,7 @@ This is an optional cross-code check; **LAMMPS never gates the PASS/FAIL** — o
 the DIRT-vs-theory exponents do.
 
 The LAMMPS model is the equivalent of DIRT's Hertz–Mindlin granular contact, same
-material, geometry, and protocol:
+material, geometry, protocol, **and exact generated initial coordinates**:
 
 | DIRT | LAMMPS |
 |------|--------|
@@ -195,6 +198,9 @@ material, geometry, and protocol:
 LAMMPS's final deposit is dumped as `(id, x, y, z, radius)`, converted to the same
 `x,y,z,radius` CSV the DIRT recorder writes, and the runout `L_f` is extracted with
 the **same** `measure_column()` — so the two codes are compared on equal footing.
+`write_lammps_input` rejects a missing, truncated, malformed, or non-finite DIRT
+source file before launching LAMMPS; it no longer synthesizes a separate random
+packing.
 
 Historical LAMMPS values from the superseded small-system protocol are not evidence
 for the current geometry. A fresh overlay is written only after all 33 LAMMPS
