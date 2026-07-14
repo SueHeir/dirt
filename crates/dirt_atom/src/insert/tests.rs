@@ -28,14 +28,14 @@ impl AtomData for BrokenDefaults {
     fn len(&self) -> usize {
         0
     }
-    fn push_default(&mut self) {}
-    fn truncate(&mut self, _: usize) {}
-    fn swap_remove(&mut self, _: usize) {}
+    unsafe fn push_default(&mut self) {}
+    unsafe fn truncate(&mut self, _: usize) {}
+    unsafe fn swap_remove(&mut self, _: usize) {}
     fn pack(&self, _: usize, _: &mut Vec<f64>) {}
-    fn unpack(&mut self, _: &[f64]) -> usize {
+    unsafe fn unpack(&mut self, _: &[f64]) -> usize {
         0
     }
-    fn apply_permutation(&mut self, _: &[usize], _: usize) {}
+    unsafe fn apply_permutation(&mut self, _: &[usize], _: usize) {}
 }
 
 fn test_dem_registry() -> AtomDataRegistry {
@@ -292,8 +292,12 @@ fn production_immediate_and_rate_match_accepted_rows_tags_after_rejection() {
     assert_eq!(rate.tag, vec![0, 1]);
     assert_eq!(serial_comm_state, CommState::FullRebuild);
     assert_eq!(
-        immediate.tag.iter().zip(&immediate.pos).collect::<Vec<_>>(),
-        rate.tag.iter().zip(&rate.pos).collect::<Vec<_>>(),
+        immediate
+            .tag
+            .iter()
+            .zip(immediate.pos.iter())
+            .collect::<Vec<_>>(),
+        rate.tag.iter().zip(rate.pos.iter()).collect::<Vec<_>>(),
         "the scheduled immediate and rate paths must retain the same accepted tag/row stream"
     );
 
@@ -316,14 +320,14 @@ fn production_immediate_and_rate_match_accepted_rows_tags_after_rejection() {
     let mut partitioned: Vec<_> = low
         .tag
         .iter()
-        .zip(&low.pos)
-        .chain(high.tag.iter().zip(&high.pos))
+        .zip(low.pos.iter())
+        .chain(high.tag.iter().zip(high.pos.iter()))
         .map(|(tag, pos)| (*tag, *pos))
         .collect();
     let mut serial: Vec<_> = rate
         .tag
         .iter()
-        .zip(&rate.pos)
+        .zip(rate.pos.iter())
         .map(|(tag, pos)| (*tag, *pos))
         .collect();
     partitioned.sort_by_key(|row| row.0);
@@ -411,14 +415,14 @@ fn production_rate_insert_partitions_exact_deterministic_tag_rows_and_cleans_lat
     let mut partitioned: Vec<_> = low
         .tag
         .iter()
-        .zip(&low.pos)
-        .chain(high.tag.iter().zip(&high.pos))
+        .zip(low.pos.iter())
+        .chain(high.tag.iter().zip(high.pos.iter()))
         .map(|(tag, pos)| (*tag, *pos))
         .collect();
     let mut serial: Vec<_> = full
         .tag
         .iter()
-        .zip(&full.pos)
+        .zip(full.pos.iter())
         .map(|(tag, pos)| (*tag, *pos))
         .collect();
     partitioned.sort_by_key(|row| row.0);
@@ -552,8 +556,12 @@ fn particle_store_restart_rejection_preserves_dem_construction() {
         .expect::<DemAtom>("restart snapshot")
         .radius
         .clone();
+
+    // Structural columns are intentionally no longer directly clearable. A
+    // mismatched ownership count is the same malformed-restart class and must
+    // leave the synchronized core and extension stores untouched.
     let mut malformed = atoms.clone();
-    malformed.mass.clear();
+    malformed.nlocal += 1;
     assert_eq!(
         ParticleStore::new(&mut atoms, &registry).replace_from_restart(malformed, &[]),
         Err(ParticleStoreError::InvalidStructuralOperation)

@@ -56,7 +56,7 @@ use dirt_atom::DemAtom;
 use dirt_core::prelude::*;
 use dirt_core::{dirt_atom, soil_core, soil_verlet};
 use dirt_schedule::{INTEROP_FAMILIES, INTEROP_LATTICE};
-use soil_core::DOMAIN_READ_INPUT;
+use soil_core::{ParticleStore, DOMAIN_READ_INPUT};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Config
@@ -239,9 +239,6 @@ fn lattice_insert(
     domain: Res<Domain>,
     comm: Res<CommResource>,
 ) {
-    let mut peri = registry.expect_mut::<PeriPoint>("lattice_insert");
-    let mut dem = registry.expect_mut::<DemAtom>("lattice_insert");
-
     let dx = cfg.spacing;
     assert!(dx > 0.0, "interop.spacing must be > 0");
     let volume = dx * dx * dx;
@@ -271,43 +268,40 @@ fn lattice_insert(
                         continue;
                     }
 
-                    // Base soil columns. cutoff_radius = horizon so the one shared
-                    // neighbour list captures the entire peri family (a superset
-                    // of the shorter-range DEM contact pairs).
-                    atoms.natoms += 1;
-                    atoms.nlocal += 1;
-                    atoms.tag.push(tag);
-                    atoms.origin_index.push(0);
-                    atoms.cutoff_radius.push(cfg.horizon as Real);
-                    atoms.image.push([0, 0, 0]);
-                    atoms.is_ghost.push(false);
-                    atoms
-                        .pos
-                        .push([pos[0] as Real, pos[1] as Real, pos[2] as Real]);
-                    atoms.vel.push([
+                    // Add every core and extension row transactionally, then
+                    // initialize this existing row for the shared DEM/peri state.
+                    let index = atoms.len();
+                    let global_natoms = atoms.natoms + 1;
+                    ParticleStore::new(&mut atoms, &registry)
+                        .push_default_local(global_natoms)
+                        .expect("registered peri/DEM rows must append together");
+                    atoms.tag[index] = tag;
+                    atoms.cutoff_radius[index] = cfg.horizon as Real;
+                    atoms.pos[index] = [pos[0] as Real, pos[1] as Real, pos[2] as Real];
+                    atoms.vel[index] = [
                         bar.velocity[0] as Real,
                         bar.velocity[1] as Real,
                         bar.velocity[2] as Real,
-                    ]);
-                    atoms.force.push([0.0; 3]);
-                    atoms.mass.push(mass as Real);
-                    atoms.inv_mass.push(inv_mass as Real);
-                    atoms.atom_type.push(0); // single material
+                    ];
+                    atoms.mass[index] = mass as Real;
+                    atoms.inv_mass[index] = inv_mass as Real;
 
                     // Peri column.
-                    peri.volume.push(volume);
-                    peri.n0.push(0.0);
-                    peri.damage.push(0.0);
+                    let mut peri = registry.expect_mut::<PeriPoint>("lattice_insert");
+                    let mut dem = registry.expect_mut::<DemAtom>("lattice_insert");
+                    peri.volume[index] = volume;
+                    peri.n0[index] = 0.0;
+                    peri.damage[index] = 0.0;
 
                     // DEM column.
-                    dem.radius.push(radius);
-                    dem.density.push(cfg.density);
-                    dem.inv_inertia.push(inv_inertia);
-                    dem.quaternion.push([1.0, 0.0, 0.0, 0.0]);
-                    dem.omega.push([0.0; 3]);
-                    dem.ang_mom.push([0.0; 3]);
-                    dem.torque.push([0.0; 3]);
-                    dem.body_id.push(0.0); // independent particles (not a rigid clump)
+                    dem.radius[index] = radius;
+                    dem.density[index] = cfg.density;
+                    dem.inv_inertia[index] = inv_inertia;
+                    dem.quaternion[index] = [1.0, 0.0, 0.0, 0.0];
+                    dem.omega[index] = [0.0; 3];
+                    dem.ang_mom[index] = [0.0; 3];
+                    dem.torque[index] = [0.0; 3];
+                    dem.body_id[index] = 0.0; // independent particles (not a rigid clump)
 
                     placed += 1;
                 }

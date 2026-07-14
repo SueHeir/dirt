@@ -92,23 +92,23 @@ impl AtomData for ContactHistoryStore {
         self.contacts.len()
     }
 
-    fn push_default(&mut self) {
+    unsafe fn push_default(&mut self) {
         self.contacts.push(Vec::new());
     }
 
-    fn truncate(&mut self, n: usize) {
+    unsafe fn truncate(&mut self, n: usize) {
         // Grow if needed (atoms may have been inserted without going through unpack)
         self.contacts.resize_with(n, Vec::new);
         self.contacts.truncate(n);
     }
 
-    fn swap_remove(&mut self, i: usize) {
+    unsafe fn swap_remove(&mut self, i: usize) {
         if i < self.contacts.len() {
             self.contacts.swap_remove(i);
         }
     }
 
-    fn apply_permutation(&mut self, perm: &[usize], n: usize) {
+    unsafe fn apply_permutation(&mut self, perm: &[usize], n: usize) {
         let new_contacts: Vec<Vec<(u32, ContactHistory, bool)>> =
             perm.iter().map(|&p| self.contacts[p].clone()).collect();
         self.contacts[..n].clone_from_slice(&new_contacts);
@@ -129,7 +129,7 @@ impl AtomData for ContactHistoryStore {
         }
     }
 
-    fn unpack(&mut self, buf: &[f64]) -> usize {
+    unsafe fn unpack(&mut self, buf: &[f64]) -> usize {
         let count = buf[0] as usize;
         let mut list = Vec::with_capacity(count);
         let mut pos = 1;

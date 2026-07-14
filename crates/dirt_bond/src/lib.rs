@@ -605,22 +605,22 @@ impl AtomData for BondHistoryStore {
         self.history.len()
     }
 
-    fn push_default(&mut self) {
+    unsafe fn push_default(&mut self) {
         self.history.push(Vec::new());
     }
 
-    fn truncate(&mut self, n: usize) {
+    unsafe fn truncate(&mut self, n: usize) {
         self.history.resize_with(n, Vec::new);
         self.history.truncate(n);
     }
 
-    fn swap_remove(&mut self, i: usize) {
+    unsafe fn swap_remove(&mut self, i: usize) {
         if i < self.history.len() {
             self.history.swap_remove(i);
         }
     }
 
-    fn apply_permutation(&mut self, perm: &[usize], n: usize) {
+    unsafe fn apply_permutation(&mut self, perm: &[usize], n: usize) {
         let new_history: Vec<Vec<BondHistoryEntry>> =
             perm.iter().map(|&p| self.history[p].clone()).collect();
         self.history[..n].clone_from_slice(&new_history);
@@ -656,7 +656,7 @@ impl AtomData for BondHistoryStore {
         }
     }
 
-    fn unpack(&mut self, buf: &[f64]) -> usize {
+    unsafe fn unpack(&mut self, buf: &[f64]) -> usize {
         let count = buf[0] as usize;
         let mut list = Vec::with_capacity(count);
         let mut pos = 1;
@@ -2340,7 +2340,8 @@ Bonds
         assert_eq!(buf.len(), 1 + 17 * 2);
 
         let mut store2 = BondHistoryStore::new();
-        let consumed = store2.unpack(&buf);
+        // The fixture owns both the encoded record and the empty destination.
+        let consumed = unsafe { store2.unpack(&buf) };
         assert_eq!(consumed, buf.len());
         assert_eq!(store2.history[0].len(), 2);
         assert_eq!(store2.history[0][0].partner_tag, 5);

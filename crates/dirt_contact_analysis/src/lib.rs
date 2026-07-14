@@ -840,8 +840,10 @@ mod tests {
     fn test_two_touching_particles_coordination() {
         // Two particles at distance 0.9, each radius 0.5 → overlap = 0.1
         let mut atoms = Atom::new();
-        atoms.push_test_atom(1, [0.0, 0.0, 0.0], 0.5, 1.0);
-        atoms.push_test_atom(2, [0.9, 0.0, 0.0], 0.5, 1.0);
+        unsafe {
+            atoms.push_test_atom(1, [0.0, 0.0, 0.0], 0.5, 1.0);
+            atoms.push_test_atom(2, [0.9, 0.0, 0.0], 0.5, 1.0);
+        }
         atoms.nlocal = 2;
         atoms.natoms = 2;
 
@@ -859,8 +861,10 @@ mod tests {
     fn test_isolated_particle_coordination() {
         // Two particles far apart: no contact
         let mut atoms = Atom::new();
-        atoms.push_test_atom(1, [0.0, 0.0, 0.0], 0.5, 1.0);
-        atoms.push_test_atom(2, [5.0, 0.0, 0.0], 0.5, 1.0);
+        unsafe {
+            atoms.push_test_atom(1, [0.0, 0.0, 0.0], 0.5, 1.0);
+            atoms.push_test_atom(2, [5.0, 0.0, 0.0], 0.5, 1.0);
+        }
         atoms.nlocal = 2;
         atoms.natoms = 2;
 
@@ -881,10 +885,12 @@ mod tests {
         // All radius=0.5, so overlap between adjacent = 0.1
         // Expected: [0]=1, [1]=2, [2]=2, [3]=1
         let mut atoms = Atom::new();
-        atoms.push_test_atom(1, [0.0, 0.0, 0.0], 0.5, 1.0);
-        atoms.push_test_atom(2, [0.9, 0.0, 0.0], 0.5, 1.0);
-        atoms.push_test_atom(3, [1.8, 0.0, 0.0], 0.5, 1.0);
-        atoms.push_test_atom(4, [2.7, 0.0, 0.0], 0.5, 1.0);
+        unsafe {
+            atoms.push_test_atom(1, [0.0, 0.0, 0.0], 0.5, 1.0);
+            atoms.push_test_atom(2, [0.9, 0.0, 0.0], 0.5, 1.0);
+            atoms.push_test_atom(3, [1.8, 0.0, 0.0], 0.5, 1.0);
+            atoms.push_test_atom(4, [2.7, 0.0, 0.0], 0.5, 1.0);
+        }
         atoms.nlocal = 4;
         atoms.natoms = 4;
 
@@ -905,11 +911,13 @@ mod tests {
         // 5 particles: center particle touching all 4 others → coord=4
         // Outer particles only touch center → coord=1 (rattlers)
         let mut atoms = Atom::new();
-        atoms.push_test_atom(1, [0.0, 0.0, 0.0], 0.5, 1.0); // center
-        atoms.push_test_atom(2, [0.9, 0.0, 0.0], 0.5, 1.0); // rattler
-        atoms.push_test_atom(3, [-0.9, 0.0, 0.0], 0.5, 1.0); // rattler
-        atoms.push_test_atom(4, [0.0, 0.9, 0.0], 0.5, 1.0); // rattler
-        atoms.push_test_atom(5, [0.0, -0.9, 0.0], 0.5, 1.0); // rattler
+        unsafe {
+            atoms.push_test_atom(1, [0.0, 0.0, 0.0], 0.5, 1.0); // center
+            atoms.push_test_atom(2, [0.9, 0.0, 0.0], 0.5, 1.0); // rattler
+            atoms.push_test_atom(3, [-0.9, 0.0, 0.0], 0.5, 1.0); // rattler
+            atoms.push_test_atom(4, [0.0, 0.9, 0.0], 0.5, 1.0); // rattler
+            atoms.push_test_atom(5, [0.0, -0.9, 0.0], 0.5, 1.0); // rattler
+        }
         atoms.nlocal = 5;
         atoms.natoms = 5;
 
