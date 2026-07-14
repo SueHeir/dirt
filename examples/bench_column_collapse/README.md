@@ -77,7 +77,7 @@ each of the 11 scheduled aspects, with all three seeds and finite measured value
 The scheduled aspect proves coverage; the fit itself uses the executable's measured
 pre-release height `H/L0`, so loose insertion and settling cannot silently shift a
 point horizontally. A LAMMPS overlay is emitted only for a complete, exact-population
-independent campaign. Fresh runout figures display each fitted exponent and its
+**11 × 3** independent campaign with the same release and arrest checks. Fresh runout figures display each fitted exponent and its
 unchanged ±0.25 acceptance band directly on the plot.
 
 Each DIRT row also records a SHA-256 fingerprint of the complete physical and
@@ -185,8 +185,9 @@ LAMMPS's final deposit is dumped as `(id, x, y, z, radius)`, converted to the sa
 the **same** `measure_column()` — so the two codes are compared on equal footing.
 
 Historical LAMMPS values from the superseded small-system protocol are not evidence
-for the current geometry. A fresh overlay is written only after all 11 LAMMPS cases
-finish with the exact requested population; a partial campaign is discarded rather
+for the current geometry. A fresh overlay is written only after all 33 LAMMPS
+realizations finish with the exact requested population at release and final state
+and meet the same terminal Froude limit; a partial campaign is discarded rather
 than used to support either a PASS or a failure diagnosis.
 
 ## Assumptions

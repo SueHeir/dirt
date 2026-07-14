@@ -438,20 +438,21 @@ thermo          {thermo}
 
 # Stage 1: settle the loose column against the gate.
 run             {settle_steps}
+write_dump      all custom {release_dump} id x y z radius modify sort id
 
 # Stage 2: remove the gate; the column collapses and spreads to rest.
 unfix           gate
 run             {collapse_steps}
 
-write_dump      all custom {dump} id x y z radius modify sort id
+write_dump      all custom {dump} id x y z radius vx vy vz modify sort id
 """
 
 
-def lammps_dump_path(aspect):
-    return os.path.join(case_dir(aspect), "lammps_deposit.txt")
+def lammps_dump_path(aspect, seed, stage):
+    return os.path.join(case_dir_seed(aspect, seed), f"lammps_{stage}.txt")
 
 
-def write_lammps_input(path, aspect):
+def write_lammps_input(path, aspect, seed):
     """Write the LAMMPS input for one aspect ratio (same geometry as DIRT)."""
     n = n_particles(aspect)
     h = aspect * L0
@@ -461,24 +462,22 @@ def write_lammps_input(path, aspect):
     # effective column height and the runout).
     footprint = (L0 - RADIUS) * (W - 2.0 * RADIUS)
     vol_particle = (4.0 / 3.0) * math.pi * RADIUS**3
-    # 'create_atoms random' rejects overlaps, so a denser-but-plausible loose pack
-    # (~0.45) sets the required loose-column height; the small initial overlaps the
-    # min-separation permits are resolved during 'settle'. Size the column to hold
-    # all N grains so the count matches DIRT exactly.
-    loose_pack = 0.45
+    # LAMMPS is an independent comparison, not a shortcut to a dense initial
+    # condition.  Use DIRT's loose packing bound and exclude a full diameter.
+    # The prior 0.85d placement deliberately introduced overlaps; installed LAMMPS
+    # then lost atoms during settling, so it never represented this protocol.
+    loose_pack = INSERT_PACKING
     h_needed = n * vol_particle / (loose_pack * footprint)
     insert_top = max(loose_insert_top(n, aspect), h_needed + RADIUS)
     z_high = insert_top + 0.05
-    # min center separation: slightly below d so the loose column packs densely
-    # enough to place every grain (overlaps relax in the settle stage).
-    min_sep = 0.85 * 2.0 * RADIUS
+    min_sep = 2.0 * RADIUS
     base_atoms = "\n".join(
         f"create_atoms    1 single {x:.8f} {y:.8f} {z:.8f} units box"
         for x, y, z in rough_base_positions()
     )
     with open(path, "w") as f:
         f.write(LMP_TEMPLATE.format(
-            aspect=aspect, count=n, seed=12345,
+            aspect=aspect, count=n, seed=12345 + seed,
             x_low=-0.01, x_high=0.60, y_low=-0.003, y_high=W + 0.003,
             z_high=f"{z_high:.4f}", insert_top=f"{insert_top:.4f}",
             radius=f"{RADIUS:.4f}", x_insert_high=f"{L0 - RADIUS:.4f}",
@@ -491,7 +490,8 @@ def write_lammps_input(path, aspect):
             tdamp=1.0, mu=FRICTION, g=9.81,
             W=W, L0=L0, dt=f"{DT:.3e}", thermo=40000,
             settle_steps=SETTLE_STEPS, collapse_steps=COLLAPSE_STEPS,
-            dump=lammps_dump_path(aspect),
+            release_dump=lammps_dump_path(aspect, seed, "release"),
+            dump=lammps_dump_path(aspect, seed, "deposit"),
         ))
 
 
@@ -521,43 +521,77 @@ def lammps_dump_to_csv(dump_path, csv_path):
     return True
 
 
+def lammps_max_speed(dump_path):
+    """Read the terminal speed from a LAMMPS custom dump, if present."""
+    with open(dump_path) as f:
+        lines = f.readlines()
+    for i, line in enumerate(lines):
+        if line.startswith("ITEM: ATOMS"):
+            cols = line.split()[2:]
+            if not {"vx", "vy", "vz"}.issubset(cols):
+                raise ValueError("LAMMPS terminal dump has no velocity columns")
+            iv = [cols.index(k) for k in ("vx", "vy", "vz")]
+            return max((math.sqrt(sum(float(p[j]) ** 2 for j in iv))
+                        for p in (line.split() for line in lines[i + 1:])
+                        if len(p) >= len(cols)), default=0.0)
+    raise ValueError("LAMMPS terminal dump has no atom section")
+
+
 def run_lammps_sweep(lammps):
-    """Run every aspect ratio in LAMMPS, parse each deposit with the SAME
-    measure_column() the DIRT leg uses, and return runout rows."""
+    """Run the same aspect×seed campaign in LAMMPS or return no overlay.
+
+    A one-seed/final-only overlay is not an independent comparison to DIRT's
+    three-seed arrested ensemble.  This deliberately fails closed unless every
+    realization has exact release/final populations and the same Froude gate.
+    """
     rows = []
+    failures = []
     for i, a in enumerate(ASPECTS, 1):
-        cdir = case_dir(a)
-        os.makedirs(cdir, exist_ok=True)
-        in_path = os.path.join(cdir, "in.lammps")
-        log_path = os.path.join(cdir, "lammps.log")
-        dump = lammps_dump_path(a)
-        deposit_csv = os.path.join(cdir, "lammps_deposit.csv")
-        for stale in (dump, deposit_csv):
-            if os.path.isfile(stale):
-                os.remove(stale)
-        write_lammps_input(in_path, a)
-        print(f"  [LAMMPS {i}/{len(ASPECTS)}] a={a:<4} N={n_particles(a)}", flush=True)
-        proc = subprocess.run(
-            [lammps, "-in", in_path, "-log", log_path],
-            cwd=REPO_ROOT, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT,
-        )
-        if proc.returncode != 0 or not os.path.isfile(dump):
-            print(f"    a={a}: LAMMPS run failed (see {log_path}).")
+        lfs, hs = [], []
+        for seed in SEEDS:
+            cdir = case_dir_seed(a, seed)
+            os.makedirs(cdir, exist_ok=True)
+            in_path = os.path.join(cdir, "in.lammps")
+            log_path = os.path.join(cdir, "lammps.log")
+            release_dump = lammps_dump_path(a, seed, "release")
+            deposit_dump = lammps_dump_path(a, seed, "deposit")
+            release_csv = os.path.join(cdir, "lammps_release.csv")
+            deposit_csv = os.path.join(cdir, "lammps_deposit.csv")
+            for stale in (release_dump, deposit_dump, release_csv, deposit_csv):
+                if os.path.isfile(stale): os.remove(stale)
+            write_lammps_input(in_path, a, seed)
+            print(f"  [LAMMPS {i}/{len(ASPECTS)}] a={a:<4} seed={seed} N={n_particles(a)}", flush=True)
+            proc = subprocess.run([lammps, "-in", in_path, "-log", log_path], cwd=REPO_ROOT,
+                                  stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
+            if (proc.returncode != 0 or not all(os.path.isfile(p) for p in (release_dump, deposit_dump))
+                    or not lammps_dump_to_csv(release_dump, release_csv)
+                    or not lammps_dump_to_csv(deposit_dump, deposit_csv)):
+                failures.append(f"a={a} seed={seed}: no parseable LAMMPS snapshots")
+                continue
+            expected = total_particles(a)
+            if csv_particle_count(release_csv) != expected or csv_particle_count(deposit_csv) != expected:
+                failures.append(f"a={a} seed={seed}: LAMMPS population not {expected} at release/final")
+                continue
+            try:
+                vmax = lammps_max_speed(deposit_dump)
+            except ValueError as exc:
+                failures.append(f"a={a} seed={seed}: {exc}")
+                continue
+            if vmax / math.sqrt(9.81 * 2.0 * RADIUS) > REST_FROUDE_MAX:
+                failures.append(f"a={a} seed={seed}: LAMMPS terminal state is not arrested")
+                continue
+            hs.append(release_height(release_csv)); _, lf = measure_column(deposit_csv); lfs.append(lf)
+        if len(lfs) != len(SEEDS):
             continue
-        if not lammps_dump_to_csv(dump, deposit_csv):
-            print(f"    a={a}: could not parse LAMMPS dump.")
-            continue
-        # LAMMPS's random insertion may report success after seating fewer atoms
-        # than requested.  Such a deposit has a different initial aspect ratio
-        # and is not a valid code-to-code comparison.
-        if csv_particle_count(deposit_csv) != total_particles(a):
-            print(f"    a={a}: rejected incomplete LAMMPS deposit.")
-            continue
-        h, lf = measure_column(deposit_csv)
-        rows.append({"nominal_aspect": a, "aspect": a, "L0": L0, "H": h, "L_f": lf,
-                     "runout_norm": (lf - L0) / L0,
-                     "protocol_sha256": protocol_fingerprint()})
-    return rows
+        rn = [(v - L0) / L0 for v in lfs]
+        rows.append({"nominal_aspect": a, "aspect": sum(hs) / len(hs) / L0,
+                     "L0": L0, "H": sum(hs) / len(hs), "L_f": sum(lfs) / len(lfs),
+                     "runout_norm": sum(rn) / len(rn),
+                     "runout_std": (sum((v - sum(rn) / len(rn)) ** 2 for v in rn) / len(rn)) ** 0.5,
+                     "n_seeds": len(lfs), "protocol_sha256": protocol_fingerprint()})
+    if failures:
+        print("LAMMPS: " + "; ".join(failures))
+    return rows if len(rows) == len(ASPECTS) else []
 
 
 # ── start ────────────────────────────────────────────────────────────────────
