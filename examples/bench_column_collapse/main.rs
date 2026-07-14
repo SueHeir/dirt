@@ -38,6 +38,7 @@ fn main() {
     app.add_plugins(CorePlugins)
         .add_plugins(GranularDefaultPlugins)
         .add_plugins(GravityPlugin)
+        .add_plugins(FixesPlugin)
         .add_plugins(WallPlugin);
 
     app.add_resource(CollapseTracker { gate_opened: false });

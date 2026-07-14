@@ -37,7 +37,7 @@ exponents fitted per regime should approach **1** (linear) and **2/3** (power).
 | Density ρ | 2500 | kg/m³ |
 | Radius R | 1.5 | mm (d = 3 mm) |
 | Restitution e | 0.926 | — |
-| Friction μ | 0.16 | — (particle–particle **and** particle–wall) |
+| Friction μ | 0.16 | — (particle–particle and grain–base) |
 | Column width L0 | 48 | mm (16 diameters) |
 | Slab width W | 18 | mm (6 diameters, quasi-2D) |
 | Timestep dt | 4 × 10⁻⁶ | s |
@@ -59,6 +59,10 @@ exponents fitted per regime should approach **1** (linear) and **2/3** (power).
 - Each case runs two stages: `settle` (80 000 steps — pack the loosely-inserted
   column against the gate) then `collapse` (1 000 000 steps / 4 s — gate removed
   on the first step, column spreads and must meet the terminal-rest criterion).
+- The base is a frozen, close-packed monolayer of the same beads. This models a
+  rough granular substrate; the fixed layer is excluded from the released height
+  and deposit silhouette. A smooth Coulomb plane is not an interchangeable
+  representation of that experimental boundary condition.
 
 ## Validation Criteria
 
@@ -78,8 +82,8 @@ unchanged ±0.25 acceptance band directly on the plot.
 
 ## Status — current evidence required
 
-The tracked figures are historical small-system output and are not evidence for this
-protocol. No exponent PASS is claimed until a fresh, complete 11 × 3 campaign has
+The tracked figures are historical smooth-base output and are not evidence for this
+rough-base protocol. No exponent PASS is claimed until a fresh, complete 11 × 3 campaign has
 passed the release/population/rest gates and regenerated both figures. This avoids
 turning the historical 8d × 3d result into an implicit claim about the new continuum
 resolution.

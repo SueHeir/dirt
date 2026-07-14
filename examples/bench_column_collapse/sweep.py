@@ -96,6 +96,8 @@ PACKING = 0.60             # settled solid fraction used to size the particle co
 # parameter.  It follows from the hard-sphere volume constraint: a randomized
 # non-overlap inserter needs enough empty volume to place every requested grain.
 INSERT_PACKING = 0.20
+BASE_Z = 2.0 * RADIUS
+BASE_SELECT_Z = 2.5 * RADIUS
 
 # Aspect ratios to sweep. Spans both regimes (linear a<~2-3, power-law a>~3) so a
 # regime change is resolvable. The sweep is deliberately FINE — extra points in
@@ -153,8 +155,23 @@ def loose_insert_top(count, aspect):
     """
     footprint = (L0 - RADIUS) * (W - 2.0 * RADIUS)
     volume = (4.0 / 3.0) * math.pi * RADIUS**3
-    return max(0.02, 1.6 * aspect * L0,
-               RADIUS + count * volume / (INSERT_PACKING * footprint))
+    return max(BASE_Z + RADIUS, BASE_Z + 1.6 * aspect * L0,
+               BASE_Z + RADIUS + count * volume / (INSERT_PACKING * footprint))
+
+
+def rough_base_positions():
+    """One glued, close-packed bead layer: the rough experimental substrate."""
+    return [((ix + 0.5) * 2.0 * RADIUS, (iy + 0.5) * 2.0 * RADIUS, RADIUS)
+            for ix in range(int(round(L0 / (2.0 * RADIUS))))
+            for iy in range(int(round(W / (2.0 * RADIUS))))]
+
+
+def write_rough_base():
+    os.makedirs(SWEEP_DIR, exist_ok=True)
+    path = os.path.join(SWEEP_DIR, "rough_base.csv")
+    with open(path, "w", newline="") as f:
+        csv.writer(f).writerows(rough_base_positions())
+    return path
 
 
 def case_tag(aspect):
@@ -218,12 +235,29 @@ restitution = {restitution}
 friction = {friction}
 
 [[particles.insert]]
+source = "file"
+file = "{rough_base}"
+format = "csv"
+material = "glass"
+radius = {radius}
+density = {density}
+columns = {{ x = 0, y = 1, z = 2 }}
+
+[[particles.insert]]
 material = "glass"
 count = {count}
 radius = {radius}
 density = {density}
 seed = {seed}
-region = {{ type = "block", min = [{radius}, {radius}, {radius}], max = [{x_insert_high}, {y_insert_high}, {insert_top}] }}
+region = {{ type = "block", min = [{radius}, {radius}, {active_z_low}], max = [{x_insert_high}, {y_insert_high}, {insert_top}] }}
+
+[[group]]
+name = "rough_base"
+region = {{ type = "block", min = [-1.0, -1.0, -1.0], max = [1.0, 1.0, {base_select_z}] }}
+dynamic = false
+
+[[freeze]]
+group = "rough_base"
 
 [[wall]]
 type = "plane"
@@ -282,6 +316,7 @@ dt = {dt}
 
 def generate():
     os.makedirs(SWEEP_DIR, exist_ok=True)
+    rough_base = write_rough_base()
     n_cfg = 0
     for a in ASPECTS:
         n = n_particles(a)
@@ -299,6 +334,8 @@ def generate():
                     x_insert_high=f"{L0 - RADIUS:.4f}",
                     y_insert_high=f"{W - RADIUS:.4f}", l0=f"{L0:.4f}",
                     w=f"{W:.4f}", y_high=f"{W + 0.003:.4f}",
+                    rough_base=rough_base, active_z_low=f"{BASE_Z + RADIUS:.4f}",
+                    base_select_z=f"{BASE_SELECT_Z:.4f}",
                     insert_top=f"{insert_top:.4f}", z_high=f"{z_high:.4f}",
                     output_dir=cdir, dt=f"{DT:.3e}",
                     settle_steps=SETTLE_STEPS, collapse_steps=COLLAPSE_STEPS,
@@ -350,15 +387,20 @@ comm_modify     vel yes
 region          simbox block {x_low} {x_high} {y_low} {y_high} 0.0 {z_high} units box
 create_box      1 simbox
 
-region          colreg block {radius} {x_insert_high} {radius} {y_insert_high} {radius} {insert_top} units box
+region          colreg block {radius} {x_insert_high} {radius} {y_insert_high} {active_z_low} {insert_top} units box
 create_atoms    1 random {count} {seed} colreg overlap {min_sep} maxtry 500 units box
+{base_atoms}
 set             group all diameter {diam}
 set             group all density {density}
+
+region          rough_base_region block INF INF INF INF 0.0 {base_select_z} units box
+group           rough_base region rough_base_region
 
 pair_style      granular
 pair_coeff      1 1 hertz/material {E} {e} {nu} tangential mindlin NULL {tdamp} {mu} damping tsuji rolling none twisting none
 
 fix             grav all gravity {g} vector 0 0 -1
+fix             base_freeze rough_base freeze
 fix             floor all wall/gran granular hertz/material {E} {e} {nu} tangential mindlin NULL {tdamp} {mu} damping tsuji rolling none twisting none zplane 0.0 NULL
 fix             back all wall/gran granular hertz/material {E} {e} {nu} tangential mindlin NULL {tdamp} {mu} damping tsuji rolling none twisting none xplane 0.0 NULL
 fix             sides all wall/gran granular hertz/material {E} {e} {nu} tangential mindlin NULL {tdamp} {mu} damping tsuji rolling none twisting none yplane 0.0 {W}
@@ -405,6 +447,10 @@ def write_lammps_input(path, aspect):
     # min center separation: slightly below d so the loose column packs densely
     # enough to place every grain (overlaps relax in the settle stage).
     min_sep = 0.85 * 2.0 * RADIUS
+    base_atoms = "\n".join(
+        f"create_atoms    1 single {x:.8f} {y:.8f} {z:.8f} units box"
+        for x, y, z in rough_base_positions()
+    )
     with open(path, "w") as f:
         f.write(LMP_TEMPLATE.format(
             aspect=aspect, count=n, seed=12345,
@@ -412,6 +458,8 @@ def write_lammps_input(path, aspect):
             z_high=f"{z_high:.4f}", insert_top=f"{insert_top:.4f}",
             radius=f"{RADIUS:.4f}", x_insert_high=f"{L0 - RADIUS:.4f}",
             y_insert_high=f"{W - RADIUS:.4f}",
+            active_z_low=f"{BASE_Z + RADIUS:.4f}",
+            base_atoms=base_atoms, base_select_z=f"{BASE_SELECT_Z:.4f}",
             min_sep=f"{min_sep:.6f}",
             diam=2.0 * RADIUS, density=DENSITY,
             E=f"{YOUNGS_MOD:.6e}", e=RESTITUTION, nu=POISSON,
@@ -477,7 +525,7 @@ def run_lammps_sweep(lammps):
         # LAMMPS's random insertion may report success after seating fewer atoms
         # than requested.  Such a deposit has a different initial aspect ratio
         # and is not a valid code-to-code comparison.
-        if csv_particle_count(deposit_csv) != n_particles(a):
+        if csv_particle_count(deposit_csv) != total_particles(a):
             print(f"    a={a}: rejected incomplete LAMMPS deposit.")
             continue
         h, lf = measure_column(deposit_csv)
@@ -495,6 +543,10 @@ def csv_particle_count(path):
         return sum(1 for _ in csv.DictReader(f))
 
 
+def total_particles(aspect):
+    return n_particles(aspect) + len(rough_base_positions())
+
+
 def release_height(path):
     """Measured released-bed height from the executable's pre-gate snapshot."""
     with open(path, newline="") as f:
@@ -502,11 +554,10 @@ def release_height(path):
     if not rows:
         raise ValueError("empty release-state record")
     try:
-        floor = min(float(r["z"]) - float(r["radius"]) for r in rows)
         top = max(float(r["z"]) + float(r["radius"]) for r in rows)
     except (KeyError, TypeError, ValueError) as exc:
         raise ValueError("malformed release-state record") from exc
-    h = top - floor
+    h = top - BASE_Z
     if not math.isfinite(h) or h <= 0.0:
         raise ValueError("non-positive release height")
     return h
@@ -576,7 +627,7 @@ def start():
             deposit = os.path.join(case_data, "column_collapse_results.csv")
             release = os.path.join(case_data, "column_collapse_release.csv")
             terminal = os.path.join(case_data, "column_collapse_final_state.csv")
-            expected = n_particles(a)
+            expected = total_particles(a)
             if not all(os.path.isfile(p) for p in (deposit, release, terminal)):
                 failures.append(f"a={a} seed={s}: missing release, final, or terminal evidence")
                 continue
@@ -677,8 +728,11 @@ def measure_column(deposit_path):
     xs, zs, rs = [], [], []
     with open(deposit_path) as f:
         for r in csv.DictReader(f):
+            z = float(r["z"])
+            if z <= BASE_SELECT_Z:
+                continue
             xs.append(float(r["x"]))
-            zs.append(float(r["z"]))
+            zs.append(z)
             rs.append(float(r["radius"]))
     if not xs:
         return 0.0, L0
