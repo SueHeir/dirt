@@ -1,5 +1,18 @@
 # DIRT Validation Status
 
+## ParticlesWith migration compatibility
+
+[`particleswith_migration_validation`](particleswith_migration_validation/README.md)
+compares full emitted CSVs from isolated `origin/main` and typed-query runs for
+the representative contact/wall, BPM-bond, and clump paths. All three CSV
+hashes are identical; the figure exposes the strict `1e-15` numerical
+compatibility limit used for the visible observables.
+
+![ParticlesWith migration compatibility](particleswith_migration_validation/plots/before_after_compatibility.png)
+
+*PASS: 3/3 representative contact/wall, bond, and clump outputs are
+byte-identical before and after the migration.*
+
 ## Typed scheduler contracts
 
 [`typed_schedule_validation`](typed_schedule_validation/README.md) independently

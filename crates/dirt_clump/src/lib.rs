@@ -573,27 +573,24 @@ fn extend_ghost_cutoff_for_clumps(
 fn snap_subspheres_to_body_com(
     mut atoms: ResMut<Atom>,
     bodies: Res<MultisphereBodyStore>,
-    registry: Res<AtomDataRegistry>,
+    particles: ParticlesWith<'_, Read<ClumpAtom>>,
 ) {
-    let clump = match registry.get::<ClumpAtom>() {
-        Some(c) => c,
-        None => return,
-    };
-
-    let nlocal = atoms.nlocal as usize;
-    for i in 0..nlocal {
-        if i >= clump.body_id.len() {
-            break;
+    particles.with(|clump| {
+        let nlocal = atoms.nlocal as usize;
+        for i in 0..nlocal {
+            if i >= clump.body_id.len() {
+                break;
+            }
+            let bid = clump.body_id[i] as u32;
+            if bid == 0 {
+                continue;
+            }
+            if let Some(body_idx) = bodies.map(bid) {
+                let com = bodies.bodies[body_idx].com_pos;
+                atoms.pos[i] = [com[0] as Real, com[1] as Real, com[2] as Real];
+            }
         }
-        let bid = clump.body_id[i] as u32;
-        if bid == 0 {
-            continue;
-        }
-        if let Some(body_idx) = bodies.map(bid) {
-            let com = bodies.bodies[body_idx].com_pos;
-            atoms.pos[i] = [com[0] as Real, com[1] as Real, com[2] as Real];
-        }
-    }
+    });
 }
 
 /// Restore sub-sphere positions from body state after atom exchange.
@@ -603,42 +600,37 @@ fn snap_subspheres_to_body_com(
 fn restore_subsphere_positions(
     mut atoms: ResMut<Atom>,
     mut bodies: ResMut<MultisphereBodyStore>,
-    registry: Res<AtomDataRegistry>,
+    particles: ParticlesWith<'_, (Read<ClumpAtom>, Write<DemAtom>)>,
 ) {
     bodies.generate_map();
-
-    let clump = match registry.get::<ClumpAtom>() {
-        Some(c) => c,
-        None => return,
-    };
-    let mut dem = registry.expect_mut::<DemAtom>("restore_subsphere_positions");
-
-    let nlocal = atoms.nlocal as usize;
-    for i in 0..nlocal {
-        if i >= clump.body_id.len() {
-            break;
+    particles.with(|(clump, mut dem)| {
+        let nlocal = atoms.nlocal as usize;
+        for i in 0..nlocal {
+            if i >= clump.body_id.len() {
+                break;
+            }
+            let bid = clump.body_id[i] as u32;
+            if bid == 0 {
+                continue;
+            }
+            if let Some(body_idx) = bodies.map(bid) {
+                let body = &bodies.bodies[body_idx];
+                let rotated = quat_rotate(body.quaternion, clump.body_offset[i]);
+                atoms.pos[i] = [
+                    (body.com_pos[0] + rotated[0]) as Real,
+                    (body.com_pos[1] + rotated[1]) as Real,
+                    (body.com_pos[2] + rotated[2]) as Real,
+                ];
+                let omega_cross_r = cross(body.omega, rotated);
+                atoms.vel[i] = [
+                    (body.com_vel[0] + omega_cross_r[0]) as Real,
+                    (body.com_vel[1] + omega_cross_r[1]) as Real,
+                    (body.com_vel[2] + omega_cross_r[2]) as Real,
+                ];
+                dem.omega[i] = body.omega;
+            }
         }
-        let bid = clump.body_id[i] as u32;
-        if bid == 0 {
-            continue;
-        }
-        if let Some(body_idx) = bodies.map(bid) {
-            let body = &bodies.bodies[body_idx];
-            let rotated = quat_rotate(body.quaternion, clump.body_offset[i]);
-            atoms.pos[i] = [
-                (body.com_pos[0] + rotated[0]) as Real,
-                (body.com_pos[1] + rotated[1]) as Real,
-                (body.com_pos[2] + rotated[2]) as Real,
-            ];
-            let omega_cross_r = cross(body.omega, rotated);
-            atoms.vel[i] = [
-                (body.com_vel[0] + omega_cross_r[0]) as Real,
-                (body.com_vel[1] + omega_cross_r[1]) as Real,
-                (body.com_vel[2] + omega_cross_r[2]) as Real,
-            ];
-            dem.omega[i] = body.omega;
-        }
-    }
+    });
 }
 
 /// Initial half-step: integrate all rigid bodies (Euler equations).

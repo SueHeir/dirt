@@ -187,8 +187,8 @@ use dirt_schedule::{
 };
 use soil_core::{
     Atom, AtomData, AtomDataRegistry, BondEntry, BondStore, CommResource, Config, Domain, Optional,
-    ParticleSimScheduleSet, ParticlesWith, ScheduleSetupSet, VirialStress, VirialStressPlugin,
-    Write, NEIGHBOR_SETUP,
+    ParticleSimScheduleSet, ParticlesWith, Read, ScheduleSetupSet, VirialStress,
+    VirialStressPlugin, Write, NEIGHBOR_SETUP,
 };
 use soil_print::Thermo;
 
@@ -923,7 +923,7 @@ impl Plugin for DemBondPlugin {
 /// the wrap (e.g. a closed-loop fibre) gets its seam bond like any other.
 pub fn auto_bond_touching(
     atoms: Res<Atom>,
-    registry: Res<AtomDataRegistry>,
+    particles: ParticlesWith<'_, (Read<DemAtom>, Write<BondStore>)>,
     bond_config: Res<BondConfig>,
     comm: Res<CommResource>,
     domain: Res<soil_core::Domain>,
@@ -932,52 +932,51 @@ pub fn auto_bond_touching(
         return;
     }
 
-    let dem = registry.expect::<DemAtom>("auto_bond_touching");
-    let mut bond_store = registry.expect_mut::<BondStore>("auto_bond_touching");
+    particles.with(|(dem, mut bond_store)| {
+        let nlocal = atoms.nlocal as usize;
+        while bond_store.bonds.len() < nlocal {
+            bond_store.bonds.push(Vec::new());
+        }
 
-    let nlocal = atoms.nlocal as usize;
-    while bond_store.bonds.len() < nlocal {
-        bond_store.bonds.push(Vec::new());
-    }
+        let tol = bond_config.bond_tolerance;
+        let pflags = domain.periodic_flags();
+        let box_size = domain.size;
+        let mut bond_count = 0u64;
 
-    let tol = bond_config.bond_tolerance;
-    let pflags = domain.periodic_flags();
-    let box_size = domain.size;
-    let mut bond_count = 0u64;
-
-    for i in 0..nlocal {
-        for j in (i + 1)..nlocal {
-            let mut d = [
-                atoms.pos[j][0] as f64 - atoms.pos[i][0] as f64,
-                atoms.pos[j][1] as f64 - atoms.pos[i][1] as f64,
-                atoms.pos[j][2] as f64 - atoms.pos[i][2] as f64,
-            ];
-            for k in 0..3 {
-                if pflags[k] {
-                    d[k] -= box_size[k] * (d[k] / box_size[k]).round();
+        for i in 0..nlocal {
+            for j in (i + 1)..nlocal {
+                let mut d = [
+                    atoms.pos[j][0] as f64 - atoms.pos[i][0] as f64,
+                    atoms.pos[j][1] as f64 - atoms.pos[i][1] as f64,
+                    atoms.pos[j][2] as f64 - atoms.pos[i][2] as f64,
+                ];
+                for k in 0..3 {
+                    if pflags[k] {
+                        d[k] -= box_size[k] * (d[k] / box_size[k]).round();
+                    }
+                }
+                let dist = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt();
+                let sum_r = dem.radius[i] + dem.radius[j];
+                if dist <= sum_r * tol {
+                    bond_store.bonds[i].push(BondEntry {
+                        partner_tag: atoms.tag[j],
+                        bond_type: 0,
+                        r0: dist,
+                    });
+                    bond_store.bonds[j].push(BondEntry {
+                        partner_tag: atoms.tag[i],
+                        bond_type: 0,
+                        r0: dist,
+                    });
+                    bond_count += 1;
                 }
             }
-            let dist = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt();
-            let sum_r = dem.radius[i] + dem.radius[j];
-            if dist <= sum_r * tol {
-                bond_store.bonds[i].push(BondEntry {
-                    partner_tag: atoms.tag[j],
-                    bond_type: 0,
-                    r0: dist,
-                });
-                bond_store.bonds[j].push(BondEntry {
-                    partner_tag: atoms.tag[i],
-                    bond_type: 0,
-                    r0: dist,
-                });
-                bond_count += 1;
-            }
         }
-    }
 
-    if comm.rank() == 0 {
-        println!("DemBond: auto-bonded {} pairs", bond_count);
-    }
+        if comm.rank() == 0 {
+            println!("DemBond: auto-bonded {} pairs", bond_count);
+        }
+    });
 }
 
 /// Load bonds from a LAMMPS data file's `Bonds` section. r₀ is computed
@@ -987,7 +986,7 @@ pub fn auto_bond_touching(
 /// across-the-box distance).
 pub fn load_bonds_from_file(
     atoms: Res<Atom>,
-    registry: Res<AtomDataRegistry>,
+    particles: ParticlesWith<'_, Write<BondStore>>,
     bond_config: Res<BondConfig>,
     comm: Res<CommResource>,
     domain: Res<soil_core::Domain>,
@@ -1024,61 +1023,62 @@ pub fn load_bonds_from_file(
         tag_to_local.insert(atoms.tag[i], i);
     }
 
-    let mut bond_store = registry.expect_mut::<BondStore>("load_bonds_from_file");
-    while bond_store.bonds.len() < nlocal {
-        bond_store.bonds.push(Vec::new());
-    }
-
-    let mut bond_count = 0u64;
-
-    for RawBond {
-        bond_type,
-        tag1,
-        tag2,
-    } in raw_bonds
-    {
-        let idx1 = match tag_to_local.get(&tag1) {
-            Some(&i) => i,
-            None => continue,
-        };
-        let idx2 = match tag_to_local.get(&tag2) {
-            Some(&i) => i,
-            None => continue,
-        };
-
-        let mut d = [
-            atoms.pos[idx2][0] as f64 - atoms.pos[idx1][0] as f64,
-            atoms.pos[idx2][1] as f64 - atoms.pos[idx1][1] as f64,
-            atoms.pos[idx2][2] as f64 - atoms.pos[idx1][2] as f64,
-        ];
-        let pflags = domain.periodic_flags();
-        let box_size = domain.size;
-        for k in 0..3 {
-            if pflags[k] {
-                d[k] -= box_size[k] * (d[k] / box_size[k]).round();
-            }
+    particles.with(|mut bond_store| {
+        while bond_store.bonds.len() < nlocal {
+            bond_store.bonds.push(Vec::new());
         }
-        let r0 = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt();
 
-        bond_store.bonds[idx1].push(BondEntry {
-            partner_tag: tag2,
-            bond_type,
-            r0,
-        });
-        bond_store.bonds[idx2].push(BondEntry {
-            partner_tag: tag1,
-            bond_type,
-            r0,
-        });
-        bond_count += 1;
-    }
+        let mut bond_count = 0u64;
 
-    if comm.rank() == 0 {
-        println!(
-            "DemBond: loaded {} bonds from LAMMPS data file '{}'",
-            bond_count, file_path
-        );
-    }
+        for RawBond {
+            bond_type,
+            tag1,
+            tag2,
+        } in raw_bonds
+        {
+            let idx1 = match tag_to_local.get(&tag1) {
+                Some(&i) => i,
+                None => continue,
+            };
+            let idx2 = match tag_to_local.get(&tag2) {
+                Some(&i) => i,
+                None => continue,
+            };
+
+            let mut d = [
+                atoms.pos[idx2][0] as f64 - atoms.pos[idx1][0] as f64,
+                atoms.pos[idx2][1] as f64 - atoms.pos[idx1][1] as f64,
+                atoms.pos[idx2][2] as f64 - atoms.pos[idx1][2] as f64,
+            ];
+            let pflags = domain.periodic_flags();
+            let box_size = domain.size;
+            for k in 0..3 {
+                if pflags[k] {
+                    d[k] -= box_size[k] * (d[k] / box_size[k]).round();
+                }
+            }
+            let r0 = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt();
+
+            bond_store.bonds[idx1].push(BondEntry {
+                partner_tag: tag2,
+                bond_type,
+                r0,
+            });
+            bond_store.bonds[idx2].push(BondEntry {
+                partner_tag: tag1,
+                bond_type,
+                r0,
+            });
+            bond_count += 1;
+        }
+
+        if comm.rank() == 0 {
+            println!(
+                "DemBond: loaded {} bonds from LAMMPS data file '{}'",
+                bond_count, file_path
+            );
+        }
+    });
 }
 
 /// Read `file_path` (whose `format` has already been pulled from the config)
@@ -1185,43 +1185,39 @@ pub fn extend_ghost_cutoff_for_bonds(
 /// the local rank.
 pub fn init_bond_history(
     atoms: Res<Atom>,
-    registry: Res<AtomDataRegistry>,
+    particles: ParticlesWith<'_, (Read<BondStore>, Write<BondHistoryStore>)>,
     breakage: Res<BondBreakage>,
 ) {
-    let bond_store = registry.get::<BondStore>();
-    let bonds = match bond_store {
-        Some(ref b) => b,
-        None => return,
-    };
-
-    let mut history = registry.expect_mut::<BondHistoryStore>("init_bond_history");
-    while history.history.len() < bonds.bonds.len() {
-        history.history.push(Vec::new());
-    }
-    let nlocal = atoms.nlocal as usize;
-    for i in 0..bonds.bonds.len().min(nlocal) {
-        let tag_a = atoms.tag[i];
-        for bond in &bonds.bonds[i] {
-            let has = history.history[i]
-                .iter()
-                .any(|h| h.partner_tag == bond.partner_tag);
-            if !has {
-                // MPI-stable: same (tag pair, seed) → same `u` on every rank.
-                let u = breakage::per_bond_uniform_samples(tag_a, bond.partner_tag, breakage.seed);
-                let thr = breakage.criterion.sample(bond.r0, u);
-                history.history[i].push(BondHistoryEntry {
-                    partner_tag: bond.partner_tag,
-                    delta_t: [0.0; 3],
-                    delta_theta: [0.0; 3],
-                    thresholds: thr.t,
-                    theta_p_bend: [0.0; 3],
-                    eps_p_axial: 0.0,
-                    theta_max_bend: 0.0,
-                    eps_max_axial: 0.0,
-                });
+    particles.with(|(bonds, mut history)| {
+        while history.history.len() < bonds.bonds.len() {
+            history.history.push(Vec::new());
+        }
+        let nlocal = atoms.nlocal as usize;
+        for i in 0..bonds.bonds.len().min(nlocal) {
+            let tag_a = atoms.tag[i];
+            for bond in &bonds.bonds[i] {
+                let has = history.history[i]
+                    .iter()
+                    .any(|h| h.partner_tag == bond.partner_tag);
+                if !has {
+                    // MPI-stable: same (tag pair, seed) → same `u` on every rank.
+                    let u =
+                        breakage::per_bond_uniform_samples(tag_a, bond.partner_tag, breakage.seed);
+                    let thr = breakage.criterion.sample(bond.r0, u);
+                    history.history[i].push(BondHistoryEntry {
+                        partner_tag: bond.partner_tag,
+                        delta_t: [0.0; 3],
+                        delta_theta: [0.0; 3],
+                        thresholds: thr.t,
+                        theta_p_bend: [0.0; 3],
+                        eps_p_axial: 0.0,
+                        theta_max_bend: 0.0,
+                        eps_max_axial: 0.0,
+                    });
+                }
             }
         }
-    }
+    });
 }
 
 // ── Force system ────────────────────────────────────────────────────────────
