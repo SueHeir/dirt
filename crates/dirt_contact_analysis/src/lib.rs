@@ -112,8 +112,8 @@ use dirt_atom::DemAtom;
 use dirt_schedule::{CONTACT_ANALYSIS, CONTACT_FORCE};
 use soil_core::Neighbor;
 use soil_core::{
-    register_atom_data, Atom, AtomData, AtomDataRegistry, CommResource, Config, Input,
-    ParticleSimScheduleSet, RunState,
+    register_atom_data, Atom, AtomData, CommResource, Config, Input, Optional,
+    ParticleSimScheduleSet, ParticlesWith, Read, RunState, Write as ParticleWrite,
 };
 use soil_print::{DumpRegistry, Thermo};
 
@@ -432,131 +432,132 @@ fn contact_analysis_requires_hertz_mindlin_contact_add_granular_default_plugins(
 fn compute_contact_analysis(
     atoms: Res<Atom>,
     neighbor: Res<Neighbor>,
-    registry: Res<AtomDataRegistry>,
+    particles: ParticlesWith<'_, (Read<DemAtom>, Optional<ParticleWrite<ContactAnalysis>>)>,
     config: Res<ContactAnalysisConfig>,
     run_state: Res<RunState>,
     mut contact_output: ResMut<ContactOutput>,
     mut fabric: ResMut<FabricTensorAccum>,
 ) {
-    let newton = neighbor.newton;
-    let nlocal = atoms.nlocal as usize;
-    let dem = registry.expect::<DemAtom>("compute_contact_analysis");
-    let has_coordination = config.coordination;
-    let has_fabric = config.fabric_tensor;
-    let collect_records = config.interval > 0 && run_state.total_cycle % config.interval == 0;
+    particles.with(|(dem, mut analysis)| {
+        let newton = neighbor.newton;
+        let nlocal = atoms.nlocal as usize;
+        let has_coordination = config.coordination;
+        let has_fabric = config.fabric_tensor;
+        let collect_records = config.interval > 0 && run_state.total_cycle % config.interval == 0;
 
-    // Clear previous step's records
-    contact_output.records.clear();
+        // Clear previous step's records
+        contact_output.records.clear();
 
-    // Reset fabric tensor accumulator
-    fabric.fxx = 0.0;
-    fabric.fyy = 0.0;
-    fabric.fzz = 0.0;
-    fabric.fxy = 0.0;
-    fabric.fxz = 0.0;
-    fabric.fyz = 0.0;
-    fabric.nc = 0.0;
+        // Reset fabric tensor accumulator
+        fabric.fxx = 0.0;
+        fabric.fyy = 0.0;
+        fabric.fzz = 0.0;
+        fabric.fxy = 0.0;
+        fabric.fxz = 0.0;
+        fabric.fyz = 0.0;
+        fabric.nc = 0.0;
 
-    // Get mutable coordination data if enabled
-    let mut ca = if has_coordination {
-        Some(registry.expect_mut::<ContactAnalysis>("compute_contact_analysis"))
-    } else {
-        None
-    };
+        // Get mutable coordination data if enabled
+        let mut ca = if has_coordination {
+            analysis.take()
+        } else {
+            None
+        };
 
-    // Ensure coordination vec covers all atoms
-    if let Some(ref mut ca) = ca {
-        while ca.coordination.len() < atoms.len() {
-            ca.coordination.push(0.0);
-        }
-    }
-
-    for (i, j) in neighbor.pairs(nlocal) {
-        let r1 = dem.radius[i];
-        let r2 = dem.radius[j];
-
-        let dx = atoms.pos[j][0] as f64 - atoms.pos[i][0] as f64;
-        let dy = atoms.pos[j][1] as f64 - atoms.pos[i][1] as f64;
-        let dz = atoms.pos[j][2] as f64 - atoms.pos[i][2] as f64;
-        let dist_sq = dx * dx + dy * dy + dz * dz;
-        let sum_r = r1 + r2;
-
-        if dist_sq >= sum_r * sum_r {
-            continue;
-        }
-
-        let distance = dist_sq.sqrt();
-        if distance == 0.0 {
-            continue;
-        }
-
-        let delta = sum_r - distance;
-        if delta <= 0.0 {
-            continue;
-        }
-
-        // This pair is in contact (overlap > 0)
-
-        // Increment coordination for both atoms (newton on) or just i (newton off)
+        // Ensure coordination vec covers all atoms
         if let Some(ref mut ca) = ca {
-            ca.coordination[i] += 1.0;
-            if newton && j < nlocal {
-                ca.coordination[j] += 1.0;
+            while ca.coordination.len() < atoms.len() {
+                ca.coordination.push(0.0);
             }
         }
 
-        // Compute contact normal (needed for fabric tensor and contact records)
-        let inv_dist = 1.0 / distance;
-        let nx = dx * inv_dist;
-        let ny = dy * inv_dist;
-        let nz = dz * inv_dist;
+        for (i, j) in neighbor.pairs(nlocal) {
+            let r1 = dem.radius[i];
+            let r2 = dem.radius[j];
 
-        // Accumulate the symmetric fabric tensor: F_ij = (1/Nc) Σ n_i·n_j.
-        // We sum the outer product n⊗n for each contact here and normalize
-        // later in push_fabric_tensor_to_thermo by dividing by nc.
-        if has_fabric {
-            // When newton=false each pair visited twice, halve contribution
-            let vs = if newton { 1.0 } else { 0.5 };
-            fabric.fxx += nx * nx * vs;
-            fabric.fyy += ny * ny * vs;
-            fabric.fzz += nz * nz * vs;
-            fabric.fxy += nx * ny * vs;
-            fabric.fxz += nx * nz * vs;
-            fabric.fyz += ny * nz * vs;
-            fabric.nc += vs;
+            let dx = atoms.pos[j][0] as f64 - atoms.pos[i][0] as f64;
+            let dy = atoms.pos[j][1] as f64 - atoms.pos[i][1] as f64;
+            let dz = atoms.pos[j][2] as f64 - atoms.pos[i][2] as f64;
+            let dist_sq = dx * dx + dy * dy + dz * dz;
+            let sum_r = r1 + r2;
+
+            if dist_sq >= sum_r * sum_r {
+                continue;
+            }
+
+            let distance = dist_sq.sqrt();
+            if distance == 0.0 {
+                continue;
+            }
+
+            let delta = sum_r - distance;
+            if delta <= 0.0 {
+                continue;
+            }
+
+            // This pair is in contact (overlap > 0)
+
+            // Increment coordination for both atoms (newton on) or just i (newton off)
+            if let Some(ref mut ca) = ca {
+                ca.coordination[i] += 1.0;
+                if newton && j < nlocal {
+                    ca.coordination[j] += 1.0;
+                }
+            }
+
+            // Compute contact normal (needed for fabric tensor and contact records)
+            let inv_dist = 1.0 / distance;
+            let nx = dx * inv_dist;
+            let ny = dy * inv_dist;
+            let nz = dz * inv_dist;
+
+            // Accumulate the symmetric fabric tensor: F_ij = (1/Nc) Σ n_i·n_j.
+            // We sum the outer product n⊗n for each contact here and normalize
+            // later in push_fabric_tensor_to_thermo by dividing by nc.
+            if has_fabric {
+                // When newton=false each pair visited twice, halve contribution
+                let vs = if newton { 1.0 } else { 0.5 };
+                fabric.fxx += nx * nx * vs;
+                fabric.fyy += ny * ny * vs;
+                fabric.fzz += nz * nz * vs;
+                fabric.fxy += nx * ny * vs;
+                fabric.fxz += nx * nz * vs;
+                fabric.fyz += ny * nz * vs;
+                fabric.nc += vs;
+            }
+
+            // Collect per-contact record if this is a dump step
+            // When newton=false, each pair visited twice; only record when i < j
+            if collect_records && (newton || i < j) {
+                // Contact point lies on the line segment between the two particle
+                // centers, at the midpoint of the overlap region.  Starting from
+                // the center of atom i, advance along the contact normal by
+                // (r1 − δ/2), which places the point halfway into the overlap.
+                let alpha = r1 - 0.5 * delta;
+                let cx = atoms.pos[i][0] as f64 + alpha * nx;
+                let cy = atoms.pos[i][1] as f64 + alpha * ny;
+                let cz = atoms.pos[i][2] as f64 + alpha * nz;
+
+                contact_output.records.push(ContactRecord {
+                    i_tag: atoms.tag[i],
+                    j_tag: atoms.tag[j],
+                    overlap: delta,
+                    cx,
+                    cy,
+                    cz,
+                    nx,
+                    ny,
+                    nz,
+                });
+            }
         }
-
-        // Collect per-contact record if this is a dump step
-        // When newton=false, each pair visited twice; only record when i < j
-        if collect_records && (newton || i < j) {
-            // Contact point lies on the line segment between the two particle
-            // centers, at the midpoint of the overlap region.  Starting from
-            // the center of atom i, advance along the contact normal by
-            // (r1 − δ/2), which places the point halfway into the overlap.
-            let alpha = r1 - 0.5 * delta;
-            let cx = atoms.pos[i][0] as f64 + alpha * nx;
-            let cy = atoms.pos[i][1] as f64 + alpha * ny;
-            let cz = atoms.pos[i][2] as f64 + alpha * nz;
-
-            contact_output.records.push(ContactRecord {
-                i_tag: atoms.tag[i],
-                j_tag: atoms.tag[j],
-                overlap: delta,
-                cx,
-                cy,
-                cz,
-                nx,
-                ny,
-                nz,
-            });
-        }
-    }
+    });
 }
 
 /// Push coordination statistics (avg, max, min) and rattler counts to thermo output.
 fn push_coordination_to_thermo(
     atoms: Res<Atom>,
-    registry: Res<AtomDataRegistry>,
+    particles: ParticlesWith<'_, Optional<Read<ContactAnalysis>>>,
     config: Res<ContactAnalysisConfig>,
     comm: Res<CommResource>,
     mut thermo: ResMut<Thermo>,
@@ -566,7 +567,10 @@ fn push_coordination_to_thermo(
         return;
     }
 
-    if let Some(ca) = registry.get::<ContactAnalysis>() {
+    particles.with(|ca| {
+        let Some(ca) = ca else {
+            return;
+        };
         let nlocal = atoms.nlocal as usize;
         let mut sum = 0.0;
         let mut max_val: f64 = 0.0;
@@ -621,7 +625,7 @@ fn push_coordination_to_thermo(
                 },
             );
         }
-    }
+    });
 }
 
 /// Normalize and push fabric tensor components from the accumulator to thermo.
@@ -740,8 +744,8 @@ fn dump_contact_csv(
 mod tests {
     use super::*;
     use grass_app::App;
-    use soil_core::Atom;
     use soil_core::Neighbor;
+    use soil_core::{Atom, AtomDataRegistry};
     use std::panic::{catch_unwind, AssertUnwindSafe};
 
     fn panic_message(panic: Box<dyn std::any::Any + Send>) -> String {
@@ -1108,7 +1112,9 @@ coordination = true
         let mut app = App::new();
         app.add_resource(Atom::default());
         app.add_resource(Neighbor::default());
-        app.add_resource(AtomDataRegistry::default());
+        let mut registry = AtomDataRegistry::default();
+        registry.try_register(DemAtom::new(), 0).unwrap();
+        app.add_resource(registry);
         app.add_resource(RunState::new());
         app.add_update_system(
             labeled_contact_force_for_ordering_test.label(CONTACT_FORCE),

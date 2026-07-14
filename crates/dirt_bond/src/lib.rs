@@ -186,8 +186,9 @@ use dirt_schedule::{
     AUTO_BOND, BOND_BREAKAGE_INIT, BOND_FORCE, BOND_GHOST_CUTOFF, BOND_PLASTICITY_INIT, LOAD_BONDS,
 };
 use soil_core::{
-    Atom, AtomData, AtomDataRegistry, BondEntry, BondStore, CommResource, Config, Domain,
-    ParticleSimScheduleSet, ScheduleSetupSet, VirialStress, VirialStressPlugin, NEIGHBOR_SETUP,
+    Atom, AtomData, BondEntry, BondStore, CommResource, Config, Domain, Optional,
+    ParticleSimScheduleSet, ParticlesWith, Read, ScheduleSetupSet, VirialStress,
+    VirialStressPlugin, Write, NEIGHBOR_SETUP,
 };
 use soil_print::Thermo;
 
@@ -922,7 +923,7 @@ impl Plugin for DemBondPlugin {
 /// the wrap (e.g. a closed-loop fibre) gets its seam bond like any other.
 pub fn auto_bond_touching(
     atoms: Res<Atom>,
-    registry: Res<AtomDataRegistry>,
+    particles: ParticlesWith<'_, (Read<DemAtom>, Write<BondStore>)>,
     bond_config: Res<BondConfig>,
     comm: Res<CommResource>,
     domain: Res<soil_core::Domain>,
@@ -931,52 +932,51 @@ pub fn auto_bond_touching(
         return;
     }
 
-    let dem = registry.expect::<DemAtom>("auto_bond_touching");
-    let mut bond_store = registry.expect_mut::<BondStore>("auto_bond_touching");
+    particles.with(|(dem, mut bond_store)| {
+        let nlocal = atoms.nlocal as usize;
+        while bond_store.bonds.len() < nlocal {
+            bond_store.bonds.push(Vec::new());
+        }
 
-    let nlocal = atoms.nlocal as usize;
-    while bond_store.bonds.len() < nlocal {
-        bond_store.bonds.push(Vec::new());
-    }
+        let tol = bond_config.bond_tolerance;
+        let pflags = domain.periodic_flags();
+        let box_size = domain.size;
+        let mut bond_count = 0u64;
 
-    let tol = bond_config.bond_tolerance;
-    let pflags = domain.periodic_flags();
-    let box_size = domain.size;
-    let mut bond_count = 0u64;
-
-    for i in 0..nlocal {
-        for j in (i + 1)..nlocal {
-            let mut d = [
-                atoms.pos[j][0] as f64 - atoms.pos[i][0] as f64,
-                atoms.pos[j][1] as f64 - atoms.pos[i][1] as f64,
-                atoms.pos[j][2] as f64 - atoms.pos[i][2] as f64,
-            ];
-            for k in 0..3 {
-                if pflags[k] {
-                    d[k] -= box_size[k] * (d[k] / box_size[k]).round();
+        for i in 0..nlocal {
+            for j in (i + 1)..nlocal {
+                let mut d = [
+                    atoms.pos[j][0] as f64 - atoms.pos[i][0] as f64,
+                    atoms.pos[j][1] as f64 - atoms.pos[i][1] as f64,
+                    atoms.pos[j][2] as f64 - atoms.pos[i][2] as f64,
+                ];
+                for k in 0..3 {
+                    if pflags[k] {
+                        d[k] -= box_size[k] * (d[k] / box_size[k]).round();
+                    }
+                }
+                let dist = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt();
+                let sum_r = dem.radius[i] + dem.radius[j];
+                if dist <= sum_r * tol {
+                    bond_store.bonds[i].push(BondEntry {
+                        partner_tag: atoms.tag[j],
+                        bond_type: 0,
+                        r0: dist,
+                    });
+                    bond_store.bonds[j].push(BondEntry {
+                        partner_tag: atoms.tag[i],
+                        bond_type: 0,
+                        r0: dist,
+                    });
+                    bond_count += 1;
                 }
             }
-            let dist = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt();
-            let sum_r = dem.radius[i] + dem.radius[j];
-            if dist <= sum_r * tol {
-                bond_store.bonds[i].push(BondEntry {
-                    partner_tag: atoms.tag[j],
-                    bond_type: 0,
-                    r0: dist,
-                });
-                bond_store.bonds[j].push(BondEntry {
-                    partner_tag: atoms.tag[i],
-                    bond_type: 0,
-                    r0: dist,
-                });
-                bond_count += 1;
-            }
         }
-    }
 
-    if comm.rank() == 0 {
-        println!("DemBond: auto-bonded {} pairs", bond_count);
-    }
+        if comm.rank() == 0 {
+            println!("DemBond: auto-bonded {} pairs", bond_count);
+        }
+    });
 }
 
 /// Load bonds from a LAMMPS data file's `Bonds` section. r₀ is computed
@@ -986,7 +986,7 @@ pub fn auto_bond_touching(
 /// across-the-box distance).
 pub fn load_bonds_from_file(
     atoms: Res<Atom>,
-    registry: Res<AtomDataRegistry>,
+    particles: ParticlesWith<'_, Write<BondStore>>,
     bond_config: Res<BondConfig>,
     comm: Res<CommResource>,
     domain: Res<soil_core::Domain>,
@@ -1023,61 +1023,62 @@ pub fn load_bonds_from_file(
         tag_to_local.insert(atoms.tag[i], i);
     }
 
-    let mut bond_store = registry.expect_mut::<BondStore>("load_bonds_from_file");
-    while bond_store.bonds.len() < nlocal {
-        bond_store.bonds.push(Vec::new());
-    }
-
-    let mut bond_count = 0u64;
-
-    for RawBond {
-        bond_type,
-        tag1,
-        tag2,
-    } in raw_bonds
-    {
-        let idx1 = match tag_to_local.get(&tag1) {
-            Some(&i) => i,
-            None => continue,
-        };
-        let idx2 = match tag_to_local.get(&tag2) {
-            Some(&i) => i,
-            None => continue,
-        };
-
-        let mut d = [
-            atoms.pos[idx2][0] as f64 - atoms.pos[idx1][0] as f64,
-            atoms.pos[idx2][1] as f64 - atoms.pos[idx1][1] as f64,
-            atoms.pos[idx2][2] as f64 - atoms.pos[idx1][2] as f64,
-        ];
-        let pflags = domain.periodic_flags();
-        let box_size = domain.size;
-        for k in 0..3 {
-            if pflags[k] {
-                d[k] -= box_size[k] * (d[k] / box_size[k]).round();
-            }
+    particles.with(|mut bond_store| {
+        while bond_store.bonds.len() < nlocal {
+            bond_store.bonds.push(Vec::new());
         }
-        let r0 = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt();
 
-        bond_store.bonds[idx1].push(BondEntry {
-            partner_tag: tag2,
-            bond_type,
-            r0,
-        });
-        bond_store.bonds[idx2].push(BondEntry {
-            partner_tag: tag1,
-            bond_type,
-            r0,
-        });
-        bond_count += 1;
-    }
+        let mut bond_count = 0u64;
 
-    if comm.rank() == 0 {
-        println!(
-            "DemBond: loaded {} bonds from LAMMPS data file '{}'",
-            bond_count, file_path
-        );
-    }
+        for RawBond {
+            bond_type,
+            tag1,
+            tag2,
+        } in raw_bonds
+        {
+            let idx1 = match tag_to_local.get(&tag1) {
+                Some(&i) => i,
+                None => continue,
+            };
+            let idx2 = match tag_to_local.get(&tag2) {
+                Some(&i) => i,
+                None => continue,
+            };
+
+            let mut d = [
+                atoms.pos[idx2][0] as f64 - atoms.pos[idx1][0] as f64,
+                atoms.pos[idx2][1] as f64 - atoms.pos[idx1][1] as f64,
+                atoms.pos[idx2][2] as f64 - atoms.pos[idx1][2] as f64,
+            ];
+            let pflags = domain.periodic_flags();
+            let box_size = domain.size;
+            for k in 0..3 {
+                if pflags[k] {
+                    d[k] -= box_size[k] * (d[k] / box_size[k]).round();
+                }
+            }
+            let r0 = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt();
+
+            bond_store.bonds[idx1].push(BondEntry {
+                partner_tag: tag2,
+                bond_type,
+                r0,
+            });
+            bond_store.bonds[idx2].push(BondEntry {
+                partner_tag: tag1,
+                bond_type,
+                r0,
+            });
+            bond_count += 1;
+        }
+
+        if comm.rank() == 0 {
+            println!(
+                "DemBond: loaded {} bonds from LAMMPS data file '{}'",
+                bond_count, file_path
+            );
+        }
+    });
 }
 
 /// Read `file_path` (whose `format` has already been pulled from the config)
@@ -1126,7 +1127,7 @@ fn read_and_parse_bonds(
 /// **before** `neighbor_setup` (which locks `ghost_cutoff` into the bin
 /// grid and border skin).
 pub fn extend_ghost_cutoff_for_bonds(
-    registry: Res<AtomDataRegistry>,
+    particles: ParticlesWith<'_, Optional<Read<BondStore>>>,
     bond_config: Res<BondConfig>,
     mut domain: ResMut<Domain>,
     comm: Res<CommResource>,
@@ -1137,11 +1138,8 @@ pub fn extend_ghost_cutoff_for_bonds(
 
     // Global max r0 across all ranks (bonds currently only exist on the
     // rank(s) that auto-bonded or loaded them at setup).
-    let local_max_r0 = {
-        let bond_store = match registry.get::<BondStore>() {
-            Some(bs) => bs,
-            None => return,
-        };
+    let Some(local_max_r0) = particles.with(|bond_store| {
+        let bond_store = bond_store?;
         let mut m = 0.0f64;
         for list in &bond_store.bonds {
             for b in list {
@@ -1150,7 +1148,9 @@ pub fn extend_ghost_cutoff_for_bonds(
                 }
             }
         }
-        m
+        Some(m)
+    }) else {
+        return;
     };
     // all_reduce_max via negated min (only min is in the CommBackend trait).
     let global_max_r0 = -comm.all_reduce_min_f64(-local_max_r0);
@@ -1184,43 +1184,39 @@ pub fn extend_ghost_cutoff_for_bonds(
 /// the local rank.
 pub fn init_bond_history(
     atoms: Res<Atom>,
-    registry: Res<AtomDataRegistry>,
+    particles: ParticlesWith<'_, (Read<BondStore>, Write<BondHistoryStore>)>,
     breakage: Res<BondBreakage>,
 ) {
-    let bond_store = registry.get::<BondStore>();
-    let bonds = match bond_store {
-        Some(ref b) => b,
-        None => return,
-    };
-
-    let mut history = registry.expect_mut::<BondHistoryStore>("init_bond_history");
-    while history.history.len() < bonds.bonds.len() {
-        history.history.push(Vec::new());
-    }
-    let nlocal = atoms.nlocal as usize;
-    for i in 0..bonds.bonds.len().min(nlocal) {
-        let tag_a = atoms.tag[i];
-        for bond in &bonds.bonds[i] {
-            let has = history.history[i]
-                .iter()
-                .any(|h| h.partner_tag == bond.partner_tag);
-            if !has {
-                // MPI-stable: same (tag pair, seed) → same `u` on every rank.
-                let u = breakage::per_bond_uniform_samples(tag_a, bond.partner_tag, breakage.seed);
-                let thr = breakage.criterion.sample(bond.r0, u);
-                history.history[i].push(BondHistoryEntry {
-                    partner_tag: bond.partner_tag,
-                    delta_t: [0.0; 3],
-                    delta_theta: [0.0; 3],
-                    thresholds: thr.t,
-                    theta_p_bend: [0.0; 3],
-                    eps_p_axial: 0.0,
-                    theta_max_bend: 0.0,
-                    eps_max_axial: 0.0,
-                });
+    particles.with(|(bonds, mut history)| {
+        while history.history.len() < bonds.bonds.len() {
+            history.history.push(Vec::new());
+        }
+        let nlocal = atoms.nlocal as usize;
+        for i in 0..bonds.bonds.len().min(nlocal) {
+            let tag_a = atoms.tag[i];
+            for bond in &bonds.bonds[i] {
+                let has = history.history[i]
+                    .iter()
+                    .any(|h| h.partner_tag == bond.partner_tag);
+                if !has {
+                    // MPI-stable: same (tag pair, seed) → same `u` on every rank.
+                    let u =
+                        breakage::per_bond_uniform_samples(tag_a, bond.partner_tag, breakage.seed);
+                    let thr = breakage.criterion.sample(bond.r0, u);
+                    history.history[i].push(BondHistoryEntry {
+                        partner_tag: bond.partner_tag,
+                        delta_t: [0.0; 3],
+                        delta_theta: [0.0; 3],
+                        thresholds: thr.t,
+                        theta_p_bend: [0.0; 3],
+                        eps_p_axial: 0.0,
+                        theta_max_bend: 0.0,
+                        eps_max_axial: 0.0,
+                    });
+                }
             }
         }
-    }
+    });
 }
 
 // ── Force system ────────────────────────────────────────────────────────────
@@ -1228,7 +1224,14 @@ pub fn init_bond_history(
 /// Computes BPM bond forces and moments for all local atoms.
 pub fn bond_force(
     mut atoms: ResMut<Atom>,
-    registry: Res<AtomDataRegistry>,
+    particles: ParticlesWith<
+        '_,
+        (
+            Write<DemAtom>,
+            Write<BondHistoryStore>,
+            Optional<Write<BondStore>>,
+        ),
+    >,
     bond_config: Res<BondConfig>,
     breakage: Res<BondBreakage>,
     plasticity: Res<BondPlasticity>,
@@ -1236,491 +1239,485 @@ pub fn bond_force(
     mut virial: Option<ResMut<VirialStress>>,
     domain: Res<soil_core::Domain>,
 ) {
-    let bond_store = registry.get::<BondStore>();
-    let bonds = match bond_store {
-        Some(ref b) => b,
-        None => return,
-    };
+    particles.with(|(mut dem, mut hist, bonds)| {
+        let mut bonds = match bonds {
+            Some(b) => b,
+            None => return,
+        };
 
-    let pflags = domain.periodic_flags();
-    let box_size = domain.size;
-    // Triclinic (Lees–Edwards) tilt factors [xy, xz, yz]. When the box is
-    // sheared, minimum-image must account for the tilt: wrapping a bond across
-    // the y (gradient) seam also shifts x by `xy`. Ignoring it makes a
-    // seam-spanning bond's separation drift with the accumulating tilt, which
-    // injects a spurious, strain-growing force (energy blow-up under shear).
-    let tilt = domain.tilt;
-    let triclinic = domain.triclinic;
+        let pflags = domain.periodic_flags();
+        let box_size = domain.size;
+        // Triclinic (Lees–Edwards) tilt factors [xy, xz, yz]. When the box is
+        // sheared, minimum-image must account for the tilt: wrapping a bond across
+        // the y (gradient) seam also shifts x by `xy`. Ignoring it makes a
+        // seam-spanning bond's separation drift with the accumulating tilt, which
+        // injects a spurious, strain-growing force (energy blow-up under shear).
+        let tilt = domain.tilt;
+        let triclinic = domain.triclinic;
 
-    let nlocal = atoms.nlocal as usize;
-    if bonds.bonds.len() < nlocal {
-        return;
-    }
+        let nlocal = atoms.nlocal as usize;
+        if bonds.bonds.len() < nlocal {
+            return;
+        }
 
-    let ratio = bond_config.bond_radius_ratio;
-    if ratio <= 0.0 {
-        return;
-    }
+        let ratio = bond_config.bond_radius_ratio;
+        if ratio <= 0.0 {
+            return;
+        }
 
-    // Material-mode (E, G) or direct stiffness fallback.
-    let e_mod = bond_config.youngs_modulus;
-    let g_mod = bond_config.shear_modulus;
-    let k_n_direct = bond_config.normal_stiffness;
-    let k_t_direct = bond_config.shear_stiffness;
-    let k_tor_direct = bond_config.twist_stiffness;
-    let k_bend_direct = bond_config.bending_stiffness;
+        // Material-mode (E, G) or direct stiffness fallback.
+        let e_mod = bond_config.youngs_modulus;
+        let g_mod = bond_config.shear_modulus;
+        let k_n_direct = bond_config.normal_stiffness;
+        let k_t_direct = bond_config.shear_stiffness;
+        let k_tor_direct = bond_config.twist_stiffness;
+        let k_bend_direct = bond_config.bending_stiffness;
 
-    let beta_n = bond_config.beta_normal;
-    let beta_t = bond_config.beta_shear;
-    let beta_tor = bond_config.beta_twist;
-    let beta_bend = bond_config.beta_bending;
+        let beta_n = bond_config.beta_normal;
+        let beta_t = bond_config.beta_shear;
+        let beta_tor = bond_config.beta_twist;
+        let beta_bend = bond_config.beta_bending;
 
-    let dt = atoms.dt;
+        let dt = atoms.dt;
 
-    // Always need DemAtom (radius, omega, torque, inv_inertia); always need history
-    // for shear and rotation channels.
-    let mut dem = registry.expect_mut::<DemAtom>("bond_force");
-    let mut hist = registry.expect_mut::<BondHistoryStore>("bond_force");
+        // Always need DemAtom (radius, omega, torque, inv_inertia); always need history
+        // for shear and rotation channels.
 
-    // Tag → index lookup (local + ghost)
-    let mut tag_to_index: HashMap<u32, usize> = HashMap::with_capacity(atoms.len());
-    for idx in 0..atoms.len() {
-        tag_to_index.insert(atoms.tag[idx], idx);
-    }
+        // Tag → index lookup (local + ghost)
+        let mut tag_to_index: HashMap<u32, usize> = HashMap::with_capacity(atoms.len());
+        for idx in 0..atoms.len() {
+            tag_to_index.insert(atoms.tag[idx], idx);
+        }
 
-    let mut bonds_to_break: Vec<(u32, u32)> = Vec::new();
+        let mut bonds_to_break: Vec<(u32, u32)> = Vec::new();
 
-    for i in 0..nlocal {
-        for b_idx in 0..bonds.bonds[i].len() {
-            let bond = &bonds.bonds[i][b_idx];
-            let j = match tag_to_index.get(&bond.partner_tag) {
-                Some(&idx) => idx,
-                None => {
-                    metrics.missing_partner_skips += 1;
+        for i in 0..nlocal {
+            for b_idx in 0..bonds.bonds[i].len() {
+                let bond = &bonds.bonds[i][b_idx];
+                let j = match tag_to_index.get(&bond.partner_tag) {
+                    Some(&idx) => idx,
+                    None => {
+                        metrics.missing_partner_skips += 1;
+                        continue;
+                    }
+                };
+                // Process each bond once: lower tag owns the computation.
+                if atoms.tag[i] >= bond.partner_tag {
                     continue;
                 }
-            };
-            // Process each bond once: lower tag owns the computation.
-            if atoms.tag[i] >= bond.partner_tag {
-                continue;
-            }
 
-            // Minimum-image distance on periodic axes. The tag_to_index
-            // lookup above can resolve a partner to a ghost copy at a
-            // wrap-image position when the same tag appears as both local
-            // and ghost; using minimum-image normalises that so within-chain
-            // bonds always see the short distance and wrap bonds always
-            // see the wrapped distance regardless of which atom copy the
-            // map happens to land on.
-            let mut dxv = [
-                atoms.pos[j][0] as f64 - atoms.pos[i][0] as f64,
-                atoms.pos[j][1] as f64 - atoms.pos[i][1] as f64,
-                atoms.pos[j][2] as f64 - atoms.pos[i][2] as f64,
-            ];
-            if triclinic {
-                // Triclinic minimum image: map the separation into fractional
-                // (lamda) coordinates via H⁻¹ (H upper-triangular with the tilt
-                // factors), wrap each periodic component to nearest, map back.
-                // Tilt factors [xy, xz, yz] are lengths; the fractional λ are
-                // dimensionless. H·λ (matching Domain::from_lamda): dx = Lx·λx +
-                // xy·λy + xz·λz, dy = Ly·λy + yz·λz, dz = Lz·λz.
-                let [xy, xz, yz] = tilt;
-                let lz = if box_size[2] != 0.0 {
-                    dxv[2] / box_size[2]
-                } else {
-                    0.0
-                };
-                let ly = if box_size[1] != 0.0 {
-                    (dxv[1] - yz * lz) / box_size[1]
-                } else {
-                    0.0
-                };
-                let lx = if box_size[0] != 0.0 {
-                    (dxv[0] - xy * ly - xz * lz) / box_size[0]
-                } else {
-                    0.0
-                };
-                let mut lam = [lx, ly, lz];
-                for k in 0..3 {
-                    if pflags[k] {
-                        lam[k] -= lam[k].round();
-                    }
-                }
-                dxv[0] = box_size[0] * lam[0] + xy * lam[1] + xz * lam[2];
-                dxv[1] = box_size[1] * lam[1] + yz * lam[2];
-                dxv[2] = box_size[2] * lam[2];
-            } else {
-                for k in 0..3 {
-                    if pflags[k] {
-                        dxv[k] -= box_size[k] * (dxv[k] / box_size[k]).round();
-                    }
-                }
-            }
-            let dx = dxv[0];
-            let dy = dxv[1];
-            let dz = dxv[2];
-            let dist = (dx * dx + dy * dy + dz * dz).sqrt();
-            if dist < 1e-20 {
-                continue;
-            }
-            let nhat = [dx / dist, dy / dist, dz / dist];
-
-            // Bond geometry (cylindrical beam).
-            let r_b = ratio * dem.radius[i].min(dem.radius[j]);
-            let area = PI * r_b * r_b;
-            let jpol = 0.5 * PI * r_b.powi(4); // polar 2nd moment of area
-            let iben = 0.5 * jpol; // bending 2nd moment (½ J)
-            let len = bond.r0;
-
-            // Stiffnesses — material mode wins when E/G provided.
-            let k_n = match e_mod {
-                Some(e) => e * area / len,
-                None => k_n_direct,
-            };
-            let k_t = match g_mod {
-                Some(g) => g * area / len,
-                None => k_t_direct,
-            };
-            let k_tor = match g_mod {
-                Some(g) => g * jpol / len,
-                None => k_tor_direct,
-            };
-            let k_bend = match e_mod {
-                Some(e) => e * iben / len,
-                None => k_bend_direct,
-            };
-
-            // Reduced mass / reduced MOI for damping.
-            let m_i = atoms.mass[i] as f64;
-            let m_j = atoms.mass[j] as f64;
-            let m_red = if m_i + m_j > 0.0 {
-                m_i * m_j / (m_i + m_j)
-            } else {
-                0.0
-            };
-            let moi_i = if dem.inv_inertia[i] > 0.0 {
-                1.0 / dem.inv_inertia[i]
-            } else {
-                0.0
-            };
-            let moi_j = if dem.inv_inertia[j] > 0.0 {
-                1.0 / dem.inv_inertia[j]
-            } else {
-                0.0
-            };
-            let moi_red = if moi_i + moi_j > 0.0 {
-                moi_i * moi_j / (moi_i + moi_j)
-            } else {
-                0.0
-            };
-
-            // Damping: raw override if provided, else critical-damping formula.
-            let gamma_n = bond_config
-                .normal_damping
-                .unwrap_or_else(|| 2.0 * beta_n * (m_red * k_n.max(0.0)).sqrt());
-            let gamma_t = bond_config
-                .shear_damping
-                .unwrap_or_else(|| 2.0 * beta_t * (m_red * k_t.max(0.0)).sqrt());
-            let gamma_tor = bond_config
-                .twist_damping
-                .unwrap_or_else(|| 2.0 * beta_tor * (moi_red * k_tor.max(0.0)).sqrt());
-            let gamma_bend = bond_config
-                .bending_damping
-                .unwrap_or_else(|| 2.0 * beta_bend * (moi_red * k_bend.max(0.0)).sqrt());
-
-            // Kinematics at contact mid-point (lever arm = L/2 n̂).
-            let half_l = 0.5 * len;
-            let r1 = [half_l * nhat[0], half_l * nhat[1], half_l * nhat[2]]; // from i → contact
-                                                                             // ω × r
-            let w_i = dem.omega[i];
-            let w_j = dem.omega[j];
-            let v_i_c = [
-                atoms.vel[i][0] as f64 + w_i[1] * r1[2] - w_i[2] * r1[1],
-                atoms.vel[i][1] as f64 + w_i[2] * r1[0] - w_i[0] * r1[2],
-                atoms.vel[i][2] as f64 + w_i[0] * r1[1] - w_i[1] * r1[0],
-            ];
-            // r2 = -r1 for j → contact
-            let v_j_c = [
-                atoms.vel[j][0] as f64 - (w_j[1] * r1[2] - w_j[2] * r1[1]),
-                atoms.vel[j][1] as f64 - (w_j[2] * r1[0] - w_j[0] * r1[2]),
-                atoms.vel[j][2] as f64 - (w_j[0] * r1[1] - w_j[1] * r1[0]),
-            ];
-            let v_rel = [
-                v_j_c[0] - v_i_c[0],
-                v_j_c[1] - v_i_c[1],
-                v_j_c[2] - v_i_c[2],
-            ];
-            let v_n_s = v_rel[0] * nhat[0] + v_rel[1] * nhat[1] + v_rel[2] * nhat[2];
-            let v_n = [v_n_s * nhat[0], v_n_s * nhat[1], v_n_s * nhat[2]];
-            let v_t = [v_rel[0] - v_n[0], v_rel[1] - v_n[1], v_rel[2] - v_n[2]];
-
-            // Axial elongation (kinematic).
-            let delta = dist - bond.r0;
-
-            // ── Locate (or create) the history entry for this bond ──
-            //
-            // Defensive fallback: `init_bond_history` should have seeded every
-            // entry (with sampled thresholds) at setup. If an entry is missing
-            // here we create one with zero thresholds — which trips any
-            // non-`Unbreakable` criterion immediately. That fail-loud behaviour
-            // surfaces missed bond-creation paths instead of silently making
-            // bonds unbreakable.
-            while hist.history.len() <= i {
-                hist.history.push(Vec::new());
-            }
-            let h_idx = match hist.history[i]
-                .iter()
-                .position(|h| h.partner_tag == bond.partner_tag)
-            {
-                Some(idx) => idx,
-                None => {
-                    hist.history[i].push(BondHistoryEntry {
-                        partner_tag: bond.partner_tag,
-                        delta_t: [0.0; 3],
-                        delta_theta: [0.0; 3],
-                        thresholds: [0.0; 4],
-                        theta_p_bend: [0.0; 3],
-                        eps_p_axial: 0.0,
-                        theta_max_bend: 0.0,
-                        eps_max_axial: 0.0,
-                    });
-                    hist.history[i].len() - 1
-                }
-            };
-
-            // Normal force conservative part: elastic `K_n · δ` by default,
-            // or piecewise-linear plasticity return-map on the axial channel
-            // when configured. Damping `γ_n · v_n_s` is added on top.
-            let (f_n_cons_mag, eps_p_axial_new, eps_max_axial_new) =
-                if let Some(axial_model) = plasticity.model.axial.as_ref() {
-                    let eps_axial = if bond.r0 > 0.0 { delta / bond.r0 } else { 0.0 };
-                    plasticity::update_axial(
-                        eps_axial,
-                        hist.history[i][h_idx].eps_p_axial,
-                        hist.history[i][h_idx].eps_max_axial,
-                        k_n,
-                        bond.r0,
-                        axial_model,
-                    )
-                } else {
-                    (
-                        k_n * delta,
-                        hist.history[i][h_idx].eps_p_axial,
-                        hist.history[i][h_idx].eps_max_axial,
-                    )
-                };
-            hist.history[i][h_idx].eps_p_axial = eps_p_axial_new;
-            hist.history[i][h_idx].eps_max_axial = eps_max_axial_new;
-            let f_n_mag = f_n_cons_mag + gamma_n * v_n_s;
-            let f_n = [f_n_mag * nhat[0], f_n_mag * nhat[1], f_n_mag * nhat[2]];
-
-            // Shear: re-project Δs ⊥ to new n̂, then integrate.
-            {
-                let h = &mut hist.history[i][h_idx];
-                let s_n = h.delta_t[0] * nhat[0] + h.delta_t[1] * nhat[1] + h.delta_t[2] * nhat[2];
-                h.delta_t[0] -= s_n * nhat[0];
-                h.delta_t[1] -= s_n * nhat[1];
-                h.delta_t[2] -= s_n * nhat[2];
-                h.delta_t[0] += v_t[0] * dt;
-                h.delta_t[1] += v_t[1] * dt;
-                h.delta_t[2] += v_t[2] * dt;
-            }
-            let ds = hist.history[i][h_idx].delta_t;
-            // Bond-internal shear force (same sign convention as Fortran:
-            // grows with +Δs and +v_t). Applied as +f_t on atom i (lower tag)
-            // and −f_t on atom j: when atom j slides below atom i, +Δs is
-            // negative, so f_t points downward on atom i (pulls it toward
-            // atom j) and upward on atom j (pulls it back into alignment).
-            let f_t = [
-                k_t * ds[0] + gamma_t * v_t[0],
-                k_t * ds[1] + gamma_t * v_t[1],
-                k_t * ds[2] + gamma_t * v_t[2],
-            ];
-
-            // Rotation kinematics
-            let w_rel = [w_j[0] - w_i[0], w_j[1] - w_i[1], w_j[2] - w_i[2]];
-            let w_rel_n_s = w_rel[0] * nhat[0] + w_rel[1] * nhat[1] + w_rel[2] * nhat[2];
-            let w_n = [
-                w_rel_n_s * nhat[0],
-                w_rel_n_s * nhat[1],
-                w_rel_n_s * nhat[2],
-            ];
-            let w_t = [w_rel[0] - w_n[0], w_rel[1] - w_n[1], w_rel[2] - w_n[2]];
-
-            // Update Δθ and split into twist (along n̂) and bending (⊥ n̂) parts.
-            {
-                let h = &mut hist.history[i][h_idx];
-                h.delta_theta[0] += w_rel[0] * dt;
-                h.delta_theta[1] += w_rel[1] * dt;
-                h.delta_theta[2] += w_rel[2] * dt;
-            }
-            let dth = hist.history[i][h_idx].delta_theta;
-            let dth_n_s = dth[0] * nhat[0] + dth[1] * nhat[1] + dth[2] * nhat[2];
-            let dth_twist = [dth_n_s * nhat[0], dth_n_s * nhat[1], dth_n_s * nhat[2]];
-            let dth_bend = [
-                dth[0] - dth_twist[0],
-                dth[1] - dth_twist[1],
-                dth[2] - dth_twist[2],
-            ];
-
-            // Bond-internal twist and bending moments (positive sign: the
-            // magnitudes grow with ω_rel and Δθ_rel). Applied as +m on atom i
-            // (lower tag) and −m on atom j (higher tag), matching the Fortran
-            // reference. This damps relative rotation: atom j receives a
-            // torque −γ·ω_rel that opposes its rotation, while atom i receives
-            // +γ·ω_rel that accelerates it toward the same rotation — in both
-            // cases reducing the *relative* angular velocity.
-            let m_tor = [
-                k_tor * dth_twist[0] + gamma_tor * w_n[0],
-                k_tor * dth_twist[1] + gamma_tor * w_n[1],
-                k_tor * dth_twist[2] + gamma_tor * w_n[2],
-            ];
-            // Bending: conservative part is elastic by default, or follows
-            // the configured plasticity return-map (Guo / piecewise) when
-            // bending plasticity is configured. Damping is added on top.
-            let (m_bend_cons, theta_p_bend_new, theta_max_bend_new) =
-                if let Some(bending_model) = plasticity.model.bending.as_ref() {
-                    plasticity::update_bending(
-                        dth_bend,
-                        hist.history[i][h_idx].theta_p_bend,
-                        hist.history[i][h_idx].theta_max_bend,
-                        k_bend,
-                        bending_model,
-                        r_b,
-                        bond.r0,
-                    )
-                } else {
-                    let m_elastic = [
-                        k_bend * dth_bend[0],
-                        k_bend * dth_bend[1],
-                        k_bend * dth_bend[2],
-                    ];
-                    (
-                        m_elastic,
-                        hist.history[i][h_idx].theta_p_bend,
-                        hist.history[i][h_idx].theta_max_bend,
-                    )
-                };
-            hist.history[i][h_idx].theta_p_bend = theta_p_bend_new;
-            hist.history[i][h_idx].theta_max_bend = theta_max_bend_new;
-            let m_bend = [
-                m_bend_cons[0] + gamma_bend * w_t[0],
-                m_bend_cons[1] + gamma_bend * w_t[1],
-                m_bend_cons[2] + gamma_bend * w_t[2],
-            ];
-
-            // Breakage: build the geom/loads/kinematics snapshots and ask the
-            // active criterion whether this bond has failed.
-            let m_bend_mag =
-                (m_bend[0] * m_bend[0] + m_bend[1] * m_bend[1] + m_bend[2] * m_bend[2]).sqrt();
-            let m_tor_mag =
-                (m_tor[0] * m_tor[0] + m_tor[1] * m_tor[1] + m_tor[2] * m_tor[2]).sqrt();
-            let f_t_mag = (f_t[0] * f_t[0] + f_t[1] * f_t[1] + f_t[2] * f_t[2]).sqrt();
-            let ds_mag = (ds[0] * ds[0] + ds[1] * ds[1] + ds[2] * ds[2]).sqrt();
-            let dth_bend_mag =
-                (dth_bend[0] * dth_bend[0] + dth_bend[1] * dth_bend[1] + dth_bend[2] * dth_bend[2])
-                    .sqrt();
-            let l_now = dist.max(f64::MIN_POSITIVE);
-            let geom = breakage::BondGeom {
-                r_b,
-                area,
-                iben,
-                jpol,
-                l0: bond.r0,
-            };
-            let loads = breakage::BondLoads {
-                f_n: f_n_mag,
-                f_t_mag,
-                m_bend_mag,
-                m_tor_mag,
-            };
-            let kin = breakage::BondKinematics {
-                eps_axial: delta / bond.r0,
-                gamma_shear: ds_mag / l_now,
-                kappa_bend: dth_bend_mag / l_now,
-                kappa_tor: dth_n_s.abs() / l_now,
-            };
-            let thr = breakage::BondThresholds {
-                t: hist.history[i][h_idx].thresholds,
-            };
-            if breakage
-                .criterion
-                .check(&geom, &loads, &kin, &thr)
-                .is_some()
-            {
-                bonds_to_break.push((atoms.tag[i], bond.partner_tag));
-                continue;
-            }
-
-            // ── Apply forces ──
-            let f_total = [f_n[0] + f_t[0], f_n[1] + f_t[1], f_n[2] + f_t[2]];
-            atoms.force[i][0] += f_total[0] as soil_core::Accum;
-            atoms.force[i][1] += f_total[1] as soil_core::Accum;
-            atoms.force[i][2] += f_total[2] as soil_core::Accum;
-            atoms.force[j][0] -= f_total[0] as soil_core::Accum;
-            atoms.force[j][1] -= f_total[1] as soil_core::Accum;
-            atoms.force[j][2] -= f_total[2] as soil_core::Accum;
-
-            if let Some(ref mut v) = virial {
-                if v.active {
-                    v.add_pair(dx, dy, dz, f_total[0], f_total[1], f_total[2]);
-                }
-            }
-
-            // Torque from shear at lever arm (both particles get r1 × f_t).
-            let tau_shear = [
-                r1[1] * f_t[2] - r1[2] * f_t[1],
-                r1[2] * f_t[0] - r1[0] * f_t[2],
-                r1[0] * f_t[1] - r1[1] * f_t[0],
-            ];
-
-            // Total torque: +M on i, −M on j; shear torque same sign on both.
-            let m_total = [
-                m_tor[0] + m_bend[0],
-                m_tor[1] + m_bend[1],
-                m_tor[2] + m_bend[2],
-            ];
-            dem.torque[i][0] += tau_shear[0] + m_total[0];
-            dem.torque[i][1] += tau_shear[1] + m_total[1];
-            dem.torque[i][2] += tau_shear[2] + m_total[2];
-            dem.torque[j][0] += tau_shear[0] - m_total[0];
-            dem.torque[j][1] += tau_shear[1] - m_total[1];
-            dem.torque[j][2] += tau_shear[2] - m_total[2];
-
-            metrics.strain_sum += delta / bond.r0;
-            metrics.bond_count += 1;
-        }
-    }
-
-    if !bonds_to_break.is_empty() {
-        drop(bond_store);
-        drop(dem);
-        drop(hist);
-
-        let mut bond_store = registry.expect_mut::<BondStore>("bond_force_break");
-        let mut history_store = registry.expect_mut::<BondHistoryStore>("bond_force_break");
-
-        for (tag_a, tag_b) in &bonds_to_break {
-            for idx in 0..atoms.len() {
-                if atoms.tag[idx] == *tag_a || atoms.tag[idx] == *tag_b {
-                    let partner = if atoms.tag[idx] == *tag_a {
-                        *tag_b
+                // Minimum-image distance on periodic axes. The tag_to_index
+                // lookup above can resolve a partner to a ghost copy at a
+                // wrap-image position when the same tag appears as both local
+                // and ghost; using minimum-image normalises that so within-chain
+                // bonds always see the short distance and wrap bonds always
+                // see the wrapped distance regardless of which atom copy the
+                // map happens to land on.
+                let mut dxv = [
+                    atoms.pos[j][0] as f64 - atoms.pos[i][0] as f64,
+                    atoms.pos[j][1] as f64 - atoms.pos[i][1] as f64,
+                    atoms.pos[j][2] as f64 - atoms.pos[i][2] as f64,
+                ];
+                if triclinic {
+                    // Triclinic minimum image: map the separation into fractional
+                    // (lamda) coordinates via H⁻¹ (H upper-triangular with the tilt
+                    // factors), wrap each periodic component to nearest, map back.
+                    // Tilt factors [xy, xz, yz] are lengths; the fractional λ are
+                    // dimensionless. H·λ (matching Domain::from_lamda): dx = Lx·λx +
+                    // xy·λy + xz·λz, dy = Ly·λy + yz·λz, dz = Lz·λz.
+                    let [xy, xz, yz] = tilt;
+                    let lz = if box_size[2] != 0.0 {
+                        dxv[2] / box_size[2]
                     } else {
-                        *tag_a
+                        0.0
                     };
-                    if idx < bond_store.bonds.len() {
-                        bond_store.bonds[idx].retain(|b| b.partner_tag != partner);
+                    let ly = if box_size[1] != 0.0 {
+                        (dxv[1] - yz * lz) / box_size[1]
+                    } else {
+                        0.0
+                    };
+                    let lx = if box_size[0] != 0.0 {
+                        (dxv[0] - xy * ly - xz * lz) / box_size[0]
+                    } else {
+                        0.0
+                    };
+                    let mut lam = [lx, ly, lz];
+                    for k in 0..3 {
+                        if pflags[k] {
+                            lam[k] -= lam[k].round();
+                        }
                     }
-                    if idx < history_store.history.len() {
-                        history_store.history[idx].retain(|h| h.partner_tag != partner);
+                    dxv[0] = box_size[0] * lam[0] + xy * lam[1] + xz * lam[2];
+                    dxv[1] = box_size[1] * lam[1] + yz * lam[2];
+                    dxv[2] = box_size[2] * lam[2];
+                } else {
+                    for k in 0..3 {
+                        if pflags[k] {
+                            dxv[k] -= box_size[k] * (dxv[k] / box_size[k]).round();
+                        }
                     }
                 }
+                let dx = dxv[0];
+                let dy = dxv[1];
+                let dz = dxv[2];
+                let dist = (dx * dx + dy * dy + dz * dz).sqrt();
+                if dist < 1e-20 {
+                    continue;
+                }
+                let nhat = [dx / dist, dy / dist, dz / dist];
+
+                // Bond geometry (cylindrical beam).
+                let r_b = ratio * dem.radius[i].min(dem.radius[j]);
+                let area = PI * r_b * r_b;
+                let jpol = 0.5 * PI * r_b.powi(4); // polar 2nd moment of area
+                let iben = 0.5 * jpol; // bending 2nd moment (½ J)
+                let len = bond.r0;
+
+                // Stiffnesses — material mode wins when E/G provided.
+                let k_n = match e_mod {
+                    Some(e) => e * area / len,
+                    None => k_n_direct,
+                };
+                let k_t = match g_mod {
+                    Some(g) => g * area / len,
+                    None => k_t_direct,
+                };
+                let k_tor = match g_mod {
+                    Some(g) => g * jpol / len,
+                    None => k_tor_direct,
+                };
+                let k_bend = match e_mod {
+                    Some(e) => e * iben / len,
+                    None => k_bend_direct,
+                };
+
+                // Reduced mass / reduced MOI for damping.
+                let m_i = atoms.mass[i] as f64;
+                let m_j = atoms.mass[j] as f64;
+                let m_red = if m_i + m_j > 0.0 {
+                    m_i * m_j / (m_i + m_j)
+                } else {
+                    0.0
+                };
+                let moi_i = if dem.inv_inertia[i] > 0.0 {
+                    1.0 / dem.inv_inertia[i]
+                } else {
+                    0.0
+                };
+                let moi_j = if dem.inv_inertia[j] > 0.0 {
+                    1.0 / dem.inv_inertia[j]
+                } else {
+                    0.0
+                };
+                let moi_red = if moi_i + moi_j > 0.0 {
+                    moi_i * moi_j / (moi_i + moi_j)
+                } else {
+                    0.0
+                };
+
+                // Damping: raw override if provided, else critical-damping formula.
+                let gamma_n = bond_config
+                    .normal_damping
+                    .unwrap_or_else(|| 2.0 * beta_n * (m_red * k_n.max(0.0)).sqrt());
+                let gamma_t = bond_config
+                    .shear_damping
+                    .unwrap_or_else(|| 2.0 * beta_t * (m_red * k_t.max(0.0)).sqrt());
+                let gamma_tor = bond_config
+                    .twist_damping
+                    .unwrap_or_else(|| 2.0 * beta_tor * (moi_red * k_tor.max(0.0)).sqrt());
+                let gamma_bend = bond_config
+                    .bending_damping
+                    .unwrap_or_else(|| 2.0 * beta_bend * (moi_red * k_bend.max(0.0)).sqrt());
+
+                // Kinematics at contact mid-point (lever arm = L/2 n̂).
+                let half_l = 0.5 * len;
+                let r1 = [half_l * nhat[0], half_l * nhat[1], half_l * nhat[2]]; // from i → contact
+                                                                                 // ω × r
+                let w_i = dem.omega[i];
+                let w_j = dem.omega[j];
+                let v_i_c = [
+                    atoms.vel[i][0] as f64 + w_i[1] * r1[2] - w_i[2] * r1[1],
+                    atoms.vel[i][1] as f64 + w_i[2] * r1[0] - w_i[0] * r1[2],
+                    atoms.vel[i][2] as f64 + w_i[0] * r1[1] - w_i[1] * r1[0],
+                ];
+                // r2 = -r1 for j → contact
+                let v_j_c = [
+                    atoms.vel[j][0] as f64 - (w_j[1] * r1[2] - w_j[2] * r1[1]),
+                    atoms.vel[j][1] as f64 - (w_j[2] * r1[0] - w_j[0] * r1[2]),
+                    atoms.vel[j][2] as f64 - (w_j[0] * r1[1] - w_j[1] * r1[0]),
+                ];
+                let v_rel = [
+                    v_j_c[0] - v_i_c[0],
+                    v_j_c[1] - v_i_c[1],
+                    v_j_c[2] - v_i_c[2],
+                ];
+                let v_n_s = v_rel[0] * nhat[0] + v_rel[1] * nhat[1] + v_rel[2] * nhat[2];
+                let v_n = [v_n_s * nhat[0], v_n_s * nhat[1], v_n_s * nhat[2]];
+                let v_t = [v_rel[0] - v_n[0], v_rel[1] - v_n[1], v_rel[2] - v_n[2]];
+
+                // Axial elongation (kinematic).
+                let delta = dist - bond.r0;
+
+                // ── Locate (or create) the history entry for this bond ──
+                //
+                // Defensive fallback: `init_bond_history` should have seeded every
+                // entry (with sampled thresholds) at setup. If an entry is missing
+                // here we create one with zero thresholds — which trips any
+                // non-`Unbreakable` criterion immediately. That fail-loud behaviour
+                // surfaces missed bond-creation paths instead of silently making
+                // bonds unbreakable.
+                while hist.history.len() <= i {
+                    hist.history.push(Vec::new());
+                }
+                let h_idx = match hist.history[i]
+                    .iter()
+                    .position(|h| h.partner_tag == bond.partner_tag)
+                {
+                    Some(idx) => idx,
+                    None => {
+                        hist.history[i].push(BondHistoryEntry {
+                            partner_tag: bond.partner_tag,
+                            delta_t: [0.0; 3],
+                            delta_theta: [0.0; 3],
+                            thresholds: [0.0; 4],
+                            theta_p_bend: [0.0; 3],
+                            eps_p_axial: 0.0,
+                            theta_max_bend: 0.0,
+                            eps_max_axial: 0.0,
+                        });
+                        hist.history[i].len() - 1
+                    }
+                };
+
+                // Normal force conservative part: elastic `K_n · δ` by default,
+                // or piecewise-linear plasticity return-map on the axial channel
+                // when configured. Damping `γ_n · v_n_s` is added on top.
+                let (f_n_cons_mag, eps_p_axial_new, eps_max_axial_new) =
+                    if let Some(axial_model) = plasticity.model.axial.as_ref() {
+                        let eps_axial = if bond.r0 > 0.0 { delta / bond.r0 } else { 0.0 };
+                        plasticity::update_axial(
+                            eps_axial,
+                            hist.history[i][h_idx].eps_p_axial,
+                            hist.history[i][h_idx].eps_max_axial,
+                            k_n,
+                            bond.r0,
+                            axial_model,
+                        )
+                    } else {
+                        (
+                            k_n * delta,
+                            hist.history[i][h_idx].eps_p_axial,
+                            hist.history[i][h_idx].eps_max_axial,
+                        )
+                    };
+                hist.history[i][h_idx].eps_p_axial = eps_p_axial_new;
+                hist.history[i][h_idx].eps_max_axial = eps_max_axial_new;
+                let f_n_mag = f_n_cons_mag + gamma_n * v_n_s;
+                let f_n = [f_n_mag * nhat[0], f_n_mag * nhat[1], f_n_mag * nhat[2]];
+
+                // Shear: re-project Δs ⊥ to new n̂, then integrate.
+                {
+                    let h = &mut hist.history[i][h_idx];
+                    let s_n =
+                        h.delta_t[0] * nhat[0] + h.delta_t[1] * nhat[1] + h.delta_t[2] * nhat[2];
+                    h.delta_t[0] -= s_n * nhat[0];
+                    h.delta_t[1] -= s_n * nhat[1];
+                    h.delta_t[2] -= s_n * nhat[2];
+                    h.delta_t[0] += v_t[0] * dt;
+                    h.delta_t[1] += v_t[1] * dt;
+                    h.delta_t[2] += v_t[2] * dt;
+                }
+                let ds = hist.history[i][h_idx].delta_t;
+                // Bond-internal shear force (same sign convention as Fortran:
+                // grows with +Δs and +v_t). Applied as +f_t on atom i (lower tag)
+                // and −f_t on atom j: when atom j slides below atom i, +Δs is
+                // negative, so f_t points downward on atom i (pulls it toward
+                // atom j) and upward on atom j (pulls it back into alignment).
+                let f_t = [
+                    k_t * ds[0] + gamma_t * v_t[0],
+                    k_t * ds[1] + gamma_t * v_t[1],
+                    k_t * ds[2] + gamma_t * v_t[2],
+                ];
+
+                // Rotation kinematics
+                let w_rel = [w_j[0] - w_i[0], w_j[1] - w_i[1], w_j[2] - w_i[2]];
+                let w_rel_n_s = w_rel[0] * nhat[0] + w_rel[1] * nhat[1] + w_rel[2] * nhat[2];
+                let w_n = [
+                    w_rel_n_s * nhat[0],
+                    w_rel_n_s * nhat[1],
+                    w_rel_n_s * nhat[2],
+                ];
+                let w_t = [w_rel[0] - w_n[0], w_rel[1] - w_n[1], w_rel[2] - w_n[2]];
+
+                // Update Δθ and split into twist (along n̂) and bending (⊥ n̂) parts.
+                {
+                    let h = &mut hist.history[i][h_idx];
+                    h.delta_theta[0] += w_rel[0] * dt;
+                    h.delta_theta[1] += w_rel[1] * dt;
+                    h.delta_theta[2] += w_rel[2] * dt;
+                }
+                let dth = hist.history[i][h_idx].delta_theta;
+                let dth_n_s = dth[0] * nhat[0] + dth[1] * nhat[1] + dth[2] * nhat[2];
+                let dth_twist = [dth_n_s * nhat[0], dth_n_s * nhat[1], dth_n_s * nhat[2]];
+                let dth_bend = [
+                    dth[0] - dth_twist[0],
+                    dth[1] - dth_twist[1],
+                    dth[2] - dth_twist[2],
+                ];
+
+                // Bond-internal twist and bending moments (positive sign: the
+                // magnitudes grow with ω_rel and Δθ_rel). Applied as +m on atom i
+                // (lower tag) and −m on atom j (higher tag), matching the Fortran
+                // reference. This damps relative rotation: atom j receives a
+                // torque −γ·ω_rel that opposes its rotation, while atom i receives
+                // +γ·ω_rel that accelerates it toward the same rotation — in both
+                // cases reducing the *relative* angular velocity.
+                let m_tor = [
+                    k_tor * dth_twist[0] + gamma_tor * w_n[0],
+                    k_tor * dth_twist[1] + gamma_tor * w_n[1],
+                    k_tor * dth_twist[2] + gamma_tor * w_n[2],
+                ];
+                // Bending: conservative part is elastic by default, or follows
+                // the configured plasticity return-map (Guo / piecewise) when
+                // bending plasticity is configured. Damping is added on top.
+                let (m_bend_cons, theta_p_bend_new, theta_max_bend_new) =
+                    if let Some(bending_model) = plasticity.model.bending.as_ref() {
+                        plasticity::update_bending(
+                            dth_bend,
+                            hist.history[i][h_idx].theta_p_bend,
+                            hist.history[i][h_idx].theta_max_bend,
+                            k_bend,
+                            bending_model,
+                            r_b,
+                            bond.r0,
+                        )
+                    } else {
+                        let m_elastic = [
+                            k_bend * dth_bend[0],
+                            k_bend * dth_bend[1],
+                            k_bend * dth_bend[2],
+                        ];
+                        (
+                            m_elastic,
+                            hist.history[i][h_idx].theta_p_bend,
+                            hist.history[i][h_idx].theta_max_bend,
+                        )
+                    };
+                hist.history[i][h_idx].theta_p_bend = theta_p_bend_new;
+                hist.history[i][h_idx].theta_max_bend = theta_max_bend_new;
+                let m_bend = [
+                    m_bend_cons[0] + gamma_bend * w_t[0],
+                    m_bend_cons[1] + gamma_bend * w_t[1],
+                    m_bend_cons[2] + gamma_bend * w_t[2],
+                ];
+
+                // Breakage: build the geom/loads/kinematics snapshots and ask the
+                // active criterion whether this bond has failed.
+                let m_bend_mag =
+                    (m_bend[0] * m_bend[0] + m_bend[1] * m_bend[1] + m_bend[2] * m_bend[2]).sqrt();
+                let m_tor_mag =
+                    (m_tor[0] * m_tor[0] + m_tor[1] * m_tor[1] + m_tor[2] * m_tor[2]).sqrt();
+                let f_t_mag = (f_t[0] * f_t[0] + f_t[1] * f_t[1] + f_t[2] * f_t[2]).sqrt();
+                let ds_mag = (ds[0] * ds[0] + ds[1] * ds[1] + ds[2] * ds[2]).sqrt();
+                let dth_bend_mag = (dth_bend[0] * dth_bend[0]
+                    + dth_bend[1] * dth_bend[1]
+                    + dth_bend[2] * dth_bend[2])
+                    .sqrt();
+                let l_now = dist.max(f64::MIN_POSITIVE);
+                let geom = breakage::BondGeom {
+                    r_b,
+                    area,
+                    iben,
+                    jpol,
+                    l0: bond.r0,
+                };
+                let loads = breakage::BondLoads {
+                    f_n: f_n_mag,
+                    f_t_mag,
+                    m_bend_mag,
+                    m_tor_mag,
+                };
+                let kin = breakage::BondKinematics {
+                    eps_axial: delta / bond.r0,
+                    gamma_shear: ds_mag / l_now,
+                    kappa_bend: dth_bend_mag / l_now,
+                    kappa_tor: dth_n_s.abs() / l_now,
+                };
+                let thr = breakage::BondThresholds {
+                    t: hist.history[i][h_idx].thresholds,
+                };
+                if breakage
+                    .criterion
+                    .check(&geom, &loads, &kin, &thr)
+                    .is_some()
+                {
+                    bonds_to_break.push((atoms.tag[i], bond.partner_tag));
+                    continue;
+                }
+
+                // ── Apply forces ──
+                let f_total = [f_n[0] + f_t[0], f_n[1] + f_t[1], f_n[2] + f_t[2]];
+                atoms.force[i][0] += f_total[0] as soil_core::Accum;
+                atoms.force[i][1] += f_total[1] as soil_core::Accum;
+                atoms.force[i][2] += f_total[2] as soil_core::Accum;
+                atoms.force[j][0] -= f_total[0] as soil_core::Accum;
+                atoms.force[j][1] -= f_total[1] as soil_core::Accum;
+                atoms.force[j][2] -= f_total[2] as soil_core::Accum;
+
+                if let Some(ref mut v) = virial {
+                    if v.active {
+                        v.add_pair(dx, dy, dz, f_total[0], f_total[1], f_total[2]);
+                    }
+                }
+
+                // Torque from shear at lever arm (both particles get r1 × f_t).
+                let tau_shear = [
+                    r1[1] * f_t[2] - r1[2] * f_t[1],
+                    r1[2] * f_t[0] - r1[0] * f_t[2],
+                    r1[0] * f_t[1] - r1[1] * f_t[0],
+                ];
+
+                // Total torque: +M on i, −M on j; shear torque same sign on both.
+                let m_total = [
+                    m_tor[0] + m_bend[0],
+                    m_tor[1] + m_bend[1],
+                    m_tor[2] + m_bend[2],
+                ];
+                dem.torque[i][0] += tau_shear[0] + m_total[0];
+                dem.torque[i][1] += tau_shear[1] + m_total[1];
+                dem.torque[i][2] += tau_shear[2] + m_total[2];
+                dem.torque[j][0] += tau_shear[0] - m_total[0];
+                dem.torque[j][1] += tau_shear[1] - m_total[1];
+                dem.torque[j][2] += tau_shear[2] - m_total[2];
+
+                metrics.strain_sum += delta / bond.r0;
+                metrics.bond_count += 1;
             }
         }
 
-        metrics.bonds_broken_this_step += bonds_to_break.len();
-        metrics.total_bonds_broken += bonds_to_break.len();
-    }
+        if !bonds_to_break.is_empty() {
+            for (tag_a, tag_b) in &bonds_to_break {
+                for idx in 0..atoms.len() {
+                    if atoms.tag[idx] == *tag_a || atoms.tag[idx] == *tag_b {
+                        let partner = if atoms.tag[idx] == *tag_a {
+                            *tag_b
+                        } else {
+                            *tag_a
+                        };
+                        if idx < bonds.bonds.len() {
+                            bonds.bonds[idx].retain(|b| b.partner_tag != partner);
+                        }
+                        if idx < hist.history.len() {
+                            hist.history[idx].retain(|h| h.partner_tag != partner);
+                        }
+                    }
+                }
+            }
+
+            metrics.bonds_broken_this_step += bonds_to_break.len();
+            metrics.total_bonds_broken += bonds_to_break.len();
+        }
+    });
 }
 
 /// Reset per-step bond metrics to zero before the force computation pass.

@@ -13,8 +13,8 @@ use dirt_schedule::CONTACT_FORCE;
 use soil_core::Neighbor;
 use soil_core::{forward_comm_overlap, CommBuffers, CommResource, CommTopology};
 use soil_core::{
-    register_atom_data, Atom, AtomDataRegistry, BondStore, ParticleSimScheduleSet, VirialStress,
-    VirialStressPlugin,
+    register_atom_data, Atom, AtomDataRegistry, BondStore, Optional, ParticleSimScheduleSet,
+    ParticlesWith, Read, VirialStress, VirialStressPlugin, Write,
 };
 
 use crate::tangential::{ContactHistory, ContactHistoryStore, CONTACT_HISTORY_LEN};

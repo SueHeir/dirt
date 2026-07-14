@@ -1,0 +1,5 @@
+# Declarative record of the compatibility comparison.
+# Baseline: origin/main at 41cb2f116480dba2b4d023a5df5e143408033c2c
+# Candidate: typed-ParticlesWith migration branch.
+cases = ["bench_wall_activate_by_name", "bond_fiber_tensile", "bench_clump_inertia_sampler"]
+criterion = "byte-identical CSV output (relative difference <= 1e-15)"

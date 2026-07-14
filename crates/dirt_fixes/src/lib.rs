@@ -47,8 +47,8 @@ use serde::Deserialize;
 
 use dirt_schedule::{ADD_FORCE, SET_FORCE};
 use soil_core::{
-    Accum, Atom, AtomDataRegistry, CommResource, Config, GroupDef, GroupRegistry,
-    ParticleSimScheduleSet, Real, ScheduleSetupSet,
+    Accum, Atom, CommResource, Config, GroupDef, GroupRegistry, Optional, ParticleSimScheduleSet,
+    ParticlesWith, Real, ScheduleSetupSet, Write,
 };
 use soil_print::Thermo;
 
@@ -705,34 +705,33 @@ fn apply_set_force(
 /// contact). Velocity is held at zero, so position never drifts.
 fn apply_freeze(
     mut atoms: ResMut<Atom>,
-    atom_data: Res<AtomDataRegistry>,
+    particles: ParticlesWith<'_, Optional<Write<dirt_atom::DemAtom>>>,
     registry: Res<FixesRegistry>,
     groups: Res<GroupRegistry>,
 ) {
     let nlocal = atoms.nlocal as usize;
-    // Mutably borrow DemAtom once (if it exists) to zero rotational state.
-    let mut dem_opt = atom_data.get_mut::<dirt_atom::DemAtom>();
-
-    for def in &registry.freezes {
-        let group = groups.expect(&def.group);
-        for i in 0..nlocal {
-            if group.mask[i] {
-                atoms.vel[i] = [0.0; 3];
-                atoms.force[i] = [0.0; 3];
-                if let Some(ref mut dem) = dem_opt {
-                    if i < dem.omega.len() {
-                        dem.omega[i] = [0.0; 3];
-                    }
-                    if i < dem.torque.len() {
-                        dem.torque[i] = [0.0; 3];
-                    }
-                    if i < dem.ang_mom.len() {
-                        dem.ang_mom[i] = [0.0; 3];
+    particles.with(|mut dem_opt| {
+        for def in &registry.freezes {
+            let group = groups.expect(&def.group);
+            for i in 0..nlocal {
+                if group.mask[i] {
+                    atoms.vel[i] = [0.0; 3];
+                    atoms.force[i] = [0.0; 3];
+                    if let Some(ref mut dem) = dem_opt {
+                        if i < dem.omega.len() {
+                            dem.omega[i] = [0.0; 3];
+                        }
+                        if i < dem.torque.len() {
+                            dem.torque[i] = [0.0; 3];
+                        }
+                        if i < dem.ang_mom.len() {
+                            dem.ang_mom[i] = [0.0; 3];
+                        }
                     }
                 }
             }
         }
-    }
+    });
 }
 
 /// Zeros force on move_linear atoms after force computation, preventing
@@ -793,42 +792,41 @@ fn apply_viscous(
 /// total force just as the LAMMPS `POST_FORCE` fix does.
 fn apply_cundall(
     mut atoms: ResMut<Atom>,
-    atom_data: Res<AtomDataRegistry>,
+    particles: ParticlesWith<'_, Optional<Write<dirt_atom::DemAtom>>>,
     registry: Res<FixesRegistry>,
     groups: Res<GroupRegistry>,
 ) {
     let nlocal = atoms.nlocal as usize;
-    // Borrow rotational state once (if present) to damp torque.
-    let mut dem_opt = atom_data.get_mut::<dirt_atom::DemAtom>();
-
-    for def in &registry.cundall {
-        let group = groups.expect(&def.group);
-        let gamma_l = def.gamma_l;
-        let gamma_a = def.gamma_a;
-        for i in 0..nlocal {
-            if !group.mask[i] {
-                continue;
-            }
-            // Linear force: F_k *= 1 - gamma_l * sign(F_k * v_k).
-            for k in 0..3 {
-                let f = atoms.force[i][k] as f64;
-                let v = atoms.vel[i][k] as f64;
-                let signf = if f * v >= 0.0 { 1.0 } else { -1.0 };
-                atoms.force[i][k] = (f * (1.0 - gamma_l * signf)) as Accum;
-            }
-            // Angular torque: T_k *= 1 - gamma_a * sign(T_k * omega_k).
-            if let Some(ref mut dem) = dem_opt {
-                if i < dem.torque.len() && i < dem.omega.len() {
-                    for k in 0..3 {
-                        let t = dem.torque[i][k];
-                        let w = dem.omega[i][k];
-                        let signt = if t * w >= 0.0 { 1.0 } else { -1.0 };
-                        dem.torque[i][k] = t * (1.0 - gamma_a * signt);
+    particles.with(|mut dem_opt| {
+        for def in &registry.cundall {
+            let group = groups.expect(&def.group);
+            let gamma_l = def.gamma_l;
+            let gamma_a = def.gamma_a;
+            for i in 0..nlocal {
+                if !group.mask[i] {
+                    continue;
+                }
+                // Linear force: F_k *= 1 - gamma_l * sign(F_k * v_k).
+                for k in 0..3 {
+                    let f = atoms.force[i][k] as f64;
+                    let v = atoms.vel[i][k] as f64;
+                    let signf = if f * v >= 0.0 { 1.0 } else { -1.0 };
+                    atoms.force[i][k] = (f * (1.0 - gamma_l * signf)) as Accum;
+                }
+                // Angular torque: T_k *= 1 - gamma_a * sign(T_k * omega_k).
+                if let Some(ref mut dem) = dem_opt {
+                    if i < dem.torque.len() && i < dem.omega.len() {
+                        for k in 0..3 {
+                            let t = dem.torque[i][k];
+                            let w = dem.omega[i][k];
+                            let signt = if t * w >= 0.0 { 1.0 } else { -1.0 };
+                            dem.torque[i][k] = t * (1.0 - gamma_a * signt);
+                        }
                     }
                 }
             }
         }
-    }
+    });
 }
 
 /// Cap maximum displacement per timestep by scaling velocity.
@@ -956,6 +954,7 @@ pub fn apply_gravity(mut atoms: ResMut<Atom>, gravity: Res<GravityConfig>) {
 mod tests {
     use super::*;
     use dirt_test_utils::{make_atoms, make_group_registry};
+    use soil_core::AtomDataRegistry;
 
     #[test]
     fn setforce_seam_does_not_require_an_addforce_provider() {
@@ -1247,6 +1246,48 @@ misspelled_force = 1.0
         assert!((a.force[1][0]).abs() < 1e-12);
         assert!((a.force[1][1]).abs() < 1e-12);
         assert!((a.force[1][2]).abs() < 1e-12);
+    }
+
+    #[test]
+    fn test_freeze_zeros_optional_dem_rotational_state_when_present() {
+        use dirt_test_utils::{ParticleFixture, ParticleSpec};
+
+        let mut fixture = ParticleFixture::single(ParticleSpec::new(0, [0.0; 3], 0.01)).build();
+        fixture.atom.vel[0] = [1.0, -2.0, 3.0];
+        fixture.atom.force[0] = [4.0, -5.0, 6.0];
+        let mut dem = fixture.registry.expect_mut::<dirt_atom::DemAtom>(
+            "test_freeze_zeros_optional_dem_rotational_state_when_present",
+        );
+        dem.omega[0] = [7.0, -8.0, 9.0];
+        dem.torque[0] = [10.0, -11.0, 12.0];
+        dem.ang_mom[0] = [13.0, -14.0, 15.0];
+        drop(dem);
+
+        let mut app = fixture.into_app();
+        app.add_resource(make_group_registry("frozen", vec![true]));
+        app.add_resource(FixesRegistry {
+            add_forces: vec![],
+            set_forces: vec![],
+            move_linears: vec![],
+            freezes: vec![FreezeDef {
+                group: "frozen".to_string(),
+            }],
+            viscous: vec![],
+            cundall: vec![],
+            nve_limit: vec![],
+        });
+        app.add_update_system(apply_freeze, ParticleSimScheduleSet::PostForce);
+        app.organize_systems();
+        app.run();
+
+        let atom = app.get_resource_ref::<Atom>().unwrap();
+        assert_eq!(atom.vel[0], [0.0; 3]);
+        assert_eq!(atom.force[0], [0.0; 3]);
+        let registry = app.get_resource_ref::<AtomDataRegistry>().unwrap();
+        let dem = registry.get::<dirt_atom::DemAtom>().unwrap();
+        assert_eq!(dem.omega[0], [0.0; 3]);
+        assert_eq!(dem.torque[0], [0.0; 3]);
+        assert_eq!(dem.ang_mom[0], [0.0; 3]);
     }
 
     #[test]

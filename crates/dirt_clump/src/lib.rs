@@ -130,8 +130,8 @@ use soil_derive::AtomData;
 
 use soil_core::{
     register_atom_data, Accum, Atom, AtomData, AtomDataRegistry, CommResource, Config, Domain,
-    ParticleSimScheduleSet, ParticleStore, ParticleStoreError, Real, Region, RunState,
-    ScheduleSetupSet, EXCHANGE, REVERSE_SEND_FORCE,
+    Optional, ParticleSimScheduleSet, ParticleStore, ParticleStoreError, ParticlesWith, Read, Real,
+    Region, RunState, ScheduleSetupSet, Write, EXCHANGE, REVERSE_SEND_FORCE,
 };
 
 #[cfg(feature = "mpi_backend")]
@@ -573,27 +573,24 @@ fn extend_ghost_cutoff_for_clumps(
 fn snap_subspheres_to_body_com(
     mut atoms: ResMut<Atom>,
     bodies: Res<MultisphereBodyStore>,
-    registry: Res<AtomDataRegistry>,
+    particles: ParticlesWith<'_, Read<ClumpAtom>>,
 ) {
-    let clump = match registry.get::<ClumpAtom>() {
-        Some(c) => c,
-        None => return,
-    };
-
-    let nlocal = atoms.nlocal as usize;
-    for i in 0..nlocal {
-        if i >= clump.body_id.len() {
-            break;
+    particles.with(|clump| {
+        let nlocal = atoms.nlocal as usize;
+        for i in 0..nlocal {
+            if i >= clump.body_id.len() {
+                break;
+            }
+            let bid = clump.body_id[i] as u32;
+            if bid == 0 {
+                continue;
+            }
+            if let Some(body_idx) = bodies.map(bid) {
+                let com = bodies.bodies[body_idx].com_pos;
+                atoms.pos[i] = [com[0] as Real, com[1] as Real, com[2] as Real];
+            }
         }
-        let bid = clump.body_id[i] as u32;
-        if bid == 0 {
-            continue;
-        }
-        if let Some(body_idx) = bodies.map(bid) {
-            let com = bodies.bodies[body_idx].com_pos;
-            atoms.pos[i] = [com[0] as Real, com[1] as Real, com[2] as Real];
-        }
-    }
+    });
 }
 
 /// Restore sub-sphere positions from body state after atom exchange.
@@ -603,42 +600,37 @@ fn snap_subspheres_to_body_com(
 fn restore_subsphere_positions(
     mut atoms: ResMut<Atom>,
     mut bodies: ResMut<MultisphereBodyStore>,
-    registry: Res<AtomDataRegistry>,
+    particles: ParticlesWith<'_, (Read<ClumpAtom>, Write<DemAtom>)>,
 ) {
     bodies.generate_map();
-
-    let clump = match registry.get::<ClumpAtom>() {
-        Some(c) => c,
-        None => return,
-    };
-    let mut dem = registry.expect_mut::<DemAtom>("restore_subsphere_positions");
-
-    let nlocal = atoms.nlocal as usize;
-    for i in 0..nlocal {
-        if i >= clump.body_id.len() {
-            break;
+    particles.with(|(clump, mut dem)| {
+        let nlocal = atoms.nlocal as usize;
+        for i in 0..nlocal {
+            if i >= clump.body_id.len() {
+                break;
+            }
+            let bid = clump.body_id[i] as u32;
+            if bid == 0 {
+                continue;
+            }
+            if let Some(body_idx) = bodies.map(bid) {
+                let body = &bodies.bodies[body_idx];
+                let rotated = quat_rotate(body.quaternion, clump.body_offset[i]);
+                atoms.pos[i] = [
+                    (body.com_pos[0] + rotated[0]) as Real,
+                    (body.com_pos[1] + rotated[1]) as Real,
+                    (body.com_pos[2] + rotated[2]) as Real,
+                ];
+                let omega_cross_r = cross(body.omega, rotated);
+                atoms.vel[i] = [
+                    (body.com_vel[0] + omega_cross_r[0]) as Real,
+                    (body.com_vel[1] + omega_cross_r[1]) as Real,
+                    (body.com_vel[2] + omega_cross_r[2]) as Real,
+                ];
+                dem.omega[i] = body.omega;
+            }
         }
-        let bid = clump.body_id[i] as u32;
-        if bid == 0 {
-            continue;
-        }
-        if let Some(body_idx) = bodies.map(bid) {
-            let body = &bodies.bodies[body_idx];
-            let rotated = quat_rotate(body.quaternion, clump.body_offset[i]);
-            atoms.pos[i] = [
-                (body.com_pos[0] + rotated[0]) as Real,
-                (body.com_pos[1] + rotated[1]) as Real,
-                (body.com_pos[2] + rotated[2]) as Real,
-            ];
-            let omega_cross_r = cross(body.omega, rotated);
-            atoms.vel[i] = [
-                (body.com_vel[0] + omega_cross_r[0]) as Real,
-                (body.com_vel[1] + omega_cross_r[1]) as Real,
-                (body.com_vel[2] + omega_cross_r[2]) as Real,
-            ];
-            dem.omega[i] = body.omega;
-        }
-    }
+    });
 }
 
 /// Initial half-step: integrate all rigid bodies (Euler equations).
@@ -876,90 +868,89 @@ fn exchange_bodies() {}
 pub fn aggregate_clump_forces(
     mut atoms: ResMut<Atom>,
     mut bodies: ResMut<MultisphereBodyStore>,
-    registry: Res<AtomDataRegistry>,
+    particles: ParticlesWith<'_, (Write<DemAtom>, Optional<Read<ClumpAtom>>)>,
 ) {
-    let clump = registry.get::<ClumpAtom>();
-    let clump = match clump {
-        Some(c) => c,
-        None => return,
-    };
-
-    let mut dem = registry.expect_mut::<DemAtom>("aggregate_clump_forces");
-
-    // Zero body accumulators
-    for body in &mut bodies.bodies {
-        body.zero_accumulators();
-    }
-
-    let nlocal = atoms.nlocal as usize;
-
-    // Collect contributions to avoid borrow conflicts
-    struct Contrib {
-        body_idx: usize,
-        force: [f64; 3],
-        torque: [f64; 3],
-        atom_idx: usize,
-    }
-
-    let mut contribs = Vec::new();
-
-    for i in 0..nlocal {
-        if i >= clump.body_id.len() {
-            break;
-        }
-        let bid = clump.body_id[i] as u32;
-        if bid == 0 {
-            continue;
-        }
-
-        let body_idx = match bodies.map(bid) {
-            Some(idx) => idx,
-            None => continue,
+    particles.with(|(mut dem, clump)| {
+        let clump = match clump {
+            Some(c) => c,
+            None => return,
         };
 
-        let body = &bodies.bodies[body_idx];
-
-        // r = rotated body_offset (current space-frame displacement)
-        let rotated = quat_rotate(body.quaternion, clump.body_offset[i]);
-
-        let f_raw = atoms.force[i];
-        let f = [f_raw[0] as f64, f_raw[1] as f64, f_raw[2] as f64];
-        let torque_from_force = cross(rotated, f);
-
-        let sub_torque = if i < dem.torque.len() {
-            dem.torque[i]
-        } else {
-            [0.0; 3]
-        };
-
-        contribs.push(Contrib {
-            body_idx,
-            force: f,
-            torque: [
-                torque_from_force[0] + sub_torque[0],
-                torque_from_force[1] + sub_torque[1],
-                torque_from_force[2] + sub_torque[2],
-            ],
-            atom_idx: i,
-        });
-    }
-
-    // Apply contributions to bodies
-    for c in &contribs {
-        let body = &mut bodies.bodies[c.body_idx];
-        for d in 0..3 {
-            body.force[d] += c.force[d];
-            body.torque[d] += c.torque[d];
+        // Zero body accumulators
+        for body in &mut bodies.bodies {
+            body.zero_accumulators();
         }
-    }
 
-    // Zero sub-sphere forces and torques
-    for c in &contribs {
-        atoms.force[c.atom_idx] = [0.0; 3];
-        if c.atom_idx < dem.torque.len() {
-            dem.torque[c.atom_idx] = [0.0; 3];
+        let nlocal = atoms.nlocal as usize;
+
+        // Collect contributions to avoid borrow conflicts
+        struct Contrib {
+            body_idx: usize,
+            force: [f64; 3],
+            torque: [f64; 3],
+            atom_idx: usize,
         }
-    }
+
+        let mut contribs = Vec::new();
+
+        for i in 0..nlocal {
+            if i >= clump.body_id.len() {
+                break;
+            }
+            let bid = clump.body_id[i] as u32;
+            if bid == 0 {
+                continue;
+            }
+
+            let body_idx = match bodies.map(bid) {
+                Some(idx) => idx,
+                None => continue,
+            };
+
+            let body = &bodies.bodies[body_idx];
+
+            // r = rotated body_offset (current space-frame displacement)
+            let rotated = quat_rotate(body.quaternion, clump.body_offset[i]);
+
+            let f_raw = atoms.force[i];
+            let f = [f_raw[0] as f64, f_raw[1] as f64, f_raw[2] as f64];
+            let torque_from_force = cross(rotated, f);
+
+            let sub_torque = if i < dem.torque.len() {
+                dem.torque[i]
+            } else {
+                [0.0; 3]
+            };
+
+            contribs.push(Contrib {
+                body_idx,
+                force: f,
+                torque: [
+                    torque_from_force[0] + sub_torque[0],
+                    torque_from_force[1] + sub_torque[1],
+                    torque_from_force[2] + sub_torque[2],
+                ],
+                atom_idx: i,
+            });
+        }
+
+        // Apply contributions to bodies
+        for c in &contribs {
+            let body = &mut bodies.bodies[c.body_idx];
+            for d in 0..3 {
+                body.force[d] += c.force[d];
+                body.torque[d] += c.torque[d];
+            }
+        }
+
+        // Zero sub-sphere forces and torques
+        for c in &contribs {
+            atoms.force[c.atom_idx] = [0.0; 3];
+            if c.atom_idx < dem.torque.len() {
+                dem.torque[c.atom_idx] = [0.0; 3];
+            }
+        }
+    });
 }
 
 /// Derive sub-sphere positions, velocities, and angular velocities from body state.
@@ -969,69 +960,69 @@ pub fn aggregate_clump_forces(
 pub fn update_clump_positions(
     mut atoms: ResMut<Atom>,
     bodies: Res<MultisphereBodyStore>,
-    registry: Res<AtomDataRegistry>,
+    particles: ParticlesWith<'_, (Write<DemAtom>, Optional<Read<ClumpAtom>>)>,
 ) {
-    let clump = registry.get::<ClumpAtom>();
-    let clump = match clump {
-        Some(c) => c,
-        None => return,
-    };
-
-    let nlocal = atoms.nlocal as usize;
-
-    struct SubUpdate {
-        idx: usize,
-        pos: [f64; 3],
-        vel: [f64; 3],
-        omega: [f64; 3],
-    }
-
-    let mut updates: Vec<SubUpdate> = Vec::new();
-
-    for i in 0..nlocal {
-        if i >= clump.body_id.len() {
-            break;
-        }
-        let bid = clump.body_id[i] as u32;
-        if bid == 0 {
-            continue;
-        }
-
-        let body_idx = match bodies.map(bid) {
-            Some(idx) => idx,
-            None => continue,
+    particles.with(|(mut dem, clump)| {
+        let clump = match clump {
+            Some(c) => c,
+            None => return,
         };
 
-        let body = &bodies.bodies[body_idx];
-        let rotated = quat_rotate(body.quaternion, clump.body_offset[i]);
+        let nlocal = atoms.nlocal as usize;
 
-        let new_pos = [
-            body.com_pos[0] + rotated[0],
-            body.com_pos[1] + rotated[1],
-            body.com_pos[2] + rotated[2],
-        ];
+        struct SubUpdate {
+            idx: usize,
+            pos: [f64; 3],
+            vel: [f64; 3],
+            omega: [f64; 3],
+        }
 
-        let omega_cross_r = cross(body.omega, rotated);
-        let new_vel = [
-            body.com_vel[0] + omega_cross_r[0],
-            body.com_vel[1] + omega_cross_r[1],
-            body.com_vel[2] + omega_cross_r[2],
-        ];
+        let mut updates: Vec<SubUpdate> = Vec::new();
 
-        updates.push(SubUpdate {
-            idx: i,
-            pos: new_pos,
-            vel: new_vel,
-            omega: body.omega,
-        });
-    }
+        for i in 0..nlocal {
+            if i >= clump.body_id.len() {
+                break;
+            }
+            let bid = clump.body_id[i] as u32;
+            if bid == 0 {
+                continue;
+            }
 
-    let mut dem = registry.expect_mut::<DemAtom>("update_clump_positions");
-    for u in updates {
-        atoms.pos[u.idx] = [u.pos[0] as Real, u.pos[1] as Real, u.pos[2] as Real];
-        atoms.vel[u.idx] = [u.vel[0] as Real, u.vel[1] as Real, u.vel[2] as Real];
-        dem.omega[u.idx] = u.omega;
-    }
+            let body_idx = match bodies.map(bid) {
+                Some(idx) => idx,
+                None => continue,
+            };
+
+            let body = &bodies.bodies[body_idx];
+            let rotated = quat_rotate(body.quaternion, clump.body_offset[i]);
+
+            let new_pos = [
+                body.com_pos[0] + rotated[0],
+                body.com_pos[1] + rotated[1],
+                body.com_pos[2] + rotated[2],
+            ];
+
+            let omega_cross_r = cross(body.omega, rotated);
+            let new_vel = [
+                body.com_vel[0] + omega_cross_r[0],
+                body.com_vel[1] + omega_cross_r[1],
+                body.com_vel[2] + omega_cross_r[2],
+            ];
+
+            updates.push(SubUpdate {
+                idx: i,
+                pos: new_pos,
+                vel: new_vel,
+                omega: body.omega,
+            });
+        }
+
+        for u in updates {
+            atoms.pos[u.idx] = [u.pos[0] as Real, u.pos[1] as Real, u.pos[2] as Real];
+            atoms.vel[u.idx] = [u.vel[0] as Real, u.vel[1] as Real, u.vel[2] as Real];
+            dem.omega[u.idx] = u.omega;
+        }
+    });
 }
 
 /// Diagnostic: check that each body has the expected number of local sub-sphere atoms.
@@ -1040,7 +1031,7 @@ pub fn update_clump_positions(
 fn check_lost_clump_atoms(
     atoms: Res<Atom>,
     bodies: Res<MultisphereBodyStore>,
-    registry: Res<AtomDataRegistry>,
+    particles: ParticlesWith<'_, Optional<Read<ClumpAtom>>>,
     comm: Res<CommResource>,
     run_state: Res<RunState>,
 ) {
@@ -1048,37 +1039,38 @@ fn check_lost_clump_atoms(
         return;
     }
 
-    let clump = match registry.get::<ClumpAtom>() {
-        Some(c) => c,
-        None => return,
-    };
+    particles.with(|clump| {
+        let Some(clump) = clump else {
+            return;
+        };
 
-    let nlocal = atoms.nlocal as usize;
-    let mut counts: HashMap<u32, usize> = HashMap::new();
+        let nlocal = atoms.nlocal as usize;
+        let mut counts: HashMap<u32, usize> = HashMap::new();
 
-    for i in 0..nlocal {
-        if i >= clump.body_id.len() {
-            break;
+        for i in 0..nlocal {
+            if i >= clump.body_id.len() {
+                break;
+            }
+            let bid = clump.body_id[i] as u32;
+            if bid > 0 {
+                *counts.entry(bid).or_default() += 1;
+            }
         }
-        let bid = clump.body_id[i] as u32;
-        if bid > 0 {
-            *counts.entry(bid).or_default() += 1;
-        }
-    }
 
-    for body in &bodies.bodies {
-        let expected = body.sub_sphere_tags.len();
-        let actual = counts.get(&body.id).copied().unwrap_or(0);
-        if actual != expected {
-            eprintln!(
-                "WARNING: Body {} has {}/{} atoms on rank {}",
-                body.id,
-                actual,
-                expected,
-                comm.rank()
-            );
+        for body in &bodies.bodies {
+            let expected = body.sub_sphere_tags.len();
+            let actual = counts.get(&body.id).copied().unwrap_or(0);
+            if actual != expected {
+                eprintln!(
+                    "WARNING: Body {} has {}/{} atoms on rank {}",
+                    body.id,
+                    actual,
+                    expected,
+                    comm.rank()
+                );
+            }
         }
-    }
+    });
 }
 
 // ── Clump insertion from config ──────────────────────────────────────────────

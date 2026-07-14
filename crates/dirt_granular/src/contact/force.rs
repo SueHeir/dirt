@@ -4,18 +4,29 @@ use super::*;
 pub fn hertz_mindlin_contact_force(
     mut atoms: ResMut<Atom>,
     neighbor: Res<Neighbor>,
-    registry: Res<AtomDataRegistry>,
+    particles: ParticlesWith<
+        '_,
+        (
+            Write<DemAtom>,
+            Write<ContactHistoryStore>,
+            Optional<Read<BondStore>>,
+        ),
+    >,
     material_table: Res<MaterialTable>,
     mut virial: Option<ResMut<VirialStress>>,
 ) {
-    contact_force_core(
-        &mut atoms,
-        &neighbor,
-        &registry,
-        &material_table,
-        virial.as_deref_mut(),
-        ForcePass::All,
-    );
+    particles.with(|(mut dem, mut history, bonds)| {
+        contact_force_core_views(
+            &mut atoms,
+            &neighbor,
+            &mut dem,
+            &mut history,
+            bonds.as_deref(),
+            &material_table,
+            virial.as_deref_mut(),
+            ForcePass::All,
+        );
+    });
 }
 
 /// Overlapped Hertz-Mindlin force (roadmap step 4): compute the interior pairs
@@ -29,6 +40,14 @@ pub fn overlapped_contact_force(
     mut atoms: ResMut<Atom>,
     neighbor: Res<Neighbor>,
     registry: Res<AtomDataRegistry>,
+    particles: ParticlesWith<
+        '_,
+        (
+            Write<DemAtom>,
+            Write<ContactHistoryStore>,
+            Optional<Read<BondStore>>,
+        ),
+    >,
     material_table: Res<MaterialTable>,
     comm: Res<CommResource>,
     topo: Res<CommTopology>,
@@ -39,10 +58,10 @@ pub fn overlapped_contact_force(
     {
         // Interior pairs need no fresh ghosts — run them during the in-flight halo.
         let mut interior = |a: &mut Atom| {
-            contact_force_core(
+            contact_force_core_particles(
                 a,
                 &neighbor,
-                &registry,
+                &particles,
                 &material_table,
                 None,
                 ForcePass::Interior,
@@ -59,10 +78,10 @@ pub fn overlapped_contact_force(
     }
     buffers.forward_scratch = pool;
     // Boundary pairs, now that the halo has landed.
-    contact_force_core(
+    contact_force_core_particles(
         &mut atoms,
         &neighbor,
-        &registry,
+        &particles,
         &material_table,
         virial.as_deref_mut(),
         ForcePass::Boundary,
@@ -77,13 +96,69 @@ pub fn contact_force_core(
     neighbor: &Neighbor,
     registry: &AtomDataRegistry,
     material_table: &MaterialTable,
+    virial: Option<&mut VirialStress>,
+    pass: ForcePass,
+) {
+    let mut dem = registry.expect_mut::<DemAtom>("contact_force_core test helper");
+    let mut history = registry.expect_mut::<ContactHistoryStore>("contact_force_core test helper");
+    let bonds = registry.get::<BondStore>();
+    contact_force_core_views(
+        atoms,
+        neighbor,
+        &mut dem,
+        &mut history,
+        bonds.as_deref(),
+        material_table,
+        virial,
+        pass,
+    );
+}
+
+/// Typed scheduled-contact implementation. The legacy registry helper above is
+/// retained solely for direct kernel unit tests; scheduled systems use this
+/// query-backed path so required extensions are validated at preparation.
+fn contact_force_core_particles(
+    atoms: &mut Atom,
+    neighbor: &Neighbor,
+    particles: &ParticlesWith<
+        '_,
+        (
+            Write<DemAtom>,
+            Write<ContactHistoryStore>,
+            Optional<Read<BondStore>>,
+        ),
+    >,
+    material_table: &MaterialTable,
+    virial: Option<&mut VirialStress>,
+    pass: ForcePass,
+) {
+    particles.with(|(mut dem, mut history, bonds)| {
+        contact_force_core_views(
+            atoms,
+            neighbor,
+            &mut dem,
+            &mut history,
+            bonds.as_deref(),
+            material_table,
+            virial,
+            pass,
+        );
+    });
+}
+
+/// Typed core used by scheduled contact systems after `ParticlesWith` has
+/// validated and borrowed the exact extension columns they require.
+pub fn contact_force_core_views(
+    atoms: &mut Atom,
+    neighbor: &Neighbor,
+    dem: &mut DemAtom,
+    history: &mut ContactHistoryStore,
+    bond_store: Option<&BondStore>,
+    material_table: &MaterialTable,
     mut virial: Option<&mut VirialStress>,
     pass: ForcePass,
 ) {
     let newton = neighbor.newton;
-    let mut dem = registry.expect_mut::<DemAtom>("contact_force_core");
-    let mut history = registry.expect_mut::<ContactHistoryStore>("contact_force_core");
-    let bond_store = registry.get::<BondStore>();
     let dt = atoms.dt;
 
     let natoms = atoms.len();
@@ -781,408 +856,383 @@ pub fn contact_force_core(
 pub fn hooke_contact_force(
     mut atoms: ResMut<Atom>,
     neighbor: Res<Neighbor>,
-    registry: Res<AtomDataRegistry>,
+    particles: ParticlesWith<
+        '_,
+        (
+            Write<DemAtom>,
+            Write<ContactHistoryStore>,
+            Optional<Read<BondStore>>,
+        ),
+    >,
     material_table: Res<MaterialTable>,
     mut virial: Option<ResMut<VirialStress>>,
 ) {
-    let newton = neighbor.newton;
-    let mut dem = registry.expect_mut::<DemAtom>("hooke_contact_force");
-    let mut history = registry.expect_mut::<ContactHistoryStore>("hooke_contact_force");
-    let bond_store = registry.get::<BondStore>();
-    let dt = atoms.dt;
+    particles.with(|(mut dem, mut history, bond_store)| {
+        let newton = neighbor.newton;
+        let dt = atoms.dt;
 
-    while history.contacts.len() < atoms.len() {
-        history.contacts.push(Vec::new());
-    }
-
-    let nlocal = atoms.nlocal as usize;
-    let mut overlap_warnings = 0usize;
-
-    for i in 0..nlocal {
-        for entry in &mut history.contacts[i] {
-            entry.2 = false;
+        while history.contacts.len() < atoms.len() {
+            history.contacts.push(Vec::new());
         }
-    }
 
-    for (i, j) in neighbor.pairs(nlocal) {
-        if let Some(ref bonds) = bond_store {
-            if bonds.are_excluded(i, j, &atoms.tag) {
+        let nlocal = atoms.nlocal as usize;
+        let mut overlap_warnings = 0usize;
+
+        for i in 0..nlocal {
+            for entry in &mut history.contacts[i] {
+                entry.2 = false;
+            }
+        }
+
+        for (i, j) in neighbor.pairs(nlocal) {
+            if let Some(ref bonds) = bond_store {
+                if bonds.are_excluded(i, j, &atoms.tag) {
+                    continue;
+                }
+            }
+
+            // Skip same-body pairs (sub-spheres of the same rigid body don't interact)
+            if dirt_atom::same_body(&dem, i, j) {
                 continue;
             }
-        }
 
-        // Skip same-body pairs (sub-spheres of the same rigid body don't interact)
-        if dirt_atom::same_body(&dem, i, j) {
-            continue;
-        }
+            let r1 = dem.radius[i];
+            let r2 = dem.radius[j];
 
-        let r1 = dem.radius[i];
-        let r2 = dem.radius[j];
+            let dx = atoms.pos[j][0] as f64 - atoms.pos[i][0] as f64;
+            let dy = atoms.pos[j][1] as f64 - atoms.pos[i][1] as f64;
+            let dz = atoms.pos[j][2] as f64 - atoms.pos[i][2] as f64;
+            let dist_sq = dx * dx + dy * dy + dz * dz;
+            let sum_r = r1 + r2;
 
-        let dx = atoms.pos[j][0] as f64 - atoms.pos[i][0] as f64;
-        let dy = atoms.pos[j][1] as f64 - atoms.pos[i][1] as f64;
-        let dz = atoms.pos[j][2] as f64 - atoms.pos[i][2] as f64;
-        let dist_sq = dx * dx + dy * dy + dz * dz;
-        let sum_r = r1 + r2;
-
-        if dist_sq >= sum_r * sum_r {
-            continue;
-        }
-
-        let distance = dist_sq.sqrt();
-        if distance == 0.0 {
-            continue;
-        }
-
-        let r_min = r1.min(r2);
-        let delta = (sum_r - distance).min(0.5 * r_min);
-        if delta <= 0.0 {
-            continue;
-        }
-
-        if distance / sum_r < LARGE_OVERLAP_WARN_THRESHOLD {
-            overlap_warnings += 1;
-            if overlap_warnings > MAX_OVERLAP_WARNINGS {
-                panic!(
-                    "Over {} excessive overlaps this step — aborting.",
-                    MAX_OVERLAP_WARNINGS
-                );
+            if dist_sq >= sum_r * sum_r {
+                continue;
             }
-            // Still compute force (don't skip) — removing repulsion causes runaway.
-        }
 
-        let inv_dist = 1.0 / distance;
-        let nx = dx * inv_dist;
-        let ny = dy * inv_dist;
-        let nz = dz * inv_dist;
+            let distance = dist_sq.sqrt();
+            if distance == 0.0 {
+                continue;
+            }
 
-        let mat_i = atoms.atom_type[i] as usize;
-        let mat_j = atoms.atom_type[j] as usize;
-        let r_eff = (r1 * r2) / sum_r;
-        // For clump sub-spheres inv_mass is 0 (body-integrated); use real mass.
-        let inv_m_i = if atoms.inv_mass[i] as f64 > 0.0 {
-            atoms.inv_mass[i] as f64
-        } else {
-            1.0 / atoms.mass[i] as f64
-        };
-        let inv_m_j = if atoms.inv_mass[j] as f64 > 0.0 {
-            atoms.inv_mass[j] as f64
-        } else {
-            1.0 / atoms.mass[j] as f64
-        };
-        let m_r = 1.0 / (inv_m_i + inv_m_j);
-        let beta = material_table.beta_ij[mat_i][mat_j];
-        let mu = material_table.friction_ij[mat_i][mat_j];
-        let mu_r = material_table.rolling_friction_ij[mat_i][mat_j];
-        let mu_tw = material_table.twisting_friction_ij[mat_i][mat_j];
-        let cohesion_energy = material_table.cohesion_energy_ij[mat_i][mat_j];
+            let r_min = r1.min(r2);
+            let delta = (sum_r - distance).min(0.5 * r_min);
+            if delta <= 0.0 {
+                continue;
+            }
 
-        let kn = material_table.kn_ij[mat_i][mat_j];
-        let kt = material_table.kt_ij[mat_i][mat_j];
-        let contact_radius = (r_eff * delta).sqrt();
+            if distance / sum_r < LARGE_OVERLAP_WARN_THRESHOLD {
+                overlap_warnings += 1;
+                if overlap_warnings > MAX_OVERLAP_WARNINGS {
+                    panic!(
+                        "Over {} excessive overlaps this step — aborting.",
+                        MAX_OVERLAP_WARNINGS
+                    );
+                }
+                // Still compute force (don't skip) — removing repulsion causes runaway.
+            }
 
-        // Hooke normal: f_n = kn * delta
-        // Damping: gamma_n = 2 * beta * sqrt(kn * m_r)
-        let gamma_n = 2.0 * beta * (kn * m_r).sqrt();
+            let inv_dist = 1.0 / distance;
+            let nx = dx * inv_dist;
+            let ny = dy * inv_dist;
+            let nz = dz * inv_dist;
 
-        // Relative velocity
-        let omega_ix = dem.omega[i][0];
-        let omega_iy = dem.omega[i][1];
-        let omega_iz = dem.omega[i][2];
-        let omega_jx = dem.omega[j][0];
-        let omega_jy = dem.omega[j][1];
-        let omega_jz = dem.omega[j][2];
-
-        let r1n_x = r1 * nx;
-        let r1n_y = r1 * ny;
-        let r1n_z = r1 * nz;
-        let vc_ix = atoms.vel[i][0] as f64 + (omega_iy * r1n_z - omega_iz * r1n_y);
-        let vc_iy = atoms.vel[i][1] as f64 + (omega_iz * r1n_x - omega_ix * r1n_z);
-        let vc_iz = atoms.vel[i][2] as f64 + (omega_ix * r1n_y - omega_iy * r1n_x);
-
-        let r2n_x = r2 * nx;
-        let r2n_y = r2 * ny;
-        let r2n_z = r2 * nz;
-        let vc_jx = atoms.vel[j][0] as f64 + (-omega_jy * r2n_z + omega_jz * r2n_y);
-        let vc_jy = atoms.vel[j][1] as f64 + (-omega_jz * r2n_x + omega_jx * r2n_z);
-        let vc_jz = atoms.vel[j][2] as f64 + (-omega_jx * r2n_y + omega_jy * r2n_x);
-
-        let vr_x = vc_jx - vc_ix;
-        let vr_y = vc_jy - vc_iy;
-        let vr_z = vc_jz - vc_iz;
-        let v_n = vr_x * nx + vr_y * ny + vr_z * nz;
-
-        // Normal force
-        let f_n_mag = if cohesion_energy > 0.0 {
-            let f_cohesion = cohesion_energy * std::f64::consts::PI * delta * r_eff;
-            kn * delta - gamma_n * v_n - f_cohesion
-        } else {
-            // See the Hertz path: `limit_damping` (default) clamps to repulsive-
-            // only; disabling it matches LAMMPS's default (no tensile cutoff).
-            let f_total = kn * delta - gamma_n * v_n;
-            if material_table.limit_damping {
-                f_total.max(0.0)
+            let mat_i = atoms.atom_type[i] as usize;
+            let mat_j = atoms.atom_type[j] as usize;
+            let r_eff = (r1 * r2) / sum_r;
+            // For clump sub-spheres inv_mass is 0 (body-integrated); use real mass.
+            let inv_m_i = if atoms.inv_mass[i] as f64 > 0.0 {
+                atoms.inv_mass[i] as f64
             } else {
-                f_total
-            }
-        };
-
-        let fn_x = f_n_mag * nx;
-        let fn_y = f_n_mag * ny;
-        let fn_z = f_n_mag * nz;
-
-        atoms.force[i][0] -= fn_x as soil_core::Accum;
-        atoms.force[i][1] -= fn_y as soil_core::Accum;
-        atoms.force[i][2] -= fn_z as soil_core::Accum;
-        if newton {
-            atoms.force[j][0] += fn_x as soil_core::Accum;
-            atoms.force[j][1] += fn_y as soil_core::Accum;
-            atoms.force[j][2] += fn_z as soil_core::Accum;
-        }
-
-        // Tangential force
-        let vt_x = vr_x - v_n * nx;
-        let vt_y = vr_y - v_n * ny;
-        let vt_z = vr_z - v_n * nz;
-
-        let tag_i = atoms.tag[i];
-        let tag_j = atoms.tag[j];
-        let sign: f64 = if tag_i < tag_j { 1.0 } else { -1.0 };
-
-        let entry_idx = history.contacts[i].iter().position(|(t, _, _)| *t == tag_j);
-        let stored = match entry_idx {
-            Some(idx) => history.contacts[i][idx].1,
-            None => zero_contact_history(),
-        };
-
-        // History-free `linear_nohistory` tangential model → zero spring (see the
-        // Hertz path above); the force reduces to velocity-Coulomb with no
-        // accumulated displacement. "history" keeps the incremental Hooke spring.
-        let tangential_model = material_table.tangential_model.as_str();
-        let nohistory = tangential_model == "linear_nohistory";
-        let mindlin_rescale = is_mindlin_rescale(tangential_model);
-        let mindlin_force_history = is_mindlin_force_history(tangential_model);
-        let f_t_max = mu * f_n_mag.abs();
-        let (sx, sy, sz) = if nohistory {
-            (0.0, 0.0, 0.0)
-        } else if mindlin_force_history {
-            let mut fx = sign * stored[0];
-            let mut fy = sign * stored[1];
-            let mut fz = sign * stored[2];
-            let prev_a = stored[7];
-            if mindlin_rescale && prev_a > TANGENTIAL_EPSILON && contact_radius < prev_a {
-                let scale = contact_radius / prev_a;
-                fx *= scale;
-                fy *= scale;
-                fz *= scale;
-            }
-            let f_dot_n = fx * nx + fy * ny + fz * nz;
-            fx -= f_dot_n * nx;
-            fy -= f_dot_n * ny;
-            fz -= f_dot_n * nz;
-            fx += kt * vt_x * dt;
-            fy += kt * vt_y * dt;
-            fz += kt * vt_z * dt;
-            (fx, fy, fz)
-        } else {
-            let mut sx = sign * stored[0];
-            let mut sy = sign * stored[1];
-            let mut sz = sign * stored[2];
-            let prev_a = stored[7];
-            if mindlin_rescale && prev_a > TANGENTIAL_EPSILON && contact_radius < prev_a {
-                let scale = contact_radius / prev_a;
-                sx *= scale;
-                sy *= scale;
-                sz *= scale;
-            }
-            let s_dot_n = sx * nx + sy * ny + sz * nz;
-            sx -= s_dot_n * nx;
-            sy -= s_dot_n * ny;
-            sz -= s_dot_n * nz;
-            sx += vt_x * dt;
-            sy += vt_y * dt;
-            sz += vt_z * dt;
-
-            let s_mag = (sx * sx + sy * sy + sz * sz).sqrt();
-            let f_t_spring_mag = kt * s_mag;
-            if f_t_spring_mag > f_t_max && f_t_spring_mag > TANGENTIAL_EPSILON {
-                let scale = f_t_max / f_t_spring_mag;
-                sx *= scale;
-                sy *= scale;
-                sz *= scale;
-            }
-            (sx, sy, sz)
-        };
-
-        let gamma_t = 2.0 * SQRT_5_6 * beta * (kt * m_r).sqrt();
-        let mut ft_x = (if mindlin_force_history { sx } else { kt * sx }) + gamma_t * vt_x;
-        let mut ft_y = (if mindlin_force_history { sy } else { kt * sy }) + gamma_t * vt_y;
-        let mut ft_z = (if mindlin_force_history { sz } else { kt * sz }) + gamma_t * vt_z;
-
-        let f_t_mag = (ft_x * ft_x + ft_y * ft_y + ft_z * ft_z).sqrt();
-        if f_t_mag > f_t_max && f_t_mag > TANGENTIAL_EPSILON {
-            let scale = f_t_max / f_t_mag;
-            ft_x *= scale;
-            ft_y *= scale;
-            ft_z *= scale;
-        }
-
-        let (sx, sy, sz) =
-            if mindlin_force_history && f_t_mag > f_t_max && f_t_mag > TANGENTIAL_EPSILON {
-                (
-                    ft_x - gamma_t * vt_x,
-                    ft_y - gamma_t * vt_y,
-                    ft_z - gamma_t * vt_z,
-                )
+                1.0 / atoms.mass[i] as f64
+            };
+            let inv_m_j = if atoms.inv_mass[j] as f64 > 0.0 {
+                atoms.inv_mass[j] as f64
             } else {
+                1.0 / atoms.mass[j] as f64
+            };
+            let m_r = 1.0 / (inv_m_i + inv_m_j);
+            let beta = material_table.beta_ij[mat_i][mat_j];
+            let mu = material_table.friction_ij[mat_i][mat_j];
+            let mu_r = material_table.rolling_friction_ij[mat_i][mat_j];
+            let mu_tw = material_table.twisting_friction_ij[mat_i][mat_j];
+            let cohesion_energy = material_table.cohesion_energy_ij[mat_i][mat_j];
+
+            let kn = material_table.kn_ij[mat_i][mat_j];
+            let kt = material_table.kt_ij[mat_i][mat_j];
+            let contact_radius = (r_eff * delta).sqrt();
+
+            // Hooke normal: f_n = kn * delta
+            // Damping: gamma_n = 2 * beta * sqrt(kn * m_r)
+            let gamma_n = 2.0 * beta * (kn * m_r).sqrt();
+
+            // Relative velocity
+            let omega_ix = dem.omega[i][0];
+            let omega_iy = dem.omega[i][1];
+            let omega_iz = dem.omega[i][2];
+            let omega_jx = dem.omega[j][0];
+            let omega_jy = dem.omega[j][1];
+            let omega_jz = dem.omega[j][2];
+
+            let r1n_x = r1 * nx;
+            let r1n_y = r1 * ny;
+            let r1n_z = r1 * nz;
+            let vc_ix = atoms.vel[i][0] as f64 + (omega_iy * r1n_z - omega_iz * r1n_y);
+            let vc_iy = atoms.vel[i][1] as f64 + (omega_iz * r1n_x - omega_ix * r1n_z);
+            let vc_iz = atoms.vel[i][2] as f64 + (omega_ix * r1n_y - omega_iy * r1n_x);
+
+            let r2n_x = r2 * nx;
+            let r2n_y = r2 * ny;
+            let r2n_z = r2 * nz;
+            let vc_jx = atoms.vel[j][0] as f64 + (-omega_jy * r2n_z + omega_jz * r2n_y);
+            let vc_jy = atoms.vel[j][1] as f64 + (-omega_jz * r2n_x + omega_jx * r2n_z);
+            let vc_jz = atoms.vel[j][2] as f64 + (-omega_jx * r2n_y + omega_jy * r2n_x);
+
+            let vr_x = vc_jx - vc_ix;
+            let vr_y = vc_jy - vc_iy;
+            let vr_z = vc_jz - vc_iz;
+            let v_n = vr_x * nx + vr_y * ny + vr_z * nz;
+
+            // Normal force
+            let f_n_mag = if cohesion_energy > 0.0 {
+                let f_cohesion = cohesion_energy * std::f64::consts::PI * delta * r_eff;
+                kn * delta - gamma_n * v_n - f_cohesion
+            } else {
+                // See the Hertz path: `limit_damping` (default) clamps to repulsive-
+                // only; disabling it matches LAMMPS's default (no tensile cutoff).
+                let f_total = kn * delta - gamma_n * v_n;
+                if material_table.limit_damping {
+                    f_total.max(0.0)
+                } else {
+                    f_total
+                }
+            };
+
+            let fn_x = f_n_mag * nx;
+            let fn_y = f_n_mag * ny;
+            let fn_z = f_n_mag * nz;
+
+            atoms.force[i][0] -= fn_x as soil_core::Accum;
+            atoms.force[i][1] -= fn_y as soil_core::Accum;
+            atoms.force[i][2] -= fn_z as soil_core::Accum;
+            if newton {
+                atoms.force[j][0] += fn_x as soil_core::Accum;
+                atoms.force[j][1] += fn_y as soil_core::Accum;
+                atoms.force[j][2] += fn_z as soil_core::Accum;
+            }
+
+            // Tangential force
+            let vt_x = vr_x - v_n * nx;
+            let vt_y = vr_y - v_n * ny;
+            let vt_z = vr_z - v_n * nz;
+
+            let tag_i = atoms.tag[i];
+            let tag_j = atoms.tag[j];
+            let sign: f64 = if tag_i < tag_j { 1.0 } else { -1.0 };
+
+            let entry_idx = history.contacts[i].iter().position(|(t, _, _)| *t == tag_j);
+            let stored = match entry_idx {
+                Some(idx) => history.contacts[i][idx].1,
+                None => zero_contact_history(),
+            };
+
+            // History-free `linear_nohistory` tangential model → zero spring (see the
+            // Hertz path above); the force reduces to velocity-Coulomb with no
+            // accumulated displacement. "history" keeps the incremental Hooke spring.
+            let tangential_model = material_table.tangential_model.as_str();
+            let nohistory = tangential_model == "linear_nohistory";
+            let mindlin_rescale = is_mindlin_rescale(tangential_model);
+            let mindlin_force_history = is_mindlin_force_history(tangential_model);
+            let f_t_max = mu * f_n_mag.abs();
+            let (sx, sy, sz) = if nohistory {
+                (0.0, 0.0, 0.0)
+            } else if mindlin_force_history {
+                let mut fx = sign * stored[0];
+                let mut fy = sign * stored[1];
+                let mut fz = sign * stored[2];
+                let prev_a = stored[7];
+                if mindlin_rescale && prev_a > TANGENTIAL_EPSILON && contact_radius < prev_a {
+                    let scale = contact_radius / prev_a;
+                    fx *= scale;
+                    fy *= scale;
+                    fz *= scale;
+                }
+                let f_dot_n = fx * nx + fy * ny + fz * nz;
+                fx -= f_dot_n * nx;
+                fy -= f_dot_n * ny;
+                fz -= f_dot_n * nz;
+                fx += kt * vt_x * dt;
+                fy += kt * vt_y * dt;
+                fz += kt * vt_z * dt;
+                (fx, fy, fz)
+            } else {
+                let mut sx = sign * stored[0];
+                let mut sy = sign * stored[1];
+                let mut sz = sign * stored[2];
+                let prev_a = stored[7];
+                if mindlin_rescale && prev_a > TANGENTIAL_EPSILON && contact_radius < prev_a {
+                    let scale = contact_radius / prev_a;
+                    sx *= scale;
+                    sy *= scale;
+                    sz *= scale;
+                }
+                let s_dot_n = sx * nx + sy * ny + sz * nz;
+                sx -= s_dot_n * nx;
+                sy -= s_dot_n * ny;
+                sz -= s_dot_n * nz;
+                sx += vt_x * dt;
+                sy += vt_y * dt;
+                sz += vt_z * dt;
+
+                let s_mag = (sx * sx + sy * sy + sz * sz).sqrt();
+                let f_t_spring_mag = kt * s_mag;
+                if f_t_spring_mag > f_t_max && f_t_spring_mag > TANGENTIAL_EPSILON {
+                    let scale = f_t_max / f_t_spring_mag;
+                    sx *= scale;
+                    sy *= scale;
+                    sz *= scale;
+                }
                 (sx, sy, sz)
             };
 
-        // Torques
-        let ti_x = r1n_y * ft_z - r1n_z * ft_y;
-        let ti_y = r1n_z * ft_x - r1n_x * ft_z;
-        let ti_z = r1n_x * ft_y - r1n_y * ft_x;
-        let tj_x = r2n_y * ft_z - r2n_z * ft_y;
-        let tj_y = r2n_z * ft_x - r2n_x * ft_z;
-        let tj_z = r2n_x * ft_y - r2n_y * ft_x;
+            let gamma_t = 2.0 * SQRT_5_6 * beta * (kt * m_r).sqrt();
+            let mut ft_x = (if mindlin_force_history { sx } else { kt * sx }) + gamma_t * vt_x;
+            let mut ft_y = (if mindlin_force_history { sy } else { kt * sy }) + gamma_t * vt_y;
+            let mut ft_z = (if mindlin_force_history { sz } else { kt * sz }) + gamma_t * vt_z;
 
-        atoms.force[i][0] += ft_x as soil_core::Accum;
-        atoms.force[i][1] += ft_y as soil_core::Accum;
-        atoms.force[i][2] += ft_z as soil_core::Accum;
-        if newton {
-            atoms.force[j][0] -= ft_x as soil_core::Accum;
-            atoms.force[j][1] -= ft_y as soil_core::Accum;
-            atoms.force[j][2] -= ft_z as soil_core::Accum;
-        }
-        dem.torque[i][0] += ti_x;
-        dem.torque[i][1] += ti_y;
-        dem.torque[i][2] += ti_z;
-        if newton {
-            dem.torque[j][0] += tj_x;
-            dem.torque[j][1] += tj_y;
-            dem.torque[j][2] += tj_z;
-        }
+            let f_t_mag = (ft_x * ft_x + ft_y * ft_y + ft_z * ft_z).sqrt();
+            if f_t_mag > f_t_max && f_t_mag > TANGENTIAL_EPSILON {
+                let scale = f_t_max / f_t_mag;
+                ft_x *= scale;
+                ft_y *= scale;
+                ft_z *= scale;
+            }
 
-        // Rolling/twisting relative angular velocity
-        let or_x = omega_ix - omega_jx;
-        let or_y = omega_iy - omega_jy;
-        let or_z = omega_iz - omega_jz;
-        let or_dot_n = or_x * nx + or_y * ny + or_z * nz;
-        let roll_x = or_x - or_dot_n * nx;
-        let roll_y = or_y - or_dot_n * ny;
-        let roll_z = or_z - or_dot_n * nz;
+            let (sx, sy, sz) =
+                if mindlin_force_history && f_t_mag > f_t_max && f_t_mag > TANGENTIAL_EPSILON {
+                    (
+                        ft_x - gamma_t * vt_x,
+                        ft_y - gamma_t * vt_y,
+                        ft_z - gamma_t * vt_z,
+                    )
+                } else {
+                    (sx, sy, sz)
+                };
 
-        let mut roll_disp_x = sign * stored[3];
-        let mut roll_disp_y = sign * stored[4];
-        let mut roll_disp_z = sign * stored[5];
-        let mut twist_disp = sign * stored[6];
+            // Torques
+            let ti_x = r1n_y * ft_z - r1n_z * ft_y;
+            let ti_y = r1n_z * ft_x - r1n_x * ft_z;
+            let ti_z = r1n_x * ft_y - r1n_y * ft_x;
+            let tj_x = r2n_y * ft_z - r2n_z * ft_y;
+            let tj_y = r2n_z * ft_x - r2n_x * ft_z;
+            let tj_z = r2n_x * ft_y - r2n_y * ft_x;
 
-        // Rolling resistance
-        if mu_r > 0.0 {
-            let roll_mag = (roll_x * roll_x + roll_y * roll_y + roll_z * roll_z).sqrt();
-            let sds_rolling = material_table.rolling_model == "sds";
-            if sds_rolling {
-                let k_roll = material_table.rolling_stiffness_ij[mat_i][mat_j];
-                let gamma_roll = material_table.rolling_damping_ij[mat_i][mat_j];
+            atoms.force[i][0] += ft_x as soil_core::Accum;
+            atoms.force[i][1] += ft_y as soil_core::Accum;
+            atoms.force[i][2] += ft_z as soil_core::Accum;
+            if newton {
+                atoms.force[j][0] -= ft_x as soil_core::Accum;
+                atoms.force[j][1] -= ft_y as soil_core::Accum;
+                atoms.force[j][2] -= ft_z as soil_core::Accum;
+            }
+            dem.torque[i][0] += ti_x;
+            dem.torque[i][1] += ti_y;
+            dem.torque[i][2] += ti_z;
+            if newton {
+                dem.torque[j][0] += tj_x;
+                dem.torque[j][1] += tj_y;
+                dem.torque[j][2] += tj_z;
+            }
 
-                let rd_dot_n = roll_disp_x * nx + roll_disp_y * ny + roll_disp_z * nz;
-                roll_disp_x -= rd_dot_n * nx;
-                roll_disp_y -= rd_dot_n * ny;
-                roll_disp_z -= rd_dot_n * nz;
-                roll_disp_x += roll_x * dt;
-                roll_disp_y += roll_y * dt;
-                roll_disp_z += roll_z * dt;
+            // Rolling/twisting relative angular velocity
+            let or_x = omega_ix - omega_jx;
+            let or_y = omega_iy - omega_jy;
+            let or_z = omega_iz - omega_jz;
+            let or_dot_n = or_x * nx + or_y * ny + or_z * nz;
+            let roll_x = or_x - or_dot_n * nx;
+            let roll_y = or_y - or_dot_n * ny;
+            let roll_z = or_z - or_dot_n * nz;
 
-                let mut tr_x = -k_roll * roll_disp_x - gamma_roll * roll_x;
-                let mut tr_y = -k_roll * roll_disp_y - gamma_roll * roll_y;
-                let mut tr_z = -k_roll * roll_disp_z - gamma_roll * roll_z;
-                let tr_mag = (tr_x * tr_x + tr_y * tr_y + tr_z * tr_z).sqrt();
-                let tau_max = mu_r * f_n_mag.abs() * r_eff;
+            let mut roll_disp_x = sign * stored[3];
+            let mut roll_disp_y = sign * stored[4];
+            let mut roll_disp_z = sign * stored[5];
+            let mut twist_disp = sign * stored[6];
 
-                if tr_mag > tau_max && tr_mag > TANGENTIAL_EPSILON {
-                    let scale = tau_max / tr_mag;
-                    tr_x *= scale;
-                    tr_y *= scale;
-                    tr_z *= scale;
-                    if k_roll > TANGENTIAL_EPSILON {
-                        roll_disp_x = (tr_x + gamma_roll * roll_x) / (-k_roll);
-                        roll_disp_y = (tr_y + gamma_roll * roll_y) / (-k_roll);
-                        roll_disp_z = (tr_z + gamma_roll * roll_z) / (-k_roll);
+            // Rolling resistance
+            if mu_r > 0.0 {
+                let roll_mag = (roll_x * roll_x + roll_y * roll_y + roll_z * roll_z).sqrt();
+                let sds_rolling = material_table.rolling_model == "sds";
+                if sds_rolling {
+                    let k_roll = material_table.rolling_stiffness_ij[mat_i][mat_j];
+                    let gamma_roll = material_table.rolling_damping_ij[mat_i][mat_j];
+
+                    let rd_dot_n = roll_disp_x * nx + roll_disp_y * ny + roll_disp_z * nz;
+                    roll_disp_x -= rd_dot_n * nx;
+                    roll_disp_y -= rd_dot_n * ny;
+                    roll_disp_z -= rd_dot_n * nz;
+                    roll_disp_x += roll_x * dt;
+                    roll_disp_y += roll_y * dt;
+                    roll_disp_z += roll_z * dt;
+
+                    let mut tr_x = -k_roll * roll_disp_x - gamma_roll * roll_x;
+                    let mut tr_y = -k_roll * roll_disp_y - gamma_roll * roll_y;
+                    let mut tr_z = -k_roll * roll_disp_z - gamma_roll * roll_z;
+                    let tr_mag = (tr_x * tr_x + tr_y * tr_y + tr_z * tr_z).sqrt();
+                    let tau_max = mu_r * f_n_mag.abs() * r_eff;
+
+                    if tr_mag > tau_max && tr_mag > TANGENTIAL_EPSILON {
+                        let scale = tau_max / tr_mag;
+                        tr_x *= scale;
+                        tr_y *= scale;
+                        tr_z *= scale;
+                        if k_roll > TANGENTIAL_EPSILON {
+                            roll_disp_x = (tr_x + gamma_roll * roll_x) / (-k_roll);
+                            roll_disp_y = (tr_y + gamma_roll * roll_y) / (-k_roll);
+                            roll_disp_z = (tr_z + gamma_roll * roll_z) / (-k_roll);
+                        }
+                    }
+
+                    dem.torque[i][0] += tr_x;
+                    dem.torque[i][1] += tr_y;
+                    dem.torque[i][2] += tr_z;
+                    if newton {
+                        dem.torque[j][0] -= tr_x;
+                        dem.torque[j][1] -= tr_y;
+                        dem.torque[j][2] -= tr_z;
+                    }
+                } else if roll_mag > 1e-30 {
+                    let tau_mag = mu_r * f_n_mag.abs() * r_eff;
+                    let inv_roll = tau_mag / roll_mag;
+                    let tr_x = -inv_roll * roll_x;
+                    let tr_y = -inv_roll * roll_y;
+                    let tr_z = -inv_roll * roll_z;
+                    dem.torque[i][0] += tr_x;
+                    dem.torque[i][1] += tr_y;
+                    dem.torque[i][2] += tr_z;
+                    if newton {
+                        dem.torque[j][0] -= tr_x;
+                        dem.torque[j][1] -= tr_y;
+                        dem.torque[j][2] -= tr_z;
                     }
                 }
-
-                dem.torque[i][0] += tr_x;
-                dem.torque[i][1] += tr_y;
-                dem.torque[i][2] += tr_z;
-                if newton {
-                    dem.torque[j][0] -= tr_x;
-                    dem.torque[j][1] -= tr_y;
-                    dem.torque[j][2] -= tr_z;
-                }
-            } else if roll_mag > 1e-30 {
-                let tau_mag = mu_r * f_n_mag.abs() * r_eff;
-                let inv_roll = tau_mag / roll_mag;
-                let tr_x = -inv_roll * roll_x;
-                let tr_y = -inv_roll * roll_y;
-                let tr_z = -inv_roll * roll_z;
-                dem.torque[i][0] += tr_x;
-                dem.torque[i][1] += tr_y;
-                dem.torque[i][2] += tr_z;
-                if newton {
-                    dem.torque[j][0] -= tr_x;
-                    dem.torque[j][1] -= tr_y;
-                    dem.torque[j][2] -= tr_z;
-                }
-            }
-        }
-
-        // Twisting friction (see the Hertz-Mindlin path for model semantics).
-        if material_table.twisting_model == "marshall" {
-            // Marshall (2009) derived-coefficient twisting on the linear (Hooke)
-            // tangential model: k_twist = ½ k_t a², γ_twist = ½ γ_t a²,
-            // μ_twist = (2/3) a μ_t with a = √(R* δ) and k_t = kt, γ_t the Hooke
-            // tangential spring/damping computed above.
-            let twist_vel = or_dot_n;
-            let a_sq = delta * r_eff;
-            let a = a_sq.sqrt();
-            let k_twist = 0.5 * kt * a_sq;
-            let gamma_twist = 0.5 * gamma_t * a_sq;
-            let mu_twist = (2.0 / 3.0) * a * mu;
-
-            twist_disp += twist_vel * dt;
-
-            let mut tau_twist = -k_twist * twist_disp - gamma_twist * twist_vel;
-            let tau_max = mu_twist * f_n_mag.abs();
-            if tau_twist.abs() > tau_max {
-                tau_twist = tau_twist.signum() * tau_max;
-                if k_twist > TANGENTIAL_EPSILON {
-                    twist_disp = (tau_twist + gamma_twist * twist_vel) / (-k_twist);
-                }
             }
 
-            let tt_x = tau_twist * nx;
-            let tt_y = tau_twist * ny;
-            let tt_z = tau_twist * nz;
-            dem.torque[i][0] += tt_x;
-            dem.torque[i][1] += tt_y;
-            dem.torque[i][2] += tt_z;
-            if newton {
-                dem.torque[j][0] -= tt_x;
-                dem.torque[j][1] -= tt_y;
-                dem.torque[j][2] -= tt_z;
-            }
-        } else if mu_tw > 0.0 {
-            let twist_vel = or_dot_n;
-            let sds_twisting = material_table.twisting_model == "sds";
-            if sds_twisting {
-                let k_twist = material_table.twisting_stiffness_ij[mat_i][mat_j];
-                let gamma_twist = material_table.twisting_damping_ij[mat_i][mat_j];
+            // Twisting friction (see the Hertz-Mindlin path for model semantics).
+            if material_table.twisting_model == "marshall" {
+                // Marshall (2009) derived-coefficient twisting on the linear (Hooke)
+                // tangential model: k_twist = ½ k_t a², γ_twist = ½ γ_t a²,
+                // μ_twist = (2/3) a μ_t with a = √(R* δ) and k_t = kt, γ_t the Hooke
+                // tangential spring/damping computed above.
+                let twist_vel = or_dot_n;
+                let a_sq = delta * r_eff;
+                let a = a_sq.sqrt();
+                let k_twist = 0.5 * kt * a_sq;
+                let gamma_twist = 0.5 * gamma_t * a_sq;
+                let mu_twist = (2.0 / 3.0) * a * mu;
 
                 twist_disp += twist_vel * dt;
 
                 let mut tau_twist = -k_twist * twist_disp - gamma_twist * twist_vel;
-                let tau_max = mu_tw * f_n_mag.abs() * r_eff;
-
+                let tau_max = mu_twist * f_n_mag.abs();
                 if tau_twist.abs() > tau_max {
                     tau_twist = tau_twist.signum() * tau_max;
                     if k_twist > TANGENTIAL_EPSILON {
@@ -1201,53 +1251,84 @@ pub fn hooke_contact_force(
                     dem.torque[j][1] -= tt_y;
                     dem.torque[j][2] -= tt_z;
                 }
-            } else if twist_vel.abs() > 1e-30 {
-                let tau = mu_tw * f_n_mag.abs() * r_eff;
-                let sign_tw = if twist_vel > 0.0 { -1.0 } else { 1.0 };
-                let tt_x = sign_tw * tau * nx;
-                let tt_y = sign_tw * tau * ny;
-                let tt_z = sign_tw * tau * nz;
-                dem.torque[i][0] += tt_x;
-                dem.torque[i][1] += tt_y;
-                dem.torque[i][2] += tt_z;
-                if newton {
-                    dem.torque[j][0] -= tt_x;
-                    dem.torque[j][1] -= tt_y;
-                    dem.torque[j][2] -= tt_z;
+            } else if mu_tw > 0.0 {
+                let twist_vel = or_dot_n;
+                let sds_twisting = material_table.twisting_model == "sds";
+                if sds_twisting {
+                    let k_twist = material_table.twisting_stiffness_ij[mat_i][mat_j];
+                    let gamma_twist = material_table.twisting_damping_ij[mat_i][mat_j];
+
+                    twist_disp += twist_vel * dt;
+
+                    let mut tau_twist = -k_twist * twist_disp - gamma_twist * twist_vel;
+                    let tau_max = mu_tw * f_n_mag.abs() * r_eff;
+
+                    if tau_twist.abs() > tau_max {
+                        tau_twist = tau_twist.signum() * tau_max;
+                        if k_twist > TANGENTIAL_EPSILON {
+                            twist_disp = (tau_twist + gamma_twist * twist_vel) / (-k_twist);
+                        }
+                    }
+
+                    let tt_x = tau_twist * nx;
+                    let tt_y = tau_twist * ny;
+                    let tt_z = tau_twist * nz;
+                    dem.torque[i][0] += tt_x;
+                    dem.torque[i][1] += tt_y;
+                    dem.torque[i][2] += tt_z;
+                    if newton {
+                        dem.torque[j][0] -= tt_x;
+                        dem.torque[j][1] -= tt_y;
+                        dem.torque[j][2] -= tt_z;
+                    }
+                } else if twist_vel.abs() > 1e-30 {
+                    let tau = mu_tw * f_n_mag.abs() * r_eff;
+                    let sign_tw = if twist_vel > 0.0 { -1.0 } else { 1.0 };
+                    let tt_x = sign_tw * tau * nx;
+                    let tt_y = sign_tw * tau * ny;
+                    let tt_z = sign_tw * tau * nz;
+                    dem.torque[i][0] += tt_x;
+                    dem.torque[i][1] += tt_y;
+                    dem.torque[i][2] += tt_z;
+                    if newton {
+                        dem.torque[j][0] -= tt_x;
+                        dem.torque[j][1] -= tt_y;
+                        dem.torque[j][2] -= tt_z;
+                    }
                 }
             }
-        }
 
-        // Virial
-        if let Some(ref mut v) = virial {
-            if v.active {
-                let vs = if newton { 1.0 } else { 0.5 };
-                let vfx = (-fn_x + ft_x) * vs;
-                let vfy = (-fn_y + ft_y) * vs;
-                let vfz = (-fn_z + ft_z) * vs;
-                v.add_pair(dx, dy, dz, vfx, vfy, vfz);
+            // Virial
+            if let Some(ref mut v) = virial {
+                if v.active {
+                    let vs = if newton { 1.0 } else { 0.5 };
+                    let vfx = (-fn_x + ft_x) * vs;
+                    let vfy = (-fn_y + ft_y) * vs;
+                    let vfz = (-fn_z + ft_z) * vs;
+                    v.add_pair(dx, dy, dz, vfx, vfy, vfz);
+                }
+            }
+
+            let mut new_spring = stored;
+            new_spring[0] = sign * sx;
+            new_spring[1] = sign * sy;
+            new_spring[2] = sign * sz;
+            new_spring[3] = sign * roll_disp_x;
+            new_spring[4] = sign * roll_disp_y;
+            new_spring[5] = sign * roll_disp_z;
+            new_spring[6] = sign * twist_disp;
+            new_spring[7] = contact_radius;
+            match entry_idx {
+                Some(idx) => {
+                    history.contacts[i][idx].1 = new_spring;
+                    history.contacts[i][idx].2 = true;
+                }
+                None => history.contacts[i].push((tag_j, new_spring, true)),
             }
         }
 
-        let mut new_spring = stored;
-        new_spring[0] = sign * sx;
-        new_spring[1] = sign * sy;
-        new_spring[2] = sign * sz;
-        new_spring[3] = sign * roll_disp_x;
-        new_spring[4] = sign * roll_disp_y;
-        new_spring[5] = sign * roll_disp_z;
-        new_spring[6] = sign * twist_disp;
-        new_spring[7] = contact_radius;
-        match entry_idx {
-            Some(idx) => {
-                history.contacts[i][idx].1 = new_spring;
-                history.contacts[i][idx].2 = true;
-            }
-            None => history.contacts[i].push((tag_j, new_spring, true)),
+        for i in 0..nlocal {
+            history.contacts[i].retain(|(_, _, active)| *active);
         }
-    }
-
-    for i in 0..nlocal {
-        history.contacts[i].retain(|(_, _, active)| *active);
-    }
+    });
 }
