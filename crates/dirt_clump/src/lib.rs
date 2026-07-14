@@ -138,6 +138,12 @@ use soil_core::{
 use soil_core::CommTopology;
 
 use dirt_atom::DemAtom;
+use dirt_schedule::{
+    CLUMP_EXCHANGE, CLUMP_FINAL_INTEGRATION, CLUMP_FORCE_AGGREGATION, CLUMP_GHOST_CUTOFF,
+    CLUMP_INITIAL_INTEGRATION, CLUMP_INSERT, CLUMP_LOST_ATOM_CHECK, CLUMP_PBC,
+    CLUMP_POSITION_UPDATE, CLUMP_PRE_EXCHANGE_UPDATE, CLUMP_REMAP, CLUMP_RESTORE, CLUMP_SNAP,
+    CONTACT_FORCE,
+};
 
 pub mod body;
 pub use body::{
@@ -364,14 +370,14 @@ impl Plugin for ClumpPlugin {
 
         // Clump insertion from [[clump.insert]] config (runs after normal particle insertion)
         app.add_setup_system(
-            clump_insert_atoms.label("clump_insert_atoms"),
+            clump_insert_atoms.label(CLUMP_INSERT),
             ScheduleSetupSet::Setup,
         );
 
         // Set minimum ghost cutoff for clumps BEFORE neighbor_setup computes bins.
         // neighbor_setup will use max(its_value, domain.ghost_cutoff).
         app.add_setup_system(
-            extend_ghost_cutoff_for_clumps.label("extend_ghost_cutoff_for_clumps"),
+            extend_ghost_cutoff_for_clumps.label(CLUMP_GHOST_CUTOFF),
             ScheduleSetupSet::Setup,
         );
 
@@ -380,15 +386,15 @@ impl Plugin for ClumpPlugin {
         // exchange_bodies so all bodies are still local for the lookup.
         app.add_update_system(
             snap_subspheres_to_body_com
-                .label("snap_subspheres_to_body_com")
-                .before("exchange_bodies")
+                .label(CLUMP_SNAP)
+                .before(CLUMP_EXCHANGE)
                 .before("exchange"),
             ParticleSimScheduleSet::Exchange,
         );
 
         // Body exchange: migrate bodies whose COM left the local subdomain.
         app.add_update_system(
-            exchange_bodies.label("exchange_bodies").before("exchange"),
+            exchange_bodies.label(CLUMP_EXCHANGE).before("exchange"),
             ParticleSimScheduleSet::Exchange,
         );
 
@@ -396,7 +402,7 @@ impl Plugin for ClumpPlugin {
         // (undo the snap-to-COM done before exchange).
         app.add_update_system(
             restore_subsphere_positions
-                .label("restore_subsphere_positions")
+                .label(CLUMP_RESTORE)
                 .after("exchange"),
             ParticleSimScheduleSet::Exchange,
         );
@@ -410,20 +416,20 @@ impl Plugin for ClumpPlugin {
         app.add_resource(ClumpBoxState::default());
         app.add_update_system(
             remap_bodies_on_box_resize
-                .label("remap_bodies_on_box_resize")
-                .before("integrate_bodies_initial"),
+                .label(CLUMP_REMAP)
+                .before(CLUMP_INITIAL_INTEGRATION),
             ParticleSimScheduleSet::InitialIntegration,
         );
 
         // Body initial integration (half-kick + drift + quaternion update)
         app.add_update_system(
-            integrate_bodies_initial.label("integrate_bodies_initial"),
+            integrate_bodies_initial.label(CLUMP_INITIAL_INTEGRATION),
             ParticleSimScheduleSet::InitialIntegration,
         );
 
         // PBC for body COM
         app.add_update_system(
-            pbc_multisphere_bodies.label("pbc_multisphere_bodies"),
+            pbc_multisphere_bodies.label(CLUMP_PBC),
             ParticleSimScheduleSet::PostInitialIntegration,
         );
 
@@ -432,15 +438,15 @@ impl Plugin for ClumpPlugin {
         // accumulated back to their owning atoms before aggregation to bodies.
         app.add_update_system(
             aggregate_clump_forces
-                .label("aggregate_clump_forces")
-                .after("hertz_mindlin_contact")
+                .label(CLUMP_FORCE_AGGREGATION)
+                .after(CONTACT_FORCE)
                 .after("reverse_send_force"),
             ParticleSimScheduleSet::PostForce,
         );
 
         // Body final integration (half-kick after new forces)
         app.add_update_system(
-            integrate_bodies_final.label("integrate_bodies_final"),
+            integrate_bodies_final.label(CLUMP_FINAL_INTEGRATION),
             ParticleSimScheduleSet::FinalIntegration,
         );
 
@@ -449,22 +455,22 @@ impl Plugin for ClumpPlugin {
         // would have no local body to aggregate to).
         app.add_update_system(
             update_clump_positions
-                .label("update_clump_positions_pre_exchange")
-                .after("pbc_multisphere_bodies"),
+                .label(CLUMP_PRE_EXCHANGE_UPDATE)
+                .after(CLUMP_PBC),
             ParticleSimScheduleSet::PostInitialIntegration,
         );
 
         // Derive sub-sphere pos/vel from body state (end of step)
         app.add_update_system(
-            update_clump_positions.label("update_clump_positions"),
+            update_clump_positions.label(CLUMP_POSITION_UPDATE),
             ParticleSimScheduleSet::PostFinalIntegration,
         );
 
         // Lost atom detection (lightweight, every 1000 steps)
         app.add_update_system(
             check_lost_clump_atoms
-                .label("check_lost_clump_atoms")
-                .after("update_clump_positions"),
+                .label(CLUMP_LOST_ATOM_CHECK)
+                .after(CLUMP_POSITION_UPDATE),
             ParticleSimScheduleSet::PostFinalIntegration,
         );
     }
@@ -1711,7 +1717,7 @@ region = { type = "block", min = [1.0, 1.0, 1.0], max = [1.0, 2.0, 2.0] }
         app.add_resource(materials);
         app.add_resource(SchedulerManager::default());
         app.add_setup_system(
-            clump_insert_atoms.label("clump_insert_atoms"),
+            clump_insert_atoms.label(CLUMP_INSERT),
             ScheduleSetupSet::Setup,
         );
         app.organize_systems();

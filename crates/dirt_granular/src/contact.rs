@@ -37,6 +37,7 @@ use grass_app::prelude::*;
 use grass_scheduler::prelude::*;
 
 use dirt_atom::{self, DemAtom, MaterialTable};
+use dirt_schedule::CONTACT_FORCE;
 use soil_core::Neighbor;
 use soil_core::{forward_comm_overlap, CommBuffers, CommResource, CommTopology};
 use soil_core::{
@@ -96,7 +97,7 @@ impl Plugin for HertzMindlinContactPlugin {
         match contact_model.as_str() {
             "hooke" => {
                 app.add_update_system(
-                    hooke_contact_force.label("hertz_mindlin_contact"),
+                    hooke_contact_force.label(CONTACT_FORCE),
                     ParticleSimScheduleSet::Force,
                 );
             }
@@ -109,12 +110,12 @@ impl Plugin for HertzMindlinContactPlugin {
                     .unwrap_or(false);
                 if overlap {
                     app.add_update_system(
-                        overlapped_contact_force.label("hertz_mindlin_contact"),
+                        overlapped_contact_force.label(CONTACT_FORCE),
                         ParticleSimScheduleSet::Force,
                     );
                 } else {
                     app.add_update_system(
-                        hertz_mindlin_contact_force.label("hertz_mindlin_contact"),
+                        hertz_mindlin_contact_force.label(CONTACT_FORCE),
                         ParticleSimScheduleSet::Force,
                     );
                 }
@@ -1746,6 +1747,30 @@ pub fn hooke_contact_force(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn hooke_and_hertz_publish_the_same_typed_contact_seam() {
+        for model in ["hertz", "hooke"] {
+            let mut app = App::new();
+            app.add_resource(soil_core::Config::from_str(&format!(
+                "[dem]\ncontact_model = \"{model}\""
+            )));
+            app.add_resource(grass_scheduler::CurrentState(
+                soil_core::CommState::FullRebuild,
+            ));
+            app.add_resource(soil_core::RunState::new());
+            app.add_resource(Neighbor::default());
+            app.add_plugins(dirt_atom::DemAtomPlugin);
+            app.add_plugins(HertzMindlinContactPlugin);
+            app.add_update_system(
+                contact_seam_consumer.requires(CONTACT_FORCE),
+                ParticleSimScheduleSet::Force,
+            );
+            app.organize_systems();
+        }
+    }
+
+    fn contact_seam_consumer() {}
     use dirt_atom::DemAtom;
     use dirt_test_utils::{make_material_table, push_dem_test_atom, ParticleFixture, ParticleSpec};
     use soil_core::Neighbor;

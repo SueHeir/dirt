@@ -76,6 +76,7 @@
 
 use std::collections::HashMap;
 
+use dirt_schedule::{MEASURE_PLANE_CROSSINGS, MEASURE_PLANE_ELAPSED, MEASURE_PLANE_REPORT};
 use grass_app::prelude::*;
 use grass_scheduler::prelude::*;
 use serde::Deserialize;
@@ -311,21 +312,21 @@ impl Plugin for MeasurePlanePlugin {
 
         app.add_resource(MeasurePlanes { planes });
         app.add_update_system(
-            measure_plane_accumulate_elapsed.label("measure_plane_accumulate_elapsed"),
+            measure_plane_accumulate_elapsed.label(MEASURE_PLANE_ELAPSED),
             ParticleSimScheduleSet::PostFinalIntegration,
         );
         app.add_update_system(
             measure_plane_report
-                .label("measure_plane_report")
-                .after("measure_plane_accumulate_elapsed")
+                .label(MEASURE_PLANE_REPORT)
+                .after(MEASURE_PLANE_ELAPSED)
                 .before(soil_print::print_thermo),
             ParticleSimScheduleSet::PostFinalIntegration,
         );
         app.add_update_system(
             measure_plane_detect_crossings
-                .label("measure_plane_detect_crossings")
+                .label(MEASURE_PLANE_CROSSINGS)
                 .after(soil_print::print_thermo)
-                .after("measure_plane_report"),
+                .after(MEASURE_PLANE_REPORT),
             ParticleSimScheduleSet::PostFinalIntegration,
         );
     }

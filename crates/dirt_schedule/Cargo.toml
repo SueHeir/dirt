@@ -1,0 +1,11 @@
+[package]
+name = "dirt_schedule"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Typed scheduler labels shared by DIRT plugins"
+publish = false
+
+[dependencies]
+grass_scheduler.workspace = true

@@ -182,6 +182,9 @@ use grass_scheduler::prelude::*;
 use serde::Deserialize;
 
 use dirt_atom::DemAtom;
+use dirt_schedule::{
+    AUTO_BOND, BOND_BREAKAGE_INIT, BOND_FORCE, BOND_GHOST_CUTOFF, BOND_PLASTICITY_INIT, LOAD_BONDS,
+};
 use soil_core::{
     Atom, AtomData, AtomDataRegistry, BondEntry, BondStore, CommResource, Config, Domain,
     ParticleSimScheduleSet, ScheduleSetupSet, VirialStress, VirialStressPlugin,
@@ -851,13 +854,13 @@ impl Plugin for DemBondPlugin {
         soil_core::register_atom_data!(app, BondHistoryStore::new());
         app.add_setup_system(
             auto_bond_touching
-                .label("auto_bond_touching")
+                .label(AUTO_BOND)
                 .run_if(first_stage_only()),
             ScheduleSetupSet::PostSetup,
         );
         app.add_setup_system(
             load_bonds_from_file
-                .label("load_bonds_from_file")
+                .label(LOAD_BONDS)
                 .run_if(first_stage_only()),
             ScheduleSetupSet::PostSetup,
         );
@@ -867,38 +870,35 @@ impl Plugin for DemBondPlugin {
         // ghost_cutoff into the bin grid / borders skin.
         app.add_setup_system(
             extend_ghost_cutoff_for_bonds
-                .label("extend_ghost_cutoff_for_bonds")
-                .after("auto_bond_touching")
-                .after("load_bonds_from_file")
+                .label(BOND_GHOST_CUTOFF)
+                .after(AUTO_BOND)
+                .after(LOAD_BONDS)
                 .before("neighbor_setup")
                 .run_if(first_stage_only()),
             ScheduleSetupSet::PostSetup,
         );
         app.add_setup_system(
             init_breakage
-                .label("init_breakage")
+                .label(BOND_BREAKAGE_INIT)
                 .run_if(first_stage_only()),
             ScheduleSetupSet::PostSetup,
         );
         app.add_setup_system(
             init_plasticity
-                .label("init_plasticity")
+                .label(BOND_PLASTICITY_INIT)
                 .run_if(first_stage_only()),
             ScheduleSetupSet::PostSetup,
         );
         app.add_setup_system(
             init_bond_history
-                .after("init_breakage")
-                .after("auto_bond_touching")
-                .after("load_bonds_from_file")
+                .after(BOND_BREAKAGE_INIT)
+                .after(AUTO_BOND)
+                .after(LOAD_BONDS)
                 .run_if(first_stage_only()),
             ScheduleSetupSet::PostSetup,
         );
         app.add_update_system(zero_bond_metrics, ParticleSimScheduleSet::PreForce);
-        app.add_update_system(
-            bond_force.label("dem_bond_force"),
-            ParticleSimScheduleSet::Force,
-        );
+        app.add_update_system(bond_force.label(BOND_FORCE), ParticleSimScheduleSet::Force);
         app.add_update_system(output_bond_metrics, ParticleSimScheduleSet::PostForce);
     }
 
@@ -1837,15 +1837,15 @@ mod tests {
         app.add_resource(Thermo::new());
         app.add_resource(domain);
         app.add_setup_system(
-            init_breakage.label("init_breakage"),
+            init_breakage.label(BOND_BREAKAGE_INIT),
             ScheduleSetupSet::PostSetup,
         );
         app.add_setup_system(
-            init_plasticity.label("init_plasticity"),
+            init_plasticity.label(BOND_PLASTICITY_INIT),
             ScheduleSetupSet::PostSetup,
         );
         app.add_setup_system(
-            init_bond_history.after("init_breakage"),
+            init_bond_history.after(BOND_BREAKAGE_INIT),
             ScheduleSetupSet::PostSetup,
         );
         app.add_update_system(bond_force, ParticleSimScheduleSet::Force);

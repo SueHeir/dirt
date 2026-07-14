@@ -43,6 +43,7 @@ dirt_core = { path = "crates/dirt_core", version = "0.1.3", default-features = f
 dirt_fixes = { path = "crates/dirt_fixes", version = "0.1.3" }
 dirt_granular = { path = "crates/dirt_granular", version = "0.1.3" }
 dirt_measure_plane = { path = "crates/dirt_measure_plane", version = "0.1.3" }
+dirt_schedule = { path = "crates/dirt_schedule", version = "0.1.3" }
 dirt_test_utils = { path = "crates/dirt_test_utils", version = "0.1.3" }
 dirt_wall = { path = "crates/dirt_wall", version = "0.1.3" }
 # Shared third-party crates
