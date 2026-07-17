@@ -73,10 +73,12 @@ exponents fitted per regime should approach **1** (linear) and **2/3** (power).
 - Each case runs two stages: `settle` (80 000 steps — pack the loosely-inserted
   column against the gate) then `collapse` (1 000 000 steps / 4 s — gate removed
   on the first step, column spreads and must meet the terminal-rest criterion).
-- The base is a frozen **hexagonally close-packed** monolayer of the same beads.
-  This models a rough granular substrate; the fixed layer is excluded from the
-  released height and deposit silhouette. A smooth Coulomb plane (or a square
-  bead grid) is not an interchangeable representation of that boundary condition.
+- The base is a frozen **hexagonally close-packed** monolayer of the same beads,
+  extending from the back wall through the full 0.60 m downstream domain. This
+  models a rough granular substrate throughout the possible runout; the plane
+  below is only a containment support, not a mid-runout boundary change. The
+  fixed layer is excluded from the released height and deposit silhouette. A
+  smooth Coulomb plane (or a square bead grid) is not interchangeable with it.
 
 ## Validation Criteria
 
@@ -117,11 +119,19 @@ reference, material, aspect range, toe metric, or ±0.25 exponent bands.
 
 ## Status — current evidence required
 
-The tracked figures are historical smooth-base output and are not evidence for this
-rough-base protocol. No exponent PASS is claimed until a fresh, complete 11 × 3 campaign has
-passed the release/population/rest gates and regenerated both figures. This avoids
-turning the historical 8d × 3d result into an implicit claim about the new continuum
-resolution.
+The tracked figures are historical output and are not evidence for this full-length
+rough-base protocol. No exponent PASS is claimed until a fresh, complete 11 × 3
+campaign has passed the release/population/rest gates and regenerated both figures.
+This avoids turning historical 8d × 3d or mixed-boundary output into an implicit
+claim about the new continuum-resolution rough-base protocol.
+
+Reproduction check (2026-07-17): `generate` produced all 33 exact-count,
+non-overlapping sources and the DIRT `a=0.5`, seed-0 run reached gate release
+with all 2,077 particles present (880 active + 1,197 frozen base). The long
+collapse was intentionally not presented as a result. LAMMPS 22-Jul-2025
+accepted the same full-length geometry but became non-numeric on its first
+settle update, so it supplies no cross-code datum for this revision; the
+LAMMPS boundary/contact initialization must be resolved before a fresh overlay.
 
 **The earlier "fit noise" hypothesis was tested and rejected.** The suspected causes
 — single seed, a coarse 6-point sweep, and diameter-scale runout quantization — were
@@ -140,10 +150,10 @@ this deliberately small benchmark, not a DIRT model defect:
    ≈0.5 — because at these particle counts (~80–1100, a 3-grain-deep slab) the
    low-aspect deposits are only a few grains thick with no sharp front. A benchmark
    in the self-similar regime the `1.2 a` law describes would not be this sensitive.
-2. **Cross-code agreement.** Running the *identical* geometry, model, and metric in
-   **LAMMPS** (authoritative granular DEM) gives linear exponent **1.27** and power
-   **0.97** — LAMMPS misses the linear target the same way DIRT does. A code-independent
-   miss is a property of the benchmark size, not of DIRT.
+2. **Cross-code agreement (superseded boundary).** The earlier LAMMPS comparison
+   used the same small, mixed-boundary protocol and also missed the target. It
+   informs that old protocol, but is not evidence for this full-length rough-base
+   case. A fresh matched LAMMPS campaign is required before any code-to-code claim.
 
 **Concrete fix path:** a substantially larger system (thicker slab, ~×10 more grains
 so the deposit front becomes continuum-like), not more seeds. **No tolerance is

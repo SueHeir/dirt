@@ -81,6 +81,10 @@ RADIUS = 0.0015            # m (d = 3 mm; Lajeunesse used ~1–3 mm glass beads)
 DENSITY = 2500.0           # kg/m^3 (glass)
 L0 = 0.048                 # initial column width [m] (= 16 diameters)
 W = 0.018                  # slab width in y [m] (= 6 diameters, quasi-2D)
+# The bead bed must cover every place the deposit may come to rest.  Stopping it
+# at L0 would change the basal boundary from rough grains to the smooth safety
+# plane immediately after release, precisely where runout is determined.
+BASE_X_HIGH = 0.60          # m; the downstream fixed-domain boundary
 # Canonical glass-bead (ballotini) material — measured properties, shared across
 # all DIRT calibrations (shear/cooling/conduction/collapse). E softened from the
 # real ~65 GPa (rigid-grain limit; keeps dt tractable). e and μ_p are measured
@@ -157,7 +161,8 @@ def protocol_fingerprint():
         # with an earlier translated crystal cannot be relabelled as this
         # fabric ensemble merely because its summary rows look compatible.
         "initialization": ["deterministic-fcc-source-v1-full-width"],
-        "boundary": [rough_base_positions(), "frozen_close_packed_bead_layer"],
+        "boundary": [BASE_X_HIGH, rough_base_positions(),
+                     "frozen_close_packed_bead_layer_full_runout"],
         "measurement": [FINE_BINS, GAP_TOL_D, TOE_MIN_HEIGHT_D],
         "validation": [EXP_TOL, LINEAR_TARGET, POWER_TARGET, REGIME_SPLIT,
                        REST_FROUDE_MAX],
@@ -207,7 +212,7 @@ def rough_base_positions():
         ix = 0
         while True:
             x = x0 + ix * d
-            if x > L0 - RADIUS + 1e-12:
+            if x > BASE_X_HIGH - RADIUS + 1e-12:
                 break
             points.append((x, y, RADIUS))
             ix += 1
