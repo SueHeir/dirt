@@ -128,10 +128,12 @@ claim about the new continuum-resolution rough-base protocol.
 Reproduction check (2026-07-17): `generate` produced all 33 exact-count,
 non-overlapping sources and the DIRT `a=0.5`, seed-0 run reached gate release
 with all 2,077 particles present (880 active + 1,197 frozen base). The long
-collapse was intentionally not presented as a result. LAMMPS 22-Jul-2025
-accepted the same full-length geometry but became non-numeric on its first
-settle update, so it supplies no cross-code datum for this revision; the
-LAMMPS boundary/contact initialization must be resolved before a fresh overlay.
+collapse was intentionally not presented as a result. The LAMMPS writer now
+serializes the frozen bed at the same precision as the shared active source,
+removing a coordinate-rounding overlap at initially tangent contacts. LAMMPS
+22-Jul-2025 nevertheless becomes non-numeric during its settling stage, so it
+supplies no cross-code datum for this revision; a stable, documented LAMMPS
+boundary/contact initialization is still required before a fresh overlay.
 
 **The earlier "fit noise" hypothesis was tested and rejected.** The suspected causes
 — single seed, a coarse 6-point sweep, and diameter-scale runout quantization — were

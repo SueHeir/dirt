@@ -578,8 +578,14 @@ def write_lammps_input(path, aspect, seed):
     source_path = os.path.join(case_dir_seed(aspect, seed), "active_column.csv")
     active_points = active_column_from_file(source_path, n)
     z_high = max(z for _, _, z in active_points) + RADIUS + 0.05
+    # The active source is serialized with ten significant decimal places.  The
+    # glued bed must use the same representation: at d=3 mm, the former fixed
+    # decimal format could round an exactly tangent source/base pair inward.
+    # That turns an intended zero-overlap preparation into a large Hertz force
+    # before either solver advances.  This is an initialization fidelity repair,
+    # not a material or tolerance adjustment.
     base_atoms = "\n".join(
-        f"create_atoms    1 single {x:.8f} {y:.8f} {z:.8f} units box"
+        f"create_atoms    1 single {x:.10e} {y:.10e} {z:.10e} units box"
         for x, y, z in rough_base_positions()
     )
     with open(path, "w") as f:
