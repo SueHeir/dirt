@@ -52,12 +52,13 @@ exponents fitted per regime should approach **1** (linear) and **2/3** (power).
   least-squares exponent is fit from many points, not a coarse handful.
 - **Seed averaging.** Each aspect ratio is run at **3 deterministic initial
   fabrics** and the runout is averaged. `generate` writes one exact-count,
-  non-overlapping close-packed source column per seed. After a common supported
-  first layer, each seed selects a reproducible sequence of non-repeating ABC
-  registries, producing distinct stacking-fault fabrics rather than translated
-  copies of one crystal. These controlled realizations do not substitute for a
-  measured packing-preparation sensitivity study; a completed dynamic campaign
-  is still required before reporting
+  non-overlapping, slightly dilated close-packed source column per seed. After a
+  common supported first layer, each seed selects a reproducible sequence of
+  non-repeating ABC registries and bounded in-plane perturbations. Thus the
+  realizations are neither translated copies nor perfect all-contact crystals.
+  These controlled realizations do not substitute for a measured
+  packing-preparation sensitivity study; a completed dynamic campaign is still
+  required before reporting
   statistical agreement with the experiment.
 - **Release-width witness.** The source grid covers the declared 16d column
   width (rather than leaving a gate-side void), and `graph` rejects any run
@@ -111,10 +112,12 @@ campaign as evidence for the rough-base protocol merely by retaining its CSV.
 
 The initializer is deliberately part of that contract. For every scheduled
 aspect/seed it writes exactly `N` active coordinates in a deterministic,
-stacking-disordered close-packed fabric with centre spacings no smaller than one
-diameter, rather than asking a runtime random inserter to place `N` grains and
-discovering an underfill later. Its triangular layers span the full release width and use the fcc vertical
-spacing √(2/3)d, so count controls height at the requested volume fraction.
+stacking-disordered, slightly dilated fabric with centre spacings no smaller
+than one diameter, rather than asking a runtime random inserter to place `N`
+grains and discovering an underfill later. Its triangular layers span the full
+release width; a bounded seed-specific in-plane perturbation removes the
+special all-contact crystal network without changing the walls or column
+envelope.
 The independently recorded release witness must confirm coverage before a fit
 is allowed. This is a preparation correction, not a change to the empirical
 reference, material, aspect range, toe metric, or ±0.25 exponent bands.
@@ -128,9 +131,13 @@ This avoids turning historical 8d × 3d or mixed-boundary output into an implici
 claim about the new continuum-resolution rough-base protocol.
 
 Reproduction check (2026-07-17): `generate` produced all 33 exact-count,
-non-overlapping sources and the DIRT `a=0.5`, seed-0 run reached gate release
-with all 2,077 particles present (880 active + 1,197 frozen base). The long
-collapse was intentionally not presented as a result. The LAMMPS writer
+seed-distinct, non-overlapping sources. The regenerated source has a minimum
+active-grain spacing of at least 1.016 diameters; its initial solid fraction is
+0.622, above the requested released-column 0.60, so settling—not an artificial
+overlap—prepares the release fabric. The DIRT `a=0.5`, seed-0 run previously
+reached gate release with all 2,077 particles present (880 active + 1,197
+frozen base). The long collapse was intentionally not presented as a result.
+The LAMMPS writer
 serializes the frozen bed at the same precision as the shared active source and
 now applies gravity, walls, and `nve/sphere` only to its complementary `mobile`
 group. `fix freeze` alone does not make it sound to apply later wall fixes to

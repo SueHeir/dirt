@@ -102,6 +102,14 @@ PACKING = 0.60             # settled solid fraction used to size the particle co
 # Its packing fraction is fixed by fcc geometry; PACKING remains the requested
 # released-column fraction used to translate aspect ratio to particle count.
 INSERT_PACKING = math.pi / (3.0 * math.sqrt(2.0))
+# A perfect close packing has a mechanically special contact network.  It is a
+# useful non-overlap construction, but it is not an independently prepared
+# granular fabric: merely changing ABC registries leaves every grain exactly at
+# contact.  Start each realization just above close packing and apply a small,
+# deterministic in-plane perturbation.  Gravity settles this harmless void
+# space before release, while the preflight below still forbids overlaps.
+SOURCE_DILATION = 1.06
+SOURCE_JITTER = 0.005      # fraction of a diameter, per horizontal coordinate
 BASE_Z = 2.0 * RADIUS
 BASE_SELECT_Z = 2.5 * RADIUS
 
@@ -154,6 +162,7 @@ def protocol_fingerprint():
     """
     contract = {
         "geometry": [RADIUS, DENSITY, L0, W, PACKING, INSERT_PACKING,
+                     SOURCE_DILATION, SOURCE_JITTER,
                      BASE_Z, BASE_SELECT_Z],
         "material": [YOUNGS_MOD, POISSON, RESTITUTION, FRICTION, DT],
         "schedule": [SETTLE_STEPS, COLLAPSE_STEPS, ASPECTS, SEEDS],
@@ -251,23 +260,46 @@ def stacking_registries(seed, layers):
     return registries
 
 
+def _source_jitter(seed, layer, iy, ix):
+    """Return a deterministic bounded in-plane perturbation for one source site.
+
+    Hashing rather than consuming a process-global RNG makes a source replayable
+    from its seed and site label, independent of iteration order.  The dilation
+    below leaves more than twice this maximum approach margin between nearest
+    sites, and the exact spatial audit remains the final authority.
+    """
+    raw = hashlib.sha256(
+        f"column-collapse-source-v3:{seed}:{layer}:{iy}:{ix}".encode()
+    ).digest()
+    scale = SOURCE_JITTER * 2.0 * RADIUS
+    return ((raw[0] / 255.0 - 0.5) * 2.0 * scale,
+            (raw[1] / 255.0 - 0.5) * 2.0 * scale)
+
+
 def active_column_positions(count, aspect, seed):
-    """Return an exact, stacking-disordered fcc source controlling release aspect.
+    """Return one exact-count prepared granular source for release.
 
     The prior 15-by-5 simple grid was non-overlapping but only pi/6 dense.  A
     fresh nominal-a=0.5 replay therefore released at H/L0=0.817, invalidating
     the requested aspect-ratio sweep.  This fcc construction has a strict
     minimum centre separation d while its compactness is sufficient for the
     target 0.60-volume-fraction column.  Seeds select distinct ABC registries
-    against the rough base, not rigid translations.
+    *and* bounded in-plane source perturbations, rather than rigid translations
+    or an exactly crystalline contact network.  The source is slightly dilated
+    so the perturbations cannot create overlap; settling still occurs before
+    the gate is removed.
     """
     d = 2.0 * RADIUS
-    dy = math.sqrt(3.0) * d / 2.0
-    dz = math.sqrt(2.0 / 3.0) * d
-    phases = ((0.0, 0.0), (0.5 * d, dy / 3.0), (d, 2.0 * dy / 3.0))
-    # 96 is an upper bound; some shifted layers deliberately have fewer sites
-    # at the fixed-width envelope, so precompute a safely long sequence.
-    registries = stacking_registries(seed, int(math.ceil(count / 75)) + 2)
+    spacing = SOURCE_DILATION * d
+    dy = math.sqrt(3.0) * spacing / 2.0
+    dz = math.sqrt(2.0 / 3.0) * spacing
+    phases = ((0.0, 0.0), (0.5 * spacing, dy / 3.0),
+              (spacing, 2.0 * dy / 3.0))
+    # The fixed-width envelope can make shifted layers hold fewer sites.  Keep a
+    # source sequence long enough even when a preparation change (such as the
+    # deliberate dilation above) reduces per-layer capacity; ``count`` is a
+    # conservative finite upper bound because every accepted layer has >=1 site.
+    registries = stacking_registries(seed, count)
     points = []
     layer = 0
     while len(points) < count:
@@ -280,9 +312,14 @@ def active_column_positions(count, aspect, seed):
             for ix in range(16):
                 # Triangular in-layer registry: without this half-diameter row
                 # offset, neighbouring rows are only sqrt(3)/2 d apart.
-                x = RADIUS + px + ix * d + (0.5 * d if iy % 2 else 0.0)
+                x = RADIUS + px + ix * spacing + (0.5 * spacing if iy % 2 else 0.0)
                 if x > L0 - RADIUS + 1e-12:
                     continue
+                jx, jy = _source_jitter(seed, layer, iy, ix)
+                # Keep every source centre inside the same fixed L0 × W
+                # envelope; randomization must not change a boundary condition.
+                x = min(L0 - RADIUS, max(RADIUS, x + jx))
+                y = min(W - RADIUS, max(RADIUS, y + jy))
                 points.append((x, y, z))
                 if len(points) == count:
                     return points
