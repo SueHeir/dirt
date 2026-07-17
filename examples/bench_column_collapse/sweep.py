@@ -496,17 +496,24 @@ set             group all density {density}
 
 region          rough_base_region block INF INF INF INF 0.0 {base_select_z} units box
 group           rough_base region rough_base_region
+group           mobile subtract all rough_base
 
 pair_style      granular
 pair_coeff      1 1 hertz/material {E} {e} {nu} tangential mindlin NULL {tdamp} {mu} damping tsuji rolling none twisting none
 
-fix             grav all gravity {g} vector 0 0 -1
+# The glued layer is an immobile granular boundary.  ``fix freeze`` makes
+# pair contacts treat it as infinite-mass, but it must also be excluded from
+# body, wall, and integration fixes: applying a wall force after freeze can
+# reintroduce a force on the supposed fixed particles.  In particular, the
+# floor contacts the tangent base layer at startup.  The mobile group is the
+# exact complement, so this changes no force acting on a released grain.
+fix             grav mobile gravity {g} vector 0 0 -1
 fix             base_freeze rough_base freeze
-fix             floor all wall/gran granular hertz/material {E} {e} {nu} tangential mindlin NULL {tdamp} {mu} damping tsuji rolling none twisting none zplane 0.0 NULL
-fix             back all wall/gran granular hertz/material {E} {e} {nu} tangential mindlin NULL {tdamp} {mu} damping tsuji rolling none twisting none xplane 0.0 NULL
-fix             sides all wall/gran granular hertz/material {E} {e} {nu} tangential mindlin NULL {tdamp} {mu} damping tsuji rolling none twisting none yplane 0.0 {W}
-fix             gate all wall/gran granular hertz/material {E} {e} {nu} tangential mindlin NULL {tdamp} {mu} damping tsuji rolling none twisting none xplane NULL {L0}
-fix             integrate all nve/sphere
+fix             floor mobile wall/gran granular hertz/material {E} {e} {nu} tangential mindlin NULL {tdamp} {mu} damping tsuji rolling none twisting none zplane 0.0 NULL
+fix             back mobile wall/gran granular hertz/material {E} {e} {nu} tangential mindlin NULL {tdamp} {mu} damping tsuji rolling none twisting none xplane 0.0 NULL
+fix             sides mobile wall/gran granular hertz/material {E} {e} {nu} tangential mindlin NULL {tdamp} {mu} damping tsuji rolling none twisting none yplane 0.0 {W}
+fix             gate mobile wall/gran granular hertz/material {E} {e} {nu} tangential mindlin NULL {tdamp} {mu} damping tsuji rolling none twisting none xplane NULL {L0}
+fix             integrate mobile nve/sphere
 
 thermo_modify   lost warn flush yes
 timestep        {dt}
