@@ -160,7 +160,7 @@ def protocol_fingerprint():
         # Source preparation is part of the physical protocol: a campaign made
         # with an earlier translated crystal cannot be relabelled as this
         # fabric ensemble merely because its summary rows look compatible.
-        "initialization": ["deterministic-fcc-source-v1-full-width"],
+        "initialization": ["deterministic-stacking-disordered-fcc-source-v2-full-width"],
         "boundary": [BASE_X_HIGH, rough_base_positions(),
                      "frozen_close_packed_bead_layer_full_runout"],
         "measurement": [FINE_BINS, GAP_TOL_D, TOE_MIN_HEIGHT_D],
@@ -228,8 +228,31 @@ def write_rough_base():
     return path
 
 
+def stacking_registries(seed, layers):
+    """Return a reproducible, stacking-disordered close-packed sequence.
+
+    The former ``(layer + seed) % 3`` rule made the three advertised seeds mere
+    translations of one perfect ABC crystal.  Such translations cannot sample
+    preparation variability and therefore are not an ensemble.  Here every
+    source starts in the same supported registry, while the subsequent close
+    packed layers choose one of the two registries different from the preceding
+    layer using a hash of the seed and layer.  Adjacent layers remain exactly
+    tangent (and never overlap), but each seed has a distinct stacking-fault
+    realization--a standard, controlled way to decrystallize a close packing
+    without changing grain size, count, material, walls, or acceptance band.
+    """
+    if layers <= 0:
+        return []
+    registries = [0]
+    for layer in range(1, layers):
+        choices = [p for p in range(3) if p != registries[-1]]
+        digest = hashlib.sha256(f"column-collapse-v2:{seed}:{layer}".encode()).digest()
+        registries.append(choices[digest[0] & 1])
+    return registries
+
+
 def active_column_positions(count, aspect, seed):
-    """Return an exact fcc source whose geometry controls release aspect.
+    """Return an exact, stacking-disordered fcc source controlling release aspect.
 
     The prior 15-by-5 simple grid was non-overlapping but only pi/6 dense.  A
     fresh nominal-a=0.5 replay therefore released at H/L0=0.817, invalidating
@@ -242,10 +265,13 @@ def active_column_positions(count, aspect, seed):
     dy = math.sqrt(3.0) * d / 2.0
     dz = math.sqrt(2.0 / 3.0) * d
     phases = ((0.0, 0.0), (0.5 * d, dy / 3.0), (d, 2.0 * dy / 3.0))
+    # 96 is an upper bound; some shifted layers deliberately have fewer sites
+    # at the fixed-width envelope, so precompute a safely long sequence.
+    registries = stacking_registries(seed, int(math.ceil(count / 75)) + 2)
     points = []
     layer = 0
     while len(points) < count:
-        px, py = phases[(layer + seed) % len(phases)]
+        px, py = phases[registries[layer]]
         z = BASE_Z + RADIUS + layer * dz
         for iy in range(6):
             y = RADIUS + py + iy * dy
@@ -264,8 +290,34 @@ def active_column_positions(count, aspect, seed):
     return points
 
 
+def source_min_separation(points):
+    """Return the exact nearest centre spacing using diameter-sized cells."""
+    d = 2.0 * RADIUS
+    cells = {}
+    best = float("inf")
+    for point in points:
+        key = tuple(math.floor(v / d) for v in point)
+        for ix in range(key[0] - 1, key[0] + 2):
+            for iy in range(key[1] - 1, key[1] + 2):
+                for iz in range(key[2] - 1, key[2] + 2):
+                    for other in cells.get((ix, iy, iz), ()):
+                        best = min(best, math.dist(point, other))
+        cells.setdefault(key, []).append(point)
+    return best
+
+
+def audit_active_source(points, count):
+    """Fail before simulation if a seed source is not an admissible packing."""
+    if len(points) != count:
+        raise ValueError(f"source population {len(points)} does not equal {count}")
+    minimum = source_min_separation(points)
+    if minimum < 2.0 * RADIUS * (1.0 - 1.0e-10):
+        raise ValueError(f"source has overlapping grains: minimum separation {minimum}")
+
+
 def write_active_column(path, count, aspect, seed):
     points = active_column_positions(count, aspect, seed)
+    audit_active_source(points, count)
     with open(path, "w", newline="") as f:
         csv.writer(f).writerows(points)
     return path
