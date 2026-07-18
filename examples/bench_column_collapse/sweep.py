@@ -61,6 +61,7 @@ import shutil
 import subprocess
 import hashlib
 import json
+import concurrent.futures
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.abspath(os.path.join(SCRIPT_DIR, "..", ".."))
@@ -1077,7 +1078,26 @@ def derive_dirt_ensemble():
     return rows
 
 
-def start():
+def _run_dirt_case(a, seed, binary, env):
+    """Run one independent witness after invalidating only its stale evidence."""
+    cdir = case_dir_seed(a, seed)
+    config = os.path.join(cdir, "config.toml")
+    if not os.path.isfile(config):
+        raise FileNotFoundError(f"missing {config} — run 'generate' first")
+    for name in ("column_collapse_results.csv", "column_collapse_release.csv",
+                 "column_collapse_final_state.csv", "column_collapse_arrest.csv"):
+        stale = os.path.join(cdir, "data", name)
+        if os.path.isfile(stale):
+            os.remove(stale)
+    with open(os.path.join(cdir, "run.log"), "w") as log:
+        subprocess.run([binary, config], cwd=REPO_ROOT, stdout=log,
+                       stderr=subprocess.STDOUT, env=env, check=True)
+    return a, seed
+
+
+def start(jobs=1):
+    if jobs < 1:
+        raise ValueError("jobs must be at least one")
     os.makedirs(DATA_DIR, exist_ok=True)
     print(f"Building {EXAMPLE} (release)...", flush=True)
     env = dict(os.environ)
@@ -1087,33 +1107,16 @@ def start():
         cwd=REPO_ROOT, check=True, env=env,
     )
 
-    n_runs = len(ASPECTS) * len(SEEDS)
-    k = 0
-    for i, a in enumerate(ASPECTS, 1):
-        for s in SEEDS:
-            k += 1
-            cdir = case_dir_seed(a, s)
-            config = os.path.join(cdir, "config.toml")
-            if not os.path.isfile(config):
-                print(f"  [{k}/{n_runs}] missing {config} — run 'generate' first.")
-                continue
-            # Wipe stale deposit so old results can't be re-plotted.
-            deposit = os.path.join(cdir, "data", "column_collapse_results.csv")
-            release = os.path.join(cdir, "data", "column_collapse_release.csv")
-            terminal = os.path.join(cdir, "data", "column_collapse_final_state.csv")
-            arrest = os.path.join(cdir, "data", "column_collapse_arrest.csv")
-            for stale in (deposit, release, terminal, arrest):
-                if os.path.isfile(stale):
-                    os.remove(stale)
-            print(f"  [{k}/{n_runs}] a={a:<4} seed={s} N={n_particles(a)}", flush=True)
-            log = os.path.join(cdir, "run.log")
-            with open(log, "w") as lf:
-                subprocess.run(
-                    ["cargo", "run", "--release", "--example", EXAMPLE,
-                     "--no-default-features", "--features", "precision-double", "--", config],
-                    cwd=REPO_ROOT, stdout=lf, stderr=subprocess.STDOUT, env=env,
-                    check=True,
-                )
+    binary = os.path.join(REPO_ROOT, "target", "release", "examples", EXAMPLE)
+    if not os.path.isfile(binary):
+        raise RuntimeError(f"release binary missing after build: {binary}")
+    cases = [(a, s) for a in ASPECTS for s in SEEDS]
+    print(f"Running {len(cases)} independent DIRT cases with {jobs} worker(s)...", flush=True)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=jobs) as pool:
+        futures = [pool.submit(_run_dirt_case, a, s, binary, env) for a, s in cases]
+        for k, future in enumerate(concurrent.futures.as_completed(futures), 1):
+            a, s = future.result()
+            print(f"  [{k}/{len(cases)}] complete a={a:<4} seed={s}", flush=True)
 
     try:
         rows = derive_dirt_ensemble()
@@ -1486,21 +1489,32 @@ def graph():
 
 # ── dispatch ─────────────────────────────────────────────────────────────────
 def main():
-    cmd = sys.argv[1] if len(sys.argv) > 1 else "all"
+    args = sys.argv[1:]
+    cmd = args[0] if args else "all"
+    jobs = 1
+    if "--jobs" in args:
+        try:
+            jobs = int(args[args.index("--jobs") + 1])
+        except (IndexError, ValueError):
+            print("ERROR: --jobs requires a positive integer")
+            sys.exit(2)
+    if jobs < 1:
+        print("ERROR: --jobs requires a positive integer")
+        sys.exit(2)
     if cmd == "generate":
         generate()
     elif cmd == "start":
-        start()
+        start(jobs)
     elif cmd == "graph":
         sys.exit(0 if graph() else 1)
     elif cmd == "all":
         generate()
-        start()
+        start(jobs)
         print()
         sys.exit(0 if graph() else 1)
     else:
         print(f"Unknown command: {cmd!r}")
-        print("Usage: sweep.py [generate|start|graph]   (no arg = all three)")
+        print("Usage: sweep.py [generate|start|graph] [--jobs N]   (no arg = all three)")
         sys.exit(2)
 
 

@@ -60,7 +60,7 @@ exponents fitted per regime should approach **1** (linear) and **2/3** (power).
   packing-preparation sensitivity study; a completed dynamic campaign is still
   required before reporting
   statistical agreement with the experiment.
-- **Release-width witness.** The source grid covers the declared 16d column
+- **Release-width witness.** The source grid covers the declared 32d column
   width (rather than leaving a gate-side void), and `graph` rejects any run
   whose recorded pre-release active-grain envelopes span less than 95% of
   `L0`. Population alone cannot establish that the controlled initial width
@@ -190,6 +190,10 @@ python3 examples/bench_column_collapse/sweep.py
 python3 examples/bench_column_collapse/sweep.py generate   # write sweep/<case>/config.toml
 python3 examples/bench_column_collapse/sweep.py start      # build + run DIRT (+ LAMMPS if on PATH) -> data/*.csv
 python3 examples/bench_column_collapse/sweep.py graph      # fit exponents + write plots/
+
+# Independent aspect/seed witnesses can run concurrently. This changes only
+# scheduling; graphing still requires the complete 11 × 3 physical ensemble.
+python3 examples/bench_column_collapse/sweep.py start --jobs 4
 ```
 
 ### Single case (default config)
