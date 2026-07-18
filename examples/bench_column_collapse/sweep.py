@@ -79,8 +79,15 @@ LAMMPS_BINS = ["lmp_serial", "lmp", "lmp_mpi", "lammps"]
 # ── Geometry / material (shared by every case) ───────────────────────────────
 RADIUS = 0.0015            # m (d = 3 mm; Lajeunesse used ~1–3 mm glass beads)
 DENSITY = 2500.0           # kg/m^3 (glass)
-L0 = 0.048                 # initial column width [m] (= 16 diameters)
-W = 0.018                  # slab width in y [m] (= 6 diameters, quasi-2D)
+# The previous 16d x 6d section left a toe only a few grains wide/deep.  Its
+# fitted exponent changed when the front definition changed, which is direct
+# evidence that it was not in the continuum regime of the experiments.  Keep
+# the material, aspect schedule and acceptance band fixed, but resolve the
+# initial cross-section at 32d x 10d.  At fixed aspect this is 6.7x as many
+# active grains and makes the measured toe a bulk deposit rather than a
+# two-to-three-grain feature.
+L0 = 0.096                 # initial column width [m] (= 32 diameters)
+W = 0.030                  # slab width in y [m] (= 10 diameters, quasi-3D)
 # The bead bed must cover every place the deposit may come to rest.  Stopping it
 # at L0 would change the basal boundary from rough grains to the smooth safety
 # plane immediately after release, precisely where runout is determined.
@@ -108,7 +115,7 @@ INSERT_PACKING = math.pi / (3.0 * math.sqrt(2.0))
 # contact.  Start each realization just above close packing and apply a small,
 # deterministic in-plane perturbation.  Gravity settles this harmless void
 # space before release, while the preflight below still forbids overlaps.
-SOURCE_DILATION = 1.06
+SOURCE_DILATION = 1.08
 SOURCE_JITTER = 0.005      # fraction of a diameter, per horizontal coordinate
 BASE_Z = 2.0 * RADIUS
 BASE_SELECT_Z = 2.5 * RADIUS
@@ -188,6 +195,29 @@ def n_particles(aspect):
     return max(1, int(round(PACKING * L0 * W * h / vol_particle)))
 
 
+def sites_per_source_layer():
+    """Number of admissible triangular-lattice sites in one source layer."""
+    d = 2.0 * RADIUS
+    spacing = SOURCE_DILATION * d
+    dy = math.sqrt(3.0) * spacing / 2.0
+    # Registry shifts and alternating row offsets can only reduce capacity by
+    # one site.  Use the minimum across all registries as a conservative bound.
+    capacities = []
+    for px, py in ((0.0, 0.0), (0.5 * spacing, dy / 3.0),
+                   (spacing, 2.0 * dy / 3.0)):
+        n = 0
+        iy = 0
+        while RADIUS + py + iy * dy <= W - RADIUS + 1e-12:
+            x0 = RADIUS + px + (0.5 * spacing if iy % 2 else 0.0)
+            ix = 0
+            while x0 + ix * spacing <= L0 - RADIUS + 1e-12:
+                n += 1
+                ix += 1
+            iy += 1
+        capacities.append(n)
+    return min(capacities)
+
+
 def loose_insert_top(count, aspect):
     """Conservative top bound of the fcc source, measured from z=0.
 
@@ -195,7 +225,7 @@ def loose_insert_top(count, aspect):
     requested 0.60 solid fraction without making the nominal column too tall.
     The fcc stack has layer spacing sqrt(2/3)d and packing pi/(3 sqrt(2)).
     """
-    layers = int(math.ceil(count / 75))
+    layers = int(math.ceil(count / sites_per_source_layer()))
     return BASE_Z + RADIUS + layers * math.sqrt(2.0 / 3.0) * (2.0 * RADIUS)
 
 
@@ -305,16 +335,18 @@ def active_column_positions(count, aspect, seed):
     while len(points) < count:
         px, py = phases[registries[layer]]
         z = BASE_Z + RADIUS + layer * dz
-        for iy in range(6):
+        iy = 0
+        while True:
             y = RADIUS + py + iy * dy
             if y > W - RADIUS + 1e-12:
-                continue
-            for ix in range(16):
+                break
+            ix = 0
+            while True:
                 # Triangular in-layer registry: without this half-diameter row
                 # offset, neighbouring rows are only sqrt(3)/2 d apart.
                 x = RADIUS + px + ix * spacing + (0.5 * spacing if iy % 2 else 0.0)
                 if x > L0 - RADIUS + 1e-12:
-                    continue
+                    break
                 jx, jy = _source_jitter(seed, layer, iy, ix)
                 # Keep every source centre inside the same fixed L0 × W
                 # envelope; randomization must not change a boundary condition.
@@ -323,6 +355,8 @@ def active_column_positions(count, aspect, seed):
                 points.append((x, y, z))
                 if len(points) == count:
                     return points
+                ix += 1
+            iy += 1
         layer += 1
     return points
 

@@ -41,8 +41,8 @@ exponents fitted per regime should approach **1** (linear) and **2/3** (power).
 | Radius R | 1.5 | mm (d = 3 mm) |
 | Restitution e | 0.926 | — |
 | Friction μ | 0.16 | — (particle–particle and grain–base) |
-| Column width L0 | 48 | mm (16 diameters) |
-| Slab width W | 18 | mm (6 diameters, quasi-2D) |
+| Column width L0 | 96 | mm (32 diameters) |
+| Slab width W | 30 | mm (10 diameters) |
 | Timestep dt | 4 × 10⁻⁶ | s |
 
 ## Parameter Sweep
@@ -65,9 +65,12 @@ exponents fitted per regime should approach **1** (linear) and **2/3** (power).
   whose recorded pre-release active-grain envelopes span less than 95% of
   `L0`. Population alone cannot establish that the controlled initial width
   used to normalize runout was physically present.
-- `a` is varied by the **particle count** at fixed L0. The 16d × 6d cross-section
-  is eight times the old 8d × 3d population; counts run from ~880 (a = 0.5) to
-  ~8800 (a = 5). Sources use an fcc layer spacing, whose geometric packing
+- `a` is varied by the **particle count** at fixed L0. The 32d × 10d cross-section
+  has 6.7 times the active population of the preceding 16d × 6d protocol; counts
+  run from ~5900 (a = 0.5) to ~59 000 (a = 5). This is a resolution change, not
+  an adjustment to a fit or acceptance criterion: the former bed's toe was only
+  a few grain diameters wide/deep and changed exponent when its front definition
+  changed. Sources use an fcc layer spacing, whose geometric packing
   fraction (π/(3√2)) can represent the requested 0.60 column fraction. A
   simple 15×5 cubic grid cannot: an isolated fresh a=0.5 replay released at
   H/L0=0.817 rather than 0.5. The executable records the actual pre-release
@@ -124,8 +127,8 @@ reference, material, aspect range, toe metric, or ±0.25 exponent bands.
 
 ## Status — current evidence required
 
-The tracked figures are historical output and are not evidence for this full-length
-rough-base protocol. No exponent PASS is claimed until a fresh, complete 11 × 3
+The tracked figures are historical output and are not evidence for this full-length,
+continuum-resolution rough-base protocol. No exponent PASS is claimed until a fresh, complete 11 × 3
 campaign has passed the release/population/rest gates and regenerated both figures.
 This avoids turning historical 8d × 3d or mixed-boundary output into an implicit
 claim about the new continuum-resolution rough-base protocol.
@@ -168,9 +171,11 @@ this deliberately small benchmark, not a DIRT model defect:
    informs that old protocol, but is not evidence for this full-length rough-base
    case. A fresh matched LAMMPS campaign is required before any code-to-code claim.
 
-**Concrete fix path:** a substantially larger system (thicker slab, ~×10 more grains
-so the deposit front becomes continuum-like), not more seeds. **No tolerance is
-loosened to force a pass**; the bench is kept as an honest, visible FAIL.
+**Concrete fix implemented here:** a substantially larger 32d × 10d system
+(6.7× more grains at fixed aspect) so the deposit front can become continuum-like,
+rather than another seed or toe-estimator adjustment. The original 11 × 3 schedule,
+experimental reference, two-layer toe rule, and ±0.25 exponent bands are unchanged.
+**No tolerance is loosened to force a pass**; a fresh campaign remains required.
 
 ## How to Run
 
