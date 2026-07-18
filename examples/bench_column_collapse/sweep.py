@@ -157,6 +157,10 @@ LINEAR_TARGET = 1.0        # (L_f-L0)/L0 ~ a^1   for a <~ 2-3
 POWER_TARGET = 2.0 / 3.0   # (L_f-L0)/L0 ~ a^2/3 for a >~ 3
 REGIME_SPLIT = 3.0         # aspect ratio dividing the two regimes
 
+# Filled lazily after the source-coordinate functions are defined.  A common
+# population is retained across seeds so seed averaging does not alter mass.
+_SOURCE_POPULATION_CACHE = {}
+
 
 def protocol_fingerprint():
     """Stable identity of the physical/measurement contract behind a campaign.
@@ -176,7 +180,7 @@ def protocol_fingerprint():
         # Source preparation is part of the physical protocol: a campaign made
         # with an earlier translated crystal cannot be relabelled as this
         # fabric ensemble merely because its summary rows look compatible.
-        "initialization": ["deterministic-stacking-disordered-fcc-source-v2-full-width"],
+        "initialization": ["deterministic-stacking-disordered-fcc-source-v3-geometry-qualified"],
         "boundary": [BASE_X_HIGH, rough_base_positions(),
                      "frozen_close_packed_bead_layer_full_runout"],
         "measurement": [FINE_BINS, GAP_TOL_D, TOE_MIN_HEIGHT_D],
@@ -188,11 +192,35 @@ def protocol_fingerprint():
 
 
 def n_particles(aspect):
-    """Particle count whose settled column (width L0, slab W, packing PACKING)
-    has height H = aspect * L0."""
-    h = aspect * L0
-    vol_particle = (4.0 / 3.0) * math.pi * RADIUS**3
-    return max(1, int(round(PACKING * L0 * W * h / vol_particle)))
+    """Exact source population for a scheduled release aspect.
+
+    The old bulk-volume formula was appropriate only for an unbounded packing.
+    This benchmark instead inserts a finite, phase-shifted triangular source.
+    Its edge losses and registry shifts mean that the formula prepared a column
+    substantially taller than the requested aspect *before it could settle*.
+    Choose the largest common population whose actual generated source remains
+    below the scheduled height for every seed.  The analysis still uses the
+    measured post-settlement height; this function only prevents the source
+    itself from silently relabelling the aspect schedule.
+    """
+    if aspect not in _SOURCE_POPULATION_CACHE:
+        target = aspect * L0
+        # The infinite-packing count is a safe upper bound for this deliberately
+        # dilated finite source.  Search the actual coordinate generator, not a
+        # second approximate packing model.
+        bulk = max(1, int(math.ceil(
+            PACKING * L0 * W * target / ((4.0 / 3.0) * math.pi * RADIUS**3)
+        )))
+        lo, hi = 1, bulk
+        while lo < hi:
+            mid = (lo + hi + 1) // 2
+            if max(source_preparation_height(active_column_positions(mid, aspect, seed))
+                   for seed in SEEDS) <= target + 1e-12:
+                lo = mid
+            else:
+                hi = mid - 1
+        _SOURCE_POPULATION_CACHE[aspect] = lo
+    return _SOURCE_POPULATION_CACHE[aspect]
 
 
 def sites_per_source_layer():
@@ -377,18 +405,35 @@ def source_min_separation(points):
     return best
 
 
-def audit_active_source(points, count):
+def source_preparation_height(points):
+    """Physical source height measured with particle envelopes above the bed."""
+    if not points:
+        raise ValueError("empty active-column source")
+    return max(z + RADIUS for _, _, z in points) - BASE_Z
+
+
+def audit_active_source(points, count, aspect):
     """Fail before simulation if a seed source is not an admissible packing."""
     if len(points) != count:
         raise ValueError(f"source population {len(points)} does not equal {count}")
     minimum = source_min_separation(points)
     if minimum < 2.0 * RADIUS * (1.0 - 1.0e-10):
         raise ValueError(f"source has overlapping grains: minimum separation {minimum}")
+    # A finite source changes height in whole layers.  One fcc layer is the
+    # unavoidable discretisation uncertainty, not an acceptance tolerance.
+    target = aspect * L0
+    height_error = abs(source_preparation_height(points) - target)
+    layer = math.sqrt(2.0 / 3.0) * SOURCE_DILATION * (2.0 * RADIUS)
+    if height_error > layer + 1e-12:
+        raise ValueError(
+            f"source height {source_preparation_height(points) / L0:.6f} L0 "
+            f"does not represent scheduled aspect {aspect:.6f}"
+        )
 
 
 def write_active_column(path, count, aspect, seed):
     points = active_column_positions(count, aspect, seed)
-    audit_active_source(points, count)
+    audit_active_source(points, count, aspect)
     with open(path, "w", newline="") as f:
         csv.writer(f).writerows(points)
     return path

@@ -65,17 +65,16 @@ exponents fitted per regime should approach **1** (linear) and **2/3** (power).
   whose recorded pre-release active-grain envelopes span less than 95% of
   `L0`. Population alone cannot establish that the controlled initial width
   used to normalize runout was physically present.
-- `a` is varied by the **particle count** at fixed L0. The 32d × 10d cross-section
-  has 6.7 times the active population of the preceding 16d × 6d protocol; counts
-  run from ~5900 (a = 0.5) to ~59 000 (a = 5). This is a resolution change, not
-  an adjustment to a fit or acceptance criterion: the former bed's toe was only
-  a few grain diameters wide/deep and changed exponent when its front definition
-  changed. Sources use an fcc layer spacing, whose geometric packing
-  fraction (π/(3√2)) can represent the requested 0.60 column fraction. A
-  simple 15×5 cubic grid cannot: an isolated fresh a=0.5 replay released at
-  H/L0=0.817 rather than 0.5. The executable records the actual pre-release
-  coordinates and analysis fits that measured height, never an intended count
-  or nominal height.
+- `a` is varied by the **particle count** at fixed L0. The 32d × 10d section
+  uses roughly 5,000 active grains at `a = 0.5` and 50,000 at `a = 5`.
+  Crucially, that population is not computed from an infinite-packing volume
+  fraction: finite edge losses and phase-shifted layers made the earlier source
+  prepare a nominal `a = 0.5` column at `H/L0 = 0.610`. The driver now searches
+  the exact coordinate generator and uses the largest common seed population
+  that fits the scheduled source height (within one fcc layer). The executable
+  still records the post-settlement coordinates and fits that measured height;
+  the source qualification prevents the *input* from silently relabelling the
+  11-point schedule. This is not an adjustment to a fit or acceptance criterion.
 - Each case runs two stages: `settle` (80 000 steps — pack the loosely-inserted
   column against the gate) then `collapse` (1 000 000 steps / 4 s — gate removed
   on the first step, column spreads and must meet the terminal-rest criterion).
@@ -133,21 +132,15 @@ campaign has passed the release/population/rest gates and regenerated both figur
 This avoids turning historical 8d × 3d or mixed-boundary output into an implicit
 claim about the new continuum-resolution rough-base protocol.
 
-Reproduction check (2026-07-17): `generate` produced all 33 exact-count,
-seed-distinct, non-overlapping sources. The regenerated source has a minimum
-active-grain spacing of at least 1.016 diameters; its initial solid fraction is
-0.622, above the requested released-column 0.60, so settling—not an artificial
-overlap—prepares the release fabric. The DIRT `a=0.5`, seed-0 run previously
-reached gate release with all 2,077 particles present (880 active + 1,197
-frozen base). The long collapse was intentionally not presented as a result.
-The LAMMPS writer
-serializes the frozen bed at the same precision as the shared active source and
-now applies gravity, walls, and `nve/sphere` only to its complementary `mobile`
-group. `fix freeze` alone does not make it sound to apply later wall fixes to
-the base; excluding it is required to keep the frozen rough substrate a true
-boundary. An isolated 20-settle/5-collapse-step LAMMPS 22-Jul-2025 replay is
-finite across gate removal after this correction. This is only an input
-stability check, not a DIRT/LAMMPS agreement result or an exponent PASS.
+Independent reproduction (2026-07-18): `generate` produced all 33 exact-count,
+seed-distinct, non-overlapping sources. The geometry-qualified source spans
+`H/L0 = 0.4997` for every `a = 0.5` seed, `2.9798` for `a = 3`, and `4.9915`
+for `a = 5`; its minimum active spacing in those boundary cases is at least
+1.0128 diameters. An installed LAMMPS 22-Jul-2025 binary independently consumed
+the exact `a=0.5`, seed-0 source and its frozen base for a 20-settle/5-collapse
+smoke: release and final populations were both 8,062, across gate removal.
+This is an initialization and population-integrity check, not a DIRT/LAMMPS
+agreement result or an exponent PASS.
 
 **The earlier "fit noise" hypothesis was tested and rejected.** The suspected causes
 — single seed, a coarse 6-point sweep, and diameter-scale runout quantization — were
@@ -171,11 +164,11 @@ this deliberately small benchmark, not a DIRT model defect:
    informs that old protocol, but is not evidence for this full-length rough-base
    case. A fresh matched LAMMPS campaign is required before any code-to-code claim.
 
-**Concrete fix implemented here:** a substantially larger 32d × 10d system
-(6.7× more grains at fixed aspect) so the deposit front can become continuum-like,
-rather than another seed or toe-estimator adjustment. The original 11 × 3 schedule,
-experimental reference, two-layer toe rule, and ±0.25 exponent bands are unchanged.
-**No tolerance is loosened to force a pass**; a fresh campaign remains required.
+**Current correction:** source populations are derived from the actual bounded
+coordinate generator, rather than from an incompatible infinite-packing formula.
+The original 11 × 3 schedule, experimental reference, two-layer toe rule, and
+±0.25 exponent bands are unchanged. **No tolerance is loosened to force a pass**;
+a fresh campaign remains required.
 
 ## How to Run
 
