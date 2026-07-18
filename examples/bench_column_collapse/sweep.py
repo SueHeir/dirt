@@ -185,7 +185,8 @@ def protocol_fingerprint():
                      "frozen_close_packed_bead_layer_full_runout"],
         "measurement": [FINE_BINS, GAP_TOL_D, TOE_MIN_HEIGHT_D],
         "validation": [EXP_TOL, LINEAR_TARGET, POWER_TARGET, REGIME_SPLIT,
-                       REST_FROUDE_MAX],
+                       REST_FROUDE_MAX, ARREST_WINDOW_SAMPLES,
+                       ARREST_SAMPLE_INTERVAL],
     }
     encoded = json.dumps(contract, sort_keys=True, separators=(",", ":")).encode()
     return hashlib.sha256(encoded).hexdigest()
@@ -682,6 +683,11 @@ fix             back mobile wall/gran granular hertz/material {E} {e} {nu} tange
 fix             sides mobile wall/gran granular hertz/material {E} {e} {nu} tangential mindlin NULL {tdamp} {mu} damping tsuji rolling none twisting none yplane 0.0 {W}
 fix             gate mobile wall/gran granular hertz/material {E} {e} {nu} tangential mindlin NULL {tdamp} {mu} damping tsuji rolling none twisting none xplane NULL {L0}
 fix             integrate mobile nve/sphere
+# Match DIRT's sustained-quiescence evidence: the final four samples, rather
+# than one terminal dump, must all satisfy the shared Froude threshold.
+variable        speed atom sqrt(vx*vx+vy*vy+vz*vz)
+compute         max_speed mobile reduce max v_speed
+fix             arrest mobile ave/time {arrest_interval} 1 {arrest_interval} c_max_speed file {arrest_file} mode scalar
 
 thermo_modify   lost warn flush yes
 timestep        {dt}
@@ -776,6 +782,8 @@ def write_lammps_input(path, aspect, seed):
             settle_steps=SETTLE_STEPS, collapse_steps=COLLAPSE_STEPS,
             release_dump=lammps_dump_path(aspect, seed, "release"),
             dump=lammps_dump_path(aspect, seed, "deposit"),
+            arrest_file=os.path.join(case_dir_seed(aspect, seed), "lammps_arrest.txt"),
+            arrest_interval=ARREST_SAMPLE_INTERVAL,
         ))
 
 
@@ -821,6 +829,31 @@ def lammps_max_speed(dump_path):
     raise ValueError("LAMMPS terminal dump has no atom section")
 
 
+def lammps_arrest_window(path):
+    """Read the final sustained-speed window written by LAMMPS ``fix ave/time``."""
+    rows = []
+    with open(path) as f:
+        for line in f:
+            fields = line.split()
+            if not fields or fields[0].startswith("#"):
+                continue
+            if len(fields) != 2:
+                raise ValueError("malformed LAMMPS arrest-window row")
+            try:
+                step, speed = int(fields[0]), float(fields[1])
+            except ValueError as exc:
+                raise ValueError("non-numeric LAMMPS arrest-window row") from exc
+            rows.append((step, speed))
+    if len(rows) < ARREST_WINDOW_SAMPLES:
+        raise ValueError("too few LAMMPS arrest-window samples")
+    window = rows[-ARREST_WINDOW_SAMPLES:]
+    if (any(step <= 0 for step, _ in window)
+            or any(b[0] - a[0] != ARREST_SAMPLE_INTERVAL for a, b in zip(window, window[1:]))
+            or not all(math.isfinite(speed) and speed >= 0.0 for _, speed in window)):
+        raise ValueError("invalid LAMMPS arrest-window values")
+    return [speed for _, speed in window]
+
+
 def run_lammps_sweep(lammps):
     """Run the same aspect×seed campaign in LAMMPS or return no overlay.
 
@@ -841,13 +874,14 @@ def run_lammps_sweep(lammps):
             deposit_dump = lammps_dump_path(a, seed, "deposit")
             release_csv = os.path.join(cdir, "lammps_release.csv")
             deposit_csv = os.path.join(cdir, "lammps_deposit.csv")
-            for stale in (release_dump, deposit_dump, release_csv, deposit_csv):
+            arrest = os.path.join(cdir, "lammps_arrest.txt")
+            for stale in (release_dump, deposit_dump, release_csv, deposit_csv, arrest):
                 if os.path.isfile(stale): os.remove(stale)
             write_lammps_input(in_path, a, seed)
             print(f"  [LAMMPS {i}/{len(ASPECTS)}] a={a:<4} seed={seed} N={n_particles(a)}", flush=True)
             proc = subprocess.run([lammps, "-in", in_path, "-log", log_path], cwd=REPO_ROOT,
                                   stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
-            if (proc.returncode != 0 or not all(os.path.isfile(p) for p in (release_dump, deposit_dump))
+            if (proc.returncode != 0 or not all(os.path.isfile(p) for p in (release_dump, deposit_dump, arrest))
                     or not lammps_dump_to_csv(release_dump, release_csv)
                     or not lammps_dump_to_csv(deposit_dump, deposit_csv)):
                 failures.append(f"a={a} seed={seed}: no parseable LAMMPS snapshots")
@@ -858,11 +892,15 @@ def run_lammps_sweep(lammps):
                 continue
             try:
                 vmax = lammps_max_speed(deposit_dump)
+                arrest_speeds = lammps_arrest_window(arrest)
             except ValueError as exc:
                 failures.append(f"a={a} seed={seed}: {exc}")
                 continue
             if vmax / math.sqrt(9.81 * 2.0 * RADIUS) > REST_FROUDE_MAX:
                 failures.append(f"a={a} seed={seed}: LAMMPS terminal state is not arrested")
+                continue
+            if max(arrest_speeds) / math.sqrt(9.81 * 2.0 * RADIUS) > REST_FROUDE_MAX:
+                failures.append(f"a={a} seed={seed}: LAMMPS final sustained state is not arrested")
                 continue
             hs.append(release_height(release_csv)); _, lf = measure_column(deposit_csv); lfs.append(lf)
         if len(lfs) != len(SEEDS):
@@ -880,6 +918,11 @@ def run_lammps_sweep(lammps):
 
 # ── start ────────────────────────────────────────────────────────────────────
 REST_FROUDE_MAX = 0.05
+# A final snapshot may coincide with a transient low-speed phase.  Require four
+# equally spaced collapse witnesses instead; this is a stricter arrest check,
+# not a relaxation of the existing Froude threshold.
+ARREST_WINDOW_SAMPLES = 4
+ARREST_SAMPLE_INTERVAL = 25_000
 
 
 def csv_particle_count(path):
@@ -943,6 +986,31 @@ def checked_final_state(path, expected_count):
     return vmax
 
 
+def checked_arrest_window(path):
+    """Return a sustained terminal-speed witness from the executable output.
+
+    The recorder emits one row every fixed number of collapse steps.  Keeping
+    only the last four samples makes the check insensitive to the early dynamic
+    stage while refusing a deposit that merely happens to be slow at its final
+    output instant.
+    """
+    with open(path, newline="") as f:
+        rows = list(csv.DictReader(f))
+    if len(rows) < ARREST_WINDOW_SAMPLES:
+        raise ValueError("too few arrest-window samples")
+    window = rows[-ARREST_WINDOW_SAMPLES:]
+    try:
+        steps = [int(row["collapse_step"]) for row in window]
+        speeds = [float(row["max_speed_m_s"]) for row in window]
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError("malformed arrest-window record") from exc
+    if (any(step <= 0 for step in steps)
+            or any(b - a != ARREST_SAMPLE_INTERVAL for a, b in zip(steps, steps[1:]))
+            or not all(math.isfinite(v) and v >= 0.0 for v in speeds)):
+        raise ValueError("invalid arrest-window values")
+    return speeds
+
+
 def derive_dirt_ensemble():
     """Derive every fit input from the 11 x 3 executable witnesses.
 
@@ -960,14 +1028,16 @@ def derive_dirt_ensemble():
             deposit = os.path.join(case_data, "column_collapse_results.csv")
             release = os.path.join(case_data, "column_collapse_release.csv")
             terminal = os.path.join(case_data, "column_collapse_final_state.csv")
+            arrest = os.path.join(case_data, "column_collapse_arrest.csv")
             expected = total_particles(a)
-            if not all(os.path.isfile(p) for p in (deposit, release, terminal)):
-                failures.append(f"a={a} seed={s}: missing release, final, or terminal evidence")
+            if not all(os.path.isfile(p) for p in (deposit, release, terminal, arrest)):
+                failures.append(f"a={a} seed={s}: missing release, final, terminal, or arrest evidence")
                 continue
             try:
                 release_n = csv_particle_count(release)
                 deposit_n = csv_particle_count(deposit)
                 vmax = checked_final_state(terminal, expected)
+                arrest_speeds = checked_arrest_window(arrest)
                 h, _ = release_geometry(release)
                 _, lf = measure_column(deposit)
             except (OSError, ValueError, csv.Error) as exc:
@@ -979,6 +1049,13 @@ def derive_dirt_ensemble():
             froude = vmax / math.sqrt(9.81 * 2.0 * RADIUS)
             if froude > REST_FROUDE_MAX:
                 failures.append(f"a={a} seed={s}: terminal Fr={froude:.6g} > {REST_FROUDE_MAX}")
+                continue
+            arrest_froude = max(arrest_speeds) / math.sqrt(9.81 * 2.0 * RADIUS)
+            if arrest_froude > REST_FROUDE_MAX:
+                failures.append(
+                    f"a={a} seed={s}: final {ARREST_WINDOW_SAMPLES}-sample Fr={arrest_froude:.6g} "
+                    f"> {REST_FROUDE_MAX}"
+                )
                 continue
             if not all(math.isfinite(v) for v in (h, lf)):
                 failures.append(f"a={a} seed={s}: non-finite measured geometry")
@@ -1024,7 +1101,8 @@ def start():
             deposit = os.path.join(cdir, "data", "column_collapse_results.csv")
             release = os.path.join(cdir, "data", "column_collapse_release.csv")
             terminal = os.path.join(cdir, "data", "column_collapse_final_state.csv")
-            for stale in (deposit, release, terminal):
+            arrest = os.path.join(cdir, "data", "column_collapse_arrest.csv")
+            for stale in (deposit, release, terminal, arrest):
                 if os.path.isfile(stale):
                     os.remove(stale)
             print(f"  [{k}/{n_runs}] a={a:<4} seed={s} N={n_particles(a)}", flush=True)

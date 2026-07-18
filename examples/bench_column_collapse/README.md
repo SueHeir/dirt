@@ -96,7 +96,7 @@ exponents fitted per regime should approach **1** (linear) and **2/3** (power).
 and exits non-zero if either fit is outside the band. It accepts only one row for
 each of the 11 scheduled aspects, with all three seeds and finite measured values.
 Before fitting, it independently re-derives every row from all **33** release,
-final-deposit, and terminal-rest witnesses; it rejects a missing witness or any
+final-deposit, and sustained-rest witnesses; it rejects a missing witness or any
 summary value that disagrees with those raw measurements. Thus `runout.csv` is a
 cache, not evidence that can make a partial or edited campaign pass.
 The scheduled aspect proves coverage; the fit itself uses the executable's measured
@@ -131,6 +131,14 @@ continuum-resolution rough-base protocol. No exponent PASS is claimed until a fr
 campaign has passed the release/population/rest gates and regenerated both figures.
 This avoids turning historical 8d × 3d or mixed-boundary output into an implicit
 claim about the new continuum-resolution rough-base protocol.
+
+Arrest is not inferred from a convenient final frame. DIRT records the maximum
+grain speed every 25,000 collapse steps, and the last four samples must each
+satisfy `Fr = v_max / sqrt(g d) <= 0.05`; LAMMPS writes and is checked against
+the same window. A candidate with a low final speed but a recent velocity burst
+is rejected before either a fit or a cross-code overlay can be made. This
+strengthens the existing terminal Froude condition and does not alter the
+runout estimator, aspect schedule, empirical targets, or ±0.25 bands.
 
 Independent reproduction (2026-07-18): `generate` produced all 33 exact-count,
 seed-distinct, non-overlapping sources. The geometry-qualified source spans

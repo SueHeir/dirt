@@ -27,10 +27,16 @@ use std::io::Write as IoWrite;
 
 /// Name of the removable vertical gate wall (matches `name = "gate"` in config).
 const GATE_NAME: &str = "gate";
+/// Number of collapse integration steps between quiescence witnesses.
+///
+/// The benchmark is single-rank, so this records the complete population used
+/// by the runout analysis rather than a rank-local proxy.
+const ARREST_SAMPLE_INTERVAL: u64 = 25_000;
 
 /// Tracks gate release so it happens exactly once.
 struct CollapseTracker {
     gate_opened: bool,
+    collapse_steps: u64,
 }
 
 fn main() {
@@ -41,11 +47,18 @@ fn main() {
         .add_plugins(FixesPlugin)
         .add_plugins(WallPlugin);
 
-    app.add_resource(CollapseTracker { gate_opened: false });
+    app.add_resource(CollapseTracker {
+        gate_opened: false,
+        collapse_steps: 0,
+    });
 
     // Remove the gate on the first step of the "collapse" stage.
     app.add_update_system(
         open_gate.run_if(in_stage("collapse")),
+        ParticleSimScheduleSet::PostFinalIntegration,
+    );
+    app.add_update_system(
+        record_collapse_quiescence.run_if(in_stage("collapse")),
         ParticleSimScheduleSet::PostFinalIntegration,
     );
 
@@ -91,12 +104,58 @@ fn open_gate(
         .unwrap();
     }
     walls.deactivate_by_name(GATE_NAME);
+    // A new collapse must never inherit a previous run's arrest witnesses.
+    let arrest_path = format!("{data_dir}/column_collapse_arrest.csv");
+    let mut arrest = fs::File::create(&arrest_path)
+        .unwrap_or_else(|e| panic!("Cannot create {arrest_path}: {e}"));
+    writeln!(arrest, "collapse_step,max_speed_m_s").unwrap();
     tracker.gate_opened = true;
     if comm.rank() == 0 {
         println!(
             "Step {}: gate removed — column released.",
             run_state.total_cycle
         );
+    }
+}
+
+/// Record a sparse, sustained-quiescence witness through the collapse stage.
+///
+/// A terminal speed alone can catch a transient low-velocity phase.  The
+/// analysis requires the final four equally spaced samples to meet its Froude
+/// threshold, which establishes a bounded interval of rest without changing a
+/// runout estimator or an empirical acceptance band.
+fn record_collapse_quiescence(
+    mut tracker: ResMut<CollapseTracker>,
+    atoms: Res<Atom>,
+    input: Res<Input>,
+    comm: Res<CommResource>,
+) {
+    if !tracker.gate_opened {
+        return;
+    }
+    tracker.collapse_steps += 1;
+    if tracker.collapse_steps % ARREST_SAMPLE_INTERVAL != 0 {
+        return;
+    }
+    let mut vmax = 0.0f64;
+    for velocity in atoms.vel.iter().take(atoms.nlocal as usize) {
+        let speed = ((velocity[0] as f64) * (velocity[0] as f64)
+            + (velocity[1] as f64) * (velocity[1] as f64)
+            + (velocity[2] as f64) * (velocity[2] as f64))
+            .sqrt();
+        vmax = vmax.max(speed);
+    }
+    if comm.rank() == 0 {
+        let out_dir = input
+            .output_dir
+            .clone()
+            .unwrap_or_else(|| "examples/bench_column_collapse".to_string());
+        let path = format!("{out_dir}/data/column_collapse_arrest.csv");
+        let mut f = fs::OpenOptions::new()
+            .append(true)
+            .open(&path)
+            .unwrap_or_else(|e| panic!("Cannot append {path}: {e}"));
+        writeln!(f, "{},{:.10e}", tracker.collapse_steps, vmax).unwrap();
     }
 }
 
