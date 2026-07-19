@@ -74,6 +74,7 @@ DATA_DIR = os.path.join(SCRIPT_DIR, "data")
 PLOT_DIR = os.path.join(SCRIPT_DIR, "plots")
 RUNOUT_CSV = os.path.join(DATA_DIR, "runout.csv")          # DIRT runout per aspect
 LAMMPS_CSV = os.path.join(DATA_DIR, "lammps_results.csv")  # LAMMPS runout per aspect
+LAMMPS_RECEIPT_NAME = "lammps_receipt.json"
 MANIFEST_NAME = "column_collapse_protocol.json"
 CASE_RECEIPT_NAME = "column_collapse_case_receipt.json"
 
@@ -809,6 +810,70 @@ def lammps_dump_path(aspect, seed, stage):
     return os.path.join(case_dir_seed(aspect, seed), f"lammps_{stage}.txt")
 
 
+def lammps_receipt_path(aspect, seed):
+    """Receipt for one external-code witness, kept beside its raw LAMMPS files."""
+    return os.path.join(case_dir_seed(aspect, seed), LAMMPS_RECEIPT_NAME)
+
+
+def lammps_binary_identity(binary):
+    """Content identity, rather than a PATH spelling, of the independent solver."""
+    resolved = os.path.realpath(binary)
+    if not os.path.isfile(resolved):
+        raise ValueError("LAMMPS executable is not a regular file")
+    return {"path": resolved, "sha256": sha256_file(resolved)}
+
+
+def lammps_case_receipt(aspect, seed, binary):
+    """Bind a LAMMPS witness to its rendered input, solver and raw outputs.
+
+    A complete dump alone does not establish which LAMMPS input produced it.
+    This receipt is deliberately provenance only: it neither supplies a target
+    nor participates in the DIRT-versus-experiment exponent verdict.
+    """
+    cdir = case_dir_seed(aspect, seed)
+    paths = {
+        "input": os.path.join(cdir, "in.lammps"),
+        "release_dump": lammps_dump_path(aspect, seed, "release"),
+        "deposit_dump": lammps_dump_path(aspect, seed, "deposit"),
+        "release_csv": os.path.join(cdir, "lammps_release.csv"),
+        "deposit_csv": os.path.join(cdir, "lammps_deposit.csv"),
+        "arrest": os.path.join(cdir, "lammps_arrest.txt"),
+    }
+    missing = [name for name, path in paths.items() if not os.path.isfile(path)]
+    if missing:
+        raise ValueError("missing LAMMPS receipt input(s): " + ", ".join(missing))
+    return {
+        "schema": 1,
+        "nominal_aspect": aspect,
+        "seed": seed,
+        "protocol_sha256": protocol_fingerprint(),
+        "lammps": lammps_binary_identity(binary),
+        "input_sha256": sha256_file(paths.pop("input")),
+        "witness_sha256": {name: sha256_file(path) for name, path in paths.items()},
+    }
+
+
+def write_lammps_case_receipt(aspect, seed, binary):
+    with open(lammps_receipt_path(aspect, seed), "w") as f:
+        json.dump(lammps_case_receipt(aspect, seed, binary), f, sort_keys=True, indent=2)
+        f.write("\n")
+
+
+def checked_lammps_case_receipt(aspect, seed):
+    path = lammps_receipt_path(aspect, seed)
+    if not os.path.isfile(path):
+        raise ValueError("missing LAMMPS per-case receipt")
+    try:
+        with open(path) as f:
+            recorded = json.load(f)
+        binary = recorded["lammps"]["path"]
+        current = lammps_case_receipt(aspect, seed, binary)
+    except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError) as exc:
+        raise ValueError("malformed LAMMPS per-case receipt") from exc
+    if recorded != current:
+        raise ValueError("LAMMPS receipt disagrees with executable, input, or raw witnesses")
+
+
 def lammps_create_atoms(points):
     """Render one LAMMPS ``create_atoms single`` command per source coordinate.
 
@@ -975,7 +1040,8 @@ def run_lammps_sweep(lammps):
             release_csv = os.path.join(cdir, "lammps_release.csv")
             deposit_csv = os.path.join(cdir, "lammps_deposit.csv")
             arrest = os.path.join(cdir, "lammps_arrest.txt")
-            for stale in (release_dump, deposit_dump, release_csv, deposit_csv, arrest):
+            for stale in (release_dump, deposit_dump, release_csv, deposit_csv, arrest,
+                          lammps_receipt_path(a, seed)):
                 if os.path.isfile(stale): os.remove(stale)
             write_lammps_input(in_path, a, seed)
             print(f"  [LAMMPS {i}/{len(ASPECTS)}] a={a:<4} seed={seed} N={n_particles(a)}", flush=True)
@@ -1002,6 +1068,9 @@ def run_lammps_sweep(lammps):
             if max(arrest_speeds) / math.sqrt(9.81 * 2.0 * RADIUS) > REST_FROUDE_MAX:
                 failures.append(f"a={a} seed={seed}: LAMMPS final sustained state is not arrested")
                 continue
+            # Record the external executable and the fully rendered input only
+            # after every raw witness has passed its physical admission checks.
+            write_lammps_case_receipt(a, seed, lammps)
             hs.append(release_height(release_csv)); _, lf = measure_column(deposit_csv); lfs.append(lf)
         if len(lfs) != len(SEEDS):
             continue
@@ -1798,6 +1867,7 @@ def derive_lammps_ensemble():
                 failures.append(f"a={a} seed={seed}: missing LAMMPS raw witness")
                 continue
             try:
+                checked_lammps_case_receipt(a, seed)
                 expected = total_particles(a)
                 if csv_particle_count(release) != expected or csv_particle_count(deposit) != expected:
                     raise ValueError(f"population is not {expected} at release/final")

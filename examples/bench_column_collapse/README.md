@@ -48,7 +48,7 @@ those target exponents.
 | Property | Value | Unit |
 |----------|-------|------|
 | Young's modulus E | 7 × 10⁷ | Pa (softened, keeps `dt` reasonable for a bed) |
-| Poisson's ratio ν | 0.25 | — |
+| Poisson's ratio ν | 0.245 | — |
 | Density ρ | 2500 | kg/m³ |
 | Radius R | 1.5 | mm (d = 3 mm) |
 | Restitution e | 0.926 | — |
@@ -125,6 +125,12 @@ and all four raw witnesses. Reuse and graphing recompute the receipt and reject
 a stale or mixed case before it can enter a seed average. This is an ordinary
 reproducibility guard, not a cryptographic signature and not physical evidence
 in place of a completed campaign.
+
+The optional LAMMPS overlay has a separate per-case receipt. It binds each
+external-code release/deposit/arrest witness to the rendered LAMMPS input and
+the SHA-256 identity of the executable that produced it. Graphing withholds an
+overlay if either changes. This records solver provenance; it does not make a
+LAMMPS result an experimental target or replace the required complete campaign.
 The scheduled aspect proves coverage; the fit itself uses the executable's measured
 pre-release height `H/L0`, so loose insertion and settling cannot silently shift a
 point horizontally. A LAMMPS overlay is emitted only for a complete, exact-population
