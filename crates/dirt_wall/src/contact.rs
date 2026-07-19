@@ -641,13 +641,13 @@ pub fn wall_contact_force(
         }
 
         // ── Sphere walls ────────────────────────────────────────────────────
-        let sphere_count = walls.spheres.len();
-        let mut sphere_forces = vec![0.0f64; sphere_count];
-        for (sphere_idx, sphere) in walls.spheres.iter().enumerate() {
-            if !walls.sphere_active[sphere_idx] {
+        let nsph = walls.spheres.len();
+        let mut sph_forces = vec![0.0f64; nsph];
+        for (sph_idx, sph) in walls.spheres.iter().enumerate() {
+            if !walls.sphere_active[sph_idx] {
                 continue;
             }
-            let wall_mat = sphere.material_index;
+            let wall_mat = sph.material_index;
             for i in 0..nlocal {
                 let pos = [
                     atoms.pos[i][0] as f64,
@@ -657,22 +657,22 @@ pub fn wall_contact_force(
                 let radius = dem.radius[i];
                 let mat_i = atoms.atom_type[i] as usize;
 
-                let dx = pos[0] - sphere.center[0];
-                let dy = pos[1] - sphere.center[1];
-                let dz = pos[2] - sphere.center[2];
+                let dx = pos[0] - sph.center[0];
+                let dy = pos[1] - sph.center[1];
+                let dz = pos[2] - sph.center[2];
                 let dist = (dx * dx + dy * dy + dz * dz).sqrt();
                 if dist < 1e-30 {
                     continue;
                 }
 
                 let inv_dist = 1.0 / dist;
-                let (nx, ny, nz, delta) = if sphere.inside {
-                    let gap = sphere.radius - dist;
+                let (nx, ny, nz, delta) = if sph.inside {
+                    let gap = sph.radius - dist;
                     let delta = radius - gap;
                     // Normal points inward (toward center)
                     (-dx * inv_dist, -dy * inv_dist, -dz * inv_dist, delta)
                 } else {
-                    let gap = dist - sphere.radius;
+                    let gap = dist - sph.radius;
                     let delta = radius - gap;
                     // Normal points outward (away from center)
                     (dx * inv_dist, dy * inv_dist, dz * inv_dist, delta)
@@ -716,7 +716,7 @@ pub fn wall_contact_force(
                 if mu > 0.0 {
                     let beta = material_table.beta_ij[mat_i][wall_mat];
                     let g_eff = material_table.g_eff_ij[mat_i][wall_mat];
-                    let key = (2u8, sphere_idx, atoms.tag[i]);
+                    let key = (2u8, sph_idx, atoms.tag[i]);
                     let old = old_springs.get(&key).copied().unwrap_or([0.0; 3]);
                     let (ft, tau, ns) = wall_tangential_force(
                         [nx, ny, nz],
@@ -751,7 +751,7 @@ pub fn wall_contact_force(
                     let sds = material_table.rolling_model == "sds";
                     let k_roll = material_table.rolling_stiffness_ij[mat_i][wall_mat];
                     let gamma_roll = material_table.rolling_damping_ij[mat_i][wall_mat];
-                    let key = (2u8, sphere_idx, atoms.tag[i]);
+                    let key = (2u8, sph_idx, atoms.tag[i]);
                     let old_rd = old_rolling.get(&key).copied().unwrap_or([0.0; 3]);
                     let (tr, new_rd) = wall_rolling_torque(
                         [nx, ny, nz],
@@ -773,10 +773,10 @@ pub fn wall_contact_force(
                     }
                 }
 
-                sphere_forces[sphere_idx] += f_net;
+                sph_forces[sph_idx] += f_net;
             }
         }
-        for (idx, &f) in sphere_forces.iter().enumerate() {
+        for (idx, &f) in sph_forces.iter().enumerate() {
             walls.spheres[idx].force_accumulator += f;
         }
 

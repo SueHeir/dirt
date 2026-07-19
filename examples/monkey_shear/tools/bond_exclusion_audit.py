@@ -27,13 +27,13 @@ import sys
 
 def parse_spheres(path):
     txt = open(path).read()
-    spheres = []
+    sph = []
     for m in re.finditer(
         r"offset\s*=\s*\[([^\]]+)\].*?radius\s*=\s*([0-9.eE+-]+)", txt
     ):
         x, y, z = (float(v) for v in m.group(1).split(","))
-        spheres.append((x, y, z, float(m.group(2))))
-    return spheres
+        sph.append((x, y, z, float(m.group(2))))
+    return sph
 
 
 def dist(a, b):
@@ -46,15 +46,15 @@ def main():
     ap.add_argument("--tol", type=float, default=1.1, help="bond_tolerance")
     a = ap.parse_args()
 
-    spheres = parse_spheres(a.toml)
-    n = len(spheres)
+    sph = parse_spheres(a.toml)
+    n = len(sph)
     print(f"parsed {n} sub-spheres from {a.toml}")
 
     # auto_bond graph
     bonds = {i: set() for i in range(n)}
     nb = 0
     for i, j in itertools.combinations(range(n), 2):
-        if dist(spheres[i], spheres[j]) <= a.tol * (spheres[i][3] + spheres[j][3]):
+        if dist(sph[i], sph[j]) <= a.tol * (sph[i][3] + sph[j][3]):
             bonds[i].add(j)
             bonds[j].add(i)
             nb += 1
@@ -72,8 +72,8 @@ def main():
     n_overlap_excluded = 0
     active_gaps = []  # (dist-(Ri+Rj))/(Ri+Rj) for non-excluded, non-overlapping pairs
     for i, j in itertools.combinations(range(n), 2):
-        d = dist(spheres[i], spheres[j])
-        sr = spheres[i][3] + spheres[j][3]
+        d = dist(sph[i], sph[j])
+        sr = sph[i][3] + sph[j][3]
         exc = excluded(i, j)
         overlapping = d < sr
         if exc:
