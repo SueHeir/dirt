@@ -60,6 +60,14 @@ exponents fitted per regime should approach **1** (linear) and **2/3** (power).
   packing-preparation sensitivity study; a completed dynamic campaign is still
   required before reporting
   statistical agreement with the experiment.
+- **Fabric provenance.** `generate` writes a local protocol manifest containing
+  a SHA-256 digest of the frozen base and of each of the 33 canonical active
+  coordinate sets. `start` recomputes those digests immediately before launch,
+  and `graph` recomputes them before accepting raw witnesses. Thus a copied,
+  stale, or hand-edited source file cannot be relabelled as a distinct seed
+  realization merely because its count and outer envelope remain plausible.
+  The manifest is preparation provenance, not dynamic evidence: release,
+  terminal-population, and sustained-arrest witnesses are still required.
 - **Release-width witness.** The source grid covers the declared 32d column
   width (rather than leaving a gate-side void), and `graph` rejects any run
   whose recorded pre-release active-grain envelopes span less than 95% of

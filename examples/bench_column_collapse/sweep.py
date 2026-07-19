@@ -72,6 +72,7 @@ DATA_DIR = os.path.join(SCRIPT_DIR, "data")
 PLOT_DIR = os.path.join(SCRIPT_DIR, "plots")
 RUNOUT_CSV = os.path.join(DATA_DIR, "runout.csv")          # DIRT runout per aspect
 LAMMPS_CSV = os.path.join(DATA_DIR, "lammps_results.csv")  # LAMMPS runout per aspect
+MANIFEST_NAME = "column_collapse_protocol.json"
 
 # LAMMPS binary candidates, in preference order. LAMMPS is optional: if none is
 # found, the LAMMPS leg is skipped and only DIRT is run/plotted.
@@ -441,6 +442,79 @@ def write_active_column(path, count, aspect, seed):
     return path
 
 
+def source_digest(points):
+    """Digest coordinates in the representation consumed by both solvers.
+
+    The seed label is not evidence that a case used that seed: a stale or copied
+    ``active_column.csv`` can retain a plausible population, width, and height.
+    Bind the campaign to the *canonical coordinates* instead.  This is kept
+    separate from the protocol fingerprint, which identifies the model and
+    estimator but deliberately does not enumerate tens of thousands of points.
+    """
+    payload = "".join(
+        f"{x:.10e},{y:.10e},{z:.10e}\n" for x, y, z in points
+    ).encode("ascii")
+    return hashlib.sha256(payload).hexdigest()
+
+
+def source_file_digest(path, expected_count):
+    """Read a generated source and return its canonical-coordinate digest."""
+    points = active_column_from_file(path, expected_count)
+    return source_digest(points)
+
+
+def protocol_manifest():
+    """Recompute the canonical, case-level preparation witness.
+
+    This intentionally derives every expected source from code rather than
+    trusting files left under ``sweep/``.  It is cheap relative to a 33-case DEM
+    campaign and makes a copied seed, edited source, or stale generated tree
+    inadmissible before runs are launched or figures are regenerated.
+    """
+    cases = []
+    for aspect in ASPECTS:
+        count = n_particles(aspect)
+        for seed in SEEDS:
+            points = active_column_positions(count, aspect, seed)
+            audit_active_source(points, count, aspect)
+            cases.append({"nominal_aspect": aspect, "seed": seed,
+                          "active_count": count,
+                          "active_source_sha256": source_digest(points)})
+    base = rough_base_positions()
+    return {"schema": 1, "protocol_sha256": protocol_fingerprint(),
+            "rough_base_count": len(base),
+            "rough_base_sha256": source_digest(base), "cases": cases}
+
+
+def checked_protocol_manifest(write=False):
+    """Require every on-disk source file to match the current protocol.
+
+    ``write=True`` records the self-describing witness beside campaign output;
+    ``False`` is used by analysis to reject a source tree that no longer matches
+    the one that a valid run would have consumed.
+    """
+    manifest = protocol_manifest()
+    expected_base = manifest["rough_base_sha256"]
+    base_path = os.path.join(SWEEP_DIR, "rough_base.csv")
+    if not os.path.isfile(base_path):
+        raise ValueError("missing rough-base source")
+    if source_file_digest(base_path, manifest["rough_base_count"]) != expected_base:
+        raise ValueError("rough-base source does not match protocol")
+    for case in manifest["cases"]:
+        path = os.path.join(case_dir_seed(case["nominal_aspect"], case["seed"]),
+                            "active_column.csv")
+        if not os.path.isfile(path):
+            raise ValueError(f"missing active source a={case['nominal_aspect']} seed={case['seed']}")
+        if source_file_digest(path, case["active_count"]) != case["active_source_sha256"]:
+            raise ValueError(f"active source does not match protocol a={case['nominal_aspect']} seed={case['seed']}")
+    if write:
+        os.makedirs(DATA_DIR, exist_ok=True)
+        with open(os.path.join(DATA_DIR, MANIFEST_NAME), "w") as f:
+            json.dump(manifest, f, sort_keys=True, indent=2)
+            f.write("\n")
+    return manifest
+
+
 def case_tag(aspect):
     return f"a{aspect:g}".replace(".", "p")
 
@@ -612,6 +686,10 @@ def generate():
                     settle_steps=SETTLE_STEPS, collapse_steps=COLLAPSE_STEPS,
                 ))
             n_cfg += 1
+    # Generation itself is a physics preflight: retain a digestible witness of
+    # the exact base and all 33 source fabrics, but do not mistake it for
+    # dynamic evidence.  ``start`` rewrites it immediately before execution.
+    checked_protocol_manifest(write=True)
     print(f"Generated {n_cfg} configs ({len(ASPECTS)} aspects x {len(SEEDS)} seeds) "
           f"under {SWEEP_DIR}")
 
@@ -1020,6 +1098,18 @@ def derive_dirt_ensemble():
     reproduce each seed average before it is allowed to fit or write a figure.
     This makes a partial campaign and an edited summary equally inadmissible.
     """
+    manifest_path = os.path.join(DATA_DIR, MANIFEST_NAME)
+    if not os.path.isfile(manifest_path):
+        raise ValueError("missing protocol manifest")
+    try:
+        with open(manifest_path) as f:
+            recorded_manifest = json.load(f)
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        raise ValueError("malformed protocol manifest") from exc
+    current_manifest = checked_protocol_manifest(write=False)
+    if recorded_manifest != current_manifest:
+        raise ValueError("protocol manifest disagrees with current generated sources")
+
     rows = []
     failures = []
     for a in ASPECTS:
@@ -1099,6 +1189,14 @@ def start(jobs=1):
     if jobs < 1:
         raise ValueError("jobs must be at least one")
     os.makedirs(DATA_DIR, exist_ok=True)
+    try:
+        # Recompute immediately before invalidating old witnesses: a campaign
+        # can only be labelled as this ensemble if every exact source file is
+        # canonical at launch, not merely when ``generate`` once ran.
+        checked_protocol_manifest(write=True)
+    except ValueError as exc:
+        print(f"ERROR: {exc}; refusing to launch non-canonical ensemble.")
+        sys.exit(1)
     print(f"Building {EXAMPLE} (release)...", flush=True)
     env = dict(os.environ)
     # macOS: ensure system libffi is found if the workspace needs it.
