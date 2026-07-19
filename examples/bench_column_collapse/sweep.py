@@ -678,11 +678,16 @@ def generate():
                     radius=RADIUS, density=DENSITY,
                     l0=f"{L0:.4f}",
                     w=f"{W:.4f}", y_high=f"{W + 0.003:.4f}",
-                    rough_base=rough_base, active_z_low=f"{BASE_Z + RADIUS:.4f}",
+                    # Config-runner file paths are resolved from the repository
+                    # root (the same cwd used by ``start``).  Keeping them
+                    # repository-relative makes a generated campaign portable:
+                    # a receipt can be rerun from a clean checkout instead of
+                    # silently retaining the workstation that generated it.
+                    rough_base=os.path.relpath(rough_base, REPO_ROOT), active_z_low=f"{BASE_Z + RADIUS:.4f}",
                     base_select_z=f"{BASE_SELECT_Z:.4f}",
                     insert_top=f"{insert_top:.4f}", z_high=f"{z_high:.4f}",
-                    active_column=active_column,
-                    output_dir=cdir, dt=f"{DT:.3e}",
+                    active_column=os.path.relpath(active_column, REPO_ROOT),
+                    output_dir=os.path.relpath(cdir, REPO_ROOT), dt=f"{DT:.3e}",
                     settle_steps=SETTLE_STEPS, collapse_steps=COLLAPSE_STEPS,
                 ))
             n_cfg += 1

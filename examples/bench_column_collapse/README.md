@@ -204,9 +204,15 @@ python3 examples/bench_column_collapse/sweep.py graph      # fit exponents + wri
 python3 examples/bench_column_collapse/sweep.py start --jobs 4
 ```
 
-### Single case (default config)
+### Representative current-protocol case
+
+`config.toml` is the `a=2`, seed-0 member of the current 32d × 10d,
+rough-base protocol.  Its two coordinate sources are generated artifacts, so
+generate them first; this is deliberately not the old self-contained 8d × 3d
+illustration, which had different material, boundaries, and duration.
 
 ```bash
+python3 examples/bench_column_collapse/sweep.py generate
 cargo run --release --example bench_column_collapse --no-default-features -- examples/bench_column_collapse/config.toml
 ```
 

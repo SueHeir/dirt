@@ -1,13 +1,10 @@
-# Granular column-collapse benchmark — single representative case (aspect a = 2).
+# Current-protocol representative: a = 2.0, seed = 0.
 #
-# A quasi-2D rectangular column of glass beads (width L0 = 0.024 m) is held
-# against a vertical gate wall at x = L0 on a flat floor. Stage 1 ("settle")
-# packs the loosely-inserted column under gravity; stage 2 ("collapse") removes
-# the gate and the column spreads along +x until it comes to rest. The example
-# binary dumps the final deposit to data/column_collapse_results.csv.
-#
-# Run:
-#   cargo run --release --example bench_column_collapse --no-default-features -- examples/bench_column_collapse/config.toml
+# Generate its exact source coordinates first:
+#   python3 examples/bench_column_collapse/sweep.py generate
+# This file intentionally shares the full campaign's material, 32d x 10d
+# geometry, frozen rough base, and 80k/1M-step schedule.  It is not evidence
+# for the 11 x 3 ensemble; only sweep.py graph can make that determination.
 
 [comm]
 processors_x = 1
@@ -15,20 +12,19 @@ processors_y = 1
 processors_z = 1
 
 [domain]
-# Long in +x to hold the runout; thin in y (quasi-2D slab).
 x_low = -0.01
-x_high = 0.30
+x_high = 0.60
 y_low = -0.003
-y_high = 0.012
+y_high = 0.0330
 z_low = 0.0
-z_high = 0.20
+z_high = 0.2480
 boundary_x = "fixed"
 boundary_y = "fixed"
 boundary_z = "fixed"
 
 [neighbor]
 skin_fraction = 1.1
-bin_size = 0.005          # ~1.5 particle diameters
+bin_size = 0.005
 every = 1
 
 [gravity]
@@ -41,21 +37,37 @@ contact_model = "hertz"
 
 [[dem.materials]]
 name = "glass"
-youngs_mod = 7.0e7        # softened modulus (1e7-1e8) keeps dt reasonable for a bed
-poisson_ratio = 0.25
-restitution = 0.5         # inelastic grains
-friction = 0.5            # frictional grains (controls the repose angle / runout)
+youngs_mod = 7.000000e+07
+poisson_ratio = 0.245
+restitution = 0.926
+friction = 0.16
 
-# Column of particles: inserted loosely into x in [0, L0], y in [0, W], settles
-# under gravity in stage 1. Count sets the settled height H (here ~2*L0, a = 2).
 [[particles.insert]]
+source = "file"
+file = "examples/bench_column_collapse/sweep/rough_base.csv"
+format = "csv"
 material = "glass"
-count = 440
-radius = 0.0015           # 1.5 mm (d = 3 mm)
+radius = 0.0015
 density = 2500.0
-region = { type = "block", min = [0.0015, 0.0015, 0.0015], max = [0.0225, 0.0075, 0.090] }
+columns = { x = 0, y = 1, z = 2 }
 
-# Floor (z = 0, normal +z).
+[[particles.insert]]
+source = "file"
+file = "examples/bench_column_collapse/sweep/a2/active_column.csv"
+format = "csv"
+material = "glass"
+radius = 0.0015
+density = 2500.0
+columns = { x = 0, y = 1, z = 2 }
+
+[[group]]
+name = "rough_base"
+region = { type = "block", min = [-1.0, -1.0, -1.0], max = [1.0, 1.0, 0.0037] }
+dynamic = false
+
+[[freeze]]
+group = "rough_base"
+
 [[wall]]
 type = "plane"
 point_z = 0.0
@@ -63,7 +75,6 @@ normal_z = 1.0
 material = "glass"
 name = "floor"
 
-# Back wall (x = 0, normal +x) — left confinement, stays for all stages.
 [[wall]]
 type = "plane"
 point_x = 0.0
@@ -71,7 +82,6 @@ normal_x = 1.0
 material = "glass"
 name = "back"
 
-# Side walls in y (quasi-2D slab), stay for all stages.
 [[wall]]
 type = "plane"
 point_y = 0.0
@@ -81,38 +91,32 @@ name = "side_lo"
 
 [[wall]]
 type = "plane"
-point_y = 0.009
+point_y = 0.0300
 normal_y = -1.0
 material = "glass"
 name = "side_hi"
 
-# Removable gate (x = L0 = 0.024, normal -x) — confines the column on its +x
-# face during "settle", removed on the first "collapse" step.
 [[wall]]
 type = "plane"
-point_x = 0.024
+point_x = 0.0960
 normal_x = -1.0
 material = "glass"
 name = "gate"
 
 [output]
-dir = "examples/bench_column_collapse"
+dir = "examples/bench_column_collapse/sweep/a2"
 
 [vtp]
-interval = 50000
+interval = 1000000
 
-# Stage 1: settle the loosely-packed column into a static column.
 [[run]]
 name = "settle"
 steps = 80000
 thermo = 20000
-dt = 4e-6
+dt = 4.000e-06
 
-# Stage 2: remove the gate and let the column collapse and (intended to) come to
-# rest. NOTE: dirt_wall provides no particle–wall sliding friction, so the
-# basal floor cannot arrest the spreading deposit — see README "Known Limitation".
 [[run]]
 name = "collapse"
-steps = 200000
+steps = 1000000
 thermo = 20000
-dt = 4e-6
+dt = 4.000e-06
