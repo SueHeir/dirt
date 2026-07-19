@@ -13,6 +13,7 @@ import os
 import subprocess
 import sys
 from protocol_admission import admission_failures
+from replication_contract import REQUIRED_SERIES, decide
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.abspath(os.path.join(HERE, "..", ".."))
@@ -118,6 +119,29 @@ def audit_external_evidence(path=EVIDENCE_INVENTORY):
     if unsupported:
         raise RuntimeError("external evidence support must be yes or no")
     return missing
+
+
+def replication_evidence_decisions():
+    """Classify the two available external artifacts before any response score.
+
+    This is not a numerical gate.  It only prevents a source snapshot or an
+    unmatched solver analogue from acquiring the status of a replication
+    reference through plotting or normalization.
+    """
+    primary_missing = set(audit_external_evidence())
+    primary = decide("Cundall--Strack 1979 primary source", {
+        series: series not in primary_missing for series in REQUIRED_SERIES
+    })
+    # The committed LAMMPS file records an axial response only.  In addition to
+    # that incomplete observable set, its independently audited protocol is
+    # not equivalent to the DIRT cell.
+    lammps = decide("bundled LAMMPS analogue", {
+        "state_registration": True,
+        "stress_or_deviatoric_path": True,
+        "volumetric_strain_or_dilatancy_path": False,
+        "contact_or_fabric_evolution": False,
+    }, admission_failures())
+    return primary, lammps
 
 
 def source_registration(path=REGISTRATION):
@@ -289,15 +313,10 @@ def plot(rows, checks, passed, source, comparison):
 def main():
     command = sys.argv[1] if len(sys.argv) > 1 else "all"
     if command == "external":
-        rows = read(RESULTS)
-        comparison = compare_independent_lammps(rows, scored=True)
-        print("independent LAMMPS comparison: " + "; ".join(
-            f"{key}={value}" for key, value in comparison.items()
-            if key not in {"dirt_normalized", "lammps_normalized"}))
-        # These observed values are deliberately not transformed into a PASS
-        # band.  The two solvers disagree, and the primary source lacks the
-        # trajectory needed to adjudicate a claimed Cundall--Strack replication.
-        raise SystemExit("external comparison reports non-reproduction; no source-derived acceptance gate exists")
+        decisions = replication_evidence_decisions()
+        for decision in decisions:
+            print(f"{decision.candidate}: {'ELIGIBLE' if decision.eligible else 'INELIGIBLE'}; {decision.reason}")
+        raise SystemExit("external replication unavailable: no protocol-comparable complete trajectory")
     if command in ("all", "run"):
         build_run()
     if command in ("all", "graph"):
@@ -305,6 +324,7 @@ def main():
         source = read_reference()
         protocol = read_protocol()
         missing = audit_external_evidence()
+        decisions = replication_evidence_decisions()
         passed, checks = evaluate(rows)
         comparison = compare_independent_lammps(rows)
         plot(rows, checks, passed, source, comparison)
@@ -318,6 +338,9 @@ def main():
               "because the paper provides no state-registration rule")
         print("external replication unavailable; missing source evidence: "
               + ", ".join(missing))
+        for decision in decisions:
+            print(f"evidence decision: {decision.candidate}: "
+                  f"{'ELIGIBLE' if decision.eligible else 'INELIGIBLE'}; {decision.reason}")
         print("independent LAMMPS analogue: " + "; ".join(
             f"{key}={value}" for key, value in comparison.items()
             if key not in {"dirt_normalized", "lammps_normalized"}))

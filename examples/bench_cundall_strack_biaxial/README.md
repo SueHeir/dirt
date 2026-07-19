@@ -62,13 +62,25 @@ therefore still not satisfy the replication contract.
 ## Independent-solver check
 
 `reference/lammps/in_biaxial.lmp` is a committed, independently implemented
-LAMMPS 2-D 197-grain compression protocol. Its raw solver output is committed
-beside the deck. `reference/lammps/protocol_admission.csv` is an executable
-equivalence ledger: dimensionality, boundaries, contact kinematics,
-preparation, loading, and every required observable must agree before any
-cross-code response score can be calculated. The existing analogue fails every
-one of those required categories, so `sweep.py external` now fails before
-scoring it; its prior r=-0.457 / normalized-RMSE=1.870 result remains a raw
-counterexample, not a validation result. This does not meet the frozen
-acceptance criterion: a protocol-comparable external trajectory with stress,
-dilatancy, and fabric/contact paths remains required.
+LAMMPS 2-D 197-grain compression diagnostic. Its raw solver output is committed
+beside the deck, but it is not a replication reference. `sweep.py external`
+first evaluates a claim-level evidence contract: a candidate must provide a
+registered state map plus stress/deviatoric, dilatancy, and fabric/contact
+series, and its dimensionality, boundaries, contact kinematics, preparation,
+loading, and observables must match. The primary source lacks all four series;
+the LAMMPS diagnostic lacks dilatancy/fabric and fails every protocol category.
+It therefore exits INELIGIBLE before reading or scoring a response. The prior
+raw r=-0.457 / normalized-RMSE=1.870 is retained only as a counterexample, not
+a validation result. This does not meet the frozen acceptance criterion: a
+protocol-comparable external trajectory with stress, dilatancy, and
+fabric/contact paths remains required.
+
+## Authorship and validation boundary
+
+This benchmark and its evidence-contract code were AI-assisted. The committed
+DIRT and LAMMPS executions demonstrate only the stated solver behavior on this
+host; they are not independent experimental confirmation or a substitute for
+the unavailable primary-source trajectory. Any future positive claim requires
+an independently traceable external data set and review of its protocol
+equivalence; this code supplies no tolerance or criterion that can turn the
+present evidence into a pass.
