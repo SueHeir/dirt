@@ -66,6 +66,17 @@ curl -LfsS 'https://api.crossref.org/works?query.title=Rolling%20friction%20in%2
   sha256sum
 ```
 
+The retirement facts and the first bibliographic identity check are also
+available as an executable audit, without embedding a solver result in the
+test:
+
+```bash
+ci/verify-retired-sph-repose.sh --soil-sph ~/projects/dev_soil_sph --online
+```
+
+It deliberately verifies only the DOI/title/type, not a mutable full-record
+hash; the hashes above retain the exact 2026-07-19 retrieval receipt.
+
 This audit did **not** obtain or read the full paper, inspect a primary glass
 experiment, recover its apparatus/protocol, run a solver, or assess
 uncertainty.  It therefore cannot decide whether any numerical target is

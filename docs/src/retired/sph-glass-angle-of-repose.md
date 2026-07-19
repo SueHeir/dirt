@@ -103,28 +103,17 @@ formally re-scoping the goal.
 To reproduce this disposition against that exact snapshot:
 
 ```bash
-git -C ~/projects/dev_soil_sph ls-tree -r --name-only \
-  b4997642678bf8072baa4d98be60429a4dfc59a9 -- examples | \
-  rg -i 'repose|calibrat|glass' || true
-git -C ~/projects/dev_soil_sph grep -n -i -E \
-  'rolling friction|angle.of.repose|mu_r|μ_r' \
-  b4997642678bf8072baa4d98be60429a4dfc59a9 -- \
-  Cargo.toml crates examples README.md docs ':!docs/dem-campaign-dirt.md'
-git diff --shortstat f7fe1a4^1 f7fe1a4 -- \
-  examples/SPH_glass_sphere_calibration Cargo.toml
-if git ls-tree -r --name-only HEAD -- examples crates | \
-  rg -q '^examples/SPH_glass_sphere_calibration/'; then
-  echo 'retired SPH surface unexpectedly present' >&2
-  exit 1
-fi
+ci/verify-retired-sph-repose.sh \
+  --soil-sph ~/projects/dev_soil_sph --online
 ```
 
-The first command returns no angle-of-repose or calibration executable.  The
-second finds the v0/deferred rolling-friction statement; its continuum
-`mu_s`, `mu_2`, and `i0` fields are deliberately not searched as a substitute
-for the deleted contact coefficient.  The final two commands check the DIRT
-removal and current-path absence directly.  None is a target, a calibration,
-or a replacement pass criterion.
+The verifier checks the removal and current-path absence directly, then checks
+that the pinned `dev_soil_sph` snapshot has no angle-of-repose/calibration
+executable and still records `mu_r = 0.0`.  With `--online` it separately
+checks the Crossref bibliographic identity. Its deliberately narrow checks do
+not treat continuum `mu_s`, `mu_2`, or `i0` as substitutes for the deleted
+contact coefficient. None is a target, a calibration, or a replacement pass
+criterion.
 
 This retirement note and the decision to withhold a coefficient were prepared
 with AI assistance.  They are a provenance boundary, not experimental work,
