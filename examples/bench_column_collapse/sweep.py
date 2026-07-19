@@ -128,8 +128,10 @@ INSERT_PACKING = math.pi / (3.0 * math.sqrt(2.0))
 # useful non-overlap construction, but it is not an independently prepared
 # granular fabric: merely changing ABC registries leaves every grain exactly at
 # contact.  Start each realization just above close packing and apply a small,
-# deterministic in-plane perturbation.  Gravity settles this harmless void
-# space before release, while the preflight below still forbids overlaps.
+# deterministic in-plane perturbation.  The 8% dilation gives this prepared
+# source its intended roughly-0.60 solid fraction.  Its scheduled source height
+# is compensated below, because its measured *released* height is the physical
+# control variable and the release witness remains the acceptance test.
 SOURCE_DILATION = 1.08
 SOURCE_JITTER = 0.005      # fraction of a diameter, per horizontal coordinate
 BASE_Z = 2.0 * RADIUS
@@ -236,7 +238,14 @@ def n_particles(aspect):
     itself from silently relabelling the aspect schedule.
     """
     if aspect not in _SOURCE_POPULATION_CACHE:
-        target = aspect * L0
+        # The source is deliberately dilated to make a non-overlapping,
+        # approximately 0.60-solid-fraction preparation.  Its artificial fcc
+        # clearance closes during the damped settling stage, so initializing it
+        # at the released target height would systematically make the measured
+        # release short by the known dilation.  Compensate the *preparation*
+        # height only; the independent raw release witness still has to meet the
+        # unchanged 2% H_i/L_i admission before any fit is allowed.
+        target = aspect * L0 * SOURCE_DILATION
         # The infinite-packing count is a safe upper bound for this deliberately
         # dilated finite source.  Search the actual coordinate generator, not a
         # second approximate packing model.
@@ -453,7 +462,10 @@ def audit_active_source(points, count, aspect):
         raise ValueError(f"source has overlapping grains: minimum separation {minimum}")
     # A finite source changes height in whole layers.  One fcc layer is the
     # unavoidable discretisation uncertainty, not an acceptance tolerance.
-    target = aspect * L0
+    # This validates only the compensated *source* geometry.  It cannot prove
+    # how the bed settles; ``checked_release_dimensions`` remains the dynamic
+    # evidence gate for the scheduled physical aspect.
+    target = aspect * L0 * SOURCE_DILATION
     height_error = abs(source_preparation_height(points) - target)
     layer = math.sqrt(2.0 / 3.0) * SOURCE_DILATION * (2.0 * RADIUS)
     if height_error > layer + 1e-12:
