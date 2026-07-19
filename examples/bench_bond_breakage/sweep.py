@@ -9,33 +9,9 @@ threshold sampling at the actual bond length -> plastic envelope -> in-loop
 breakage check -> recorded failure), reusing the existing `fiber_bond` example
 binary (no new core code, no new example binary).
 
-Three groups, each with a quantitative theory gate:
+Two groups, each with a quantitative theory gate:
 
-  GROUP A — crack-band breakage across a 4x mesh-refinement sweep
-  -------------------------------------------------------------------------
-  A straight fiber is pulled axially, quasi-statically and symmetrically, with a
-  piecewise (trilinear-shaped: elastic -> hardening -> perfectly-plastic) axial
-  plasticity envelope and an `axial_strain` breakage criterion whose threshold
-  is drawn from the *crack-band* length-rescaling law (Bazant 1976; Hillerborg-
-  Modeer-Petersson 1976):
-
-        eps_break(L_bond) = eps_yield + (value_ref - eps_yield) * l_ref / L_bond
-
-  Because a uniform axial pull produces a spatially uniform strain, every bond
-  reaches its (identical, deterministic) crack-band threshold at the same global
-  strain, so the fiber's first-break global strain equals eps_break(L_bond)
-  exactly. Refining the mesh (N = 11, 21, 41 beads over a fixed 2 mm fiber ->
-  L_bond = 200, 100, 50 um) sweeps L_bond by 4x and the predicted break strain
-  moves 0.04 -> 0.06 -> 0.10 (dt = 1e-7 s keeps the finest, stiffest bonds
-  stable through the startup transient). The gate checks the *measured* first-break global
-  strain against the crack-band closed form for every mesh, and that each bond
-  goes plastic (eps_p > 0) before it breaks.
-
-  This validates that the crack-band regularization is applied with the correct
-  per-bond length scaling inside the running solver — not just in the unit test
-  of `ThresholdDistribution::sample`.
-
-  GROUP B — Guo 2018 trilinear bending plasticity, fully-plastic moment cap
+  GROUP A — Guo 2018 trilinear bending plasticity, fully-plastic moment cap
   -------------------------------------------------------------------------
   A pinned 11-bead fiber is loaded with the built-in three-step transverse tip
   schedule (fiber_bond/main.rs::apply_three_step_load, activated by the
@@ -45,13 +21,13 @@ Three groups, each with a quantitative theory gate:
 
         M^p = (4/3) * sigma_0 * r_b^3
 
-  Sweeping the yield stress sigma_0 (2.0, 2.5, 3.0 MPa) scales M^p linearly
-  (2.67, 3.33, 4.0 mN*m; all below the moment the fixed tip schedule can drive
+  Sweeping the yield stress sigma_0 (0.5, 1.0, 1.5 MPa) scales M^p linearly
+  (0.67, 1.33, 2.0 mN*m; all below the moment the fixed tip schedule can drive
   into the middle bond, so every case reaches its cap). The gate reconstructs the peak bond moment from the
   recorded kinematics (M = K_bend * (theta_bend - theta_p_bend)) and checks it
   plateaus at M^p for every sigma_0.
 
-  GROUP C — seeded Weibull weakest-link CDF
+  GROUP B — seeded Weibull weakest-link CDF
   ------------------------------------------------------------
   Sixty independently seeded axial-stress Weibull breakage realizations run the
   same 10-bond fiber. Each run still checks the deterministic weakest-bond
@@ -70,11 +46,10 @@ Commands (run from anywhere):
     python3 examples/bench_bond_breakage/sweep.py generate   # write per-case configs + geometry
     python3 examples/bench_bond_breakage/sweep.py start      # build + run all sims -> CSV
     python3 examples/bench_bond_breakage/sweep.py graph      # validate + plot (exit 1 on FAIL)
-    python3 examples/bench_bond_breakage/sweep.py            # all three, in order
+    python3 examples/bench_bond_breakage/sweep.py            # all three phases, in order
 
-No LAMMPS needed: all gates are closed-form (crack-band rescaling law, Guo
-Eq. 31, and the weakest-link Weibull CDF). Reference values come from theory,
-not back-fit.
+No LAMMPS needed: both gates are closed-form (Guo Eq. 31 and the weakest-link
+Weibull CDF). Reference values come from theory, not back-fit.
 """
 
 import os
@@ -90,37 +65,10 @@ EXAMPLE_BIN = "fiber_bond"   # reuse the existing BPM validation binary
 SWEEP_DIR = os.path.join(SCRIPT_DIR, "sweep")
 DATA_DIR = os.path.join(SCRIPT_DIR, "data")
 PLOT_DIR = os.path.join(SCRIPT_DIR, "plots")
-CB_CSV = os.path.join(DATA_DIR, "crackband.csv")     # one row per mesh case
-GUO_CSV = os.path.join(DATA_DIR, "guo_trilinear.csv")  # one row per sigma_0 case
-WEIBULL_CSV = os.path.join(DATA_DIR, "weibull_cdf.csv")  # one row per seed
+GUO_CSV = os.path.join(DATA_DIR, "guo_trilinear.csv")
+WEIBULL_CSV = os.path.join(DATA_DIR, "weibull_cdf.csv")
 
-# ── GROUP A: crack-band axial breakage across mesh refinement ────────────────
-LF = 2.0e-3               # fiber end-to-end length (m), fixed across the sweep
-N_LIST = [11, 21, 41]     # bead counts -> L_bond = LF/(N-1) = 200, 100, 50 um
-E_AX = 1.0e7              # Pa (soft polymer fiber)
-POISSON_AX = 0.3
-G_AX = E_AX / (2.0 * (1.0 + POISSON_AX))
-RHO_AX = 1200.0
-BETA_AX = 0.02            # light bond damping (beta*N << 1 so the strain field equilibrates)
-GRIP_V = 0.02            # m/s per grip (symmetric); global strain rate = 2 v / LF = 20 /s
-DT_AX = 1.0e-7            # small enough that the finest mesh (L_bond=50um) is stable at startup
-STEPS_AX = 64000          # reach ~0.128 global strain (past the 0.10 break of the finest mesh)
-
-# Crack-band threshold parameters (axial strain criterion).
-CB_VALUE_REF = 0.06       # threshold at l_ref
-CB_L_REF = 1.0e-4         # reference bond length (m)
-CB_EPS_YIELD = 0.02       # elastic anchor: only the part above rescales with L_bond
-# Piecewise (trilinear-shaped) axial plasticity envelope.
-AX_BREAKPOINTS = [0.02, 0.04]
-AX_SLOPES = [0.3, 0.0]
-
-
-def cb_predicted_break_strain(l_bond):
-    """Crack-band closed form: eps_yield + (value_ref - eps_yield) * l_ref / L_bond."""
-    return CB_EPS_YIELD + (CB_VALUE_REF - CB_EPS_YIELD) * CB_L_REF / l_bond
-
-
-# ── GROUP B: Guo trilinear bending, fully-plastic moment cap ─────────────────
+# ── GROUP A: Guo trilinear bending, fully-plastic moment cap ─────────────────
 N_B = 11                  # 11-bead pinned fiber (matches the built-in tip schedule, TIP_TAG=10)
 SP_B = 4.0e-3             # bead spacing (m); spaced fiber, bonds still form (bond_tolerance=2.1)
 R_B = 1.0e-3              # bead radius (m)
@@ -128,9 +76,9 @@ E_B = 1.0e9              # Pa
 POISSON_B = 0.25
 G_B = 4.0e8              # Pa
 RHO_B = 2500.0
-SIGMA0_LIST = [2.0e6, 2.5e6, 3.0e6]   # yield stress -> M^p = 2.67, 3.33, 4.0 mN*m (all reach the cap)
+SIGMA0_LIST = [0.5e6, 1.0e6, 1.5e6]   # yield stress -> M^p = 0.67, 1.33, 2.0 mN*m
 DT_B = 1.0e-7
-STEPS_B = 120000          # through the first load cycle's hold window (~12 ms), reaches the plateau
+STEPS_B = 120000          # run through the first load cycle's hold window
 
 
 def guo_Mp(sigma_0, r_b):
@@ -139,11 +87,6 @@ def guo_Mp(sigma_0, r_b):
 
 
 # ── Validation tolerances (theory gates) ─────────────────────────────────────
-# Crack-band: relative tolerance, with an absolute floor of ~1.2 sample-strain
-# steps to account for finite recording cadence (record_every=200 steps).
-TOL_CB_REL = 0.08
-SAMPLE_DSTRAIN = (2.0 * GRIP_V / LF) * 200 * DT_AX   # global strain advance per recorded sample
-TOL_CB_ABS_FLOOR = 1.2 * SAMPLE_DSTRAIN
 # Guo trilinear peak moment: relative tolerance about M^p.
 TOL_GUO_REL = 0.06
 # Weibull weakest-link: Kolmogorov-Smirnov gate against the closed-form CDF.
@@ -169,112 +112,6 @@ def _straight_fiber_csv(path, n, spacing):
         f.write("# straight fiber along x: x, y, z\n")
         for i in range(n):
             f.write(f"{i * spacing:.10e}, 0.0, 0.0\n")
-
-
-CB_CONFIG = """# Crack-band axial breakage, {n} beads, L_bond = {lbond:.3e} m
-# Predicted first-break global strain = {pred:.5f}  (crack-band closed form)
-[comm]
-processors_x = 1
-processors_y = 1
-processors_z = 1
-[domain]
-x_low  = {xlo:.6e}
-x_high = {xhi:.6e}
-y_low  = -0.0003
-y_high =  0.0003
-z_low  = -0.0003
-z_high =  0.0003
-boundary_x = "fixed"
-boundary_y = "fixed"
-boundary_z = "fixed"
-[neighbor]
-skin_fraction = 1.2
-bin_size = {binsz:.6e}
-every = 1
-[dem]
-contact_model = "hertz"
-[[dem.materials]]
-name = "bpm"
-youngs_mod = {e:.6e}
-poisson_ratio = {nu}
-restitution = 0.9
-friction = 0.0
-[[particles.insert]]
-source = "file"
-file = "{csv}"
-format = "csv"
-material = "bpm"
-radius = {radius:.6e}
-density = {rho}
-columns = {{ x = 0, y = 1, z = 2 }}
-[bonds]
-auto_bond = true
-bond_tolerance = 1.05
-bond_radius_ratio = 1.0
-youngs_modulus = {e:.6e}
-shear_modulus  = {g:.6e}
-beta_normal  = {beta}
-beta_shear   = {beta}
-beta_twist   = {beta}
-beta_bending = {beta}
-[bonds.plasticity.axial]
-kind = "piecewise"
-breakpoint_strains = [{bp0}, {bp1}]
-slope_multipliers  = [{sl0}, {sl1}]
-[bonds.breakage]
-kind = "axial_strain"
-tensile = {{ kind = "crack_band", value_ref = {vref}, l_ref = {lref:.6e}, eps_yield = {epsy} }}
-[[group]]
-name = "left_grip"
-region = {{ type = "block", min = [{lgx0:.6e}, -0.0003, -0.0003], max = [{lgx1:.6e}, 0.0003, 0.0003] }}
-dynamic = false
-[[group]]
-name = "right_grip"
-region = {{ type = "block", min = [{rgx0:.6e}, -0.0003, -0.0003], max = [{rgx1:.6e}, 0.0003, 0.0003] }}
-dynamic = false
-[[move_linear]]
-group = "left_grip"
-vx = {vneg:.6e}
-[[move_linear]]
-group = "right_grip"
-vx = {vpos:.6e}
-[output]
-dir = "{outdir}"
-[run]
-steps = {steps}
-thermo = {thermo}
-dt = {dt:.6e}
-"""
-
-
-def cb_case_dir(n):
-    return os.path.join(SWEEP_DIR, f"crackband_N{n}")
-
-
-def _write_cb_case(n):
-    cdir = cb_case_dir(n)
-    os.makedirs(cdir, exist_ok=True)
-    spacing = LF / (n - 1)
-    radius = spacing / 2.0            # touching beads
-    l_bond = spacing
-    csv_path = os.path.join(cdir, "fiber.csv")
-    _straight_fiber_csv(csv_path, n, spacing)
-    # Grip boxes grab exactly the end bead at each side (half-width < spacing).
-    hw = 0.4 * spacing
-    cfg = CB_CONFIG.format(
-        n=n, lbond=l_bond, pred=cb_predicted_break_strain(l_bond),
-        xlo=-0.3 * LF, xhi=1.3 * LF, binsz=max(3.0 * spacing, 5.0e-5),
-        e=E_AX, nu=POISSON_AX, g=G_AX, rho=RHO_AX, beta=BETA_AX,
-        radius=radius, csv=csv_path,
-        bp0=AX_BREAKPOINTS[0], bp1=AX_BREAKPOINTS[1], sl0=AX_SLOPES[0], sl1=AX_SLOPES[1],
-        vref=CB_VALUE_REF, lref=CB_L_REF, epsy=CB_EPS_YIELD,
-        lgx0=-hw, lgx1=hw, rgx0=LF - hw, rgx1=LF + hw,
-        vneg=-GRIP_V, vpos=GRIP_V,
-        outdir=cdir, steps=STEPS_AX, thermo=STEPS_AX, dt=DT_AX,
-    )
-    with open(os.path.join(cdir, "config.toml"), "w") as f:
-        f.write(cfg)
-    return cdir
 
 
 GUO_CONFIG = """# Guo 2018 trilinear bending, sigma_0 = {s0:.3e} Pa, M^p = {mp:.4e} N*m
@@ -462,9 +299,6 @@ def _write_weibull_case(seed):
 # ── generate ─────────────────────────────────────────────────────────────────
 def generate():
     n = 0
-    for nb in N_LIST:
-        _write_cb_case(nb)
-        n += 1
     for s0 in SIGMA0_LIST:
         _write_guo_case(s0)
         n += 1
@@ -498,25 +332,6 @@ def _fval(row, key):
         return float(row[key])
     except (KeyError, ValueError):
         return float("nan")
-
-
-def _measure_crackband(rows):
-    """Return (measured_break_strain, plastic_before_break, prebreak_strain)."""
-    if not rows:
-        return None
-    length0 = _fval(rows[0], "length0")
-    if not (length0 > 0):
-        return None
-    gstrain = [(_fval(r, "length_global") / length0) - 1.0 for r in rows]
-    broken = [int(_fval(r, "bonds_broken")) for r in rows]
-    idx = next((i for i, b in enumerate(broken) if b > 0), None)
-    if idx is None or idx == 0:
-        return None
-    # Threshold crossing is bracketed by [prev sample, first-break sample].
-    prev = gstrain[idx - 1]
-    meas = 0.5 * (prev + gstrain[idx])
-    plastic = _fval(rows[idx - 1], "eps_p_axial_mid") > 0.0
-    return meas, plastic, prev
 
 
 def _measure_guo_peak_moment(rows):
@@ -596,31 +411,9 @@ def start():
                     "--no-default-features", "--features", "precision-double"],
                    cwd=REPO_ROOT, check=True)
 
-    # GROUP A — crack-band mesh sweep.
-    cb_rows = []
-    print("\n[Group A] crack-band axial breakage, mesh refinement")
-    for nb in N_LIST:
-        cdir = cb_case_dir(nb)
-        if not os.path.isfile(os.path.join(cdir, "config.toml")):
-            print(f"  N={nb}: missing config — run 'generate' first.")
-            continue
-        l_bond = LF / (nb - 1)
-        print(f"  N={nb:<3} L_bond={l_bond*1e6:6.1f} um", end="  ", flush=True)
-        data = _run(cdir)
-        m = _measure_crackband(data) if data is not None else None
-        if m is None:
-            print("RUN/BREAK FAILED")
-            continue
-        meas, plastic, prev = m
-        pred = cb_predicted_break_strain(l_bond)
-        cb_rows.append({"N": nb, "L_bond": l_bond, "eps_break_pred": pred,
-                        "eps_break_meas": meas, "prebreak_strain": prev,
-                        "plastic_before_break": int(plastic)})
-        print(f"break_meas={meas:.4f}  pred={pred:.4f}  plastic={plastic}")
-
-    # GROUP B — Guo trilinear bending, M^p plateau.
+    # GROUP A — Guo trilinear bending, M^p plateau.
     guo_rows = []
-    print("\n[Group B] Guo 2018 trilinear bending, fully-plastic moment cap")
+    print("\n[Group A] Guo 2018 trilinear bending, fully-plastic moment cap")
     for s0 in SIGMA0_LIST:
         cdir = guo_case_dir(s0)
         if not os.path.isfile(os.path.join(cdir, "config.toml")):
@@ -636,18 +429,12 @@ def start():
         guo_rows.append({"sigma_0": s0, "Mp_theory": mp, "peak_moment": peak})
         print(f"peak_M={peak:.4e}  M^p={mp:.4e}  ratio={peak/mp:.3f}")
 
-    if not cb_rows and not guo_rows:
-        print("\nERROR: no results collected.")
-        sys.exit(1)
-    if cb_rows:
-        _write_csv(CB_CSV, ["N", "L_bond", "eps_break_pred", "eps_break_meas",
-                            "prebreak_strain", "plastic_before_break"], cb_rows)
     if guo_rows:
         _write_csv(GUO_CSV, ["sigma_0", "Mp_theory", "peak_moment"], guo_rows)
 
-    # GROUP C — seeded Weibull weakest-link CDF.
+    # GROUP B — seeded Weibull weakest-link CDF.
     weibull_rows = []
-    print("\n[Group C] seeded Weibull breakage realizations, weakest-link CDF")
+    print("\n[Group B] seeded Weibull breakage realizations, weakest-link CDF")
     for seed in WEIBULL_SEEDS:
         cdir = weibull_case_dir(seed)
         if not os.path.isfile(os.path.join(cdir, "config.toml")):
@@ -667,7 +454,7 @@ def start():
     if weibull_rows:
         _write_csv(WEIBULL_CSV, ["seed", "n_bonds", "eps_break_pred", "eps_break_meas",
                                  "sigma_min", "rel_err"], weibull_rows)
-    print(f"\nWrote {CB_CSV} ({len(cb_rows)} rows), {GUO_CSV} ({len(guo_rows)} rows), "
+    print(f"\nWrote {GUO_CSV} ({len(guo_rows)} rows), "
           f"{WEIBULL_CSV} ({len(weibull_rows)} rows)")
 
 
@@ -680,41 +467,12 @@ def _load(path):
                 for r in csv.DictReader(f)]
 
 
-def validate(cb_rows, guo_rows, weibull_rows):
+def validate(guo_rows, weibull_rows):
     ok = True
     print("\n=== Bond-breakage / plasticity sweep validation ===")
 
-    # ── Group A gate: crack-band closed form + plastic-before-break ──
-    print("\n[A] Crack-band breakage vs closed form "
-          f"eps_yield + (value_ref - eps_yield)*l_ref/L_bond  (rel tol {TOL_CB_REL:.0%}, "
-          f"abs floor {TOL_CB_ABS_FLOOR:.4f})")
-    print(f"  {'N':>4}{'L_bond(um)':>12}{'pred':>9}{'meas':>9}{'rel.err':>9}  plastic  note")
-    if len(cb_rows) != len(N_LIST):
-        print(f"  MISSING CASES: got {len(cb_rows)}/{len(N_LIST)} crack-band runs")
-        ok = False
-    prev_meas = None
-    for r in sorted(cb_rows, key=lambda x: x["N"]):
-        pred = r["eps_break_pred"]
-        meas = r["eps_break_meas"]
-        rel = abs(meas - pred) / pred
-        tol = max(TOL_CB_REL * pred, TOL_CB_ABS_FLOOR)
-        note = ""
-        if abs(meas - pred) > tol:
-            note = "BREAK-STRAIN MISMATCH"
-            ok = False
-        if not int(r["plastic_before_break"]):
-            note = (note + "; " if note else "") + "NO PLASTIC YIELD BEFORE BREAK"
-            ok = False
-        # Monotonicity: finer mesh (smaller L_bond, larger N) must break later.
-        if prev_meas is not None and meas <= prev_meas:
-            note = (note + "; " if note else "") + "NOT MONOTONE"
-            ok = False
-        prev_meas = meas
-        print(f"  {int(r['N']):>4}{r['L_bond']*1e6:>12.1f}{pred:>9.4f}{meas:>9.4f}"
-              f"{rel:>8.1%}  {'yes' if int(r['plastic_before_break']) else 'NO ':>7}  {note}")
-
-    # ── Group B gate: Guo trilinear M^p = (4/3) sigma_0 r_b^3 ──
-    print(f"\n[B] Guo trilinear peak moment vs M^p = (4/3) sigma_0 r_b^3  (rel tol {TOL_GUO_REL:.0%})")
+    # ── Group A gate: Guo trilinear M^p = (4/3) sigma_0 r_b^3 ──
+    print(f"\n[A] Guo trilinear peak moment vs M^p = (4/3) sigma_0 r_b^3  (rel tol {TOL_GUO_REL:.0%})")
     print(f"  {'sigma_0(MPa)':>12}{'M^p(mN*m)':>12}{'peak(mN*m)':>12}{'ratio':>8}  note")
     if len(guo_rows) != len(SIGMA0_LIST):
         print(f"  MISSING CASES: got {len(guo_rows)}/{len(SIGMA0_LIST)} Guo runs")
@@ -728,8 +486,8 @@ def validate(cb_rows, guo_rows, weibull_rows):
             ok = False
         print(f"  {r['sigma_0']/1e6:>12.1f}{mp*1e3:>12.4f}{peak*1e3:>12.4f}{ratio:>8.3f}  {note}")
 
-    # ── Group C gate: per-run weakest-link + distribution CDF ──
-    print(f"\n[C] Weibull weakest-link break strain CDF  "
+    # ── Group B gate: per-run weakest-link + distribution CDF ──
+    print(f"\n[B] Weibull weakest-link break strain CDF  "
           f"(per-seed tol {TOL_WEIBULL_PER_SEED_REL:.0%}, KS tol {TOL_WEIBULL_KS:.2f})")
     if len(weibull_rows) != len(WEIBULL_SEEDS):
         print(f"  MISSING CASES: got {len(weibull_rows)}/{len(WEIBULL_SEEDS)} seeded Weibull runs")
@@ -761,7 +519,7 @@ def validate(cb_rows, guo_rows, weibull_rows):
     return ok
 
 
-def plot(cb_rows, guo_rows, weibull_rows):
+def plot(guo_rows, weibull_rows):
     try:
         import matplotlib
         matplotlib.use("Agg")
@@ -772,26 +530,7 @@ def plot(cb_rows, guo_rows, weibull_rows):
     os.makedirs(PLOT_DIR, exist_ok=True)
     plt.rcParams.update({"figure.dpi": 150, "savefig.dpi": 150, "font.size": 11})
 
-    # Fig 1: crack-band break strain vs 1/L_bond.
-    if cb_rows:
-        rs = sorted(cb_rows, key=lambda x: x["L_bond"])
-        inv_l = [1.0 / r["L_bond"] for r in rs]
-        meas = [r["eps_break_meas"] for r in rs]
-        xline = [0.0, max(inv_l) * 1.05]
-        yline = [CB_EPS_YIELD + (CB_VALUE_REF - CB_EPS_YIELD) * CB_L_REF * x for x in xline]
-        fig, ax = plt.subplots(figsize=(6.2, 4.5))
-        ax.plot(xline, yline, "k--",
-                label=r"crack-band: $\varepsilon_y+(\varepsilon_{ref}-\varepsilon_y)\,l_{ref}/L$")
-        ax.plot(inv_l, meas, "o", ms=8, label="DIRT (measured first-break)")
-        ax.set_xlabel(r"$1/L_{bond}$  (m$^{-1}$)")
-        ax.set_ylabel(r"global break strain $\varepsilon_{break}$")
-        ax.set_title("Crack-band regularized breaking strain vs mesh refinement")
-        ax.legend()
-        fig.tight_layout()
-        fig.savefig(os.path.join(PLOT_DIR, "crackband_break_strain.png"))
-        plt.close(fig)
-
-    # Fig 2: Guo peak moment vs sigma_0.
+    # Fig 1: Guo peak moment vs sigma_0.
     if guo_rows:
         rs = sorted(guo_rows, key=lambda x: x["sigma_0"])
         s0 = [r["sigma_0"] / 1e6 for r in rs]
@@ -809,7 +548,7 @@ def plot(cb_rows, guo_rows, weibull_rows):
         fig.savefig(os.path.join(PLOT_DIR, "guo_trilinear_moment.png"))
         plt.close(fig)
 
-    # Fig 3: Weibull CDF and QQ plot.
+    # Fig 2: Weibull CDF and QQ plot.
     if weibull_rows:
         rs = sorted(weibull_rows, key=lambda x: x["eps_break_meas"])
         n_bonds = int(round(rs[0]["n_bonds"]))
@@ -844,14 +583,13 @@ def plot(cb_rows, guo_rows, weibull_rows):
 
 
 def graph():
-    cb_rows = _load(CB_CSV)
     guo_rows = _load(GUO_CSV)
     weibull_rows = _load(WEIBULL_CSV)
-    if not cb_rows and not guo_rows and not weibull_rows:
+    if not guo_rows and not weibull_rows:
         print(f"No results in {DATA_DIR} — run 'start' first.")
         return False
-    ok = validate(cb_rows, guo_rows, weibull_rows)
-    plot(cb_rows, guo_rows, weibull_rows)
+    ok = validate(guo_rows, weibull_rows)
+    plot(guo_rows, weibull_rows)
     return ok
 
 

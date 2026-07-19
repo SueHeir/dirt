@@ -813,16 +813,11 @@ impl Plugin for DemBondPlugin {
 # tensile = { kind = "constant", value = 5.0e7 }
 # shear   = { kind = "constant", value = 3.0e7 }
 #
-# Each threshold accepts one of three distributions (`kind`):
+# Each threshold accepts one of two distributions (`kind`):
 #   constant   — same value for every bond:
 #     { kind = "constant", value = 5.0e7 }
 #   weibull    — length-scaled 2-parameter Weibull (weakest-link size effect):
 #     { kind = "weibull", mean = 5.0e7, m = 8.0, l_calib = 0.020, l_min = 0.0 }
-#   crack_band — deterministic, length-rescaled (Bazant crack-band) so the
-#                per-bond energy budget is mesh-invariant; the part above
-#                eps_yield scales as l_ref / max(l_bond, l_min). Use eps_yield = 0
-#                for force/stress criteria, eps_yield > 0 for strain criteria:
-#     { kind = "crack_band", value_ref = 0.05, l_ref = 0.020, eps_yield = 0.0, l_min = 0.0 }
 #
 # Plasticity (omit for purely elastic bonds). Both `bending` and `axial`
 # channels are independently optional. Examples:
@@ -836,12 +831,10 @@ impl Plugin for DemBondPlugin {
 # # kind               = "piecewise"
 # # breakpoint_strains = [0.01, 0.02]
 # # slope_multipliers  = [0.5, 0.0]
-# # length_calibration = 0.020       # optional crack-band length regularization (m)
 # [bonds.plasticity.axial]
 # kind                = "piecewise"
 # breakpoint_strains  = [0.01, 0.02, 0.03]
-# slope_multipliers   = [0.5, 0.1, 0.0]
-# length_calibration  = 0.020         # optional crack-band length regularization (m)"#,
+# slope_multipliers   = [0.5, 0.1, 0.0]"#,
         )
     }
 
