@@ -8,10 +8,9 @@ it settles, then the gate is removed at runtime (`Walls::deactivate_by_name`) an
 the column collapses and spreads. The floor is a frictional `dirt_wall` plane,
 which is what arrests the spreading deposit and sets the runout.
 
-If a LAMMPS binary is on `PATH`, the same sweep is **also** run in LAMMPS with the
-equivalent granular model and overlaid on the runout-vs-aspect-ratio plot as a
-code-to-code cross-check (see *LAMMPS cross-check* below). LAMMPS is optional — the
-example runs and validates against the experimental laws with no LAMMPS present.
+If a LAMMPS binary is on `PATH`, an intended counterpart is also run and overlaid.
+The retained comparison exposed an initial-condition mismatch, described below;
+it is not currently a valid code-to-code validation.
 
 ## Physics
 
@@ -33,11 +32,11 @@ exponents fitted per regime should approach **1** (linear) and **2/3** (power).
 | Property | Value | Unit |
 |----------|-------|------|
 | Young's modulus E | 7 × 10⁷ | Pa (softened, keeps `dt` reasonable for a bed) |
-| Poisson's ratio ν | 0.25 | — |
+| Poisson's ratio ν | 0.245 | — |
 | Density ρ | 2500 | kg/m³ |
 | Radius R | 1.5 | mm (d = 3 mm) |
-| Restitution e | 0.5 | — |
-| Friction μ | 0.5 | — (particle–particle **and** particle–wall) |
+| Restitution e | 0.926 | — |
+| Friction μ | 0.16 | — (particle–particle **and** particle–wall) |
 | Column width L0 | 24 | mm (8 diameters) |
 | Slab width W | 9 | mm (3 diameters, quasi-2D) |
 | Timestep dt | 4 × 10⁻⁶ | s |
@@ -62,49 +61,33 @@ exponents fitted per regime should approach **1** (linear) and **2/3** (power).
 
 | Check | Tolerance |
 |-------|-----------|
+| Actual particle-count aspect vs requested aspect | within 2% |
 | Linear-regime exponent (a ≤ 3) vs 1 | within ±0.25 |
 | Power-regime exponent (a ≥ 3) vs 2/3 | within ±0.25 |
 
 `graph` fits the runout exponent in each regime by least squares on log–log axes
-and exits non-zero if either fit is outside the band. **It FAILs** (a known,
-now-characterised limitation — see *Status* below): with the hardened measurement
-the fitted exponents are **1.54** (linear regime, target 1.0 — **outside** ±0.25)
-and **0.59** (power regime, target 2/3 — inside ±0.25), so `graph` exits 1.
+and exits non-zero if insertion completeness or either exponent gate fails.
 
-## Status — known FAIL (genuine finite-size result, not a fit artifact)
+## Status — WITHHELD after initial-condition audit
 
-This benchmark does **not** validate to tolerance and its gate exits non-zero; the
-docs here and in `examples/VALIDATION.md` reflect that FAIL rather than reporting it
-green. Adding particle–wall sliding friction to `dirt_wall` (see *Floor friction*)
-fixed the earlier failure mode where the released column slid into a one-grain-thick
-sheet that ran to the domain boundary — the deposit now arrests as a finite pile —
-but the fitted **linear-regime exponent stays outside the ±0.25 band**.
+The old comparison was not an identical DIRT–LAMMPS experiment. DIRT's random
+non-overlap insertion exhausted its attempt budget: retained logs show `79/110`
+particles at requested `a=0.5`, `140/220` at `a=1`, and `675/1100` at `a=5`.
+The final case therefore had actual `a = H/L0 ≈ 3.07`, but the old figure placed
+it at the requested label `a=5`. LAMMPS used a taller loose-fill region and placed
+the full requested count. It also used a single packing seed while DIRT was
+described as a three-seed average.
 
-**The earlier "fit noise" hypothesis was tested and rejected.** The suspected causes
-— single seed, a coarse 6-point sweep, and diameter-scale runout quantization — were
-all removed: the runout is now **seed-averaged (3 seeds)**, the sweep is **11 points**,
-and the runout uses a **sub-diameter deposit-toe metric** (same physical definition
-as before — the far edge where the deposit is ≳1 diameter tall — but with the
-diameter-scale binning removed). After all three fixes the linear exponent **barely
-moved, 1.57 → 1.54**, and the run-to-run seed scatter is now small (σ ≲ 0.1–0.6 in
-normalized runout). So the miss is **not** a measurement artifact.
+That mismatch explains the systematic solver separation and corrupts the fitted
+DIRT exponent. It does **not** establish a DIRT model defect, cross-code agreement,
+or a finite-size law. The harness now computes the aspect ratio from the actual
+particle count, plots that value, and rejects any case more than 2% from its
+requested aspect.
 
-Two independent lines of evidence show it is a genuine **finite-size** limitation of
-this deliberately small benchmark, not a DIRT model defect:
-
-1. **Front-definition dependence.** The fitted linear exponent swings with the runout
-   definition — a 2-layer deposit toe gives ≈1.5, a 1-diameter-connected-front gives
-   ≈0.5 — because at these particle counts (~80–1100, a 3-grain-deep slab) the
-   low-aspect deposits are only a few grains thick with no sharp front. A benchmark
-   in the self-similar regime the `1.2 a` law describes would not be this sensitive.
-2. **Cross-code agreement.** Running the *identical* geometry, model, and metric in
-   **LAMMPS** (authoritative granular DEM) gives linear exponent **1.27** and power
-   **0.97** — LAMMPS misses the linear target the same way DIRT does. A code-independent
-   miss is a property of the benchmark size, not of DIRT.
-
-**Concrete fix path:** a substantially larger system (thicker slab, ~×10 more grains
-so the deposit front becomes continuum-like), not more seeds. **No tolerance is
-loosened to force a pass**; the bench is kept as an honest, visible FAIL.
+The next valid campaign must generate a complete initial particle coordinate set
+once and feed that identical set to both DIRT and LAMMPS for each declared seed.
+Until those matched reruns exist, the benchmark and its exponent claims are
+withheld from scientific validation.
 
 ## How to Run
 
@@ -149,9 +132,8 @@ case, with the initial column width `L0` marked.
 ## LAMMPS cross-check
 
 If a LAMMPS binary (`lmp_serial`, `lmp`, `lmp_mpi`, or `lammps`) is on `PATH`, the
-`start` stage runs the **same** sweep in LAMMPS and the `graph` stage overlays it.
-This is an optional cross-code check; **LAMMPS never gates the PASS/FAIL** — only
-the DIRT-vs-theory exponents do.
+`start` stage runs a counterpart sweep and `graph` overlays it. At present this is
+a diagnostic only because the initial particle sets are not matched.
 
 The LAMMPS model is the equivalent of DIRT's Hertz–Mindlin granular contact, same
 material, geometry, and protocol:
@@ -166,28 +148,12 @@ material, geometry, and protocol:
 | removable gate (`deactivate_by_name` at collapse) | `fix wall/gran … xplane NULL L0`, then `unfix gate` before the collapse run |
 
 LAMMPS's final deposit is dumped as `(id, x, y, z, radius)`, converted to the same
-`x,y,z,radius` CSV the DIRT recorder writes, and the runout `L_f` is extracted with
-the **same** `measure_column()` — so the two codes are compared on equal footing.
-
-Both codes track the increasing runout and bracket the reference lines, but neither
-lands the linear-regime exponent inside the ±0.25 band. Fitted exponents (this run,
-seed-averaged DIRT, sub-diameter deposit-toe metric applied to both codes): linear
-regime (a ≤ 3) — DIRT **1.54**, LAMMPS **1.27** (target 1.0); power regime (a ≥ 3) —
-DIRT **0.59**, LAMMPS **0.97** (target 2/3). Only the DIRT-vs-theory exponents gate
-the result, and DIRT's linear-regime exponent is outside the band, so the bench FAILs
-(see *Status*). **The key point is that LAMMPS — an independent, authoritative granular
-DEM code run through the identical geometry, model, and measurement — misses the linear
-target the same way DIRT does.** A code-independent miss at fixed system size is strong
-evidence the limitation is the benchmark's finite size (few-grain-thick low-aspect
-deposits with no sharp front), not a DIRT model defect. Both codes reproduce the
-increasing, near-power-law runout and sit on the experimental band; they simply cannot
-resolve the continuum linear exponent at this deliberately small size.
-
-> Caveat: LAMMPS `create_atoms random` rejects overlapping placements, so the loose
-> insert column is sized (and the minimum separation relaxed) to seat all `N` grains;
-> the placed count matches DIRT to within a few percent. The two codes' loose-fill
-> microstructures still differ, which contributes to the point-by-point runout
-> differences.
+`x,y,z,radius` CSV, and measured with the same `measure_column()`. That common
+measurement is useful, but it does not rescue unmatched inputs: LAMMPS placed the
+full requested count while DIRT often placed only 60–72%. The old claim that the
+codes missed the experimental exponent "the same way" is withdrawn. A new
+cross-code conclusion requires identical file-based initial coordinates and the
+same seed ensemble.
 
 ## Assumptions
 

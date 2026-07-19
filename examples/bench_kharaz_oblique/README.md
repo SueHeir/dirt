@@ -74,6 +74,7 @@ cargo run --release --example bench_kharaz_oblique --no-default-features \
 |---|---|---|
 | `sweep/<case>/` | per-angle DIRT configs | no (gitignored) |
 | `data/kharaz_sweep.csv` | reduced rebound/spin quantities | no |
+| `data/kharaz_lammps.csv` | matched LAMMPS rebound/spin quantities | no |
 | `plots/kharaz_rebound_spin.png` | the four Kharaz curves vs incidence angle | **yes** |
 | `kharaz_experiment.csv` | *optional* digitised experimental points (overlaid if present) | yes |
 
@@ -93,15 +94,19 @@ conditions and overlays the Maw/Hertz–Mindlin analytical micro-slip curves:
   rebound spin peaks at Rω'/Vᵢ ≈ 0.39 near Θᵢ ≈ 30° before both join the sliding
   branch. The contact-point restitution agrees with the analytical curve to
   max `|Δβ| = 0.0015`.
+- **Cross-code:** all 16 matched LAMMPS wall impacts overlay DIRT. Maximum
+  DIRT–LAMMPS differences are `0.00074` in eₜ, `0.00045` in Rω'/Vᵢ,
+  `0.0105°` in rebound angle, and `0.00260` in contact-point β.
 
 ![Kharaz rebound/spin curves](plots/kharaz_rebound_spin.png)
 
 *Rebound angle, tangential restitution, non-dimensional rebound spin, and normal
-restitution vs incidence angle. Points: DIRT (flat glass anvil). Green: analytical
-Maw/Hertz–Mindlin curves. Dotted: exact rigid-body sliding kinematics (drawn only
-where valid). Dashed red: Kharaz's measured eₙ = 0.98. The bottom row shows the
-contact-point β curve and the DIRT–Maw β residual against the ±0.04 validation
-gate.*
+restitution vs incidence angle. Filled circles: DIRT; open squares: matched
+LAMMPS wall impacts. Green: analytical Maw/Hertz–Mindlin curves. Dotted: exact
+rigid-body sliding kinematics where valid. Dashed red: Kharaz's measured
+eₙ = 0.98. The bottom row shows the contact-point β curve and the direct
+DIRT–LAMMPS β residual; validation limits remain in the harness rather than as
+shaded figure bands.*
 
 ### A note on the experimental points
 

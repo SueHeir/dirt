@@ -23,26 +23,23 @@ runout is AVERAGED over seeds. Each DIRT run dumps the rest-state deposit
 those, computes L_f as the far edge of the deposit toe on a sub-diameter grid
 (see measure_column), and fits the runout exponent in each regime.
 
-Measurement quality (not the tolerance) was hardened to remove the three fit
-artifacts the original coarse sweep was suspected of: (1) diameter-scale runout
-quantization (now a sub-diameter deposit-toe metric that keeps the original height
-definition), (2) single-seed packing scatter of ~±20-25% (now seed-averaged), and
-(3) a coarse 6-point aspect sweep (now 11 points across both regimes). The ±0.25
-exponent tolerance is UNCHANGED and the gate still exits non-zero on a genuine
-miss. With those artifacts removed the linear-regime exponent barely moved (from
-1.57 to 1.54), and an independent code (LAMMPS) run through the identical metric
-misses the target the same way — so the miss is a genuine finite-size result of
-this deliberately small benchmark, not a measurement artifact (see README).
+The original sweep was invalidated by an initial-condition audit: DIRT's random
+non-overlap insertion often exhausted its attempt budget and placed only 60–72% of
+the requested particles, while LAMMPS used a taller region and placed the full
+count. The old plot nevertheless used the requested aspect ratio on the x-axis.
+This driver now computes and plots `actual_aspect = H/L0` from the particles
+present and fails any case more than 2% from the requested aspect. No exponent or
+cross-code conclusion is accepted until complete matched initial coordinate sets
+are supplied to both solvers.
 
 If a LAMMPS binary (lmp_serial / lmp / lmp_mpi / lammps) is on PATH, each aspect
-ratio is ALSO run in LAMMPS with the equivalent granular model (pair_style
+ratio is ALSO run in LAMMPS with the intended equivalent granular model (pair_style
 granular hertz/material ... tangential mindlin ... damping tsuji, same E/nu/e/mu,
 gravity, and frictional floor + back + side + removable-gate walls via
 fix wall/gran). LAMMPS's final deposit is parsed into the SAME (x, y, z, radius)
-form and runout is extracted with the SAME measure_column() the DIRT leg uses, so
-the two codes are compared on equal footing and overlaid (open markers) on
-plots/runout_scaling.png. LAMMPS is optional: with no binary present, only DIRT
-runs and the validation (DIRT-vs-theory) is unchanged.
+form and runout is extracted with the SAME measure_column() the DIRT leg uses.
+The shared measurement does not make the current initial states equivalent; the
+LAMMPS overlay remains diagnostic until both codes read the same coordinates.
 
 Outputs:
     sweep/<case>/config.toml            DIRT configs                  (gitignored)
@@ -100,12 +97,10 @@ PACKING = 0.60             # settled solid fraction used to size the particle co
 # a dominant source of fit noise in the earlier 6-point sweep.
 ASPECTS = [0.5, 0.75, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0]
 
-# Insertion RNG seeds. Every aspect ratio is run once per seed and the runout is
-# AVERAGED over seeds before the exponent is fit. Packing randomness in a quasi-2D
-# (3-diameter-deep) column produced ~±20-25% run-to-run scatter in the runout at a
-# single seed — the other dominant source of fit noise — so seed-averaging is
-# essential to a stable exponent. (The DIRT inserter is seeded by the `seed` field
-# on [[particles.insert]]; LAMMPS, if present, is run once at its own fixed seed.)
+# Insertion RNG seeds. DIRT runs each requested aspect at three seeds. This is not
+# yet a matched cross-code ensemble: LAMMPS still has its own initializer and one
+# fixed seed, so its output is diagnostic only until shared file-based particle
+# coordinates are used.
 SEEDS = [0, 1, 2]
 
 # ── Runout metric ────────────────────────────────────────────────────────────
@@ -299,8 +294,8 @@ def find_lammps():
     return None
 
 
-# LAMMPS counterpart of the DIRT column collapse. Same material, same geometry,
-# same two-stage protocol (settle against a gate, remove the gate, collapse):
+# LAMMPS counterpart of the DIRT column collapse. It matches the material,
+# boundary geometry, and two-stage protocol, but not yet the initial coordinates:
 #   pair_style granular hertz/material E e nu  -> Young's modulus, restitution,
 #       Poisson ratio (E/nu/e identical to DIRT's [dem.materials]).
 #   tangential mindlin NULL {damp} {mu}        -> Mindlin tangential spring with
@@ -316,8 +311,9 @@ def find_lammps():
 #   fix gate ... xplane NULL {L0}; unfix gate  -> removable gate at x = L0, present
 #       during 'settle', unfix-ed at the start of 'collapse' (mirrors
 #       Walls::deactivate_by_name on the first collapse step in DIRT).
-# Atoms are seeded overlap-free into a tall loose column and settle under gravity,
-# the same loose-insert-then-settle that DIRT performs. The final deposit is dumped
+# Atoms are seeded into a tall loose column and settle under gravity. Because this
+# initializer differs from DIRT's, the current overlay is diagnostic only. The
+# final deposit is dumped
 # as (id, x, y, z, radius); runout is then extracted with the SAME measure_column().
 LMP_TEMPLATE = """\
 # Auto-generated LAMMPS input for the column-collapse sweep — aspect a = {aspect}
@@ -455,6 +451,7 @@ def run_lammps_sweep(lammps):
             continue
         h, lf = measure_column(deposit_csv)
         rows.append({"aspect": a, "L0": L0, "H": h, "L_f": lf,
+                     "actual_aspect": h / L0,
                      "runout_norm": (lf - L0) / L0})
     return rows
 
@@ -515,6 +512,7 @@ def start():
         rn_mean = sum(rn) / len(rn)
         rn_std = (sum((v - rn_mean) ** 2 for v in rn) / len(rn)) ** 0.5 if len(rn) > 1 else 0.0
         rows.append({"aspect": a, "L0": L0, "H": h_mean, "L_f": lf_mean,
+                     "actual_aspect": h_mean / L0,
                      "runout_norm": rn_mean, "runout_std": rn_std,
                      "n_seeds": len(lfs)})
 
@@ -546,7 +544,7 @@ def _write_runout(path, rows):
     with open(path, "w", newline="") as f:
         w = csv.DictWriter(
             f,
-            fieldnames=["aspect", "L0", "H", "L_f", "runout_norm",
+            fieldnames=["aspect", "actual_aspect", "L0", "H", "L_f", "runout_norm",
                         "runout_std", "n_seeds"],
             restval="", extrasaction="ignore",
         )
@@ -669,20 +667,27 @@ def validate(rows):
     print("=" * 66)
     print(f"  L0 = {L0*1000:.1f} mm, slab W = {W*1000:.1f} mm, d = {2*RADIUS*1000:.1f} mm")
     print(f"  E = {YOUNGS_MOD:.1e} Pa, e = {RESTITUTION}, mu = {FRICTION}\n")
-    print(f"  {'a':>5} {'H[mm]':>8} {'L_f[mm]':>9} {'(Lf-L0)/L0':>12} "
+    print(f"  {'a_req':>5} {'a_act':>7} {'H[mm]':>8} {'L_f[mm]':>9} {'(Lf-L0)/L0':>12} "
           f"{'seed_sd':>8} {'seeds':>6}")
 
     pairs = []
+    insertion_complete = True
     for r in rows:
         a = float(r["aspect"])
         h = float(r["H"])
+        actual_a = float(r.get("actual_aspect") or h / L0)
         lf = float(r["L_f"])
         rn = float(r["runout_norm"])
         sd = float(r["runout_std"]) if r.get("runout_std") not in (None, "") else float("nan")
         ns = r.get("n_seeds", "")
-        pairs.append((a, rn))
-        print(f"  {a:>5.2f} {h*1000:>8.2f} {lf*1000:>9.2f} {rn:>12.3f} "
+        pairs.append((actual_a, rn))
+        case_complete = abs(actual_a - a) / a <= 0.02
+        insertion_complete &= case_complete
+        print(f"  {a:>5.2f} {actual_a:>7.2f} {h*1000:>8.2f} {lf*1000:>9.2f} {rn:>12.3f} "
               f"{sd:>8.3f} {str(ns):>6}")
+        if not case_complete:
+            print("        FAIL: actual particle-count aspect differs from requested "
+                  f"by {100.0 * abs(actual_a-a)/a:.1f}%")
 
     low = [(a, rn) for a, rn in pairs if a <= REGIME_SPLIT]
     high = [(a, rn) for a, rn in pairs if a >= REGIME_SPLIT]
@@ -698,15 +703,14 @@ def validate(rows):
     print(f"  Power regime  (a >= {REGIME_SPLIT}): fitted exponent = {e_high:.3f} "
           f"(target {POWER_TARGET:.2f})  [{'PASS' if high_ok else 'FAIL'}]")
 
-    ok = low_ok and high_ok
+    ok = insertion_complete and low_ok and high_ok
     if not ok:
         print()
-        print("  NOTE: this bench does NOT validate to tolerance. Measurement quality")
-        print("  has been hardened (seed-averaged runout, 11-point aspect sweep, and a")
-        print("  sub-diameter deposit-toe metric — no tolerance loosened), yet the")
-        print("  linear exponent barely moved (1.57 -> 1.54) and an independent code")
-        print("  (LAMMPS) misses identically: a genuine finite-size result, not a fit")
-        print("  artifact. See README/VALIDATION.md for the documented root cause.")
+        if not insertion_complete:
+            print("  ROOT CAUSE: one or more DIRT cases inserted fewer particles than")
+            print("  requested, but the old plot placed them at the requested aspect ratio.")
+            print("  The DIRT–LAMMPS comparison is invalid until both codes start from")
+            print("  complete, matched particle sets. No finite-size conclusion is allowed.")
     print("\nALL CHECKS PASSED" if ok else "VALIDATION FAILED (see note above)")
     return ok
 
@@ -724,14 +728,15 @@ def compare_codes(dirt_rows, lammps_rows):
         d, l = dirt[a], lammps[a]
         print(f"  {a:>5.2f} | {d:>8.3f} {l:>8.3f} | {l - d:>+8.3f}")
 
-    def fits(data):
-        pairs = [(a, data[a]) for a in sorted(data)]
+    def fits(source_rows):
+        pairs = [(float(r.get("actual_aspect") or float(r["H"]) / L0),
+                  float(r["runout_norm"])) for r in source_rows]
         low = [(a, v) for a, v in pairs if a <= REGIME_SPLIT]
         high = [(a, v) for a, v in pairs if a >= REGIME_SPLIT]
         return fit_loglog(low)[0], fit_loglog(high)[0]
 
-    dl, dh = fits(dirt)
-    ll, lh = fits(lammps)
+    dl, dh = fits(dirt_rows)
+    ll, lh = fits(lammps_rows)
     print("\n  Fitted exponents:        linear (a<=3)   power (a>=3)")
     print(f"    DIRT   :               {dl:>10.3f}    {dh:>10.3f}")
     print(f"    LAMMPS :               {ll:>10.3f}    {lh:>10.3f}")
@@ -752,14 +757,15 @@ def plot(rows, lammps_rows=None):
     os.makedirs(PLOT_DIR, exist_ok=True)
     plt.rcParams.update({"font.size": 12, "figure.dpi": 150, "savefig.dpi": 150})
 
-    a = np.array([float(r["aspect"]) for r in rows])
+    a = np.array([float(r.get("actual_aspect") or float(r["H"]) / L0) for r in rows])
     rn = np.array([float(r["runout_norm"]) for r in rows])
 
     # ── Plot 1: normalized runout vs aspect ratio (log-log) with scaling lines.
     fig, ax = plt.subplots(figsize=(7, 5.2))
     ax.plot(a, rn, "o", color="#1f77b4", markersize=7, label="DIRT")
     if lammps_rows:
-        la = np.array([float(r["aspect"]) for r in lammps_rows])
+        la = np.array([float(r.get("actual_aspect") or float(r["H"]) / L0)
+                       for r in lammps_rows])
         lrn = np.array([float(r["runout_norm"]) for r in lammps_rows])
         ax.plot(la, lrn, "s", color="#d62728", markersize=8,
                 markerfacecolor="none", markeredgewidth=1.6, label="LAMMPS")

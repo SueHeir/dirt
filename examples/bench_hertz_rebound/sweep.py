@@ -12,16 +12,15 @@ Commands (from anywhere):
     python3 examples/bench_hertz_rebound/sweep.py            # all three, in order
 
 If a LAMMPS binary (lmp_serial / lmp / lmp_mpi / lammps) is on PATH, each case is
-also run in LAMMPS with the equivalent granular Hertz model (damping tsuji) and
-overlaid on the plots as open markers. Because no exact restitution->damping
-formula exists for a nonlinear Hertz contact, the LAMMPS restitution input is
-back-solved per nominal COR so its *measured* COR matches DIRT — isolating the
-shared contact physics from each code's damping calibration. LAMMPS is optional —
-without it, only DIRT runs.
+also run in LAMMPS with the equivalent granular Hertz model (`damping tsuji`) and
+overlaid on the plots as open markers. DIRT and LAMMPS receive the same nominal
+restitution and use the same Tsuji polynomial, so the overlay checks the shared
+contact law without back-fitting either code. LAMMPS is optional — without it,
+only DIRT runs.
 
 Outputs:
     sweep/<case>/config.toml   DIRT configs                          (gitignored)
-    sweep/<case>/in.lammps     LAMMPS inputs (calibrated restitution)(gitignored)
+    sweep/<case>/in.lammps     LAMMPS inputs (same restitution)      (gitignored)
     data/sweep_results.csv     DIRT results                          (gitignored)
     data/lammps_results.csv    LAMMPS results                        (gitignored)
     plots/*.png                final figures                         (tracked)
@@ -77,12 +76,10 @@ DENSITY = 2500.0       # kg/m^3
 # COR, and (2) agreement with LAMMPS when an overlay binary is present.
 VEL_INDEP_TOL = 0.01     # max spread of realized COR across impact speed, per COR
 XCODE_COR_TOL = 0.005    # |COR_dirt - COR_lammps| when a LAMMPS overlay is present
-CONTACT_TIME_TOL = 0.10  # 10% for contact duration (vs Hertz theory)
-# Elastic Hertz theory over-predicts overlap for dissipative contacts, so the
-# overlap tolerance scales with COR.
-OVERLAP_TOL_HIGH = 0.10  # COR >= 0.85 (near-elastic)
-OVERLAP_TOL_MED = 0.15   # 0.6 <= COR < 0.85
-OVERLAP_TOL_LOW = 0.25   # COR < 0.6 (heavy damping)
+# Numerical trajectory vs the independently integrated Tsuji contact ODE. At the
+# production timestep the largest observed discrepancy is ~1.5% (contact time),
+# so one unchanged 2% gate covers COR, duration, and peak overlap.
+ODE_REL_TOL = 0.02
 
 # Derived sphere-wall properties (wall: infinite mass and radius).
 E_STAR = YOUNGS_MOD / (2.0 * (1.0 - POISSON_RATIO**2))
@@ -266,8 +263,7 @@ def generate():
                     output_dir=cdir, steps=steps,
                 ))
 
-            # The LAMMPS input needs the calibrated restitution e', which is
-            # back-solved at run time, so it is written during 'start' — not here.
+            # The matched LAMMPS input is written during `start`.
             n += 1
     print(f"Generated {n} DIRT configs under {SWEEP_DIR}")
 
@@ -427,29 +423,44 @@ def hertz_max_overlap(v0):
 
 
 # Inelastic (viscoelastic-Hertz) reference. The undamped formulas above ignore
-# the damping; this integrates the same 1-DOF normal contact ODE the solver
-# uses — m δ̈ = -[k_n δ + c(δ) δ̇], clamped ≥ 0 — to predict COR, contact
-# duration, and peak overlap including dissipation.
+# the damping; this integrates the same 1-DOF normal contact ODE the solver uses
+# with `limit_damping = false`:
+#
+#     m δ̈ = -[k_n δ + c(δ) δ̇]
+#
+# The force is intentionally not clamped near separation because the matched DIRT
+# and LAMMPS cases both retain the short tensile tail of the Tsuji law.
 #   k_n   = (4/3) E* √(R δ)              Hertz spring
-#   c(δ)  = 2 β·CFAC·√(S_n m),  S_n = 2 E* √(R δ),  β = -ln e / √(π²+ln²e)
-# CFAC is the solver's damping constant. NOTE the solver's constant named
-# `SQRT_5_3` is actually valued √(5/6) ≈ 0.91287 (not √(5/3) ≈ 1.29099); the
-# √(5/6) value is the physically correct one (it reproduces measured COR ≈ e).
-CFAC_MODEL = math.sqrt(5.0 / 6.0)   # DIRT's actual damping constant (correct value)
+#   c(δ)  = 2 β·CFAC·√(S_n m),  S_n = 2 E* √(R δ),  β = α_Tsuji(e)/√5
+# Here beta is the Tsuji polynomial alpha(e)/sqrt(5), not the logarithmic
+# linear-dashpot inversion. Using the latter was the reason the old plotted model
+# missed both codes even though DIRT and LAMMPS agreed with each other.
+CFAC_MODEL = math.sqrt(5.0 / 6.0)
+
+
+def tsuji_alpha(e):
+    """Tsuji-Tanaka-Ishida Hertz damping polynomial used by DIRT/LAMMPS."""
+    return (1.2728 - 4.2783 * e + 11.087 * e**2 - 22.348 * e**3
+            + 27.467 * e**4 - 18.022 * e**5 + 4.8218 * e**6)
+
+
+def hertz_beta_for_cor(e):
+    if e >= 0.9999:
+        return 0.0
+    return tsuji_alpha(max(1.0e-3, min(0.9999, e))) / math.sqrt(5.0)
 
 
 def contact_ode(e, v0, cfac):
     """Integrate the 1-DOF viscoelastic Hertz contact; return (cor, t_c, dmax)."""
     A = 4.0 / 3.0 * E_STAR * math.sqrt(RADIUS)          # F_el = A δ^1.5
-    beta = 0.0 if e >= 1.0 else -math.log(e) / math.sqrt(math.pi**2 + math.log(e)**2)
+    beta = hertz_beta_for_cor(e)
     c0 = 2.0 * beta * cfac * math.sqrt(2.0 * E_STAR * MASS) * RADIUS**0.25  # c(δ)=c0 δ^0.25
     dt = hertz_contact_duration(v0) / 6000.0
 
     def f(d, v):
         if d <= 0.0:
             return 0.0
-        fr = A * d**1.5 + c0 * d**0.25 * v
-        return fr if fr > 0.0 else 0.0
+        return A * d**1.5 + c0 * d**0.25 * v
 
     d, v, t, dmax = 0.0, v0, 0.0, 0.0
     for _ in range(2_000_000):
@@ -467,14 +478,6 @@ def contact_ode(e, v0, cfac):
             return abs(v + frac * (vn - v)) / v0, t - dt + frac * dt, dmax
         d, v = dn, vn
     return abs(v) / v0, t, dmax
-
-
-def overlap_tol(cor_input):
-    if cor_input >= 0.85:
-        return OVERLAP_TOL_HIGH
-    if cor_input >= 0.6:
-        return OVERLAP_TOL_MED
-    return OVERLAP_TOL_LOW
 
 
 def load_rows():
@@ -512,7 +515,7 @@ def as_data(rows):
 
 
 def validate(rows):
-    """Run the four checks; return True if everything passed."""
+    """Check the trajectory against the Tsuji ODE and cross-case invariants."""
     print("=" * 65)
     print("Hertz Contact Rebound Benchmark Validation")
     print("=" * 65)
@@ -521,7 +524,7 @@ def validate(rows):
     print(f"  R  = {RADIUS*1000:.1f} mm\n")
 
     total = passed = 0
-    tc_pass = ov_pass = 0
+    cor_pass = tc_pass = ov_pass = 0
     n = len(rows)
 
     # Realized COR grouped by nominal input, for the velocity-independence check.
@@ -536,24 +539,30 @@ def validate(rows):
         v_impact = float(row["v_impact"])
         by_cor.setdefault(cor_input, []).append(cor_meas)
 
-        tc_theory = hertz_contact_duration(v_impact)
-        delta_max_theory = hertz_max_overlap(v_impact)
+        cor_ref, tc_ref, delta_max_ref = contact_ode(cor_input, v_impact, CFAC_MODEL)
 
-        tc_err = abs(tc_meas - tc_theory) / tc_theory
-        status_tc = "PASS" if tc_err <= CONTACT_TIME_TOL else "FAIL"
+        cor_err = abs(cor_meas - cor_ref) / cor_ref
+        tc_err = abs(tc_meas - tc_ref) / tc_ref
+        status_cor = "PASS" if cor_err <= ODE_REL_TOL else "FAIL"
+        status_tc = "PASS" if tc_err <= ODE_REL_TOL else "FAIL"
+        cor_pass += status_cor == "PASS"
         tc_pass += status_tc == "PASS"
 
-        ov_err = abs(delta_max_meas - delta_max_theory) / delta_max_theory
-        status_ov = "PASS" if ov_err <= overlap_tol(cor_input) else "FAIL"
+        ov_err = abs(delta_max_meas - delta_max_ref) / delta_max_ref
+        status_ov = "PASS" if ov_err <= ODE_REL_TOL else "FAIL"
         ov_pass += status_ov == "PASS"
 
-        total += 2
-        passed += (status_tc == "PASS") + (status_ov == "PASS")
+        total += 3
+        passed += ((status_cor == "PASS") + (status_tc == "PASS")
+                   + (status_ov == "PASS"))
 
         print(f"v0={v0:.1f} m/s, COR_in={cor_input:.2f}:")
-        print(f"  COR:     realized {cor_meas:.4f} (nominal {cor_input:.2f}; Tsuji offset, info only)")
-        print(f"  t_c:     {tc_meas:.3e} vs {tc_theory:.3e} s  (err={tc_err*100:.1f}%)  [{status_tc}]")
-        print(f"  d_max:   {delta_max_meas:.3e} vs {delta_max_theory:.3e} m  (err={ov_err*100:.1f}%)  [{status_ov}]")
+        print(f"  COR:     {cor_meas:.4f} vs Tsuji ODE {cor_ref:.4f}  "
+              f"(err={cor_err*100:.1f}%)  [{status_cor}]")
+        print(f"  t_c:     {tc_meas:.3e} vs Tsuji ODE {tc_ref:.3e} s  "
+              f"(err={tc_err*100:.1f}%)  [{status_tc}]")
+        print(f"  d_max:   {delta_max_meas:.3e} vs Tsuji ODE {delta_max_ref:.3e} m  "
+              f"(err={ov_err*100:.1f}%)  [{status_ov}]")
 
     # Velocity-independence: realized COR must be flat across impact speed (the
     # signature of correct nonlinear-Hertz damping; the old bug was speed-dependent).
@@ -576,6 +585,7 @@ def validate(rows):
     print(f"\nCompleteness: {n}/{expected} cases  [{'PASS' if complete else 'FAIL'}]")
     print()
     print(f"Velocity-independence: {vi_pass}/{len(by_cor)} passed")
+    print(f"COR vs ODE checks:     {cor_pass}/{n} passed")
     print(f"Contact time checks:   {tc_pass}/{n} passed")
     print(f"Overlap checks:        {ov_pass}/{n} passed")
     print(f"\nOverall: {passed}/{total} checks passed")
@@ -586,8 +596,8 @@ def validate(rows):
 
 def plot(dirt_rows, lammps_rows):
     """Write the three benchmark figures, overlaying DIRT (filled markers) and
-    LAMMPS (open markers, restitution tuned so its COR matches DIRT). Skips
-    gracefully without matplotlib."""
+    matched-nominal-input LAMMPS (open markers). Skips gracefully without
+    matplotlib."""
     try:
         import numpy as np
         import matplotlib
@@ -647,7 +657,7 @@ def plot(dirt_rows, lammps_rows):
     # Viscoelastic-model curve (COR is velocity-independent → evaluate at v=1).
     e_in = np.linspace(0.45, 1.0, 25)
     ax.plot(e_in, [contact_ode(e, 1.0, CFAC_MODEL)[0] for e in e_in],
-            "-", color="0.35", linewidth=1.4, label="viscoelastic model")
+            "-", color="0.35", linewidth=1.4, label="Tsuji contact ODE")
     ax.set_xlabel("Input COR")
     ax.set_ylabel("Measured COR")
     ax.set_title("Coefficient of Restitution: Input vs Measured")
@@ -685,7 +695,7 @@ def plot(dirt_rows, lammps_rows):
             ax.plot(v_curve, [contact_ode(cor, v, CFAC_MODEL)[idx] * 1e6 for v in v_curve],
                     "--", color=c, linewidth=1.0, alpha=0.9)
         model_proxy = [Line2D([], [], color="0.35", linestyle="--", linewidth=1.0,
-                              label="viscoelastic model")]
+                              label="Tsuji contact ODE")]
         ax.set_xlabel("Impact velocity [m/s]")
         ax.set_ylabel(ylabel)
         ax.set_title(title)

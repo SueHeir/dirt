@@ -62,6 +62,7 @@ import os
 import sys
 import csv
 import math
+import shutil
 import subprocess
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -72,6 +73,7 @@ SWEEP_DIR = os.path.join(SCRIPT_DIR, "sweep")
 DATA_DIR = os.path.join(SCRIPT_DIR, "data")
 PLOT_DIR = os.path.join(SCRIPT_DIR, "plots")
 SWEEP_CSV = os.path.join(DATA_DIR, "kharaz_sweep.csv")
+LAMMPS_CSV = os.path.join(DATA_DIR, "kharaz_lammps.csv")
 # Optional digitised experimental points; kept at the (tracked) example root so a
 # future digitisation lands in git (data/ is gitignored). See README.
 EXP_CSV = os.path.join(SCRIPT_DIR, "kharaz_experiment.csv")
@@ -115,6 +117,7 @@ bin_size = 0.012
 every = 1
 [dem]
 contact_model = "hertz"
+limit_damping = true
 [[dem.materials]]
 name = "alumina"
 youngs_mod = {youngs:.6e}
@@ -145,6 +148,28 @@ thermo = {steps}
 dt = {dt:.6e}
 """
 
+# Matched LAMMPS wall-impact case. `limit_damping` is explicit in both solvers,
+# and both use the Tsuji normal damping and Mindlin tangential history model.
+LMP_TEMPLATE = """units           si
+atom_style      sphere
+atom_modify     map array
+boundary        f f f
+comm_modify     vel yes
+region          box block -0.05 0.05 -0.02 0.02 0.0 0.05 units box
+create_box      1 box
+create_atoms    1 single 0.0 0.0 {z0:.8e} units box
+set             group all diameter {diam:.8e}
+set             group all density {density:.8e}
+pair_style      granular
+pair_coeff      1 1 hertz/material {youngs:.8e} {e_n} {nu} tangential mindlin NULL 1.0 {mu} damping tsuji rolling none twisting none limit_damping
+fix             wall all wall/gran granular hertz/material {youngs:.8e} {e_n} {nu} tangential mindlin NULL 1.0 {mu} damping tsuji rolling none twisting none limit_damping zplane 0.0 NULL
+fix             integrate all nve/sphere
+velocity        all set {vx:.8e} 0.0 -{vz:.8e} units box
+timestep        {dt:.8e}
+run             {steps}
+write_dump      all custom {dump} id vx vz omegay modify sort id
+"""
+
 
 def vel_components(theta_deg):
     """Return (v_t, v_n) for a fixed impact speed V_I at incidence theta (from normal)."""
@@ -160,6 +185,14 @@ def case_dir(theta_deg):
     return os.path.join(SWEEP_DIR, case_tag(theta_deg))
 
 
+def find_lammps():
+    for binary in ("lmp_serial", "lmp", "lmp_mpi", "lammps"):
+        path = shutil.which(binary)
+        if path:
+            return path
+    return None
+
+
 def _config(theta_deg, outdir):
     v_t, v_n = vel_components(theta_deg)
     # Sphere centre starts a clearance GAP above the wall (contact at z = R).
@@ -167,6 +200,15 @@ def _config(theta_deg, outdir):
     return TOML_TEMPLATE.format(
         youngs=YOUNGS_MOD, nu=NU, e_n=E_N, mu=MU, radius=RADIUS, density=DENSITY,
         vx=v_t, vz=v_n, zlo=z0 - 1e-9, zhi=z0 + 1e-9, outdir=outdir, steps=STEPS, dt=DT,
+    )
+
+
+def _lammps_input(theta_deg, dump):
+    v_t, v_n = vel_components(theta_deg)
+    return LMP_TEMPLATE.format(
+        z0=RADIUS + GAP, diam=2.0 * RADIUS, density=DENSITY,
+        youngs=YOUNGS_MOD, e_n=E_N, nu=NU, mu=MU,
+        vx=v_t, vz=v_n, dt=DT, steps=STEPS, dump=dump,
     )
 
 
@@ -178,6 +220,8 @@ def generate():
         os.makedirs(cdir, exist_ok=True)
         with open(os.path.join(cdir, "config.toml"), "w") as f:
             f.write(_config(th, cdir))
+        with open(os.path.join(cdir, "in.lammps"), "w") as f:
+            f.write(_lammps_input(th, os.path.join(cdir, "lammps_final.dump")))
         n += 1
     print(f"Generated {n} Kharaz per-angle configs under {SWEEP_DIR}")
 
@@ -238,6 +282,32 @@ def _row(theta_deg, r):
     }
 
 
+def _parse_lammps_final(path):
+    """Return final (vx, vz, omega_y) from a one-atom custom dump."""
+    if not os.path.isfile(path):
+        return None
+    lines = [line.strip() for line in open(path) if line.strip()]
+    for line in reversed(lines):
+        fields = line.split()
+        if len(fields) == 4:
+            try:
+                _, vx, vz, wy = (float(value) for value in fields)
+                return vx, vz, wy
+            except ValueError:
+                continue
+    return None
+
+
+def _lammps_row(theta_deg, final):
+    v_t, v_n = vel_components(theta_deg)
+    vt2, vn2, wy = final
+    return _row(theta_deg, {
+        "vn_impact": v_n, "vt_impact": v_t,
+        "vn_rebound": vn2, "vt_rebound": vt2,
+        "omega_y_rebound": wy, "radius": RADIUS,
+    })
+
+
 def _write_csv(path, fields, rows):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", newline="") as f:
@@ -253,7 +323,10 @@ def start():
     subprocess.run(["cargo", "build", "--release", "--example", EXAMPLE,
                     "--no-default-features", "--features", "precision-double"],
                    cwd=REPO_ROOT, check=True)
+    lammps = find_lammps()
+    print(f"LAMMPS: {lammps}" if lammps else "LAMMPS: not found; running DIRT only")
     rows = []
+    lammps_rows = []
     n = len(THETA_DEG)
     for i, th in enumerate(THETA_DEG, 1):
         cdir = case_dir(th)
@@ -269,11 +342,30 @@ def start():
         rows.append(row)
         print(f"e_n={row['e_n']:.3f}  e_t={row['e_t']:+.3f}  R w/V={row['spin_nd']:.3f}  "
               f"Theta_r={row['theta_r_deg']:.1f}deg  ({'slide' if row['sliding'] else 'stick'})")
+
+        if lammps:
+            in_path = os.path.join(cdir, "in.lammps")
+            dump_path = os.path.join(cdir, "lammps_final.dump")
+            log_path = os.path.join(cdir, "lammps.log")
+            if os.path.exists(dump_path):
+                os.remove(dump_path)
+            proc = subprocess.run(
+                [lammps, "-in", in_path, "-log", log_path], cwd=REPO_ROOT,
+                stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT,
+            )
+            final = _parse_lammps_final(dump_path) if proc.returncode == 0 else None
+            if final is None:
+                print(f"      LAMMPS FAILED ({log_path})")
+            else:
+                lammps_rows.append(_lammps_row(th, final))
     if not rows:
         print("\nERROR: no DIRT results collected.")
         sys.exit(1)
     _write_csv(SWEEP_CSV, SWEEP_FIELDS, rows)
     print(f"\n{len(rows)}/{n} cases -> {SWEEP_CSV}")
+    if lammps_rows:
+        _write_csv(LAMMPS_CSV, SWEEP_FIELDS, lammps_rows)
+        print(f"{len(lammps_rows)}/{n} LAMMPS cases -> {LAMMPS_CSV}")
 
 
 # ── graph (validate + plot) ──────────────────────────────────────────────────
@@ -373,7 +465,7 @@ def _load(path):
         return out
 
 
-def validate(rows):
+def validate(rows, lammps_rows):
     print("\n=== Kharaz (2001) oblique-impact validation ===")
     print(f"  V_i={V_I} m/s  e_n={E_N}  mu={MU}  nu={NU}   "
           f"sliding boundary Theta_i>{THETA_SLIDE_DEG:.1f}deg")
@@ -417,11 +509,28 @@ def validate(rows):
         print(f"  max |delta beta| vs Maw/Hertz-Mindlin = {max_delta:.4f} > 0.04"); ok = False
     else:
         print(f"  max |delta beta| vs Maw/Hertz-Mindlin = {max_delta:.4f}")
+    if lammps_rows:
+        dirt_by_theta = {round(r["theta_deg"], 6): r for r in rows}
+        lmp_by_theta = {round(r["theta_deg"], 6): r for r in lammps_rows}
+        common = sorted(set(dirt_by_theta) & set(lmp_by_theta))
+        xcode_limits = {
+            "e_n": 0.001, "e_t": 0.005, "spin_nd": 0.005,
+            "theta_r_deg": 0.1, "beta_cp": 0.005,
+        }
+        print(f"\n  DIRT-LAMMPS parity ({len(common)}/{len(rows)} matched angles):")
+        if len(common) != len(rows):
+            ok = False
+        for key, limit in xcode_limits.items():
+            delta = max(abs(dirt_by_theta[t][key] - lmp_by_theta[t][key]) for t in common)
+            passed = delta <= limit
+            ok &= passed
+            print(f"    max |delta {key}| = {delta:.6g} (limit {limit:g}) "
+                  f"[{'PASS' if passed else 'FAIL'}]")
     print("RESULT:", "ALL CHECKS PASSED" if ok else "CHECKS FAILED")
     return ok
 
 
-def plot(rows, exp):
+def plot(rows, lammps_rows, exp):
     os.makedirs(PLOT_DIR, exist_ok=True)
     import matplotlib
     matplotlib.use("Agg")
@@ -430,6 +539,8 @@ def plot(rows, exp):
 
     d = sorted(rows, key=lambda x: x["theta_meas_deg"])
     th = [r["theta_meas_deg"] for r in d]
+    lmp = sorted(lammps_rows, key=lambda x: x["theta_meas_deg"])
+    th_lmp = [r["theta_meas_deg"] for r in lmp]
     maw = maw_kharaz_curve()
     th_m = [r["theta_deg"] for r in maw]
     # The rigid-body sliding relations only hold in the sliding regime; draw the
@@ -448,6 +559,9 @@ def plot(rows, exp):
     # (a) rebound angle
     ax = axes[0]
     ax.plot(th, [r["theta_r_deg"] for r in d], "o-", label="DIRT")
+    if lmp:
+        ax.plot(th_lmp, [r["theta_r_deg"] for r in lmp], "s", mfc="none",
+                color="tab:blue", label="LAMMPS")
     ax.plot(th_m, [r["theta_r_deg"] for r in maw], "-", color="tab:green",
             lw=1.7, label="Maw (1976)")
     ax.plot(th_s, [r["theta_r_slide_deg"] for r in ds], "k:", label="rigid sliding")
@@ -463,6 +577,9 @@ def plot(rows, exp):
     # (b) tangential restitution
     ax = axes[1]
     ax.plot(th, [r["e_t"] for r in d], "o-", label=r"DIRT $e_t=v_t'/v_t$")
+    if lmp:
+        ax.plot(th_lmp, [r["e_t"] for r in lmp], "s", mfc="none",
+                color="tab:blue", label="LAMMPS")
     ax.plot(th_m, [r["e_t"] for r in maw], "-", color="tab:green",
             lw=1.7, label="Maw (1976)")
     ax.plot(th_s, [r["e_t_slide"] for r in ds], "k:", label="rigid sliding")
@@ -479,6 +596,9 @@ def plot(rows, exp):
     # (c) non-dimensional rebound spin
     ax = axes[2]
     ax.plot(th, [r["spin_nd"] for r in d], "o-", label=r"DIRT $R\omega'/V_i$")
+    if lmp:
+        ax.plot(th_lmp, [r["spin_nd"] for r in lmp], "s", mfc="none",
+                color="tab:blue", label="LAMMPS")
     ax.plot(th_m, [r["spin_nd"] for r in maw], "-", color="tab:green",
             lw=1.7, label="Maw (1976)")
     ax.plot(th_s, [r["spin_nd_slide"] for r in ds], "k:", label="rigid sliding")
@@ -494,6 +614,9 @@ def plot(rows, exp):
     # (d) normal restitution vs Kharaz's measured 0.98
     ax = axes[3]
     ax.plot(th, [r["e_n"] for r in d], "o-", label="DIRT")
+    if lmp:
+        ax.plot(th_lmp, [r["e_n"] for r in lmp], "s", mfc="none",
+                color="tab:blue", label="LAMMPS")
     ax.axhline(E_N, color="r", lw=1.0, ls="--", label=f"Kharaz exp. $e_n$={E_N}")
     ax.set_ylim(0.9, 1.02)
     ax.set_xlabel(r"incidence angle $\Theta_i$ (deg)")
@@ -503,6 +626,9 @@ def plot(rows, exp):
     # (e) contact-point beta, the Maw variable used by the validation gate.
     ax = axes[4]
     ax.plot(th, [r["beta_cp"] for r in d], "o-", label=r"DIRT $\beta$")
+    if lmp:
+        ax.plot(th_lmp, [r["beta_cp"] for r in lmp], "s", mfc="none",
+                color="tab:blue", label="LAMMPS")
     ax.plot(th_m, [r["beta_cp"] for r in maw], "-", color="tab:green",
             lw=1.7, label="Maw (1976)")
     ax.axhline(0, color="gray", lw=0.5)
@@ -511,19 +637,25 @@ def plot(rows, exp):
     ax.set_ylabel(r"contact-point restitution $\beta$")
     ax.set_title(r"(e) Maw contact-point restitution"); ax.legend()
 
-    # (f) residual against the quantitative Maw gate used by validate().
+    # (f) direct cross-code residual. Keep acceptance tolerances in validate(),
+    # not as shaded bands on the scientific figure.
     ax = axes[5]
-    beta_res = [(r["theta_meas_deg"], r["beta_cp"] - maw_beta_for_theta(r["theta_meas_deg"])) for r in d]
-    ax.axhspan(-0.04, 0.04, color="tab:green", alpha=0.12,
-               label=r"validation band $\pm0.04$")
-    ax.axhline(0.0, color="tab:green", lw=1.0)
-    ax.axhline(0.04, color="tab:green", lw=0.8, ls="--")
-    ax.axhline(-0.04, color="tab:green", lw=0.8, ls="--")
-    ax.plot([t for t, _ in beta_res], [b for _, b in beta_res], "o-", color="tab:blue")
+    if lmp:
+        lmp_by_theta = {round(r["theta_deg"], 6): r for r in lmp}
+        beta_res = [(r["theta_meas_deg"], r["beta_cp"] - lmp_by_theta[round(r["theta_deg"], 6)]["beta_cp"])
+                    for r in d if round(r["theta_deg"], 6) in lmp_by_theta]
+        residual_label = r"DIRT $-$ LAMMPS"
+    else:
+        beta_res = [(r["theta_meas_deg"], r["beta_cp"] - maw_beta_for_theta(r["theta_meas_deg"]))
+                    for r in d]
+        residual_label = r"DIRT $-$ Maw"
+    ax.axhline(0.0, color="0.35", lw=0.8)
+    ax.plot([t for t, _ in beta_res], [b for _, b in beta_res], "o-",
+            color="tab:blue", label=residual_label)
     ax.axvline(THETA_SLIDE_DEG, color="gray", lw=0.6, ls="--")
     ax.set_xlabel(r"incidence angle $\Theta_i$ (deg)")
     ax.set_ylabel(r"$\Delta\beta$")
-    ax.set_title(r"(f) DIRT - Maw residual, max $|\Delta\beta|$ gate")
+    ax.set_title(r"(f) Contact-point restitution residual")
     ax.legend(loc="upper right", fontsize=9)
 
     fig.suptitle("Kharaz, Gorham & Salman (2001) oblique impact — 5 mm alumina on glass, "
@@ -541,10 +673,13 @@ def graph():
         print(f"No {SWEEP_CSV} — run 'start' first.")
         return False
     exp = _load(EXP_CSV)
+    lammps_rows = _load(LAMMPS_CSV)
     if exp:
         print(f"(overlaying {len(exp)} digitised experimental points from {EXP_CSV})")
-    ok = validate(rows)
-    plot(rows, exp)
+    if lammps_rows:
+        print(f"(overlaying {len(lammps_rows)} matched LAMMPS cases from {LAMMPS_CSV})")
+    ok = validate(rows, lammps_rows)
+    plot(rows, lammps_rows, exp)
     return ok
 
 

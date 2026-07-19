@@ -55,21 +55,24 @@ no longer uses a frozen floor sphere: it now runs on a real flat wall, so
 These are the most useful starting points for reading the ledger:
 
 - [`bench_hertz_rebound`](#bench_hertz_rebound--hertzian-normal-rebound): DIRT
-  and LAMMPS agree closely, but the damped viscoelastic mapping remains unresolved.
+  and LAMMPS agree with the independently integrated Tsuji contact ODE.
 - [`bench_oblique_impact`](#bench_oblique_impact--tangential-contact-vs-maw-1976):
   DIRT, LAMMPS, and the Maw theory curve.
+- [`bench_kharaz_oblique`](#bench_kharaz_oblique--replicate-kharaz-gorham--salman-2001):
+  DIRT and LAMMPS in the Kharaz wall-impact protocol against Maw and published
+  experimental scalars.
 - [`bench_nohistory_tangential`](#bench_nohistory_tangential--history-free-tangential-law):
   DIRT against the documented LAMMPS force law.
 - [`bench_column_collapse`](#bench_column_collapse--granular-column-runout): the
-  two solvers show the same finite-size miss rather than agreement with experiment.
+  retained comparison is withheld because the two solvers started from different
+  particle counts; the audit now fails that condition explicitly.
 - [`bench_lebc_shear`](#bench_lebc_shear--lees-edwards-homogeneous-shear-rheometer):
   frictionless DIRT results against kinetic theory, LAMMPS, Fortran, and LIGGGHTS.
 - [`bench_mdr_elastoplastic_normal`](#bench_mdr_elastoplastic_normal--mdr-elastic-plastic-normal-contact):
   DIRT against the LAMMPS MDR source equations.
 
 `bench_mindlin_rescale_tangential` currently checks equations documented by
-LAMMPS, not a separately executed LAMMPS trajectory. `bench_kharaz_oblique`
-currently has no LAMMPS overlay; adding one remains useful follow-up work.
+LAMMPS, not a separately executed LAMMPS trajectory.
 
 ---
 
@@ -136,41 +139,39 @@ resolution, and all cases pass inside it.*
 ## `bench_hertz_rebound` — Hertzian normal rebound
 
 A single glass sphere strikes a rigid wall; the benchmark sweeps impact velocity
-(0.1–2 m/s) and input restitution (0.5–1.0) and measures the coefficient of
-restitution, contact duration, and peak overlap against Hertz theory. The strongest
-evidence is the **elastic anchor** at COR = 1 (zero damping): there the contact is
-purely Hertzian and the simulation reproduces the analytical peak overlap to
-**≤ 0.1 %** and contact duration to ~1 % at every velocity, with measured COR = 1.000.
-This pins the contact stiffness and the integrator.
+(0.1–2 m/s) and Tsuji restitution input (0.5–1.0) and measures realized
+restitution, contact duration, and peak overlap. The reference now integrates the
+same one-degree-of-freedom Hertz–Tsuji contact equation independently, using the
+Tsuji polynomial `beta = alpha(e)/sqrt(5)` and the same unclamped near-separation
+force convention as the matched DIRT and LAMMPS cases. The previous plotted model
+incorrectly used the logarithmic *linear-dashpot* inversion and clamped the force;
+that was why it missed both codes.
 
 ![Measured vs input COR](bench_hertz_rebound/plots/cor_validation.png)
 
-*Measured restitution vs the input value, DIRT (filled) and LAMMPS (open) at four
-speeds. The two codes agree with each other, but neither follows the nominal
-input-to-output line or the plotted one-degree-of-freedom viscoelastic model at
-low COR. That discrepancy is unresolved and is not counted here as physical
-validation of the damping map.*
+*Measured restitution vs the Tsuji input, DIRT (filled), LAMMPS (open), and the
+independently integrated contact ODE. All three overlay. The dashed 1:1 line is
+shown to make an important parameterization limit explicit: at low input values,
+the Tsuji polynomial does not realize `measured COR = input COR`.*
 
 ![Contact duration](bench_hertz_rebound/plots/contact_duration.png)
 
-*Contact duration vs impact velocity. DIRT and LAMMPS overlay closely. The black
-curve is elastic Hertz theory and therefore applies only to COR = 1; the damped
-model curves do not reproduce every measured damped case and are retained as an
-unresolved diagnostic, not a passing reference.*
+*Contact duration vs impact velocity. DIRT and LAMMPS overlay the Tsuji ODE curves;
+the black elastic-Hertz curve is the COR = 1 limit. Maximum DIRT–ODE error is
+1.51 %, dominated by timestep resolution.*
 
 ![Peak overlap](bench_hertz_rebound/plots/peak_overlap.png)
 
-*Peak overlap vs velocity. Dissipative cases fall below the elastic curve (energy
-lost on approach reduces penetration), up to ~22 % at low COR; the elastic anchor is
-on the line.*
+*Peak overlap vs velocity. Dissipative cases fall below the elastic curve and
+follow the Tsuji ODE; maximum DIRT–ODE error is 0.79 %. The elastic anchor sits on
+the Hertz line.*
 
-**Honest read:** **PASS only at the elastic limit and for DIRT–LAMMPS parity.**
-The damped mapping is not validated: matching implementations in DIRT and LAMMPS
-do not explain the disagreement with nominal COR or with the plotted reduced
-viscoelastic model. Before this section can claim damped Hertz validation, the
-damping convention, force cutoff near separation, and reference ODE must be
-audited together. Contact-duration resolution also carries ~1–2 % timestep
-quantization.
+**Honest read:** **PASS for the implemented Hertz–Tsuji equation and DIRT–LAMMPS
+parity.** Across 20 cases, maximum DIRT–ODE relative errors are 0.57 % in COR,
+1.51 % in contact duration, and 0.79 % in peak overlap; maximum DIRT–LAMMPS COR
+difference is 0.0015. This validates the implementation, not the naming of the
+input: a configured value of 0.5 realizes about 0.614. Anyone requiring a target
+physical COR must calibrate or replace that Tsuji mapping rather than assume 1:1.
 
 ## `fiber_bond_breakage` — coupled axial plasticity and breakage
 
@@ -338,23 +339,25 @@ non-dimensional rebound spin Rω′/Vᵢ vs incidence angle.
 
 ![Kharaz rebound/spin curves](bench_kharaz_oblique/plots/kharaz_rebound_spin.png)
 
-*Normal restitution is flat at eₙ = 0.980 across the whole 5°–80° sweep (matching
-Kharaz's measured 0.98). In the sliding regime (Θᵢ ≳ 32.5°) the rebound angle,
+*Normal restitution is flat at eₙ = 0.986 across the whole 5°–80° sweep (within
+0.006 of Kharaz's measured 0.98). In the sliding regime (Θᵢ ≳ 32.5°) the rebound angle,
 tangential restitution and spin match the exact rigid-body impulse kinematics to
 three decimals; below it DIRT traces the Maw micro-slip S-curve (eₜ minimum ≈ 0.62
-near 20°, spin peak ≈ 0.39 near 30°) — the characteristic Kharaz shape.*
+near 20°, spin peak ≈ 0.39 near 30°) — the characteristic Kharaz shape.
+Open squares are the matched LAMMPS wall-impact cases and overlay the DIRT points.*
 
 **Honest read:** the flat wall (vs the frozen sphere used by `bench_oblique_impact`)
 keeps the contact normal +z at all angles, so eₙ is exactly angle-independent — the
 faithful Kharaz geometry. The quantitative check is against the exact rigid-body
 sliding kinematics + the Maw theory Kharaz's data confirmed, anchored to Kharaz's
-**measured** scalars eₙ = 0.98 and μ = 0.092. The paper's per-point glass-anvil
-scatter lives only in its paywalled figures (no open-access copy); if digitised, it
-drops into `kharaz_experiment.csv` and is overlaid automatically. So this is the
-suite's closest tie to a physical experiment, but still not a raw-point comparison.
-There is currently no LAMMPS run in this figure; adding the matched wall-impact
-case would strengthen the cross-code evidence without replacing the experimental
-comparison.
+**measured** scalars eₙ = 0.98 and μ = 0.092. The 16-angle matched LAMMPS sweep
+uses the same wall geometry, Tsuji damping, Mindlin history, and explicit damping
+limit. Maximum DIRT–LAMMPS differences are 0.00074 in eₜ, 0.00045 in
+`Rω'/Vᵢ`, 0.0105° in rebound angle, and 0.00260 in contact-point β. The
+paper's per-point glass-anvil scatter lives only in its paywalled figures; if
+digitised, it drops into `kharaz_experiment.csv` and is overlaid automatically.
+So this is the suite's closest tie to a physical experiment, but still not a
+raw-point comparison.
 
 ## `bench_sliding_friction` — slip-to-roll transition
 
@@ -748,55 +751,37 @@ and the sweep stops at μ = 0.3 (the angle saturates above). The heap now stands
 
 ## `bench_column_collapse` — granular column runout
 
-A quasi-2D column is released on a flat frictional floor; the runout `L_f` vs aspect
-ratio `a = H/L0` is fit against the experimental scalings of Lube (2004) and Lajeunesse
-(2004): `(L_f−L0)/L0 ≈ 1.2a` for a ≲ 3, `≈ 1.6a^(2/3)` for a ≳ 3.
+A quasi-2D column is released on a flat frictional floor; the intended comparison
+is runout `L_f` versus the initial aspect ratio `a = H/L0` against Lube (2004) and
+Lajeunesse (2004). The current sweep is **not valid scientific evidence** because
+the DIRT and LAMMPS initial columns were not matched.
 
 ![Runout scaling](bench_column_collapse/plots/runout_scaling.png)
 
-*Normalized runout vs aspect ratio (log–log) with the two experimental regime lines,
-seed-averaged over 3 seeds on an 11-point sweep. Fitted exponents are 1.54 (a ≤ 3,
-target 1.0) and 0.59 (a ≥ 3, target 2/3): the power-regime exponent is inside the
-±0.25 band but the linear-regime exponent is outside it, so the benchmark **FAILs**
-its exponent gate (`sweep.py graph` exits 1).*
+*Diagnostic only. Points are now placed at the aspect ratio computed from the
+particle count actually present, not the requested case label. The separation
+between the two solvers mostly reflects different initial columns rather than a
+validated difference in collapse physics.*
 
 ![Deposit profile](bench_column_collapse/plots/deposit_profile.png)
 
 *Side view of the rest-state deposit for the representative case — with wall friction it
 comes to rest as a finite pile rather than running to the wall.*
 
-**Honest read:** **FAIL — genuine finite-size result, not a fit artifact.** Adding
-particle–wall sliding friction to `dirt_wall` fixed the earlier runaway-monolayer
-failure mode — the column now arrests as a finite pile instead of sliding to the domain
-wall — but the fitted **linear-regime exponent still lands outside the ±0.25 band**.
+**Root cause:** DIRT's random non-overlap inserter exhausted its attempts well
+before reaching the requested counts. Examples from the retained run logs are
+`79/110` particles at requested `a=0.5` and `675/1100` at requested `a=5`. The
+latter therefore had actual `a ≈ 3.07`, yet the old plot placed it at `a=5`.
+LAMMPS used a taller insertion region and placed the full count. It also ran one
+packing seed while DIRT was described as a three-seed mean. These are not
+equivalent initial conditions, so neither the pointwise solver gap nor the old
+fitted exponents support a finite-size or model conclusion.
 
-The measurement was hardened to test the earlier "fit noise" hypothesis directly. The
-three suspected artifacts — single seed, a coarse 6-point sweep, and diameter-scale
-runout quantization — were all removed: the runout is now **seed-averaged (3 seeds)**,
-the sweep is **11 points** (7 linear / 5 power), and the runout uses a **sub-diameter
-deposit-toe metric** (same physical definition — the far edge where the deposit is ≳1
-diameter tall — with the diameter-scale binning removed). **After all three fixes the
-linear exponent barely moved, 1.57 → 1.54**, with small residual seed scatter (σ ≲
-0.1–0.6). So the miss is not a measurement artifact.
-
-Two independent lines of evidence show it is a genuine **finite-size** limitation of
-this deliberately small benchmark, not a DIRT model defect:
-
-- **Front-definition dependence.** The fitted linear exponent swings with the runout
-  definition (2-layer toe ≈ 1.5; 1-diameter-connected front ≈ 0.5) because at these
-  particle counts (~80–1100, 3-grain-deep slab) the low-aspect deposits are only a few
-  grains thick with no sharp front — a system in the self-similar regime the `1.2 a`
-  law describes would not be this sensitive.
-- **Cross-code agreement.** The *identical* geometry, model, and metric in **LAMMPS**
-  (authoritative granular DEM) give linear **1.27** and power **0.97** — LAMMPS misses
-  the linear target the same way DIRT does. A code-independent miss is a property of the
-  benchmark size, not of DIRT.
-
-The reference is empirical with material-dependent prefactors, so only the exponents /
-regime change are tested. **Concrete fix path:** a substantially larger system (thicker
-slab, ~×10 more grains so the front becomes continuum-like), not more seeds. **No
-tolerance was loosened to force a pass**; the bench is retained in regression as an
-honest, visible FAIL rather than reported green.
+The harness now computes `actual_aspect = H/L0`, plots that value, and fails any
+case whose actual and requested aspect differ by more than 2%. A scientifically
+useful rerun needs one complete set of initial particle coordinates supplied to
+both codes, followed by a declared seed ensemble. Until then this benchmark is
+**WITHHELD**, not a DIRT failure and not a cross-code validation.
 
 ## `bench_lebc_shear` — Lees-Edwards homogeneous shear rheometer
 
@@ -992,11 +977,11 @@ will need a benchmark when re-added.)
 
 | Example | Reference | Tier | Status / main gap |
 |---|---|---|---|
-| hertz_rebound | Hertz + LAMMPS | analytical + cross-code | PARTIAL; elastic anchor and DIRT–LAMMPS parity pass, damped mapping unresolved |
+| hertz_rebound | Hertz–Tsuji contact ODE + LAMMPS | analytical + cross-code | PASS for implemented equation; max DIRT–ODE errors 0.57% COR / 1.51% duration / 0.79% overlap and max DIRT–LAMMPS ΔCOR 0.0015; Tsuji input is not realized COR at low values |
 | hooke_rebound | linear damped-oscillator collision (COR=e, t_c=π/ω_d, δ_max) | analytical (strong, exact) | PASS; exact closed form (not just elastic), COR/t_c/overlap ≤0.05%; velocity-independence confirmed |
 | oblique_impact | Maw 1976 + LAMMPS | analytical + cross-code (strong) | PASS; full S-curve; vs theory not raw experiment |
 | mindlin_rescale_tangential | LAMMPS documented unloading recurrence | documented law | PASS at equation level; no independently executed LAMMPS trajectory |
-| kharaz_oblique | Kharaz 2001 protocol: rigid-body kinematics + Maw, anchored to measured eₙ, μ | analytical + experiment-anchored (strong) | PASS; raw glass-anvil points and matched LAMMPS run not yet included |
+| kharaz_oblique | Kharaz 2001 protocol + Maw + LAMMPS, anchored to measured eₙ, μ | analytical + experiment-anchored + cross-code (strong) | PASS; 16 matched LAMMPS angles, max Δeₜ 0.00074 / Δspin 0.00045 / Δβ 0.00260; raw glass-anvil scatter not digitised |
 | sliding_friction | rigid-body slip-to-roll | analytical | PASS; (5/7)v₀ model-independent; a=μg partly self-consistent |
 | rolling_decay | own-model rate + LAMMPS | analytical (self-consistent) | PASS; rate derived from same model |
 | sds_rolling | own-model damped-oscillator + Coulomb cap | analytical (self-consistent) | PASS; elastic ω(t) to 0.1 %/0.56 % (springless control 2.4 %/131 %), cap slope 0.00 % |
@@ -1010,16 +995,17 @@ will need a benchmark when re-added.)
 | curtis_cantilever | Guo/Curtis flexible-fiber cantilever load curve and profiles | analytical | PASS; tip curve max error 2.988%, deflection profile 2.828%, bending-moment profile 1.791%, 0 broken bonds |
 | sphere haff | Haff law + LAMMPS | law + cross-code | PASS at curve level; clump/rod claims withheld pending multisphere energy audit |
 | angle_of_repose | empirical (none exact) | qualitative | PASS; trends only; default bounded smoke gate PASSes 4/4 with committed pass-criterion graph; full sweep stands on real frictional wall |
-| column_collapse | Lube/Lajeunesse (empirical) + LAMMPS cross-check | empirical scaling + cross-code | FAIL (genuine finite-size limit, not fit noise); linear exponent 1.54 vs 1.0 outside ±0.25 after seed-averaging + 11-pt sweep + sub-diameter metric; LAMMPS misses identically (1.27); exits 1 |
+| column_collapse | Lube/Lajeunesse (empirical) + intended LAMMPS cross-check | benchmark audit | WITHHELD; DIRT inserted only 60–72% of requested particles while LAMMPS used full counts, so old aspect labels, exponents, and cross-code conclusions are invalid |
 | lebc_shear | Lun / extended kinetic theory + LAMMPS / Fortran / LIGGGHTS | kinetic theory + cross-code | PASS for frictionless stress comparison; μ(I), Φ(I), and Walton dashboards omitted |
 | hopper_beverloo | Beverloo (empirical) + Choi/Kudrolli/Bazant quasi-2D experiment | empirical correlation / published slot exponent | PASS; exponent 1.53 vs 1.5 and published 1.48; prefactor untested |
 | plate_sinkage | Bekker form only | empirical / qualitative | DIAGNOSTIC; shallow trend plausible, deep-sinkage departure unresolved; no soil-specific parameter claim |
 
 ## What is not validated
 
-- **Damped Hertz restitution mapping.** DIRT and LAMMPS agree with each other,
-  but the nominal COR and reduced viscoelastic model do not fully explain the
-  measured damped response.
+- **Physical target COR from the Tsuji input.** The implemented equation is now
+  checked against its ODE and LAMMPS, but the configured Tsuji input is not the
+  realized COR at low values (0.5 gives about 0.614). Physical calibration remains
+  a separate task.
 - **Multisphere dynamics.** Clump and rod cooling show a start-up energy injection;
   clump/rod Haff and rod-shear claims are withheld pending an energy audit.
 - **Bond cantilever equilibrium.** The trace remains oscillatory, so sampling a
@@ -1030,8 +1016,9 @@ will need a benchmark when re-added.)
   finiteness, and order of magnitude; it is not scientific validation.
 - **Plate sinkage at depth.** The deep-sinkage departure is unresolved and no
   soil-specific Bekker parameters are claimed.
-- **Kharaz LAMMPS parity.** The experiment-anchored DIRT result has no matched
-  LAMMPS trajectory yet.
+- **Column collapse.** The retained sweep used incomplete DIRT insertions and
+  unmatched LAMMPS initial beds. A shared complete coordinate set is required
+  before any runout exponent or cross-code conclusion is reported.
 - **Direct experiment coverage remains sparse.** Most references are analytical,
   empirical correlations, published simulation trends, or LAMMPS. Shared-code
   agreement does not establish physical correctness.
