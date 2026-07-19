@@ -82,6 +82,7 @@ MANIFEST_NAME = "column_collapse_protocol.json"
 CASE_RECEIPT_NAME = "column_collapse_case_receipt.json"
 CAMPAIGN_LOCK_NAME = ".column_collapse_campaign.lock"
 CASE_LOCK_NAME = ".column_collapse_case.lock"
+JOB_MANIFEST_NAME = "column_collapse_jobs.tsv"
 
 # LAMMPS binary candidates, in preference order. LAMMPS is optional: if none is
 # found, the LAMMPS leg is skipped and only DIRT is run/plotted.
@@ -868,6 +869,47 @@ def generate():
         checked_protocol_manifest(write=True)
     print(f"Generated {n_cfg} configs ({len(ASPECTS)} aspects x {len(SEEDS)} seeds) "
           f"under {SWEEP_DIR}")
+
+
+def emit_jobs():
+    """Write an auditable, scheduler-neutral map for the 33 raw witnesses.
+
+    A full continuum-resolution campaign is intentionally too large to hide
+    behind one interactive invocation. This manifest is not a result and does
+    not create ``runout.csv``: it gives a batch system exactly one immutable
+    witness per row, bound to the canonical source digest that ``graph`` later
+    requires. A failed or missing row remains a fail-closed incomplete ensemble.
+    """
+    with shared_campaign_lock("emit-jobs"):
+        manifest = checked_protocol_manifest(write=True)
+        by_case = {(float(row["nominal_aspect"]), int(row["seed"])): row
+                   for row in manifest["cases"]}
+        path = os.path.join(SWEEP_DIR, JOB_MANIFEST_NAME)
+        with open(path, "w", newline="") as f:
+            writer = csv.DictWriter(
+                f,
+                fieldnames=("index", "aspect", "seed", "active_count",
+                            "active_source_sha256", "protocol_sha256", "command"),
+                delimiter="\t",
+            )
+            writer.writeheader()
+            for index, (aspect, seed) in enumerate(
+                    ((a, s) for a in ASPECTS for s in SEEDS), start=1):
+                witness = by_case[(float(aspect), int(seed))]
+                writer.writerow({
+                    "index": index,
+                    "aspect": f"{aspect:g}",
+                    "seed": seed,
+                    "active_count": witness["active_count"],
+                    "active_source_sha256": witness["active_source_sha256"],
+                    "protocol_sha256": manifest["protocol_sha256"],
+                    "command": (
+                        "python3 examples/bench_column_collapse/sweep.py "
+                        f"start --case {aspect:g},{seed}"
+                    ),
+                })
+    print(f"Wrote 33 immutable DIRT witness jobs -> {path}")
+    return path
 
 
 # ── LAMMPS leg (optional cross-code overlay) ─────────────────────────────────
@@ -2268,6 +2310,11 @@ def main():
             print("ERROR: --case is valid only with start")
             sys.exit(2)
         generate()
+    elif cmd == "emit-jobs":
+        if selected_cases is not None:
+            print("ERROR: --case is valid only with start")
+            sys.exit(2)
+        emit_jobs()
     elif cmd == "start":
         try:
             start(jobs, rerun="--rerun" in args, selected_cases=selected_cases)
@@ -2286,7 +2333,7 @@ def main():
         sys.exit(0 if graph() else 1)
     else:
         print(f"Unknown command: {cmd!r}")
-        print("Usage: sweep.py [generate|start|graph] [--jobs N] [--rerun]   (no arg = all three)")
+        print("Usage: sweep.py [generate|emit-jobs|start|graph] [--jobs N] [--rerun]   (no arg = all three)")
         sys.exit(2)
 
 

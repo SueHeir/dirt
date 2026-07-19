@@ -165,6 +165,17 @@ the unchanged exponent band. `graph` refuses any CSV whose fingerprint differs.
 This makes it impossible to graph a smooth-base, partial, or prior-material
 campaign as evidence for the rough-base protocol merely by retaining its CSV.
 
+### Distributed execution
+
+The full 11 × 3 continuum campaign is deliberately executed as 33 independent
+raw witnesses, not as a fabricated quick aggregate. After `generate`, run
+`python3 examples/bench_column_collapse/sweep.py emit-jobs`. It writes the ignored
+`sweep/column_collapse_jobs.tsv`: one scheduler-neutral command per aspect/seed,
+with its expected population, source digest, and the physical-protocol digest.
+Dispatch each row on an appropriate batch worker, then run `graph` only after all
+33 receipts exist. The manifest itself is preparation provenance, not validation
+evidence; it cannot create `runout.csv`, figures, an exponent result, or a PASS.
+
 The initializer is deliberately part of that contract. For every scheduled
 aspect/seed it writes exactly `N` active coordinates in a deterministic,
 stacking-disordered, slightly dilated fabric with centre spacings no smaller
