@@ -5,7 +5,7 @@ Granular column-collapse benchmark driver.
 Releases a quasi-2D rectangular column of grains (initial width L0, height H) on a
 flat floor for a range of aspect ratios a = H/L0, then extracts the final runout
 L_f from each settled deposit and checks the dimensionless runout against the
-experimental aspect-ratio scaling laws (Lube et al. 2004; Lajeunesse et al. 2004):
+experimental planar aspect-ratio scaling law of Lajeunesse et al. (2004):
 
     (L_f - L0)/L0 ~ 1.2 * a          (a <~ 2-3, linear regime)
     (L_f - L0)/L0 ~ 1.6 * a^(2/3)    (a >~ 3,   power-law regime)
@@ -155,8 +155,21 @@ FINE_BINS = 8              # x-cells per particle diameter (sub-diameter resolut
 GAP_TOL_D = 1.0            # a clear gap > 1 grain diameter ends the contiguous deposit
 TOE_MIN_HEIGHT_D = 1.0     # deposit toe = grain centre >= this many diameters up (>=2 layers)
 
-# Validation tolerances on the fitted runout exponent per regime. UNCHANGED — the
-# measurement is improved, the pass band is not touched.
+# External experimental reference. This quasi-2D, planar-gate benchmark must
+# not silently borrow the high-aspect *axisymmetric* Lube et al. law (whose
+# exponent is different). The two exponents and crossover below are the planar
+# relation reported by Lajeunesse, Mangeney-Castelnau & Vilotte, Phys. Fluids 16,
+# 2371–2381 (2004), doi:10.1063/1.1736611. Keep this source separate from the
+# numerical fit: DIRT output is compared to it; it does not define itself.
+EMPIRICAL_REFERENCE = {
+    "authors": "Lajeunesse, Mangeney-Castelnau & Vilotte",
+    "journal": "Physics of Fluids 16 (2004) 2371–2381",
+    "doi": "10.1063/1.1736611",
+    "geometry": "planar granular mass on a horizontal plane",
+}
+
+# Validation tolerances on the externally sourced fitted exponents. UNCHANGED —
+# the measurement is improved, the pass band is not touched.
 EXP_TOL = 0.25             # |fitted exponent - target| pass band
 LINEAR_TARGET = 1.0        # (L_f-L0)/L0 ~ a^1   for a <~ 2-3
 POWER_TARGET = 2.0 / 3.0   # (L_f-L0)/L0 ~ a^2/3 for a >~ 3
@@ -1595,7 +1608,10 @@ def validate(rows):
     print("Granular Column-Collapse Runout Validation")
     print("=" * 66)
     print(f"  L0 = {L0*1000:.1f} mm, slab W = {W*1000:.1f} mm, d = {2*RADIUS*1000:.1f} mm")
-    print(f"  E = {YOUNGS_MOD:.1e} Pa, e = {RESTITUTION}, mu = {FRICTION}\n")
+    print(f"  E = {YOUNGS_MOD:.1e} Pa, e = {RESTITUTION}, mu = {FRICTION}")
+    print(f"  External reference: {EMPIRICAL_REFERENCE['authors']}, "
+          f"{EMPIRICAL_REFERENCE['journal']}, doi:{EMPIRICAL_REFERENCE['doi']}")
+    print(f"  Reference geometry: {EMPIRICAL_REFERENCE['geometry']}\n")
     print(f"  {'a_nom':>5} {'a_rel':>6} {'H[mm]':>8} {'L_f[mm]':>9} {'(Lf-L0)/L0':>12} "
           f"{'seed_sd':>8} {'seeds':>6}")
 

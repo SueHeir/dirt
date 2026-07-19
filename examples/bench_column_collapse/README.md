@@ -2,8 +2,8 @@
 
 Releases a quasi-2D rectangular column of grains on a flat floor and measures the
 final runout `L_f` as a function of the initial aspect ratio `a = H / L0`, to test
-the experimental column-collapse scaling laws of Lube et al. (2004) and Lajeunesse
-et al. (2004). The column is held against a removable vertical **gate** wall while
+the planar experimental column-collapse scaling law of Lajeunesse et al. (2004).
+The column is held against a removable vertical **gate** wall while
 it settles, then the gate is removed at runtime (`Walls::deactivate_by_name`) and
 the column collapses and spreads. The floor is a frictional `dirt_wall` plane,
 which is what arrests the spreading deposit and sets the runout.
@@ -30,6 +30,18 @@ in the aspect ratio `a = H / L0`:
 The prefactors are experimental and material-dependent; the benchmark validates
 the **scaling exponents and the regime change**, not the exact constants. The
 exponents fitted per regime should approach **1** (linear) and **2/3** (power).
+
+### Reference-geometry boundary
+
+The acceptance reference is specifically the planar experiment of Lajeunesse,
+Mangeney-Castelnau, and Vilotte, *Physics of Fluids* **16** (2004), 2371–2381,
+doi:[10.1063/1.1736611](https://doi.org/10.1063/1.1736611). Its horizontal-plane,
+gate-release geometry is the applicable external reference for this quasi-2D
+benchmark. Lube et al.'s axisymmetric experiment is useful background, but its
+high-aspect scaling is not interchangeable with the planar `2/3` law and is not
+used as a second target. `graph` prints the cited external reference immediately
+before evaluating DIRT's two fitted exponents; no DIRT result is used to establish
+those target exponents.
 
 ## Material Properties
 
@@ -328,10 +340,12 @@ particle–particle tangential path in `dirt_granular`.
 
 ## References
 
-1. G. Lube, H.E. Huppert, R.S.J. Sparks, M.A. Hallworth, "Axisymmetric collapses
-   of granular columns", *J. Fluid Mech.* 508 (2004) 175–199.
-2. E. Lajeunesse, A. Mangeney-Castelnau, J.P. Vilotte, "Spreading of a granular
-   mass on a horizontal plane", *Phys. Fluids* 16 (2004) 2371–2381.
+1. E. Lajeunesse, A. Mangeney-Castelnau, J.P. Vilotte, "Spreading of a granular
+   mass on a horizontal plane", *Phys. Fluids* 16 (2004) 2371–2381,
+   doi:10.1063/1.1736611. This is the acceptance reference.
+2. G. Lube, H.E. Huppert, R.S.J. Sparks, M.A. Hallworth, "Axisymmetric collapses
+   of granular columns", *J. Fluid Mech.* 508 (2004) 175–199. Background only;
+   its axisymmetric regime must not be substituted for the planar target.
 3. N.J. Balmforth, R.R. Kerswell, "Granular collapse in two dimensions",
    *J. Fluid Mech.* 538 (2005) 399–428.
 

@@ -1,6 +1,7 @@
 //! bench_column_collapse — validates granular column-collapse runout scaling
-//! against the experimental aspect-ratio laws of Lube et al. (2004) and
-//! Lajeunesse et al. (2004).
+//! against the planar experimental aspect-ratio law of Lajeunesse et al.
+//! (2004), doi:10.1063/1.1736611. The high-aspect axisymmetric law of Lube et
+//! al. is deliberately not used: this is a quasi-2D planar-gate benchmark.
 //!
 //! A quasi-2D rectangular column of grains (initial width L0, height H) is held
 //! against a vertical gate wall on a flat floor. Stage 1 ("settle") lets the
