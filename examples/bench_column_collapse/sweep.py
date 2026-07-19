@@ -717,11 +717,21 @@ poisson_ratio = {poisson}
 restitution = {restitution}
 friction = {friction}
 
+[[dem.materials]]
+# Same glass contact law as the released grains.  This distinct type exists
+# solely to make the frozen rough boundary's membership survive atom sorting;
+# it is not a second material model.
+name = "rough_glass"
+youngs_mod = {youngs:.6e}
+poisson_ratio = {poisson}
+restitution = {restitution}
+friction = {friction}
+
 [[particles.insert]]
 source = "file"
 file = "{rough_base}"
 format = "csv"
-material = "glass"
+material = "rough_glass"
 radius = {radius}
 density = {density}
 columns = {{ x = 0, y = 1, z = 2 }}
@@ -737,8 +747,12 @@ columns = {{ x = 0, y = 1, z = 2 }}
 
 [[group]]
 name = "rough_base"
-region = {{ type = "block", min = [-1.0, -1.0, -1.0], max = [1.0, 1.0, {base_select_z}] }}
-dynamic = false
+# A static spatial mask is invalid after atom sorting: its index membership
+# follows slots rather than the frozen grains.  Rebuild by the dedicated,
+# physically identical rough-base type each step so the support stays fixed.
+# DIRT material type IDs are zero-based; ``rough_glass`` is declared first.
+type = [0]
+dynamic = true
 
 [[freeze]]
 group = "rough_base"

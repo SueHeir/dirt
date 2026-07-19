@@ -13,6 +13,12 @@ SPEC.loader.exec_module(SWEEP)
 
 
 class SourceCompactionBudgetTests(unittest.TestCase):
+    def test_generated_config_uses_type_tracked_rough_base(self):
+        """The rough support must not lose freeze membership after sorting."""
+        self.assertIn('material = "rough_glass"', SWEEP.TOML_TEMPLATE)
+        self.assertIn('type = [0]', SWEEP.TOML_TEMPLATE)
+        self.assertIn('dynamic = true', SWEEP.TOML_TEMPLATE)
+
     def test_source_height_compensates_deliberate_fcc_clearance(self):
         # This validates only the prescribed initial geometry; every dynamic
         # witness still has to pass its measured 2% release-aspect gate.

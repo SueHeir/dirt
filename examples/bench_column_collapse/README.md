@@ -120,6 +120,9 @@ those target exponents.
   below is only a containment support, not a mid-runout boundary change. The
   fixed layer is excluded from the released height and deposit silhouette. A
   smooth Coulomb plane (or a square bead grid) is not interchangeable with it.
+  The base uses a separate but physically identical material type solely so its
+  dynamic group membership follows atom sorting; a static spatial group can
+  otherwise freeze whichever particles later occupy its original slots.
 
 ## Validation Criteria
 
