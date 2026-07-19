@@ -1,221 +1,158 @@
-# DIRT
+# DIRT: Discrete-element Interaction-Resolved Toolkit
+
+**A modular, parallel discrete-element-method solver for granular materials,
+rigid clumps, bonded particles, and fibers.**
 
 <!-- disclaimer-banner -->
-> **Research-software status:** This ecosystem is AI-authored and under active evaluation. DIRT's DEM claims are accompanied by reproducible analytical, cross-code, or empirical evidence; repositories prefixed `dev_` are experimental method demonstrations outside the author's domain expertise. See [DISCLAIMER.md](DISCLAIMER.md) and [examples/VALIDATION.md](examples/VALIDATION.md).
+> **Research-software status:** This ecosystem is AI-authored and under active
+> evaluation. DIRT's DEM claims are accompanied by reproducible analytical,
+> cross-code, or empirical evidence; repositories prefixed `dev_` are
+> experimental method demonstrations outside the author's domain expertise. See
+> [DISCLAIMER.md](DISCLAIMER.md) and
+> [examples/VALIDATION.md](examples/VALIDATION.md).
 <!-- /disclaimer-banner -->
 
+DIRT is a ground-up Rust DEM implementation built around replaceable physics
+plugins. It provides particle and material data, contact mechanics, walls,
+bonds, rigid multisphere bodies, loading, diagnostics, distributed execution,
+and reproducible validation examples as one usable simulation code.
 
-**A granular-DEM solver that runs as a complete code today, built on a
-composition-oriented simulation stack.**
+## What DIRT provides
 
-DIRT — the *Discrete-element Interaction-Resolved Toolkit* — provides contact,
-walls, bonds, clumps, integration, diagnostics, and validated DEM examples. Its
-unusual property is not simply that those capabilities are Rust plugins. It is
-that DIRT shares its state, lifecycle, and schedule model with the rest of the
-GRASS ecosystem.
+### Particles and materials
 
-Run DIRT as a standalone DEM application, and add or replace its DEM physics as
-ordinary systems. Cross-substrate cases live in dedicated `dev_couple_*` repos,
-where the exchange and validation can be assessed independently. The current
-DEM-CFD repo includes a resolved bonded-fiber case using DIRT and an unresolved
-SOIL-particle path; see
-[`cfd_ibm_fiber`](https://github.com/SueHeir/dev_couple_dem_cfd/tree/main/examples/cfd_ibm_fiber)
-and the distributed
-[`routed_trajectory_3x2`](https://github.com/SueHeir/dev_couple_dem_cfd/blob/main/crates/dem_cfd/tests/routed_trajectory_3x2.rs)
-ownership-crossing test.
+- Spherical particles with per-type material properties and material-pair
+  mixing.
+- Fixed, uniform, and discrete particle-radius distributions.
+- Random, lattice, rate-based, CSV, LAMMPS-data, and LAMMPS-dump insertion.
+- Rigid multisphere clumps for representing nonspherical bodies.
+- Translational and rotational dynamics.
 
-DIRT is a ground-up Rust reimplementation building on roughly two years of prior
-DEM development (formerly MDDEM).
+### Contact mechanics
 
-## A simulation is a few plugins you assemble in Rust
+- Hertz–Tsuji nonlinear normal contact.
+- Hooke linear spring-dashpot contact.
+- MDR elastic-plastic normal contact.
+- Mindlin tangential history, history-free tangential response, and
+  LAMMPS-style Mindlin unloading-rescale variants.
+- Coulomb sliding with rolling and twisting resistance.
+- JKR and DMT adhesion, SJKR cohesion, and Willett liquid-bridge cohesion where
+  supported by the selected contact and boundary path.
 
-You build a DIRT program by composing plugins from the crate prelude. Here is a
-complete settling-bed solver:
+Not every model combination is meaningful or implemented. The contact
+documentation records important boundaries, including adhesion support by
+contact model and differences between plane and curved walls:
+[Contact Models](docs/src/physics/contact.md).
+
+### Boundaries, loading, and control
+
+- Plane, cylinder, sphere, cone, and region-surface walls.
+- Tangential wall friction and rolling/twisting resistance.
+- Moving, named, activated, and servo-controlled boundaries.
+- Gravity, Cundall damping, viscous damping, prescribed motion, freeze/pin,
+  integration limiting, and applied-force fixes.
+- Periodic, fixed, shrink-wrapped, deforming, and Lees–Edwards domains supplied
+  by the underlying particle infrastructure.
+
+### Bonded particles and fibers
+
+- Beam-like normal, shear, bending, and twisting bond response.
+- Elastic and elastoplastic axial and bending behavior.
+- Stress- and strain-based breakage, including statistical strength models.
+- Bond creation, sintering, and bonded-fiber configurations.
+
+### Diagnostics and output
+
+- Per-contact geometry and force output.
+- Coordination number, fabric tensor, and rattler analysis.
+- Measurement planes for particle counts, mass flow, flux, and profiles.
+- Thermodynamic output, VTP visualization, text/binary dumps, and restart files.
+- Examples for hopper flow, shear, impact, granular cooling, clumps, bonded
+  specimens, and other DEM workflows.
+
+## Two ways to run DIRT
+
+### Assemble a simulation in Rust
+
+A DIRT application is a set of plugins chosen for one problem:
 
 ```rust
 use dirt_core::prelude::*;
 
 fn main() {
     let mut app = App::new();
-    app.add_plugins(CorePlugins)            // I/O, comm, domain, neighbors, run loop
-       .add_plugins(GranularDefaultPlugins) // Hertz–Mindlin contact + Velocity Verlet
-       .add_plugins(GravityPlugin)          // opt into the physics you want …
-       .add_plugins(WallPlugin);            // … one plugin at a time
+    app.add_plugins(CorePlugins)            // domain, particles, comm, neighbors, I/O
+       .add_plugins(GranularDefaultPlugins) // contact, rotation, Velocity Verlet
+       .add_plugins(GravityPlugin)
+       .add_plugins(WallPlugin);
     app.start();
 }
 ```
 
-That is the whole point of the stack: **a plugin is just a set of systems, and a
-system is just a function.** When you need physics that isn't in the box, you
-write it as one more function and `add_update_system` it — the scheduler injects
-the typed state it asks for (`Res<Atom>`, `ResMut<Walls>`, …) and the substrate
-handles decomposition, so the same code runs serial or across MPI ranks. Learn
-these seams once and you can write the physics *you* need — and the same mental
-model carries to any other solver on the stack. The
-[Your First Simulation](docs/src/getting-started/first-simulation.md) walk-through
-adds a real custom system (remove a blocker wall when the bed goes quiet) in a
-dozen lines.
+A plugin registers state and scheduled systems. Custom physics or measurements
+are ordinary Rust functions added at the appropriate typed DEM phase. The
+[Your First Simulation](docs/src/getting-started/first-simulation.md) tutorial
+walks through a complete example and adds a custom system.
 
-## Why this architecture matters for DEM
+### Run a declarative scenario
 
-DEM is frequently one half of a larger problem: particles interact with a fluid,
-deformable structure, thermal field, electrostatic field, or continuum model. If
-the DEM code owns a private timestep driver and private state model, every
-coupling begins as an integration project.
+The prebuilt `run` example assembles the common plugin stack and reads geometry,
+materials, insertion, walls, forces, and loading from TOML:
 
-DIRT is organized around a common composition layer:
-
-- SOIL owns reusable parallel particle infrastructure.
-- DIRT owns DEM physics.
-- GRASS owns scheduling, lifecycle, I/O, and solver composition.
-- A dedicated coupling repo owns the exchange between participating solvers.
-
-Validation remains essential evidence for individual DEM claims, but it is not
-evidence of an unbuilt coupling capability. The architecture keeps the relevant
-solver seams explicit; whether they support a particular coupling remains to be
-demonstrated in a dedicated, validated case.
-
-In those coupled runs, DIRT remains an ordinary App. The parent coupling code
-reads public resources between ticks (or named exported scheduler seams); DIRT
-systems do not reach sideways into another child App. A TOML topology can assign
-roles and ranks to the same executable, so local and MPI layouts do not require
-separate solver programs.
-
-> Prefer config files to code? A prebuilt driver runs the shipped scenarios and
-> parameter sweeps from TOML with no recompile — see
-> [Run scenarios and sweeps from config](#run-scenarios-and-sweeps-from-config-no-recompile).
-> It's a convenience for canned runs, not the main path.
-
-## Trust: what's actually validated
-
-DIRT's first-class feature is that it tells you where to believe it. It ships a
-suite of `bench_*` validation examples under [`examples/`](examples/); each
-couples a small simulation to an **independent** reference and checks measured
-quantities against it with explicit tolerances. Every benchmark's `sweep.py graph`
-step prints a **PASS/FAIL** verdict, so the suite is a regression net — not a
-gallery of runs that happen to pass.
-
-Each benchmark is graded by how strong its evidence is:
-
-- **Analytical** — agreement with a closed-form result (Hertz contact duration,
-  Euler–Bernoulli beam deflection, Haff's `T_g ∝ t⁻²` cooling).
-- **Cross-code** — agreement with **LAMMPS** on the same problem. This tests
-  implementation consistency under a *shared* contact model, not correctness
-  against physical reality.
-- **Empirical / law / qualitative** — agreement with a scaling exponent or a
-  fitted correlation (Beverloo discharge, angle of repose vs. friction).
-
-And each one says plainly where it is weak — an idealization, an empirical fit, a
-check that is really self-consistent (a model returning its own input), or a
-regime the run never reaches. Some benchmarks are still **red on purpose**
-(`bench_column_collapse` FAILs its exponent gate today), and that's left visible
-rather than tuned away. There is no comparison to raw experimental data in the
-suite; the closest tie is `bench_kharaz_oblique`, anchored to Kharaz et al.'s
-measured restitution and friction.
-
-**These tests catch real bugs.** The oblique-impact validation alone drove two
-contact-model fixes — a tangential damping-sign error that was injecting energy,
-and a requirement that a frozen contact partner also freeze its rotation — and
-the rebound benchmark surfaced a mislabeled damping constant.
-
-Scientific validation and cross-code evidence live in
-[`examples/VALIDATION.md`](examples/VALIDATION.md). Numerical convergence,
-reproducibility, MPI correctness, API contracts, and build compatibility live
-separately in [`examples/VERIFICATION.md`](examples/VERIFICATION.md).
-
-## The physics menu (opt in per plugin)
-
-Everything past the contact force is a plugin you add only if you want it:
-
-- **Contact** — Hertz–Mindlin normal + tangential, rolling/twisting resistance,
-  JKR/DMT-SJKR adhesion, rotational dynamics.
-- **Walls** — plane / cylinder / sphere / cone / region-surface, with Mindlin
-  wall friction and servo-controlled boundaries.
-- **Bonds** — bonded-particle beams (normal/shear/twist/bending), breakage,
-  plasticity.
-- **Clumps** — rigid multisphere composites.
-- **Fixes** — gravity, prescribed motion, pin/freeze, viscous damping,
-  add/set-force.
-- **Diagnostics** — coordination number, fabric tensor, rattlers, measurement
-  planes for flux and profiles.
-
-## Run scenarios and sweeps from config (no recompile)
-
-`examples/run` is a prebuilt driver that assembles the full plugin stack —
-contact, gravity, walls, fixes, box deformation — and reads every case-specific
-detail from a **declarative TOML config**, so you can run the shipped scenarios
-(settle, pour, cylinder pour, Lees–Edwards shear, uniaxial compression) without
-writing or recompiling any Rust:
-
-```bash
+```console
 cargo run --release --example run -- examples/run/pour_settle.toml
 ```
 
-Two things this prebuilt driver gives you that a hand-written `main.rs` does not:
+This is convenient for shipped scenarios and parameter sweeps because the same
+binary can run many configurations without recompiling. TOML selects existing
+capabilities; a new physical model still belongs in a Rust plugin.
 
-- **Toggle physics without recompiling.** A hand-written program fixes its plugin
-  set at compile time; to add walls or deformation you edit Rust and rebuild. The
-  driver pre-adds the superset, and each plugin stays inert unless its config
-  section is present — so settle → pour → shear are chosen purely by the TOML.
-- **Parameter sweeps are one binary + N configs.** Point the same binary at a
-  series of TOMLs varying volume fraction, friction, or strain rate and nothing
-  recompiles. (This is the pattern the validation suite runs — each `bench_*`
-  builds one example binary, then loops it over a config tree.) For a deformation
-  run, the declarative `[loading]` block lets the driver derive the step count
-  and own the deform loop for you.
+See [Run from a Config](docs/src/getting-started/run-from-config.md).
 
-The config is declarative throughout: you *describe* geometry, materials,
-insertion, walls, body forces, and loading; you never *script* a step sequence.
-Reach for a custom plugin instead when you need physics or a measurement the
-shipped stack doesn't already have. Details:
-[Run from a Config](docs/src/getting-started/run-from-config.md).
+## Parallel particle execution
 
-## The stack
+DIRT uses SOIL for the spatial machinery beneath its DEM physics:
 
-DIRT is the top tier of a three-repo stack; each tier depends only on the ones
-below it and knows nothing about the tiers above:
+- MPI domain decomposition and local particle ownership;
+- particle migration and ghost exchange;
+- forward state replication and reverse force/torque accumulation;
+- bin-based neighbor construction and rebuild decisions;
+- restart-safe registered particle data;
+- double, mixed, and single-precision modes.
 
-```
-GRASS    framework: App, Plugin, Scheduler, IO, coupling      (no particles)
-  └─ SOIL   substrate: Atom, domain decomposition, comm, neighbor lists   (no physics)
-       └─ DIRT   DEM physics: contact, bonds, walls, clumps   ← you are here
-```
+The same scheduled DEM systems run in a single process or over distributed
+subdomains. MPI is enabled by default; a no-MPI build is available for local use.
 
-## How the three fit together
+## Scientific evidence
 
-GRASS gives you the `App`/scheduler/coupling; SOIL turns that into a parallel
-particle substrate via one `AtomData` contract; DIRT adds a focused,
-LAMMPS-compared granular-DEM physics tier.
+DIRT keeps scientific validation separate from numerical and software
+verification:
 
-One line per tier, worded identically wherever these three repos describe
-themselves:
+- [Scientific Validation](examples/VALIDATION.md) contains analytical,
+  experimental/empirical, and independently executed cross-code comparisons.
+- [Numerical and Software Verification](examples/VERIFICATION.md) contains
+  convergence, reproducibility, MPI, restart, API, and build checks.
 
-- **[GRASS](https://github.com/SueHeir/grass)** — Build solvers as composable
-  plugins instead of a hand-rolled main loop — explicit time-stepping or a
-  single implicit global solve, particles or a mesh — and couple several
-  together, in-process or across MPI.
-- **[SOIL](https://github.com/SueHeir/soil)** — Write your own particle method
-  without hand-writing domain decomposition, halo exchange, migration, and
-  neighbor lists — declare your state once, SOIL carries it through all of it.
-- **[DIRT](https://github.com/SueHeir/dirt)** — A LAMMPS-validated granular-DEM
-  engine, easily extended by composing Rust plugins on the GRASS framework.
+Cross-code agreement with LAMMPS tests consistency under a shared model; it is
+not automatically evidence that the model represents a real material. Empirical
+scaling checks are likewise identified separately from closed-form validation.
+Known failures and withheld comparisons remain visible instead of being tuned
+away.
 
-**Where to start:** to *run* granular simulations, start at
-[DIRT](https://github.com/SueHeir/dirt), the batteries-included physics tier; to
-*write your own* particle method or solver, start at
-[SOIL](https://github.com/SueHeir/soil) (the particle substrate) or
-[GRASS](https://github.com/SueHeir/grass) (the framework). The full walkthrough
-of how the tiers compose — one timestep end to end, and where the seams are — is
-the canonical [How the stack fits together](https://sueheir.github.io/grass/stack/how-the-stack-fits-together.html)
-page in the GRASS book.
+The evidence covers important parts of the code, including elastic and damped
+impact, tangential response, rotational resistance, adhesion/cohesion,
+bonded-particle mechanics, granular flow, and distributed execution. It does not
+make every implemented feature experimentally validated. Consult the ledgers
+before relying on a particular model combination.
 
 ## Install
 
-You need **Rust** (stable, 2021 edition or newer; [rustup.rs](https://rustup.rs)).
-You do *not* need to check out GRASS or SOIL — DIRT pulls them from GitHub during
-the build.
+You need stable [Rust](https://rustup.rs/). DIRT pulls GRASS and SOIL during the
+build.
 
-```bash
+For a single-process build with double precision:
+
+```console
 git clone https://github.com/SueHeir/dirt
 cd dirt
 cargo run --release --example hello_bed \
@@ -223,46 +160,63 @@ cargo run --release --example hello_bed \
   -- examples/hello_bed/config.toml
 ```
 
-The default feature set is `["mpi_backend", "precision-double"]`.
-`--no-default-features` turns off `mpi_backend` and builds a single-process
-binary — the fastest way to get running, with no C compiler or MPI library
-required — but it also drops `precision-double`, which the solver requires, so
-you re-add it explicitly with `--features precision-double`. Drop
-`--no-default-features` entirely once you have an MPI toolchain and want
-multi-rank domain-decomposed runs:
+The default features enable MPI and double precision. With an MPI toolchain:
 
-```bash
-cargo build --release           # mpi_backend on by default
+```console
+cargo build --release
 mpirun -np 4 ./target/release/examples/hopper examples/hopper/config.toml
 ```
 
-Full details, including using DIRT as a library dependency, are in
-[Installation & Building](docs/src/getting-started/installation.md).
+See [Installation and Building](docs/src/getting-started/installation.md) for
+library dependencies, feature selection, and MPI requirements.
 
-## Crate map (reference)
+## Crate map
 
-`dirt_core` is the batteries-included umbrella crate — depend on that and you get
-the prelude plus the plugin groups. The rest are the individual physics tiers,
-useful when you want to reach for one directly:
+`dirt_core` is the batteries-included umbrella crate. The other crates expose
+individual pieces for applications that need direct control:
 
-| crate | role |
+| Crate | Role |
 |---|---|
-| [`dirt_core`](crates/dirt_core/README.md) | umbrella: `CorePlugins`, `GranularDefaultPlugins`, prelude |
-| [`dirt_atom`](crates/dirt_atom/README.md) | per-atom DEM data (`DemAtom`), materials, particle insertion |
-| [`dirt_granular`](crates/dirt_granular/README.md) | Hertz/Mindlin contact, rolling/twisting, adhesion, rotational dynamics |
-| [`dirt_wall`](crates/dirt_wall/README.md) | plane/cylinder/sphere/cone/region-surface walls, with Mindlin wall friction |
-| [`dirt_bond`](crates/dirt_bond/README.md) | bonded-particle model: normal/shear/twist/bending beam, breakage, plasticity |
-| [`dirt_clump`](crates/dirt_clump/README.md) | multisphere/clump rigid composites |
-| [`dirt_contact_analysis`](crates/dirt_contact_analysis/README.md) | coordination number, fabric tensor, rattlers |
-| [`dirt_measure_plane`](crates/dirt_measure_plane/README.md) | measurement planes for flux/profiles |
-| [`dirt_fixes`](crates/dirt_fixes/README.md) | DEM group fixes: add/set force, freeze, pin, prescribed motion, viscous damping, gravity |
+| [`dirt_core`](crates/dirt_core/README.md) | prelude and core/default plugin groups |
+| [`dirt_atom`](crates/dirt_atom/README.md) | DEM particle data, materials, radius distributions, and insertion |
+| [`dirt_granular`](crates/dirt_granular/README.md) | normal/tangential contact, adhesion, rolling/twisting, and rotation |
+| [`dirt_wall`](crates/dirt_wall/README.md) | wall geometry, contact response, motion, and servo control |
+| [`dirt_bond`](crates/dirt_bond/README.md) | bonded-particle beams, plasticity, breakage, and sintering |
+| [`dirt_clump`](crates/dirt_clump/README.md) | rigid multisphere composites |
+| [`dirt_fixes`](crates/dirt_fixes/README.md) | gravity, damping, constraints, motion, and applied forces |
+| [`dirt_contact_analysis`](crates/dirt_contact_analysis/README.md) | contact records, coordination number, fabric tensor, and rattlers |
+| [`dirt_measure_plane`](crates/dirt_measure_plane/README.md) | measurement planes for counts, flow, flux, and profiles |
+| [`dirt_schedule`](crates/dirt_schedule/README.md) | typed DEM scheduler labels shared by plugins |
 | [`dirt_test_utils`](crates/dirt_test_utils/README.md) | shared test helpers |
+
+The mdBook under `docs/` contains the complete user and physics documentation.
+
+## Ecosystem
+
+DIRT is the DEM tier of a one-way dependency stack:
+
+```text
+GRASS   scientific application framework
+  └── SOIL   distributed particle infrastructure
+        └── DIRT   discrete-element-method physics and applications
+```
+
+- [GRASS](https://github.com/SueHeir/grass) provides Apps, scheduling, plugins,
+  lifecycle, configuration, and communication abstractions.
+- [SOIL](https://github.com/SueHeir/soil) provides particle storage, domains,
+  migration, ghost communication, and neighbor search.
+- DIRT owns the DEM-specific materials, contact laws, boundaries, bonds, clumps,
+  loading, diagnostics, and scientific evidence.
+
+Because these layers expose typed state and scheduled behavior, DIRT can be used
+as one component of a larger application. Such application-specific composition
+is optional and is not part of DIRT's core scientific claim.
 
 ## Citing
 
-Machine-readable metadata is in [`CITATION.cff`](CITATION.cff) (GitHub renders a
-"Cite this repository" button from it); please cite the version you ran, with
-per-version changes in [`CHANGELOG.md`](CHANGELOG.md). A JOSS paper is planned.
+Machine-readable citation metadata is in [`CITATION.cff`](CITATION.cff), with
+per-version changes in [`CHANGELOG.md`](CHANGELOG.md). Please cite the version
+you ran. A JOSS paper is planned.
 
 ## License
 
