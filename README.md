@@ -6,8 +6,7 @@ rigid clumps, bonded particles, and fibers.**
 <!-- disclaimer-banner -->
 > **Research-software status:** This ecosystem is AI-authored and under active
 > evaluation. DIRT's DEM claims are accompanied by reproducible analytical,
-> cross-code, or empirical evidence; repositories prefixed `dev_` are
-> experimental method demonstrations outside the author's domain expertise. See
+> cross-code, or empirical evidence; See
 > [DISCLAIMER.md](DISCLAIMER.md) and
 > [examples/VALIDATION.md](examples/VALIDATION.md).
 <!-- /disclaimer-banner -->
