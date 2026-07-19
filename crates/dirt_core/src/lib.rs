@@ -79,7 +79,7 @@
 //! | [`grass_scheduler`] | System scheduler with [`ScheduleSet`](grass_scheduler::ScheduleSet) ordering, hierarchical schedules |
 //! | [`grass_io`] | TOML config loading, multi-stage [`RunPlugin`](grass_io::RunPlugin), `SimClock` / `TermOut` / `Dump` plugins |
 //! | [`grass_mpi`] | MPI abstraction (`CommBackend`, `SingleProcessComm`, `MpiCommBackend`) |
-//! | [`grass_derive`] | Derive macros: `#[derive(ScheduleSet)]`, `#[derive(StageEnum)]`, `#[derive(Namespace)]` |
+//! | [`grass_derive`] | Derive macros for schedules and namespaces |
 //! | [`soil_core`] | Domain decomposition, atom data, regions, groups; re-exports `Config` / `InputPlugin` / `RunPlugin` from `grass_io` |
 //! | `neighbor` (in `soil_core`) | Bin-based neighbor list construction |
 //! | [`soil_verlet`] | Velocity Verlet time integration |
@@ -239,7 +239,6 @@ impl PluginGroup for CorePlugins {
 /// ## Shared types
 /// - [`DeformPlugin`], [`DeformConfig`], [`DeformState`] — box deformation
 /// - [`FixesPlugin`], [`GravityPlugin`] — general-purpose fixes
-/// - [`StageEnum`] — derive macro for multi-stage runs
 ///
 /// ## Core framework (via glob re-exports)
 /// - [`App`](grass_app::App), [`Plugin`](grass_app::Plugin),
@@ -279,7 +278,7 @@ pub mod prelude {
     pub use soil_fixes::{PinDef, PinRegistry, PinState, SoilFixesPlugin};
 
     // Derive macros
-    pub use grass_derive::{ScheduleSet, StageEnum};
+    pub use grass_derive::ScheduleSet;
     pub use soil_derive::AtomData;
 
     // Core framework re-exports (glob)

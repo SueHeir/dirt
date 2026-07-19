@@ -28,15 +28,8 @@ use dirt_core::prelude::*;
 use std::fs;
 use std::io::Write as IoWrite;
 
-/// Two-stage protocol: confine-and-settle, then lift-and-relax.
-#[derive(Clone, Debug, PartialEq, Default, StageEnum)]
-enum Phase {
-    #[default]
-    #[stage("fill")]
-    Fill,
-    #[stage("lift")]
-    Lift,
-}
+const FILL_STAGE: &str = "fill";
+const LIFT_STAGE: &str = "lift";
 
 /// Tracks settling and guards against writing the results file twice.
 struct ReposeTracker {
@@ -58,25 +51,18 @@ fn main() {
     app.add_plugins(CorePlugins)
         .add_plugins(GranularDefaultPlugins)
         .add_plugins(GravityPlugin)
-        .add_plugins(WallPlugin)
-        .add_plugins(StatesPlugin::new(
-            Phase::Fill,
-            ParticleSimScheduleSet::PostFinalIntegration,
-        ))
-        .add_plugins(StageAdvancePlugin::<Phase>::new(
-            ParticleSimScheduleSet::PostFinalIntegration,
-        ));
+        .add_plugins(WallPlugin);
 
     app.add_resource(ReposeTracker::new());
 
     // Stage 1: settle the column, then lift the cylinder.
     app.add_update_system(
-        lift_when_settled.run_if(in_state(Phase::Fill)),
+        lift_when_settled.run_if(in_stage(FILL_STAGE)),
         ParticleSimScheduleSet::PostFinalIntegration,
     );
     // Stage 2: wait for the heap to come to rest, then dump positions.
     app.add_update_system(
-        record_when_settled.run_if(in_state(Phase::Lift)),
+        record_when_settled.run_if(in_stage(LIFT_STAGE)),
         ParticleSimScheduleSet::PostFinalIntegration,
     );
 
@@ -110,7 +96,7 @@ fn lift_when_settled(
     comm: Res<CommResource>,
     mut walls: ResMut<Walls>,
     mut tracker: ResMut<ReposeTracker>,
-    mut next_state: ResMut<NextState<Phase>>,
+    mut run_control: ResMut<SchedulerManager>,
 ) {
     let step = run_state.total_cycle;
     // Give the column time to settle before testing; then test periodically.
@@ -121,12 +107,29 @@ fn lift_when_settled(
     if vmax < 2e-3 {
         walls.deactivate_by_name("cylinder");
         tracker.lift_step = Some(step);
-        next_state.set(Phase::Lift);
+        run_control.advance_requested = true;
         if comm.rank() == 0 {
             println!(
                 "Step {}: max speed = {:.3e} m/s — column settled, lifting cylinder",
                 step, vmax
             );
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn referenced_stages_exist_in_default_config() {
+        let config = Config::from_str(include_str!("config.toml"));
+        let stages = RunConfig::from_config(&config);
+        for expected in [FILL_STAGE, LIFT_STAGE] {
+            assert!(stages
+                .stages
+                .iter()
+                .any(|stage| stage.name.as_deref() == Some(expected)));
         }
     }
 }

@@ -9,14 +9,7 @@
 
 use dirt_core::prelude::*;
 
-#[derive(Clone, Debug, PartialEq, Default, StageEnum)]
-enum Phase {
-    #[default]
-    #[stage("filling")]
-    Filling,
-    #[stage("flowing")]
-    Flowing,
-}
+const FILLING_STAGE: &str = "filling";
 
 fn main() {
     let mut app = App::new();
@@ -24,17 +17,10 @@ fn main() {
         .add_plugins(GranularDefaultPlugins)
         .add_plugins(GranularTempPlugin) // hopper/validate.py reads data/GranularTemp.txt
         .add_plugins(GravityPlugin)
-        .add_plugins(WallPlugin)
-        .add_plugins(StatesPlugin::new(
-            Phase::Filling,
-            ParticleSimScheduleSet::PostFinalIntegration,
-        ))
-        .add_plugins(StageAdvancePlugin::<Phase>::new(
-            ParticleSimScheduleSet::PostFinalIntegration,
-        ));
+        .add_plugins(WallPlugin);
 
     app.add_update_system(
-        check_settled.run_if(in_state(Phase::Filling)),
+        check_settled.run_if(in_stage(FILLING_STAGE)),
         ParticleSimScheduleSet::PostFinalIntegration,
     );
 
@@ -47,7 +33,7 @@ fn check_settled(
     run_state: Res<RunState>,
     comm: Res<CommResource>,
     mut walls: ResMut<Walls>,
-    mut next_state: ResMut<NextState<Phase>>,
+    mut run_control: ResMut<SchedulerManager>,
 ) {
     let step = run_state.total_cycle;
     // Wait at least 1000 steps for particles to start moving, then check every 100 steps
@@ -68,12 +54,33 @@ fn check_settled(
 
     if global_ke < 1e-5 {
         walls.deactivate_by_name("blocker");
-        next_state.set(Phase::Flowing);
+        run_control.advance_requested = true;
         if comm.rank() == 0 {
             println!(
                 "Step {}: KE = {:.3e} J — particles settled, removing blocker wall",
                 step, global_ke
             );
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn referenced_stage_exists_in_all_configs() {
+        for source in [
+            include_str!("config.toml"),
+            include_str!("validate_config.toml"),
+            include_str!("validate_long_config.toml"),
+        ] {
+            let config = Config::from_str(source);
+            let stages = RunConfig::from_config(&config);
+            assert!(stages
+                .stages
+                .iter()
+                .any(|stage| stage.name.as_deref() == Some(FILLING_STAGE)));
         }
     }
 }
