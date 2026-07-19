@@ -1937,6 +1937,14 @@ def graph():
     rows = load_runout()
     lammps_rows = load_verified_lammps()
     ok = validate(rows)            # DIRT-vs-theory only; LAMMPS never gates PASS.
+    # Re-measure the raw witnesses in a separate program.  It neither imports
+    # this driver nor accepts this aggregate CSV, so a benchmark PASS needs
+    # corroboration rather than a self-referential check of one estimator.
+    observer = os.path.join(SCRIPT_DIR, "independent_observer.py")
+    observed = subprocess.run([sys.executable, observer], cwd=REPO_ROOT).returncode == 0
+    if not observed:
+        print("INDEPENDENT OBSERVER FAILED — refusing a benchmark PASS.")
+    ok = ok and observed
     if lammps_rows:
         compare_codes(rows, lammps_rows)
     else:

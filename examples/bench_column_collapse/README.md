@@ -156,6 +156,19 @@ The independently recorded release witness must confirm coverage before a fit
 is allowed. This is a preparation correction, not a change to the empirical
 reference, material, aspect range, toe metric, or ±0.25 exponent bands.
 
+### Independent observer
+
+`graph` also invokes `independent_observer.py`. This standard-library program
+does **not** import `sweep.py`, use `runout.csv`, or use its gridded toe
+measurement. It independently reads all raw release, final, terminal, and
+arrest witnesses; checks population, release width, and sustained Froude rest;
+then estimates the same stated two-layer toe by merging radius-expanded particle
+intervals with a one-diameter physical gap. It fits the same externally cited
+planar targets and unchanged ±0.25 bands. A missing witness or disagreement
+fails closed, so it is corroboration rather than a criterion engineered from the
+driver's result. The implementation was AI-assisted (2026-07-19); it is not a
+new experiment and cannot remove the need for a completed 11 × 3 campaign.
+
 ## Status — current evidence required
 
 The tracked figures are historical output and are not evidence for this full-length,
