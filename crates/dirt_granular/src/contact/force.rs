@@ -627,35 +627,43 @@ pub fn contact_force_core_views(
                 let k_roll = material_table.rolling_stiffness_ij[mat_i][mat_j];
                 let gamma_roll = material_table.rolling_damping_ij[mat_i][mat_j];
 
+                // LAMMPS SDS stores a length-valued pseudo-force displacement,
+                // driven by v_rl = R_eff (omega_rel x n), then converts the
+                // pseudo-force to a couple R_eff (n x F_roll).
+                let vrl_x = r_eff * (or_y * nz - or_z * ny);
+                let vrl_y = r_eff * (or_z * nx - or_x * nz);
+                let vrl_z = r_eff * (or_x * ny - or_y * nx);
                 // Update rolling displacement: remove normal component, integrate
                 let rd_dot_n = roll_disp_x * nx + roll_disp_y * ny + roll_disp_z * nz;
                 roll_disp_x -= rd_dot_n * nx;
                 roll_disp_y -= rd_dot_n * ny;
                 roll_disp_z -= rd_dot_n * nz;
-                roll_disp_x += roll_x * dt;
-                roll_disp_y += roll_y * dt;
-                roll_disp_z += roll_z * dt;
+                roll_disp_x += vrl_x * dt;
+                roll_disp_y += vrl_y * dt;
+                roll_disp_z += vrl_z * dt;
 
-                // Spring + dashpot torque
-                let mut tr_x = -k_roll * roll_disp_x - gamma_roll * roll_x;
-                let mut tr_y = -k_roll * roll_disp_y - gamma_roll * roll_y;
-                let mut tr_z = -k_roll * roll_disp_z - gamma_roll * roll_z;
-                let tr_mag = (tr_x * tr_x + tr_y * tr_y + tr_z * tr_z).sqrt();
-                let tau_max = mu_r * f_n_mag.abs() * r_eff;
+                let mut fr_x = -k_roll * roll_disp_x - gamma_roll * vrl_x;
+                let mut fr_y = -k_roll * roll_disp_y - gamma_roll * vrl_y;
+                let mut fr_z = -k_roll * roll_disp_z - gamma_roll * vrl_z;
+                let fr_mag = (fr_x * fr_x + fr_y * fr_y + fr_z * fr_z).sqrt();
+                let fr_max = mu_r * f_n_mag.abs();
 
-                if tr_mag > tau_max && tr_mag > TANGENTIAL_EPSILON {
+                if fr_mag > fr_max && fr_mag > TANGENTIAL_EPSILON {
                     // Cap and rescale spring displacement
-                    let scale = tau_max / tr_mag;
-                    tr_x *= scale;
-                    tr_y *= scale;
-                    tr_z *= scale;
-                    // Rescale spring: δ = (τ + γ·ω) / (-k)
+                    let scale = fr_max / fr_mag;
+                    fr_x *= scale;
+                    fr_y *= scale;
+                    fr_z *= scale;
                     if k_roll > TANGENTIAL_EPSILON {
-                        roll_disp_x = (tr_x + gamma_roll * roll_x) / (-k_roll);
-                        roll_disp_y = (tr_y + gamma_roll * roll_y) / (-k_roll);
-                        roll_disp_z = (tr_z + gamma_roll * roll_z) / (-k_roll);
+                        roll_disp_x = (fr_x + gamma_roll * vrl_x) / (-k_roll);
+                        roll_disp_y = (fr_y + gamma_roll * vrl_y) / (-k_roll);
+                        roll_disp_z = (fr_z + gamma_roll * vrl_z) / (-k_roll);
                     }
                 }
+
+                let tr_x = r_eff * (ny * fr_z - nz * fr_y);
+                let tr_y = r_eff * (nz * fr_x - nx * fr_z);
+                let tr_z = r_eff * (nx * fr_y - ny * fr_x);
 
                 dem.torque[i][0] += tr_x;
                 dem.torque[i][1] += tr_y;
@@ -1165,31 +1173,42 @@ pub fn hooke_contact_force(
                     let k_roll = material_table.rolling_stiffness_ij[mat_i][mat_j];
                     let gamma_roll = material_table.rolling_damping_ij[mat_i][mat_j];
 
+                    // SDS is LAMMPS's length-valued pseudo-force law:
+                    // v_rl = R_eff (omega_rel x n), F_roll = -k xi-gamma v_rl,
+                    // and tau = R_eff (n x F_roll).  It is not a spring in
+                    // angular displacement with a torque-valued coefficient.
+                    let vrl_x = r_eff * (or_y * nz - or_z * ny);
+                    let vrl_y = r_eff * (or_z * nx - or_x * nz);
+                    let vrl_z = r_eff * (or_x * ny - or_y * nx);
                     let rd_dot_n = roll_disp_x * nx + roll_disp_y * ny + roll_disp_z * nz;
                     roll_disp_x -= rd_dot_n * nx;
                     roll_disp_y -= rd_dot_n * ny;
                     roll_disp_z -= rd_dot_n * nz;
-                    roll_disp_x += roll_x * dt;
-                    roll_disp_y += roll_y * dt;
-                    roll_disp_z += roll_z * dt;
+                    roll_disp_x += vrl_x * dt;
+                    roll_disp_y += vrl_y * dt;
+                    roll_disp_z += vrl_z * dt;
 
-                    let mut tr_x = -k_roll * roll_disp_x - gamma_roll * roll_x;
-                    let mut tr_y = -k_roll * roll_disp_y - gamma_roll * roll_y;
-                    let mut tr_z = -k_roll * roll_disp_z - gamma_roll * roll_z;
-                    let tr_mag = (tr_x * tr_x + tr_y * tr_y + tr_z * tr_z).sqrt();
-                    let tau_max = mu_r * f_n_mag.abs() * r_eff;
+                    let mut fr_x = -k_roll * roll_disp_x - gamma_roll * vrl_x;
+                    let mut fr_y = -k_roll * roll_disp_y - gamma_roll * vrl_y;
+                    let mut fr_z = -k_roll * roll_disp_z - gamma_roll * vrl_z;
+                    let fr_mag = (fr_x * fr_x + fr_y * fr_y + fr_z * fr_z).sqrt();
+                    let fr_max = mu_r * f_n_mag.abs();
 
-                    if tr_mag > tau_max && tr_mag > TANGENTIAL_EPSILON {
-                        let scale = tau_max / tr_mag;
-                        tr_x *= scale;
-                        tr_y *= scale;
-                        tr_z *= scale;
+                    if fr_mag > fr_max && fr_mag > TANGENTIAL_EPSILON {
+                        let scale = fr_max / fr_mag;
+                        fr_x *= scale;
+                        fr_y *= scale;
+                        fr_z *= scale;
                         if k_roll > TANGENTIAL_EPSILON {
-                            roll_disp_x = (tr_x + gamma_roll * roll_x) / (-k_roll);
-                            roll_disp_y = (tr_y + gamma_roll * roll_y) / (-k_roll);
-                            roll_disp_z = (tr_z + gamma_roll * roll_z) / (-k_roll);
+                            roll_disp_x = (fr_x + gamma_roll * vrl_x) / (-k_roll);
+                            roll_disp_y = (fr_y + gamma_roll * vrl_y) / (-k_roll);
+                            roll_disp_z = (fr_z + gamma_roll * vrl_z) / (-k_roll);
                         }
                     }
+
+                    let tr_x = r_eff * (ny * fr_z - nz * fr_y);
+                    let tr_y = r_eff * (nz * fr_x - nx * fr_z);
+                    let tr_z = r_eff * (nx * fr_y - ny * fr_x);
 
                     dem.torque[i][0] += tr_x;
                     dem.torque[i][1] += tr_y;

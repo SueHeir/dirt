@@ -59,6 +59,28 @@ respectively, retaining all 1,200 particles. The shared fitter measured
 previous non-settling failure; it is adverse calibration evidence, not a full
 six-by-two campaign, an experimental comparison, or a pinned `mu_r`.
 
+### SDS pseudo-force implementation correction (2026-07-19)
+
+An independent reading of LAMMPS 22 Jul 2025 Update 4
+`GranularModel::calculate_forces` and `GranSubModRollingSDS::calculate_forces`
+found a more basic mismatch: DIRT had converted the campaign coefficients to
+the documented SDS pseudo-force units, but still integrated angular velocity
+and applied the spring result directly as a torque. LAMMPS instead integrates
+`R_eff (omega_rel x n)` as a length, caps the resulting pseudo-force at
+`mu_r |F_n|`, and applies `R_eff (n x F_roll)` as the couple. DIRT now follows
+that formulation for both particle--particle and particle--wall contacts; the
+unit regression exercises the direction, length-history spring, and Coulomb
+cap.
+
+This invalidates earlier numerical campaign observations made with the
+dimensionally inconsistent core path. An isolated post-correction
+`mu_r=0.30`, replicate-0 run qualified its fill/rest witnesses (steps 16,200
+and 33,400; 1,200 particles), but its common estimator returned **0.0000°**.
+That is an adverse single-case result, not a complete sweep, a calibrated
+coefficient, a cross-code agreement, or a glass-band pass. AI assistance was
+used to implement and test this correction; the LAMMPS source is the
+independent implementation reference, not experimental validation.
+
 ### Repository-scope boundary
 
 This is a standalone **DEM** formation study. DIRT no longer contains the SPH

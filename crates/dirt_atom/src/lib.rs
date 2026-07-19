@@ -210,10 +210,12 @@ pub struct MaterialConfig {
     /// Linear tangential stiffness for Hooke model (N/m, 0 = use Mindlin).
     #[serde(default)]
     pub kt: f64,
-    /// Rolling spring stiffness for SDS rolling model (N·m/rad, 0 = use constant model).
+    /// Rolling pseudo-force stiffness for the LAMMPS-compatible SDS rolling
+    /// model (N/m, 0 = use constant model).
     #[serde(default)]
     pub rolling_stiffness: f64,
-    /// Rolling viscous damping coefficient for SDS rolling model.
+    /// Rolling pseudo-force damping for the LAMMPS-compatible SDS rolling
+    /// model (N·s/m).
     #[serde(default)]
     pub rolling_damping: f64,
     /// Twisting spring stiffness for SDS twisting model (N·m/rad, 0 = use constant model).

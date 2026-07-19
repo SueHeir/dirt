@@ -904,11 +904,13 @@ fn sds_rolling_opposes_angular_velocity() {
 
 #[test]
 fn sds_rolling_spring_accumulates() {
-    // Pre-load rolling displacement → larger torque than zero displacement
+    // Pre-load the LAMMPS-style length-valued rolling displacement → larger
+    // torque than zero displacement. With n=x and omega=y, v_rl is -z and
+    // n x F_roll is the torque about y.
     // Use very small omega so that damping doesn't dominate and Coulomb cap isn't reached
     let radius = 0.001;
 
-    let run_with_preload = |preload_y: f64| -> f64 {
+    let run_with_preload = |preload_z: f64| -> f64 {
         let mut app = App::new();
         let mut atom = Atom::new();
         let mut dem = DemAtom::new();
@@ -929,9 +931,9 @@ fn sds_rolling_spring_accumulates() {
         atom.natoms = 2;
 
         // Pre-load rolling displacement in contact history (canonical: tag 0 < tag 1, sign=+1)
-        if preload_y != 0.0 {
+        if preload_z != 0.0 {
             let mut preload = [0.0; CONTACT_HISTORY_LEN];
-            preload[4] = preload_y;
+            preload[5] = preload_z;
             hist.contacts[0].push((1, preload, false));
         }
 
@@ -957,7 +959,7 @@ fn sds_rolling_spring_accumulates() {
     };
 
     let torque_no_preload = run_with_preload(0.0);
-    let torque_with_preload = run_with_preload(1e-5); // small preload below cap
+    let torque_with_preload = run_with_preload(-1e-8); // small length preload below cap
 
     assert!(torque_no_preload < 0.0, "should oppose omega_y");
     assert!(torque_with_preload < 0.0, "should oppose omega_y");
