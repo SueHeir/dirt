@@ -1,0 +1,6 @@
+# Regenerable simulation artifacts (also covered by the repo-root .gitignore).
+# Track only the final figures in plots/.
+data/
+sweep/
+*.log
+__pycache__/
