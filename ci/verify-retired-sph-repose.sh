@@ -69,8 +69,9 @@ if $online; then
     command -v curl >/dev/null
     command -v jq >/dev/null
     record=$(curl -LfsS 'https://api.crossref.org/works/10.1016/S0378-4371(99)00183-1' |
-        jq -r '[.status, .message.DOI, .message.title[0], .message.type] | @tsv')
-    expected=$'ok\t10.1016/s0378-4371(99)00183-1\tRolling friction in the dynamic simulation of sandpile formation\tjournal-article'
+        jq -r '[.status, .message.DOI, .message.title[0], .message.type,
+            ([.message.author[] | "\(.given) \(.family)"] | join("; "))] | @tsv')
+    expected=$'ok\t10.1016/s0378-4371(99)00183-1\tRolling friction in the dynamic simulation of sandpile formation\tjournal-article\tY.C. Zhou; B.D. Wright; R.Y. Yang; B.H. Xu; A.B. Yu'
     if [[ $record != "$expected" ]]; then
         echo "FAIL: unexpected Crossref identity: $record" >&2
         exit 1
