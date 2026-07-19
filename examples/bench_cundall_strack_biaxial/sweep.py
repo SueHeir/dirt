@@ -12,6 +12,7 @@ import math
 import os
 import subprocess
 import sys
+from protocol_admission import admission_failures
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.abspath(os.path.join(HERE, "..", ".."))
@@ -186,7 +187,7 @@ def _interpolate(points, x):
     raise RuntimeError("comparison strain lies outside a trajectory")
 
 
-def compare_independent_lammps(dirt_rows, path=LAMMPS_RESULTS):
+def compare_independent_lammps(dirt_rows, path=LAMMPS_RESULTS, *, scored=False):
     """Report a solver-to-solver response comparison without a fitted gate.
 
     The source paper does not provide a trajectory.  LAMMPS is therefore an
@@ -195,6 +196,12 @@ def compare_independent_lammps(dirt_rows, path=LAMMPS_RESULTS):
     function reports measured disagreement, which reviewers can inspect along
     with the raw external trajectory.
     """
+    failures = admission_failures()
+    if scored and failures:
+        raise RuntimeError(
+            "refusing a scored cross-code replication comparison; protocol mismatches: "
+            + ", ".join(failures)
+        )
     lammps = read(path)
     dirt = [(r["axial_strain"], r["f_v_mean"]) for r in dirt_rows
             if r["f_v_mean"] > 0.0]
@@ -283,7 +290,7 @@ def main():
     command = sys.argv[1] if len(sys.argv) > 1 else "all"
     if command == "external":
         rows = read(RESULTS)
-        comparison = compare_independent_lammps(rows)
+        comparison = compare_independent_lammps(rows, scored=True)
         print("independent LAMMPS comparison: " + "; ".join(
             f"{key}={value}" for key, value in comparison.items()
             if key not in {"dirt_normalized", "lammps_normalized"}))

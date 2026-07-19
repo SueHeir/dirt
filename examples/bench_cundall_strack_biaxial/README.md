@@ -63,12 +63,12 @@ therefore still not satisfy the replication contract.
 
 `reference/lammps/in_biaxial.lmp` is a committed, independently implemented
 LAMMPS 2-D 197-grain compression protocol. Its raw solver output is committed
-beside the deck. After `sweep.py run`, `sweep.py external` compares normalized
-axial response over strain 0.01--0.065 without fitting, selecting, or applying
-a pass allowance. The present DIRT result disagrees (correlation -0.457,
-normalized RMSE 1.870); the command exits non-zero and is evidence of
-non-reproduction, not a successful external validation. The graph renders the
-same raw comparison alongside the DIRT-only volumetric/fabric observables so a
-reader cannot mistake a recorder pass for a bulk-response replication. This
-does not meet the frozen acceptance criterion: a protocol-comparable external
-trajectory with stress, dilatancy, and fabric/contact paths remains required.
+beside the deck. `reference/lammps/protocol_admission.csv` is an executable
+equivalence ledger: dimensionality, boundaries, contact kinematics,
+preparation, loading, and every required observable must agree before any
+cross-code response score can be calculated. The existing analogue fails every
+one of those required categories, so `sweep.py external` now fails before
+scoring it; its prior r=-0.457 / normalized-RMSE=1.870 result remains a raw
+counterexample, not a validation result. This does not meet the frozen
+acceptance criterion: a protocol-comparable external trajectory with stress,
+dilatancy, and fabric/contact paths remains required.
