@@ -23,12 +23,10 @@ GRASS    framework: App, Plugin, Scheduler, IO, coupling      (no particles)
 
 ## Why split it this way
 
-The seam between SOIL and DIRT is a single contract: a physics tier registers
-its per-particle state as an `AtomData` column, and the substrate then carries
-that state through every migration, ghost exchange, and restart automatically.
-Because that contract is physics-agnostic, the *same* substrate can carry a
-completely different physics — SPH, peridynamics, your own force law — with no
-change to SOIL.
+The seam between SOIL and DIRT is a single contract: DIRT registers its DEM state
+as `AtomData` columns, and SOIL carries that state through migration, ghost
+exchange, and restart. DIRT remains the granular-DEM tier; broader substrate and
+framework extension is documented in the other two books.
 
 That is the subject of the other two books:
 

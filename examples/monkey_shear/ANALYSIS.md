@@ -83,7 +83,7 @@ the **dense-flow μ(I) plateau `μ ≈ 0.41–0.47`** at `I ≈ 0.3–1.0` — c
 
 At the **same** nominal solid fraction, shape carries far more stress:
 
-| Φ_nom | p_sphere | p_rigid | p_bpm | rigid/sph | bpm/sph |
+| Φ_nom | p_sphere | p_rigid | p_bpm | rigid/sphere | bpm/sphere |
 |------|---------|---------|-------|-----------|---------|
 | 0.05 | 1.8e-2 | 1.7e+1 | 4.5e+1† | ~970× | ~2500× |
 | 0.10 | 2.0e-1 | 4.7e+1 | 2.9e+2† | ~230× | ~1400× |

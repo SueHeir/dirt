@@ -184,9 +184,8 @@ GRASS    framework: App, Plugin, Scheduler, IO, coupling      (no particles)
 ## How the three fit together
 
 GRASS gives you the `App`/scheduler/coupling; SOIL turns that into a parallel
-particle substrate via one `AtomData` contract; DIRT is the proof that a full
-LAMMPS-validated physics tier rides it — and the same seams are open for SPH,
-peridynamics, or your own method.
+particle substrate via one `AtomData` contract; DIRT adds a focused,
+LAMMPS-compared granular-DEM physics tier.
 
 One line per tier, worded identically wherever these three repos describe
 themselves:

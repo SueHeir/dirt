@@ -1,4 +1,0 @@
-# Regenerable artifacts (also covered by the repo-root .gitignore).
-# Tracked: plots/, and the example sources (main.rs, config.toml, sweep.py, README.md).
-data/
-sweep/

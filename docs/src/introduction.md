@@ -23,9 +23,9 @@ GRASS    framework: App, Plugin, Scheduler, IO, coupling      (no particles)
 - **DIRT** adds the granular physics on top.
 
 If you want to *use* a granular DEM engine — fill a hopper, measure an angle of
-repose, validate a Hertz rebound — start here. If you want to *write your own*
-particle physics (SPH, peridynamics, your own force law), the substrate and
-framework books are where that story lives:
+repose, validate a Hertz rebound — start here. DIRT deliberately stays focused
+on DEM; lower-level substrate and framework development belongs in the other
+two books:
 
 - The [SOIL book](https://sueheir.github.io/soil) — how to add per-particle
   state and ride the substrate's communication for free.

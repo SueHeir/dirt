@@ -81,10 +81,6 @@ name = "simulation_fixture_validation"
 path = "examples/simulation_fixture_validation/main.rs"
 
 [[example]]
-name = "peri_dem_interop"
-path = "examples/peri_dem_interop/main.rs"
-
-[[example]]
 name = "measure_plane_throughput"
 path = "examples/measure_plane_throughput/main.rs"
 
@@ -231,39 +227,6 @@ path = "examples/bench_liquid_bridge_cohesion/main.rs"
 [[example]]
 name = "bench_curtis_wet_fiber_breakage"
 path = "examples/bench_curtis_wet_fiber_breakage/main.rs"
-
-# ── SPH glass-sphere calibration suite (one example per DEM closure) ──
-[[example]]
-name = "sphcal_shear_rheology"
-path = "examples/SPH_glass_sphere_calibration/01_shear_rheology/main.rs"
-
-[[example]]
-name = "sphcal_compressibility"
-path = "examples/SPH_glass_sphere_calibration/02_compressibility/main.rs"
-
-[[example]]
-name = "sphcal_angle_of_repose"
-path = "examples/SPH_glass_sphere_calibration/03_angle_of_repose/main.rs"
-
-[[example]]
-name = "sphcal_enduring_contact"
-path = "examples/SPH_glass_sphere_calibration/04_enduring_contact/main.rs"
-
-[[example]]
-name = "sphcal_cooling_dissipation"
-path = "examples/SPH_glass_sphere_calibration/05_cooling_dissipation/main.rs"
-
-[[example]]
-name = "sphcal_conductivity"
-path = "examples/SPH_glass_sphere_calibration/06_conductivity/main.rs"
-
-[[example]]
-name = "sphcal_column_collapse"
-path = "examples/SPH_glass_sphere_calibration/07_column_collapse/main.rs"
-
-[[example]]
-name = "sphcal_cooperativity_length"
-path = "examples/SPH_glass_sphere_calibration/08_cooperativity_length/main.rs"
 
 [profile.release]
 opt-level = 3

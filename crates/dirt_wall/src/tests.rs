@@ -723,13 +723,13 @@ fn make_walls_with_cylinder(cyl: WallCylinder) -> Walls {
     }
 }
 
-fn make_walls_with_sphere(sph: WallSphere) -> Walls {
+fn make_walls_with_sphere(sphere: WallSphere) -> Walls {
     Walls {
         planes: Vec::new(),
         active: Vec::new(),
         cylinders: Vec::new(),
         cylinder_active: Vec::new(),
-        spheres: vec![sph],
+        spheres: vec![sphere],
         sphere_active: vec![true],
         regions: Vec::new(),
         region_active: Vec::new(),
