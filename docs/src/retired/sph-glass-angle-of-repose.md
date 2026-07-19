@@ -50,6 +50,7 @@ completion may be inferred from this page.
 | --- | --- | --- |
 | Is the cited literature record the claimed publication? | A resolvable DOI and bibliographic metadata checked independently of the solver | **Negative control only.** Crossref resolves Zhou, Xu, Yu, and Zulli, *Rolling friction in the dynamic simulation of sandpile formation*, *Physica A* 269 (1999), DOI [10.1016/S0378-4371(99)00183-1](https://doi.org/10.1016/S0378-4371(99)00183-1). Bibliographic identity does not establish material or protocol comparability. |
 | Does that source establish the 22–26 degree glass target for this protocol? | Recoverable observations plus matching glass material, particle/surface state, vessel, formation/release procedure, and estimator | **No.** The source is a different sandpile simulation and is retained only as an incompatibility control; it is not a numerical target. |
+| Does the DOI cited by DIRT's maintained generic repose example establish a glass-hopper target? | Independently checked source identity plus recoverable matching material, apparatus, protocol, angle statistic, and uncertainty | **No.** Crossref identifies DOI [10.1073/pnas.2107965118](https://doi.org/10.1073/pnas.2107965118) as *An expression for the angle of repose of dry cohesive granular materials on Earth and in planetary environments* (Elekes & Parteli, 2021). That metadata contradicts the former glass-hopper description and supplies no admissible numerical target. |
 | Does a solver reproduce a retained campaign? | A complete, hash-bound input/seed/raw-output/fitted-angle ledger and a regenerated plot | **No current DIRT surface.** The executable and its ledger were removed with DIRT #163, so archived branch plots cannot answer this question. |
 | May a fitted coefficient cross from DIRT to an SPH solver? | The preceding evidence, unchanged monotonicity/spread/band gates, and a qualified independent-code reconciliation | **No.** There is no calibrated coefficient to transfer. |
 
@@ -97,7 +98,10 @@ python3 docs/verify_sph_repose_boundary.py \
 The second command independently reads the SPH revision's tracked example tree
 and `MaterialParams` declaration, records the exact DIRT/SPH revisions and a
 SHA-256 digest of the inspected source, then verifies the Crossref identity of
-the Zhou citation as an explicitly incompatible negative control.  The surface
+the Zhou citation as an explicitly incompatible negative control and separately
+checks the identity of the DOI cited by DIRT's maintained generic repose
+example.  Both records are non-admissions: the latter corrects an unsupported
+glass-hopper attribution and neither supplies a numerical target. The surface
 search deliberately looks for repose/calibration names rather than treating a
 generic glass example as a repose experiment; the interface check only admits a
 public rolling-contact field, not a documentation mention or an unrelated
@@ -111,6 +115,6 @@ plan.
 This retirement note and the decision to withhold a coefficient were prepared
 with AI assistance.  They are a provenance boundary, not experimental work,
 an external-reference validation, or a substitute for an independent review.
-The DOI identity check above was performed from Crossref metadata on 2026-07-19;
-it is not a reading of the paper's numerical observations and does not reduce
-the evidence requirements in this record.
+The DOI identity checks above were performed from Crossref metadata on
+2026-07-19; they are not readings of either paper's numerical observations and
+do not reduce the evidence requirements in this record.

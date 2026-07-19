@@ -12,15 +12,17 @@ also run in LAMMPS and overlaid for an informative cross-code comparison (it doe
 
 ## Experimental-comparison boundary
 
-This benchmark deliberately does **not** claim to reproduce the 20--25° angle
-reported for millimetre glass beads poured from a hopper by Elekes & Parteli,
-*PNAS* **118** (2021), e2107965118,
+This benchmark deliberately does **not** claim an experimental angle target
+from Elekes & Parteli, *An expression for the angle of repose of dry cohesive
+granular materials on Earth and in planetary environments*, *PNAS* **118**
+(2021), e2107965118,
 doi:[10.1073/pnas.2107965118](https://doi.org/10.1073/pnas.2107965118).  That
-number is an external experimental reference, but it is not a valid pass band
-for this calculation: this example releases a pre-settled column onto a flat,
-frictional floor, whereas the paper's material is prepared by pouring.  Angle of
-repose is preparation- and contact-model-dependent; in particular, the paper
-does not supply this implementation's rolling spring/dashpot/cap parameters.
+publication is relevant context, but its bibliographic metadata neither
+establishes a millimetre-glass-bead/hopper experiment nor reports an admissible
+20--25° pass band for this calculation. This example releases a pre-settled
+column onto a flat frictional floor. Angle of repose is preparation- and
+contact-model-dependent; the citation does not supply this implementation's
+rolling spring/dashpot/cap parameters.
 
 For a useful experimental validation, a new hopper protocol must be implemented
 and its *independently measured* bead size distribution, particle--particle and
@@ -31,17 +33,17 @@ and is intentionally not performed here.  The solver checks below are therefore
 limited to protocol-internal DEM behaviour, while the optional LAMMPS result is
 an independent implementation cross-check rather than an experiment.
 
-The mismatch is concrete, rather than a generic caveat.  Elekes & Parteli's
-Table 1 specifies a sliding coefficient of 0.5 and rolling coefficient of 0.05
-for its glass beads.  This benchmark deliberately sweeps sliding friction and
-uses a fixed `sds` rolling cap of 0.1; more importantly, it creates a settled
-column and releases its retaining cylinder instead of depositing grains through
-a hopper.  Consequently neither its plotted values nor its `[10°, 40°]`
-protocol-internal band may be read as a comparison with the paper's 20--25°
-observation.  A future matched benchmark must make a *single, predeclared*
-material/protocol choice and compare its replicate mean and uncertainty to the
-source's reported spread; it must fail if that comparison is unavailable or
-outside the source band.
+The mismatch is concrete, rather than a generic caveat. The DOI's title and
+metadata do not establish the former claimed glass-bead coefficients, hopper
+formation, or 20--25° observation; those assertions have been removed rather
+than inferred from a citation. This benchmark sweeps sliding friction and uses
+a fixed `sds` rolling cap of 0.1 while forming a settled column and releasing
+its retaining cylinder. Consequently neither its plotted values nor its
+`[10°, 40°]` protocol-internal band may be read as an experimental comparison.
+A future matched benchmark must make a *single, predeclared* material/protocol
+choice and compare its replicate mean and uncertainty to a recoverable source
+observation; it must fail if that comparison is unavailable or outside the
+source band.
 
 ## Physics
 

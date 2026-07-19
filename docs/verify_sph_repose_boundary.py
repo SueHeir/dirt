@@ -22,6 +22,7 @@ from pathlib import Path
 
 RETIRED = "examples/SPH_glass_sphere_calibration/03_angle_of_repose"
 DOI = "10.1016/S0378-4371(99)00183-1"
+REPOSE_DOI = "10.1073/pnas.2107965118"
 # A generic "glass" example is not a repose experiment.  Keeping it out of
 # this predicate prevents the audit from treating unrelated material examples
 # as a reason to infer a calibration surface.  Conversely, an actual repose
@@ -62,10 +63,15 @@ def inspect(paths: list[str], params_source: str) -> dict[str, object]:
     }
 
 
-def crossref_identity() -> dict[str, object]:
-    url = "https://api.crossref.org/works/" + urllib.parse.quote(DOI, safe="")
+def crossref_work(doi: str) -> dict[str, object]:
+    """Fetch a bibliographic record from the fixed Crossref API endpoint."""
+    url = "https://api.crossref.org/works/" + urllib.parse.quote(doi, safe="")
     with urllib.request.urlopen(url, timeout=20) as response:  # nosec B310: fixed HTTPS host
-        message = json.load(response)["message"]
+        return json.load(response)["message"]
+
+
+def crossref_identity() -> dict[str, object]:
+    message = crossref_work(DOI)
     title = message.get("title", [""])[0]
     venue = message.get("container-title", [""])[0]
     year = message.get("published", {}).get("date-parts", [[None]])[0][0]
@@ -75,6 +81,36 @@ def crossref_identity() -> dict[str, object]:
         raise ValueError("Crossref record does not match the declared negative-control citation")
     return {"doi": DOI, "title": title, "venue": venue, "year": year,
             "disposition": "identity_only_protocol_incompatible"}
+
+
+def generic_repose_reference_boundary() -> dict[str, object]:
+    """Independently classify the DOI cited by DIRT's generic repose example.
+
+    Crossref metadata can establish bibliographic identity, not the bead material,
+    preparation protocol, numerical angle, or an admissible calibration band.
+    The expected title deliberately guards against the prior false description of
+    this record as a hopper-poured millimetre-glass-bead experiment.
+    """
+    return classify_generic_repose_reference(crossref_work(REPOSE_DOI))
+
+
+def classify_generic_repose_reference(message: dict[str, object]) -> dict[str, object]:
+    """Classify a supplied Crossref record; kept pure for adversarial tests."""
+    title = message.get("title", [""])[0]
+    venue = message.get("container-title", [""])[0]
+    year = message.get("published", {}).get("date-parts", [[None]])[0][0]
+    expected = "An expression for the angle of repose of dry cohesive granular materials on Earth and in planetary environments"
+    if (message.get("DOI", "").lower() != REPOSE_DOI.lower()
+            or title != expected or not venue.startswith("Proceedings of the National Academy")
+            or year != 2021):
+        raise ValueError("Crossref record does not match the generic-repose citation")
+    return {
+        "doi": REPOSE_DOI,
+        "title": title,
+        "venue": venue,
+        "year": year,
+        "disposition": "identity_only_not_glass_hopper_or_numeric_target",
+    }
 
 
 def audit(dirt_repo: Path, sph_repo: Path, rev: str) -> dict[str, object]:
@@ -89,6 +125,7 @@ def audit(dirt_repo: Path, sph_repo: Path, rev: str) -> dict[str, object]:
         "sph_revision": git(sph_repo, "rev-parse", rev).strip(),
         "sph_surface": surface,
         "external_reference": crossref_identity(),
+        "generic_repose_reference": generic_repose_reference_boundary(),
     }
     if report["dirt_retired_path_present"]:
         raise ValueError("DIRT still contains the retired SPH executable; retirement claim is stale")
@@ -116,6 +153,28 @@ class BoundaryAuditTests(unittest.TestCase):
     def test_repose_executable_is_detected(self) -> None:
         result = inspect(["examples/glass_angle_of_repose/main.rs"], "pub struct MaterialParams {\n pub mu_s: f64,\n}")
         self.assertEqual(result["candidate_examples"], ["examples/glass_angle_of_repose/main.rs"])
+
+    def test_generic_reference_is_not_an_admission_token(self) -> None:
+        # This is intentionally a supplied, independently shaped Crossref
+        # record, not the function's own output used as its input.
+        record = {
+            "DOI": REPOSE_DOI,
+            "title": ["An expression for the angle of repose of dry cohesive granular materials on Earth and in planetary environments"],
+            "container-title": ["Proceedings of the National Academy of Sciences"],
+            "published": {"date-parts": [[2021, 9, 13]]},
+        }
+        result = classify_generic_repose_reference(record)
+        self.assertEqual(result["disposition"], "identity_only_not_glass_hopper_or_numeric_target")
+
+    def test_generic_reference_rejects_the_old_glass_hopper_attribution(self) -> None:
+        stale = {
+            "DOI": REPOSE_DOI,
+            "title": ["Millimetre glass beads poured from a hopper"],
+            "container-title": ["Proceedings of the National Academy of Sciences"],
+            "published": {"date-parts": [[2021]]},
+        }
+        with self.assertRaises(ValueError):
+            classify_generic_repose_reference(stale)
 
 
 def main() -> int:
