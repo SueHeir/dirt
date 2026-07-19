@@ -38,7 +38,7 @@ mismatch; it does not establish a numerical angle, a material specification,
 or a contact-law parameter.  In particular, the historical 22--26 degree
 range is not admitted as a target on the strength of this lookup.
 
-For a second, non-identical check, Crossref's title-search endpoint returned
+For a second, non-identical lookup within Crossref, its title-search endpoint returned
 the target record together with a later comment and a different 2011
 simulation-validation article.  The normalized three-result list has SHA-256
 `8ce8999b561491b04d5fca581ad190426a9db12fe221c9831cff8ca0a1fe9023`:
@@ -51,6 +51,18 @@ The search confirmation reduces the risk of a mistyped DOI or title, but it is
 still bibliographic metadata, not an experimental observation.  Neither check
 is coupled to a DIRT executable, a DIRT acceptance threshold, or a fitted
 parameter, so neither can tautologically make this repository pass.
+
+## Independent index cross-check
+
+On the same date, the DOI was resolved through the separately operated
+[OpenAlex Works API](https://api.openalex.org/works/https://doi.org/10.1016/S0378-4371(99)00183-1).
+It reported the same DOI, title, year (1999), article type, and five authors
+(with expanded given names). The executable audit compares those fields to the
+Crossref DOI record. That agreement reduces the risk that this repository only
+echoes a hand-entered citation; it does **not** corroborate a glass angle, a
+rolling coefficient, experimental conditions, or solver behaviour. Both
+services are bibliographic indexes, so agreement remains a negative provenance
+control rather than scientific validation.
 
 ## Reproduction and limits
 
@@ -74,9 +86,11 @@ test:
 ci/verify-retired-sph-repose.sh --soil-sph ~/projects/dev_soil_sph --online
 ```
 
-It deliberately verifies the DOI/title/type and a separate Crossref title
-search (which must recover both the cited DOI and its published comment), not a mutable full-record
-hash; the hashes above retain the exact 2026-07-19 retrieval receipt.
+It deliberately verifies historical acceptance terms from the Git object
+immediately before removal, the DOI/title/type through both Crossref and
+OpenAlex, and a separate Crossref title search (which must recover both the
+cited DOI and its published comment), not a mutable full-record hash; the
+hashes above retain the exact 2026-07-19 retrieval receipt.
 
 This audit did **not** obtain or read the full paper, inspect a primary glass
 experiment, recover its apparatus/protocol, run a solver, or assess
