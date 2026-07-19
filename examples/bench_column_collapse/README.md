@@ -103,6 +103,12 @@ those target exponents.
 - Each case runs two stages: `settle` (80 000 steps — pack the loosely-inserted
   column against the gate) then `collapse` (1 000 000 steps / 4 s — gate removed
   on the first step, column spreads and must meet the terminal-rest criterion).
+- **Preparation dynamics.** The dense but non-overlapping source is settled with
+  Cundall global damping and a `10 µm` per-step displacement cap. Both are
+  explicitly removed before the first collapse force evaluation (and the
+  generated LAMMPS input removes its matched `damping/cundall` and `nve/limit`
+  fixes at the same boundary). They are a numerical equilibration procedure, not
+  part of the measured material model or a route to changing the runout gate.
 - The base is a frozen **hexagonally close-packed** monolayer of the same beads,
   extending from the back wall through the full 0.60 m downstream domain. This
   models a rough granular substrate throughout the possible runout; the plane

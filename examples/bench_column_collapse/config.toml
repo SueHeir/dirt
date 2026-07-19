@@ -68,6 +68,17 @@ dynamic = false
 [[freeze]]
 group = "rough_base"
 
+# Quasi-static preparation only; bench_column_collapse removes these at the
+# beginning of the collapse stage so they do not alter the measured runout.
+[[cundall]]
+group = "all"
+gamma_l = 0.8
+gamma_a = 0.8
+
+[[nve_limit]]
+group = "all"
+max_displacement = 1.0e-5
+
 [[wall]]
 type = "plane"
 point_z = 0.0

@@ -731,6 +731,20 @@ dynamic = false
 [[freeze]]
 group = "rough_base"
 
+# Numerical preparation only.  A dense, deliberately non-overlapping source
+# carries a load wave when gravity is first applied; Cundall damping and the
+# conservative displacement cap dissipate that artificial insertion transient.
+# `main.rs` removes both fixes before the gate is opened, so neither participates
+# in the measured collapse dynamics.
+[[cundall]]
+group = "all"
+gamma_l = 0.8
+gamma_a = 0.8
+
+[[nve_limit]]
+group = "all"
+max_displacement = 1.0e-5
+
 [[wall]]
 type = "plane"
 point_z = 0.0
@@ -897,7 +911,11 @@ fix             floor mobile wall/gran granular hertz/material {E} {e} {nu} tang
 fix             back mobile wall/gran granular hertz/material {E} {e} {nu} tangential mindlin NULL {tdamp} {mu} damping tsuji rolling none twisting none xplane 0.0 NULL
 fix             sides mobile wall/gran granular hertz/material {E} {e} {nu} tangential mindlin NULL {tdamp} {mu} damping tsuji rolling none twisting none yplane 0.0 {W}
 fix             gate mobile wall/gran granular hertz/material {E} {e} {nu} tangential mindlin NULL {tdamp} {mu} damping tsuji rolling none twisting none xplane NULL {L0}
-fix             integrate mobile nve/sphere
+# These two fixes are a quasi-static source-preparation aid only.  They are
+# removed together before gate release, mirroring DIRT's stage-local Cundall
+# damping and displacement cap below.
+fix             settle_damp mobile damping/cundall 0.8 0.8
+fix             integrate mobile nve/limit 1.0e-5
 # Match DIRT's sustained-quiescence evidence: the final four samples, rather
 # than one terminal dump, must all satisfy the shared Froude threshold.
 variable        speed atom sqrt(vx*vx+vy*vy+vz*vz)
@@ -914,6 +932,9 @@ write_dump      all custom {release_dump} id x y z radius modify sort id
 
 # Stage 2: remove the gate; the column collapses and spreads to rest.
 unfix           gate
+unfix           settle_damp
+unfix           integrate
+fix             integrate mobile nve/sphere
 run             {collapse_steps}
 
 write_dump      all custom {dump} id x y z radius vx vy vz modify sort id

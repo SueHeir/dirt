@@ -58,6 +58,13 @@ fn main() {
         open_gate.run_if(in_stage("collapse")),
         ParticleSimScheduleSet::PostFinalIntegration,
     );
+    // A dense source is relaxed with explicitly stage-local numerical aids.
+    // Remove them before the first collapse force evaluation: the released DEM
+    // material/contact model remains exactly the declared experimental protocol.
+    app.add_update_system(
+        end_preparation_relaxation.run_if(in_stage("collapse")),
+        ParticleSimScheduleSet::PreInitialIntegration,
+    );
     app.add_update_system(
         record_collapse_quiescence.run_if(in_stage("collapse")),
         ParticleSimScheduleSet::PostFinalIntegration,
@@ -67,6 +74,17 @@ fn main() {
 
     // Dump the final deposit once the run has finished and the bed is at rest.
     dump_deposit(&app);
+}
+
+/// Remove source-preparation damping and the transient displacement limiter.
+///
+/// Both definitions are present in the generated configuration only to settle
+/// the initially dense, non-overlapping packing.  Keeping either after release
+/// would make the runout a property of a numerical relaxation algorithm rather
+/// than the stated Hertz–Mindlin material model.
+fn end_preparation_relaxation(mut fixes: ResMut<FixesRegistry>) {
+    fixes.cundall.clear();
+    fixes.nve_limit.clear();
 }
 
 /// Deactivate the vertical gate wall on the first "collapse" step, releasing the
