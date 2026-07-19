@@ -9,19 +9,28 @@ surface; it is never a calibration pass and must not be used as one.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import subprocess
 import sys
 import unittest
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 
 RETIRED = "examples/SPH_glass_sphere_calibration/03_angle_of_repose"
 DOI = "10.1016/S0378-4371(99)00183-1"
-TARGET_RE = re.compile(r"(?:repose|calibrat|glass)", re.IGNORECASE)
-ROLLING_RE = re.compile(r"(?:rolling|mu_r|rolling_friction)", re.IGNORECASE)
+# A generic "glass" example is not a repose experiment.  Keeping it out of
+# this predicate prevents the audit from treating unrelated material examples
+# as a reason to infer a calibration surface.  Conversely, an actual repose
+# or calibration path must stop this withholding audit and trigger a new,
+# model-specific review.
+TARGET_RE = re.compile(r"(?:angle[_ -]?of[_ -]?repose|repose|calibrat)", re.IGNORECASE)
+ROLLING_FIELD_RE = re.compile(
+    r"^\s*pub\s+(?:rolling_friction|rolling_resistance|mu_r)\s*:", re.MULTILINE
+)
 
 
 def git(repo: Path, *args: str) -> str:
@@ -44,8 +53,12 @@ def inspect(paths: list[str], params_source: str) -> dict[str, object]:
     params = material_block(params_source)
     return {
         "candidate_examples": candidates,
-        "rolling_parameter_present": bool(ROLLING_RE.search(params)),
+        # Only public fields of the maintained constitutive interface count.
+        # Documentation mentions, comments, and unrelated names such as
+        # `mu_ref` must not be promoted into a rolling-contact interface.
+        "rolling_parameter_present": bool(ROLLING_FIELD_RE.search(params)),
         "material_fields": re.findall(r"pub\s+(\w+)\s*:", params),
+        "material_source_sha256": hashlib.sha256(params_source.encode()).hexdigest(),
     }
 
 
@@ -71,6 +84,7 @@ def audit(dirt_repo: Path, sph_repo: Path, rev: str) -> dict[str, object]:
     surface = inspect(sph_paths, source)
     report: dict[str, object] = {
         "audit_kind": "cross_substrate_precondition",
+        "dirt_revision": git(dirt_repo, "rev-parse", "HEAD").strip(),
         "dirt_retired_path_present": RETIRED in dirt_paths,
         "sph_revision": git(sph_repo, "rev-parse", rev).strip(),
         "sph_surface": surface,
@@ -90,6 +104,10 @@ class BoundaryAuditTests(unittest.TestCase):
         result = inspect(["examples/simple_shear/main.rs"], "pub struct MaterialParams {\n pub mu_s: f64,\n pub d: f64,\n}")
         self.assertEqual(result["candidate_examples"], [])
         self.assertFalse(result["rolling_parameter_present"])
+
+    def test_glass_name_alone_is_not_a_repose_surface(self) -> None:
+        result = inspect(["examples/glass_pour/main.rs"], "pub struct MaterialParams {\n pub mu_s: f64,\n}")
+        self.assertEqual(result["candidate_examples"], [])
 
     def test_rolling_parameter_is_detected(self) -> None:
         result = inspect([], "pub struct MaterialParams {\n pub rolling_friction: f64,\n}")

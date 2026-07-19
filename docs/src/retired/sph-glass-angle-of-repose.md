@@ -95,13 +95,18 @@ python3 docs/verify_sph_repose_boundary.py \
 ```
 
 The second command independently reads the SPH revision's tracked example tree
-and `MaterialParams` declaration, then verifies the Crossref identity of the
-Zhou citation as an explicitly incompatible negative control.  Its only
-successful outcome is `WITHHELD_NO_MAINTAINED_TARGET`; that result prevents an
-unsupported transfer but is not, and must never be reported as, a calibration
-pass.  If a future SPH revision adds either a candidate repose executable or a
-rolling-contact parameter, the audit fails closed and requires a new
-model-specific validation plan.
+and `MaterialParams` declaration, records the exact DIRT/SPH revisions and a
+SHA-256 digest of the inspected source, then verifies the Crossref identity of
+the Zhou citation as an explicitly incompatible negative control.  The surface
+search deliberately looks for repose/calibration names rather than treating a
+generic glass example as a repose experiment; the interface check only admits a
+public rolling-contact field, not a documentation mention or an unrelated
+variable name.  Its only successful outcome is
+`WITHHELD_NO_MAINTAINED_TARGET`; that result prevents an unsupported transfer
+but is not, and must never be reported as, a calibration pass.  If a future SPH
+revision adds either a candidate repose executable or a rolling-contact
+parameter, the audit fails closed and requires a new model-specific validation
+plan.
 
 This retirement note and the decision to withhold a coefficient were prepared
 with AI assistance.  They are a provenance boundary, not experimental work,
