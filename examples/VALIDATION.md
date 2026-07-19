@@ -1,33 +1,13 @@
-# DIRT Validation Status
+# DIRT Scientific Validation
 
-## ParticlesWith migration compatibility
+This document is restricted to physical/scientific validation and cross-code
+comparisons. Each included benchmark compares a DIRT simulation with an
+analytical result, experimental or empirical reference, published simulation,
+or another solver such as LAMMPS.
 
-[`particleswith_migration_validation`](particleswith_migration_validation/README.md)
-compares full emitted CSVs from isolated `origin/main` and typed-query runs for
-the representative contact/wall, BPM-bond, and clump paths. All three CSV
-hashes are identical; the figure exposes the strict `1e-15` numerical
-compatibility limit used for the visible observables.
-
-![ParticlesWith migration compatibility](particleswith_migration_validation/plots/before_after_compatibility.png)
-
-*PASS: 3/3 representative contact/wall, bond, and clump outputs are
-byte-identical before and after the migration.*
-
-## Typed scheduler contracts
-
-[`typed_schedule_validation`](typed_schedule_validation/README.md) independently
-executes five declared schedule contracts: standalone setforce, addforce/setforce
-ordering, rejection of a missing contact provider, acceptance of a supplied
-provider, and the shared Hooke/Hertz contact seam. The driver fails on any
-unexpected outcome and regenerates this result graph; it is schedule-integration
-evidence rather than a contact-physics calibration.
-
-![Typed scheduler contracts](typed_schedule_validation/plots/typed_schedule_contract.svg)
-
-This document records what the `bench_*` examples actually validate, and how to
-read each figure. Every benchmark couples a small DIRT simulation to a reference
-(an analytical result, an empirical correlation, or LAMMPS) and checks measured
-quantities against it with explicit tolerances (`sweep.py graph` prints PASS/FAIL).
+Numerical convergence, reproducibility, MPI correctness, API contracts, and
+build compatibility are tracked separately in
+[`VERIFICATION.md`](VERIFICATION.md).
 
 The intent is to be useful *and* honest: each section states the result, then says
 plainly where the test is weak — an idealization, an empirical fit, a check that is
@@ -48,66 +28,11 @@ its curve-level check is still against the rigid-body/Maw theory those experimen
 points confirmed, because the paper's per-point scatter lives only in paywalled
 figures.
 
-## `bench_guo2018_fiber_shear_cell` — source audit; replication blocked
-
-The Guo rubber-cord directory hash-binds the primary paper and its approximate
-manual Fig. 6/7 digitization. The paper's numerical setup is periodic and
-planar—not the experimental Schulze-ring annulus—and builds walls and blades
-from rigidly connected spheres under a gravity-weighted upper body. Its
-wall-sphere diameter/layout are not reported, so this
-directory intentionally contains only source and candidate-topology audits,
-not a DIRT solver draft. A completed result requires citable recovery of those
-inputs, an independently exercised sphere-built gravity-loaded assembly, six
-solver-receipted histories, measured normal-load qualification, a post-drive
-steady window, and two Fig. 6/7 comparisons at three loads plus a 64/96-mm
-sensitivity check. No solver result, figure, or PASS is committed.
-
-## `material_pair_table_validation` — typed Material compatibility
-
-The typed `Material` registration path is compared with a golden mixed-material
-pair table recorded from the pre-redesign `origin/main` implementation. It covers
-all 21 generated pair properties, including elastic, adhesion, rolling/twisting,
-MDR, and liquid-bridge mixing. The `1e-12` relative-error limit is a strict
-compatibility check rather than a physics calibration.
-
-![Typed Material pair-table compatibility](material_pair_table_validation/plots/typed_vs_legacy_pair_table.png)
-
-*PASS: 21/21 typed values match the pre-redesign golden table; the dashed line is
-the `1e-12` relative-error criterion and exact matches are drawn at the plot floor.*
-
-## `simulation_fixture_validation` — public fixture structural contract
-
-The `dirt_test_utils::SimulationFixture` builder is exercised from a standalone
-top-level example, then measured against a committed declaration of a default
-contact pair and a three-particle CSR chain. This checks nonzero synchronized
-Atom/DEM rows, `nlocal`/`natoms`, material pair-table dimensions, declared CSR
-offsets/indices, and the stable default timestep through the public API. It is a
-test-fixture integrity check, not an independent DEM physics calibration.
-
-![SimulationFixture structural contract](simulation_fixture_validation/plots/fixture_contract.svg)
-
-*PASS: 20/20 measured scalar and CSR contract checks match exactly; the dashed
-line is the `1e-15` relative-error pass limit.*
-
 **These benchmarks catch real bugs.** The oblique-impact validation alone drove two
 contact-model fixes — a tangential damping-sign error that was injecting energy, and
 a requirement that a frozen contact partner also have its rotation frozen — and the
 rebound benchmark surfaced a mislabeled damping constant (`SQRT_5_3` holds √(5/6)).
 So the suite is doing its job, not just decorating passing runs.
-
-**CPU precision baseline.** The archived precision sweep records deterministic
-output fingerprints for contact and bulk benchmarks under `precision-double`,
-`precision-mixed`, and `precision-single`. The machine-readable status table lives
-at `validation/cpu_precision_baseline.csv`; the human summary is
-`validation/cpu_precision_baseline.md`. Completed runs are plotted below as
-mixed/single relative signature deltas against double; non-OK runs remain explicit
-status rows instead of being dropped.
-
-![CPU precision deltas](../validation/plots/cpu_precision_deltas.png)
-
-*CPU precision fingerprint deltas for completed benchmarks. The dashed 10% line is
-a large-drift reference; `bench_granular_conductivity` is a documented timeout in
-all three precision modes, so it has no fingerprint in this baseline.*
 
 **Wall friction (recent core change).** `dirt_wall` now applies a **Mindlin
 tangential (sliding) spring with a Coulomb cap** on plane walls (using the
@@ -125,66 +50,26 @@ isolate the rotational degree of freedom under a known normal load. `rolling_dec
 no longer uses a frozen floor sphere: it now runs on a real flat wall, so
 `r_eff = R` exactly.
 
-## `bench_plate_sinkage` — plate pressure-sinkage against Bekker and published parameters
+## LAMMPS and independent-code comparisons first
 
-A flat plate is driven into a settled granular bed and the wall reaction force is
-fit to the Bekker pressure-sinkage form `p = A z^n`. The sweep keeps its existing
-checks that every case is monotone, has a good power-law fit, has a sensible
-granular exponent, and carries more total load as plate width increases. It now
-adds a cited fitted-parameter gate: the representative narrow plate `b020_mu05`
-must fall inside the sandy/loam Bekker exponent range `0.66 <= n <= 1.10` from
-NASA/TM-20250006958 Table 1, which includes LETE Sand (`n=0.79`, `kc=102
-kN/m^(n+1)`, `k_phi=5301 kN/m^(n+2)`).
+These are the most useful starting points for reading the ledger:
 
-![Published Bekker reference](bench_plate_sinkage/plots/published_bekker_reference.png)
+- [`bench_hertz_rebound`](#bench_hertz_rebound--hertzian-normal-rebound): DIRT
+  and LAMMPS agree closely, but the damped viscoelastic mapping remains unresolved.
+- [`bench_oblique_impact`](#bench_oblique_impact--tangential-contact-vs-maw-1976):
+  DIRT, LAMMPS, and the Maw theory curve.
+- [`bench_nohistory_tangential`](#bench_nohistory_tangential--history-free-tangential-law):
+  DIRT against the documented LAMMPS force law.
+- [`bench_column_collapse`](#bench_column_collapse--granular-column-runout): the
+  two solvers show the same finite-size miss rather than agreement with experiment.
+- [`bench_lebc_shear`](#bench_lebc_shear--lees-edwards-homogeneous-shear-rheometer):
+  frictionless DIRT results against kinetic theory, LAMMPS, Fortran, and LIGGGHTS.
+- [`bench_mdr_elastoplastic_normal`](#bench_mdr_elastoplastic_normal--mdr-elastic-plastic-normal-contact):
+  DIRT against the LAMMPS MDR source equations.
 
-*Normalized DIRT pressure-sinkage overlaid with the published LETE Sand Bekker
-curve, and the fitted `n` range gate. Latest run: PASS, the representative DIRT
-fit lies inside the published sandy/loam range.*
-
-![Plate pressure-sinkage](bench_plate_sinkage/plots/pressure_sinkage.png)
-
-*DIRT pressure-sinkage curves and power-law fits for all plate widths; the broad
-Bekker-form checks remain active in addition to the published-parameter gate.*
-
-**SPH glass calibration bounded smoke gates.** The SPH glass-sphere calibration
-deliverables 1, 4, and 6 are long-form calibration sweeps, so their harness default
-is now a bounded smoke gate rather than the full sweep. The summary figure in
-[`SPH_glass_sphere_calibration`](SPH_glass_sphere_calibration/README.md) shows the
-actual measured 01 shear-rheology, 04 enduring-contact, and 06 conductivity checks
-against their pass bands/criteria.
-
-![SPH glass bounded smoke gates](SPH_glass_sphere_calibration/plots/smoke_gates.png)
-
-*Latest independent revision run: 01 shear rheology PASS (2/2), 04 enduring contact
-PASS (3/3), and 06 conductivity PASS (3/3).*
-
-## `bench_curtis_wet_fiber_breakage` — wet flexible-fiber agglomerate impact
-
-A small wet BPM fiber agglomerate impacts a plane with Willett pendular
-liquid-bridge cohesion enabled between fibers and bond breakage enabled inside
-the flexible fibers. The recorder counts fiber-fiber contacts from the active
-DIRT Willett liquid-bridge force on neighbor pairs, then forms fragments from
-those active contacts plus intact intra-fiber BPM bonds. The benchmark follows
-Yang et al. (2019): breakage ratio must increase with impact velocity / modified
-Weber number, and the minimum largest-fragment mass ratio must decrease. The
-gate compares every DIRT point to the digitized Yang/Curtis Fig. 13
-modified-Weber master curve committed as
-`data/yang_curtis_fig13_digitized.csv`; the tolerance bands shown in the plot
-are `0.30` absolute breakage ratio and `0.40` absolute largest-fragment mass
-ratio. This is a small regression-scale agglomerate, not the full Table 2
-`Np = 664` prepared-agglomerate run.
-
-![Wet fiber breakage velocity trend](bench_curtis_wet_fiber_breakage/plots/breakage_vs_impact_velocity.png)
-
-*Breakage ratio and largest-fragment mass ratio across the DIRT velocity sweep.
-Latest run: PASS, 4/4 points inside the digitized Yang/Curtis Fig. 13
-modified-Weber tolerance bands.*
-
-![Wet fiber modified Weber trend](bench_curtis_wet_fiber_breakage/plots/weber_trend.png)
-
-*Same measurements against modified Weber number with the Yang/Curtis reference
-curve and tolerance bands shaded. Latest run: PASS.*
+`bench_mindlin_rescale_tangential` currently checks equations documented by
+LAMMPS, not a separately executed LAMMPS trajectory. `bench_kharaz_oblique`
+currently has no LAMMPS overlay; adding one remains useful follow-up work.
 
 ---
 
@@ -261,15 +146,17 @@ This pins the contact stiffness and the integrator.
 ![Measured vs input COR](bench_hertz_rebound/plots/cor_validation.png)
 
 *Measured restitution vs the input value, DIRT (filled) and LAMMPS (open) at four
-speeds. Points track the 1:1 line; the slight rise above it at low COR is the known
-viscoelastic-on-Hertz bias (gray curve). COR is velocity-independent, as a
-constant-`e` contact should be.*
+speeds. The two codes agree with each other, but neither follows the nominal
+input-to-output line or the plotted one-degree-of-freedom viscoelastic model at
+low COR. That discrepancy is unresolved and is not counted here as physical
+validation of the damping map.*
 
 ![Contact duration](bench_hertz_rebound/plots/contact_duration.png)
 
-*Contact duration vs impact velocity (log–log) against the elastic-Hertz power law.
-Damped cases sit slightly above it (damping lengthens contact, up to ~10 % at the
-lowest COR); the COR = 1 points lie on the line.*
+*Contact duration vs impact velocity. DIRT and LAMMPS overlay closely. The black
+curve is elastic Hertz theory and therefore applies only to COR = 1; the damped
+model curves do not reproduce every measured damped case and are retained as an
+unresolved diagnostic, not a passing reference.*
 
 ![Peak overlap](bench_hertz_rebound/plots/peak_overlap.png)
 
@@ -277,24 +164,13 @@ lowest COR); the COR = 1 points lie on the line.*
 lost on approach reduces penetration), up to ~22 % at low COR; the elastic anchor is
 on the line.*
 
-**Honest read:** strong at the elastic limit. Away from it the only reference is the
-*elastic* formula (no damped closed form is checked), and the restitution comes from
-a viscoelastic damping *mapping* that is calibrated, not derived. Contact-duration
-accuracy is floored at ~1–2 % by timestep quantization.
-
-## `bench_wall_twisting_parity` — wall twisting torque parity
-
-A one-sphere contact check compares plane, cylinder, sphere, and spherical-region
-walls at the same overlap and local contact normal. The sphere is spun purely
-about the normal, so the only wall torque should be the constant twisting couple
-`tau = mu_tw |F_n| R*` inherited from the plane-wall implementation. The benchmark
-gates each geometry against that plane-law reference to round-off tolerance.
-
-![Wall twisting torque parity](bench_wall_twisting_parity/plots/wall_twisting_parity.png)
-
-*Measured wall twisting torque for plane, cylinder, sphere, and region contacts
-against the local plane-wall reference. Latest run: PASS, max relative error below
-1e-12.*
+**Honest read:** **PASS only at the elastic limit and for DIRT–LAMMPS parity.**
+The damped mapping is not validated: matching implementations in DIRT and LAMMPS
+do not explain the disagreement with nominal COR or with the plotted reduced
+viscoelastic model. Before this section can claim damped Hertz validation, the
+damping convention, force cutoff near separation, and reference ODE must be
+audited together. Contact-duration resolution also carries ~1–2 % timestep
+quantization.
 
 ## `fiber_bond_breakage` — coupled axial plasticity and breakage
 
@@ -448,7 +324,9 @@ and `linear_nohistory` remains zero when `v_t = 0`.*
 
 **Honest read:** this is an isolated force-law benchmark, not a free collision.
 That is intentional: prescribed positions remove integrator noise and expose the
-load-unload history update directly.
+load-unload history update directly. It is equation-level parity with a documented
+LAMMPS recurrence; an independently executed LAMMPS unloading trajectory has not
+yet been added.
 
 ## `bench_kharaz_oblique` — replicate Kharaz, Gorham & Salman (2001)
 
@@ -474,6 +352,9 @@ sliding kinematics + the Maw theory Kharaz's data confirmed, anchored to Kharaz'
 scatter lives only in its paywalled figures (no open-access copy); if digitised, it
 drops into `kharaz_experiment.csv` and is overlaid automatically. So this is the
 suite's closest tie to a physical experiment, but still not a raw-point comparison.
+There is currently no LAMMPS run in this figure; adding the matched wall-impact
+case would strengthen the cross-code evidence without replacing the experimental
+comparison.
 
 ## `bench_sliding_friction` — slip-to-roll transition
 
@@ -504,26 +385,6 @@ that blew up neighbor binning is gone). The `(5/7)v₀` plateau is model-indepen
 it genuinely tests the Hertz–Mindlin tangential law; `a = μg` is partly
 self-consistent (the cap is μ|Fₙ| by construction). Gross sliding only; no LAMMPS.
 
-## `bench_wall_activate_by_name` — named wall runtime reactivation
-
-A single sphere is held at fixed overlap with a named `dirt_wall` plane. The
-example samples the wall force while the wall is active, calls
-`Walls::deactivate_by_name("gate")`, then calls `Walls::activate_by_name("gate")`
-on the same resource and samples again. Geometry and material state are unchanged,
-so the deactivated window should be exactly force-free and the reactivated window
-should recover the same nonzero force as the initial active window.
-
-![Named wall force response](bench_wall_activate_by_name/plots/wall_activate_by_name_force.png)
-
-*Particle-wall normal force during active, deactivated, and reactivated windows.
-Latest run: PASS, the inactive force is zero within `1e-14` N and the reactivated
-mean force matches the initial active force within `1e-12` relative error.*
-
-**Honest read:** this is an API behavior validation for runtime wall control, not
-a new physics reference. The physical force law is already covered by the wall
-contact benchmarks; this check pins that `activate_by_name` restores participation
-in the same force path that `deactivate_by_name` removes.
-
 ## `bench_polydisperse_mixing` — per-pair mixing rules (R*, E*, e_ij, μ_ij)
 
 Single binary collisions between spheres of **unequal radius** and/or **different
@@ -545,8 +406,10 @@ to the geometric than the arithmetic mean.
 ![Mixing validation](bench_polydisperse_mixing/plots/mixing_validation.png)
 
 *Left: elastic head-on peak overlap vs Hertz theory (mixed R*, E*) — on the 1:1
-line. Right: oblique gross-sliding impulse ratio tracks the geometric mean √(μ1 μ2)
-(green), not the arithmetic mean (red).*
+line. Right: oblique gross-sliding impulse ratio tracks the configured geometric
+mean √(μ1 μ2). The arithmetic mean is shown only as a negative control: if DIRT
+were wired to the wrong common mixing rule, the points would move toward that
+line. It is not presented as a competing physical reference.*
 
 **Honest read:** analytical references, but for the model DIRT implements — this
 confirms the mixing arithmetic is wired up, not which mixing rule is physically
@@ -784,25 +647,6 @@ the fitted slope is 1.000050 GPa against 1.000001 GPa, a 0.005% relative error
 is propagated into axial force correctly for a simple uniform fiber. It is not an
 independent material calibration or fracture validation.
 
-## `bond_cantilever` — frozen-anchor bonded cantilever
-
-A 10-sphere bonded chain is anchored with `[[freeze]]` at one end and bends under
-its own weight. The example compares the latest measured free-tip deflection with
-the Euler-Bernoulli uniform-load cantilever prediction, while also requiring all 9
-bonds to remain present and all missing-partner skips to stay at zero.
-
-![Bond cantilever tip deflection](bond_cantilever/plots/tip_deflection_vs_beam.png)
-
-*Tip deflection over time from `bond_cantilever/data/cantilever.csv` against the
-Euler-Bernoulli reference. The shaded band is the ±5 % PASS criterion; the latest
-regenerated run is 0.61 % from the reference, with 9 bonds and zero
-missing-partner skips. PASS.*
-
-**Honest read:** this is an analytical small-deflection beam-theory check of the
-bonded chain's static scale and the frozen-anchor failure mode. The reference uses
-the committed 10-sphere chain mass spread over the 18 mm span, so it is not a
-continuum calibration sweep or a direct experiment.
-
 ## `bench_curtis_cantilever` — Guo/Curtis flexible-fiber cantilever
 
 A 10-sphere bonded fiber is fixed at one end and loaded by a static transverse
@@ -834,124 +678,24 @@ reference rather than this straight Euler-Bernoulli line.
 
 # Tier 2 — Free cooling (Haff's law)
 
-`bench_sphere_haff_cooling`, `bench_clump_haff_cooling`, `bench_rod_haff_cooling` each
-release a periodic box of grains with a random velocity field and let it cool through
-inelastic collisions. Because DIRT's restitution is velocity-independent (constant
-`e`), the granular temperature must follow Haff, `T(t) = T₀/(1+t/tc)²` — a `t⁻²`
-late-time decay, not the `t⁻⁵ᐟ³` viscoelastic law. The strongest statement is that
-`1/√T` is linear in `t` (the linearized law), with **R² ≈ 0.9997–0.9999**.
-
-`bench_haff_ensemble` strengthens this from a curve-shape check to a statistical
-cooling-time check: each of the three Haff cases is rerun at two deterministic
-insertion seeds, fitted for `tc`, and gated against the Enskog/Haff kinetic estimate
-`tc = 2/(ω₀√T₀)`, `ω₀ = (4/3)n d² g₀√π(1-e²)`, with Carnahan-Starling `g₀`. All
-three cases use the same `[0.5, 2.0]` band on fitted/theory `tc`. For clumps and
-rods the reference uses a bounding collision diameter; because the rate scales as
-`d²`, the factor-two band leaves room for that proxy while rejecting an
-order-of-magnitude cooling-time error.
+`bench_sphere_haff_cooling` releases a periodic box of spheres with a random
+velocity field and lets it cool through inelastic collisions. Because the
+configured restitution is velocity-independent, the expected granular
+temperature follows Haff, `T(t) = T₀/(1+t/tc)²`. The useful comparison here is
+the direct DIRT–LAMMPS overlay and the linearity of `1/√T` in time.
 
 ![Sphere Haff cooling](bench_sphere_haff_cooling/plots/haff_cooling.png)
 
-*Spheres. Left: normalized temperature vs time (log–log), DIRT and LAMMPS on the Haff
-fit. Right: the energy partition — translational and rotational temperature decaying
-together once friction populates the rotational mode.*
+*Spheres only. Normalized temperature and energy partition for DIRT, with the
+matched LAMMPS cooling curve overlaid.*
 
-![Clump Haff cooling](bench_clump_haff_cooling/plots/haff_cooling.png)
-
-*7-sphere clumps. Left: cooling **re-zeroed at the rotational-equilibration point** (the
-start-up transient is skipped); past it DIRT and LAMMPS overlay on the Haff fit. Right:
-the full partition, including the skipped transient.*
-
-![Clump inertia sampler determinism](bench_clump_inertia_sampler/plots/inertia_sampler_determinism.png)
-
-*Clump Monte Carlo inertia sampler. Left: repeated default-seed and explicit-seed
-calls have zero bitwise repeat failures. Right: seed-to-seed Monte Carlo spread for
-a single-sphere analytical reference shrinks with sample count, and every 100 000
-sample estimate stays within the 5% inertia tolerance.*
-
-![Rod Haff cooling](bench_rod_haff_cooling/plots/haff_cooling.png)
-
-*4-sphere rods (asymmetric inertia). Same construction; the harness tracks the
-linearized Haff cooling law and the late-time slope, with the optional LAMMPS overlay
-when the local binary has the required rigid-molecule packages.*
-
-![Haff ensemble cooling-time distribution](bench_haff_ensemble/plots/haff_ensemble.png)
-
-*Seeded Haff ensemble. Left column: DIRT seeded realizations and the optional LAMMPS
-comparison where the local binary can run the matched case. Middle: residuals of the
-linearized Haff fit. Right: fitted `tc` divided by the kinetic-theory estimate; the
-orange band is the PASS interval. Latest run: PASS for all 39 checks.*
-
-**Honest read:** the cooling *form* is well supported (`1/√T` linear, **R² ≈ 0.9987–0.9999**
-on every run of all three benches), but the **−2 asymptote is only approached over finite
-time** — these dilute gases cool to a finite `t/tc`, where the *local* log-log slope is
-still short of −2. Spheres and clumps cool far enough (`t/tc ≈ 5` and `≈ 11`, slopes ≈
-**−1.88** and **−1.79**) to land inside the `−2.3 < slope < −1.6` gate and **PASS**.
-The rod bench now uses a longer 1.6M-step run and reaches a deeper tail:
-the current run passes 6/6 with **R² = 0.9999** and slope **−1.841 at `t/tc = 12.9`**
-against the unchanged gate. If automation reports a rod slope near **−1.59** at
-only `t/tc ≈ 5.6`, it is running a stale 700k-step checkout, not the current
-benchmark configuration. The ensemble gate now checks that the median fitted
-`tc/theory` is finite and inside the declared kinetic-theory band: spheres pass at
-median **0.51** (range 0.50–0.51), clumps at **0.57** (0.52–0.61), and rods at
-**1.54** (1.35–1.73). A many-body gas is chaotic, so only
-curve-level and distribution-level agreement is meaningful. For clumps/rods the LAMMPS cross-check is
-**calibrated** (the rigid velocity projection otherwise starts LAMMPS ~4× hotter)
-and compared **past the rotational transient**; different rigid integrators leave a
-small residual. The claim is "same cooling law," not identical dynamics.
-
----
-
-# Tier 2b — Config-level reproducibility
-
-`bench_clump_insertion_determinism` runs the actual config/setup path for
-`[[clump.insert]]` through `ClumpPlugin` and `clump_insert_atoms`, writes the
-inserted atom/body fingerprint, and byte-compares repeated runs.
-
-![Clump insertion determinism](bench_clump_insertion_determinism/plots/clump_insertion_determinism.png)
-
-*Same-seed runs are byte-identical (max bit-fingerprint delta = 0); changing the
-seed produces a non-zero state divergence. PASS means the production setup path,
-not just a lower-level helper, is seeded.*
-
-**Honest read:** this is a reproducibility/regression gate, not a physics
-validation. It proves deterministic clump positions, velocities, and random
-orientations for the same config and catches any return to entropy-seeded
-insertion in the setup system.
-
-`SPH_glass_sphere_calibration/03_angle_of_repose` records the per-case inserter
-seeds used by the rolling-friction calibration sweep. Its `seed-check` command
-compares generated config SHA-256 fingerprints for a same-base-seed rerun, a
-manifest replay, and a changed-base campaign.
-
-![SPH glass angle-of-repose seed manifest reproducibility](SPH_glass_sphere_calibration/03_angle_of_repose/plots/seed_reproducibility.png)
-
-*Same base seed and manifest replay reproduce all 12 per-case configs
-byte-identically; changing the base seed reproduces none of the config hashes or
-per-case seeds. PASS means the calibration campaign can be regenerated exactly
-from its base seed or manifest, while distinct replicates remain independent.*
-
-`SPH_glass_sphere_calibration/08_cooperativity_length` is intentionally **not**
-listed as a validation gate. The example can generate exploratory DEM estimates
-of the nonlocal cooperativity amplitude `A` and the `g∝sqrt(T)` bridge, but there
-is not yet an independent reference value or justified tolerance for this exact
-geometry. Its default `sweep.py` path therefore reports `SKIPPED` without data
-instead of producing the old zero-duration "no data" FAIL; restoring it to the
-suite requires a bounded criterion rather than a positive-amplitude or loose-fit
-placeholder.
-
-`bench_restart_determinism` runs an uninterrupted periodic granular-gas
-trajectory, a checkpoint/resume trajectory, and an independent same-seed twin of
-the uninterrupted run. The resumed final dump is compared atom-by-atom to the
-uninterrupted reference for positions and velocities, and the independent twin is
-byte-compared by SHA-256 digest.
-
-![Restart continuity and digest determinism](bench_restart_determinism/plots/restart_determinism.png)
-
-*Measured restart-continuity errors are below the `1e-9` tolerance line for both
-positions and velocities, and the digest mismatch flags versus the uninterrupted
-reference are zero. PASS means the restart preserved the per-atom plus
-per-contact state and the same-seed single-rank run is byte-identical.*
+**Honest read:** this supports spherical-particle Haff cooling at curve level.
+The clump and rod cooling figures have been removed from the validation ledger:
+their start-up energy injection, re-zeroing after the transient, and calibrated
+LAMMPS initialization obscure whether DIRT's multisphere dynamics are correct.
+They should return only after the rotational-energy injection is understood. The
+repeated seeded-ensemble dashboard is also omitted here; it remains a regression
+artifact rather than primary scientific evidence.
 
 ---
 
@@ -1001,36 +745,6 @@ Absolute angles read low because the lift-and-collapse protocol mobilizes the su
 and the sweep stops at μ = 0.3 (the angle saturates above). The heap now stands on a
 **real frictional floor wall** (the earlier frozen-bed workaround was removed once
 `dirt_wall` gained tangential friction).
-
-## `bench_granular_conductivity` — granular-temperature conductivity
-
-A box of grains is shaken from below so the bed stays agitated (vibro-fluidized)
-instead of settling, and it reaches a steady state where the grains are "hottest" —
-most agitated, highest *granular temperature* — near the vibrating base and calmer
-higher up. That gradient drives a steady upward flow of velocity-fluctuation energy
-through the bed. Integrating the inelastic collisional dissipation from the top down
-gives that upward energy flux, so the benchmark can back out a dimensionless
-Fourier-law conductivity `κ*(Φ)` — how readily agitation diffuses through the packing
-at each solid fraction — and compares it to the Lun/Gidaspow kinetic-theory
-reference. The bounded smoke gate checks that the energy-balance estimate is positive,
-finite, and within an order-unity band around KT.
-
-![Dimensionless conductivity vs kinetic theory](bench_granular_conductivity/plots/kappa_of_phi.png)
-
-*Measured `κ*(Φ)` from DIRT against the kinetic-theory curve. The shaded 0.4-6x
-band is the smoke PASS window; open markers show the kinetic-flux-only lower-bound
-estimate.*
-
-![Steady vibro-fluidized profiles](bench_granular_conductivity/plots/profiles.png)
-
-*Steady Φ(y), T(y), and kinetic heat-flux profiles used for the conductivity
-extraction.*
-
-**Honest read:** the smoke gate is deliberately broad and catches sign, NaN, and
-order-of-magnitude regressions; the dense-bed heat flux also has a `∇Φ` contribution
-outside the simple Fourier form. The full scientific run is unchanged but remains
-too long for the default automation cap, so the committed figure is regenerated
-from the bounded smoke output.
 
 ## `bench_column_collapse` — granular column runout
 
@@ -1087,98 +801,26 @@ honest, visible FAIL rather than reported green.
 ## `bench_lebc_shear` — Lees-Edwards homogeneous shear rheometer
 
 A triperiodic glass-bead box is sheared with native Lees-Edwards deformation. This
-is the bulk rheology ledger entry for the DEM shear campaign: the **frictionless
-full sweep** checks Bagnold-normalized normal and shear stresses against Lun /
-extended kinetic theory and independent LAMMPS / Fortran / LIGGGHTS reference
-points over solid fraction, while the **frictional production sweep** fits the
-GDR MiDi / da Cruz μ(I) and Φ(I) closure used by downstream continuum calibration
-and gates the measured stress ratios against the published dense-flow envelope.
-The same frictional sweep now overlays Walton & Braun's 1986 homogeneous-shear
-inelastic-disk trends for pressure, shear stress ratio, granular-temperature
-proxy, and normal-stress anisotropy.
-
-The validation has two gates, deliberately kept separate:
-
-- **Bounded smoke gate (`sweep.py` default / harness): PASS.** Three frictional
-  cases (Φ = 0.2, 0.3, 0.4) must produce positive pressure, a steady averaging
-  window (`p` drift < 15%), and a macroscopic stress ratio inside the GDR MiDi /
-  da Cruz dense-flow envelope `0.30 <= μ = |σ_xy|/P <= 0.70`. This keeps CI fast;
-  it does not weaken or replace the full rheology tolerances.
-- **Full-sweep KT gate (`sweep.py full` / `graph`): PASS on the committed plots.**
-  At least 60% of frictionless KT points must fall within the plotted tolerance
-  bands: normal stress `σ_yy/(ρ_s d² γ̇²)` within ±15% of Lun KT and shear stress
-  `σ_xy/(ρ_s d² γ̇²)` within ±20%. The same full sweep overlays independent LAMMPS,
-  Fortran, and LIGGGHTS points.
-- **Full-sweep μ(I) gate (`sweep.py full` / `graph`): PASS on the committed plot.**
-  Every frictional production point must remain inside the plotted GDR MiDi /
-  da Cruz dense-flow envelope `0.30 <= μ <= 0.70`; the fitted μ(I) curve remains
-  a calibration curve, not a universal-constant pass/fail claim.
-- **Walton 1986 trend gate (`sweep.py` default and `graph`): PASS on the committed
-  plot.** DIRT pressure, shear ratio, granular-temperature proxy, and
-  `σ_xx/σ_yy` are compared with digitized Walton & Braun (1986) homogeneous
-  shear trends at the measured solid fractions. This is a dimensionless
-  cross-geometry check because Walton used 2-D disks and DIRT uses 3-D spheres:
-  Bagnold-normalized pressure and fluctuation velocity are normalized by their
-  mid-density value and gated inside the plotted ±50% Walton shape bands, while
-  `|σ_xy|/σ_yy` and `σ_xx/σ_yy` are gated inside the plotted ±40% Walton
-  stress-ratio bands. `N1/P` and `N2/P` remain bounded diagnostics. The Walton
-  gate does not replace the KT or GDR gates.
+section retains only the strongest comparison: the **frictionless full sweep**
+of Bagnold-normalized normal and shear stresses against Lun / extended kinetic
+theory and independent LAMMPS, Fortran, and LIGGGHTS results. The frictional
+μ(I), Φ(I), and Walton dashboards are calibration or cross-geometry trend plots;
+they are not presented here as validation evidence.
 
 ![Kinetic-theory validation](bench_lebc_shear/plots/kt_validation.png)
 
-*DIRT frictionless points over the kinetic-theory and cross-code references. The
-shaded bands show the unchanged graph gate: at least 60% of points must be within
-15% for normal stress and 20% for shear stress.*
+*DIRT frictionless points over the kinetic-theory and cross-code references.
+The acceptance tolerances remain in the benchmark harness. The plotting code no
+longer draws the colored PASS bands; this committed image still contains them
+because the full frictionless KT dataset needed to regenerate it is not present
+in this checkout.*
 
-![mu(I) fit](bench_lebc_shear/plots/mu_of_I.png)
-
-*Measured frictional μ(I). The orange band is the GDR MiDi / da Cruz dense-flow
-PASS gate (`0.30 <= μ <= 0.70`); the black curve is the calibration fit.*
-
-![Phi(I) trend](bench_lebc_shear/plots/phi_of_I.png)
-
-*Measured frictional Φ(I), paired with the μ(I) fit for closure calibration.*
-
-![Walton 1986 overlay](bench_lebc_shear/plots/walton_1986_overlay.png)
-
-*DIRT frictional pressure, shear ratio, granular-temperature proxy, and
-normal-stress ratios against digitized Walton & Braun (1986) homogeneous-shear
-trends. The shaded bands are the printed PASS/FAIL gates: ±50% on normalized
-shape trends and ±40% on stress ratios, with the existing kinetic-theory and GDR
-checks still intact.*
-
-**Honest read:** the strongest physics check is the frictionless stress collapse
-against kinetic theory and cross-code data; it is expected to deviate near jamming,
-where enduring contacts leave the collisional KT regime. The frictional μ(I) gate
-checks the measured stress ratios against the published dense-flow envelope, while
-the Walton overlay is a cross-geometry trend check, not a claim that 3-D spheres
-should reproduce every 2-D disk ordinate. The fitted μ(I) / Φ(I) constants are
-material/calibration outputs rather than independent universal numbers. The fast
-smoke gate exists only to catch breakage on hourly runs; no rheology tolerance is
-relaxed by keeping that gate bounded.
-
-## `bench_rod_shear_aspect_ratio` — glued-sphere rods in Lees-Edwards shear
-
-This compact rod/clump benchmark follows the frictionless glued-sphere branch of
-Guo, Wassgren, Ketterhagen, Hancock, James & Curtis (JFM 713, 2012). DIRT keeps
-the equivalent-volume diameter fixed, shears AR = 1, 2, 4, and 6 glued-sphere
-particles in a Lees-Edwards cell, and compares the elongated-rod dilute-regime
-trend against the paper: both Bagnold-normalized pressure
-`p/(rho d_v^2 gamma_dot^2)` and shear stress
-`|sigma_xy|/(rho d_v^2 gamma_dot^2)` must decrease with aspect ratio for
-AR >= 2. The plot also shows the measured long-axis flow alignment and an
-approximate self-digitized Guo Fig. 18 apparent-friction trace for context.
-
-![Rod shear aspect-ratio trends](bench_rod_shear_aspect_ratio/plots/rod_shear_aspect_ratio.png)
-
-*DIRT glued-sphere rods compared with the Guo et al. aspect-ratio trends. Latest
-run: PASS for the two active dimensionless gates: decreasing elongated-rod
-Bagnold-normalized pressure and shear stress with aspect ratio.*
-
-**Honest read:** this is a regression-scale replication of the published dilute
-trend, not a full 26-page reproduction. The absolute apparent-friction values are
-not gated because this small dilute run does not reproduce the paper's dense
-alignment/interlocking regime.
+**Honest read:** the useful evidence is the frictionless stress comparison.
+Deviations near jamming are expected when enduring contacts leave the collisional
+kinetic-theory regime. The removed Walton comparison mixed 2-D disks with 3-D
+spheres and did not match the stress ratios closely enough to carry validation
+weight. The glued-sphere rod shear section is also withheld until the multisphere
+energy issue identified in the cooling tests is resolved.
 
 ## `bench_hopper_beverloo` — silo discharge rate
 
@@ -1215,151 +857,24 @@ silo, depth, and velocity-based flow-rate measure mean this is still a normalize
 exponent comparison, not a prefactor match. 2D slot only (the 3D `5/2` form is untested
 and not directly comparable to this geometry).
 
-## `hopper_quiescence` — region-coherence optimization fidelity
-
-This non-`bench_` example compares the region-coherence quiescence optimization
-against the same hopper run without the optimization. The fidelity checks are
-baseline-vs-coherence fill height and discharge history; phase wall times show the
-performance effect for the same run.
-
-![Hopper quiescence validation](hopper_quiescence/plots/hopper_quiescence_validation.png)
-
-*Short matched `val_*.toml` run: coherence tracks the baseline discharge curve
-inside the ±1% pass band and the end-of-fill height stays inside the ±1 mm pass
-band. Latest regenerated figure: PASS, fill-height delta 0.34 mm and discharge
-within ±1% of baseline.*
-
-**Honest read:** this is a prototype optimization/fidelity check, not an independent
-physics validation. The reference is the unoptimized baseline run, so the figure
-shows whether the optimization preserves this scenario's behavior while reducing
-wall time; it does not validate hopper discharge against theory or experiment.
-
 ## `bench_plate_sinkage` — pressure–sinkage
 
 A plate is pushed into a settled bed; pressure vs sinkage is fit against the **Bekker**
-terramechanics relation `p = (k_c/b + k_φ)·zⁿ`. This benchmark is summarized in
-the top section because it now includes the published-parameter gate added after
-the original qualitative Bekker-form check.
-
-![Pressure vs sinkage (log–log)](bench_plate_sinkage/plots/pressure_sinkage.png)
-
-*Pressure vs sinkage (log-log) per case with the fitted power law. Latest run:
-PASS; all cases keep the monotonic, fit-quality, broad-exponent, and width-load
-trend checks active.*
+terramechanics relation `p = (k_c/b + k_φ)·zⁿ`. Only the qualitative Bekker-form
+checks are retained here: pressure should rise monotonically with sinkage and the
+wider plate should carry more load. No agency-report or soil-specific parameter
+comparison is claimed.
 
 ![Pressure vs sinkage (linear)](bench_plate_sinkage/plots/pressure_sinkage_linear.png)
 
-*Same data, linear axes — monotone pressure rise with depth and plate width.*
+*Pressure-sinkage on linear axes. The shallow response is plausible, but the
+deeper-sinkage curves visibly depart from a clean shared trend.*
 
-**Honest read:** empirical/qualitative — Bekker is a soil-fit correlation, not a
-contact law. The current gate checks the representative narrow-plate fitted
-exponent against the cited NASA/TM-20250006958 sandy/loam range, but it does not
-claim that DIRT's absolute pressure curve reproduces LETE Sand or any specific
-soil. Grains are softened, gravity enhanced 5x, geometry a thin periodic slice;
-absolute pressures remain diagnostic rather than physical.
-
----
-
----
-
-# Numerical convergence — timestep, particle count, and box size
-
-## `bench_convergence` — do the observables stop moving as `dt → 0`, `N → ∞`, `L → ∞`?
-
-Every benchmark above runs at a single timestep (`0.15 · dt_Rayleigh`), a single
-periodic box, and a single particle count. `bench_convergence` closes that gap by
-re-driving two existing binaries over resolution ladders (it adds no new
-physics — it reuses `bench_hertz_rebound` and `bench_sphere_haff_cooling`
-through generated configs).
-
-**A. Timestep.** A single sphere strikes a wall at `dt = f · dt_Rayleigh`,
-`f ∈ {0.5 … 0.015}`. For the elastic anchor (COR = 1) the measured contact
-duration and peak overlap converge onto the exact Hertz closed forms — at the
-finest `dt`, `t_c` err ≈ 0.1 % and `δ_max` err ≈ 0.00 % — and the observed order
-of accuracy of `δ_max` is **p ≈ 2.0**, consistent with Velocity-Verlet. The
-solver default `0.15 · dt_R` holds all observables within ~1.3 % of the
-fully-resolved value; the study recommends **`dt ≲ 0.25 · dt_R`** for < 2 %.
-
-![Timestep convergence](bench_convergence/plots/dt_convergence.png)
-
-**B. Particle count.** A free-cooling granular gas is run at `N ∈ {200 … 1600}`
-at fixed volume fraction `φ = 0.07` (box grows with `N`), 4 seeds each. The Haff
-cooling time `t_c` is nearly converged (Δ = 1.64 % from `N = 800→1600`, within
-the 10 % gate) while the Haff-fit
-RMS residual and the run-to-run scatter shrink like `~1/√N`; recommended
-**`N ≥ 400`** for < 1 % fit residual and < 3 % scatter at this `φ`.
-
-![Particle-count convergence](bench_convergence/plots/n_convergence.png)
-
-**C. Box size.** The same fixed-density, fully periodic Haff ladder is also a
-domain-size sweep: `L/d` grows while the number density stays fixed. The
-seed-mean Haff cooling time `t_c` converges toward the largest-box value with
-monotonically decreasing finite-size error (`3.80 % → 2.27 % → 1.64 % → 0 %`);
-the next-largest box is within the stated 2 % large-box tolerance. Recommended
-**`L/d ≥ 18.16`** for this material/setup.
-
-![Box-size convergence](bench_convergence/plots/box_size_convergence.png)
-
-**Honest read:** this is a **numerical** convergence study (does the discrete
-solution approach a limit?), not a new physical validation. Study A's elastic
-anchor is a real analytic check; the damped case and Studies B/C are
-self-convergence / finite-size checks against the fully-resolved or largest-box
-run, not against an independent reference. The recommended `dt`/`N`/`L` are
-specific to these materials/setups (the procedure transfers, the numbers don't).
-
----
-
-## `bench_mpi_decomposition` — MPI cross-rank correctness
-
-**Reference:** the code's own `1×1×1` (single-rank) trajectory — a
-decomposition-invariance / parallel-correctness check, not a physical one.
-
-A dense, fully-periodic, gravity-off frictional granular gas (~400 glass spheres,
-Hertz–Mindlin, restitution 0.9) is run at three decompositions of the *same* box —
-`1×1×1` (serial), `2×1×1` (2 ranks), `2×2×1` (4 ranks) — and the multi-rank runs
-are compared to the serial reference. With `[neighbor] every=1 check=false
-sort_every=0`, the only thing that differs between runs is the decomposition, so
-the pairwise / reverse-communicated ghost-force reduction order is the sole source
-of disagreement, and that is pure floating-point associativity.
-
-Asserted against `1×1×1`, sampled from the MPI-gathered `[dump]` frames:
-
-- **atom-count / identity** — every gathered frame holds exactly `N` atoms with the
-  reference tag set (migration + ghost exchange never lose or duplicate an atom);
-- **momentum conservation** — gravity off + periodic ⇒ `P = Σ mᵥ` is exact; drift
-  and cross-decomposition mismatch stay at round-off (`~1e-23` relative);
-- **energy** — `KE(t)` matches the reference at every sample (`~1e-15`);
-- **per-atom trajectory** — final velocities and minimum-image positions agree to
-  the FP-associativity floor (measured `pos ~6e-17`, `vel ~8e-14` over 4000 steps).
-
-![MPI decomposition deltas](bench_mpi_decomposition/plots/mpi_decomposition_deltas.svg)
-
-*Measured `2×1×1` and `2×2×1` tag/count, momentum, energy, and final per-atom
-state deltas against the `1×1×1` serial reference. The dashed line is the
-unchanged `1e-9` pass tolerance; the tag/count identity delta is exactly zero.
-PASS.*
-
-All well under the `1e-9` gate (the FP floor `bench_restart_determinism` also uses);
-agreement is essentially machine-epsilon, so this is not a loosened band. **Status:
-PASS.** This closes the "MPI domain decomposition" gap formerly listed below.
-
-## `bond_mpi_drift` — BPM bonds across MPI migration
-
-In a parallel (MPI) run the simulation box is split across processes, so a bonded
-fiber that drifts sideways can end up with its member spheres owned by *different*
-ranks — and the bond bookkeeping has to survive that handoff intact. Here a 3-sphere
-bonded chain is pushed steadily through a periodic box split into two ranks along x,
-repeatedly crossing the rank boundary and the periodic wrap. The run samples the
-global bond metrics every 1000 steps and demands exact integer agreement with the two
-bonds that must always be present: `bond_count == 2` and `bond_missing == 0` at every
-sample.
-
-![BPM MPI bond migration counts](bond_mpi_drift/plots/bond_mpi_drift_counts.png)
-
-*Measured 2-rank MPI `bond_count` and `bond_missing` over 200 migration samples
-against the exact `2/0` reference. The shaded band and red dotted lines show the
-integer pass gate; latest run: PASS, `bond_count` min/max = 2/2 and
-`bond_missing` max = 0.*
+**Honest read:** **diagnostic, not quantitative validation.** Bekker is a fitted
+soil correlation, and these softened grains, enhanced gravity, and thin periodic
+geometry do not represent a specified soil. The departure at larger sinkage must
+be investigated before fitting or publishing an exponent. The cluttered all-case
+log-log fit and the former published-parameter overlay are intentionally omitted.
 
 ---
 
@@ -1394,27 +909,6 @@ axial case checks the configured piecewise envelope, while the bending-plastic
 case checks Guo's trilinear yield law, kinematic-hardening trajectory, and
 permanent-deformation profile for this single loading schedule.
 
-## `peri_dem_interop` — same-substrate peri-to-DEM handoff
-
-This non-`bench_` example checks the handoff between two physics methods that share
-the *same* particle set: peridynamics (a bond-based continuum method that can
-represent cracks) and ordinary DEM contact. Two brittle peridynamic bars are fired at
-each other; on impact their internal bonds snap, the bars shatter, and the resulting
-loose fragments have to keep interacting through normal DEM contact on the same soil
-atoms and neighbor list — with no particle created, lost, or double-counted at the
-transition. The hard gate is conservation across that handoff: max relative mass and
-momentum drift must stay below 1e-9. The sweep also requires that real fracture
-actually occurred (surviving bonds below 10% of the reference family and peak damage
-≥ 0.99) and that post-breakage DEM contact engages (at least 8 active contacts).
-
-![Peri-to-DEM transition validation](peri_dem_interop/plots/peri_dem_transition_validation.svg)
-
-*Measured mass and momentum conservation errors vs the 1e-9 PASS limit, plus the
-fracture/contact diagnostics through the transition. Latest regenerated run:
-PASS for all four checks.*
-
----
-
 ## `fiber_bond_breakage` — BPM breakage criteria
 
 This non-`bench_` validation example reuses the `fiber_bond` binary to exercise
@@ -1427,9 +921,15 @@ Euler-Bernoulli estimate with the documented 35% discrete-chain gate.
 
 ![Fiber bond breakage criteria](fiber_bond_breakage/plots/breakage_criteria_validation.png)
 
-*Measured first-break strain or tip displacement vs the reference prediction for
-each criterion. Dashed bands are the validator PASS gates. Latest run: all six
-criteria PASS.*
+*Each point is one breakage rule. Left: predicted axial break strain on the
+horizontal axis and measured strain on the vertical axis; the three axial rules
+sit almost exactly on the black 1:1 line. Right: the same comparison for
+cantilever tip displacement. Those three points miss the beam estimate by
+16–30% and pass only because the discrete-chain tolerance is a broad ±35%.*
+
+**Honest read:** the axial criteria are sharp analytical checks. The cantilever
+criteria are only coarse consistency checks; a 35% band is too broad to treat
+their PASS labels as strong validation.
 
 The statistical Weibull weakest-link distribution is gated in
 `bench_bond_breakage`, which runs 60 independently seeded axial-stress Weibull
@@ -1468,73 +968,6 @@ progression is not only a scalar strength check. Latest run: PASS, peak strength
 Fig. 8(a) target, with the spatial sequence of `CombinedStress` bond breaks.
 Latest run: PASS.*
 
----
-
-## `SPH_glass_sphere_calibration/07_column_collapse` — SPH glass macro gate
-
-This SPH glass-sphere calibration case releases a quasi-2D column of canonical
-glass grains and fits the runout exponent against the Lube/Lajeunesse scaling
-laws. It no longer carries a placeholder rolling friction: because
-`03_angle_of_repose` currently reports no transferable glass-band `mu_r` closure,
-the case uses the campaign canonical `rolling_friction = 0.10` and keeps the
-linear/power exponent gates strict.
-
-![SPH glass column runout scaling](SPH_glass_sphere_calibration/07_column_collapse/plots/runout_scaling.png)
-
-*Normalized runout vs aspect ratio with the empirical `1.2a` and `1.6a^(2/3)`
-lines plus the visible exponent gate panel. Latest regenerated run: FAIL, with
-DIRT exponents 1.407 for the linear regime (target 1.0, outside the +/-0.25
-gate) and 0.885 for the power regime (target 0.667, inside the gate).*
-
-![SPH glass column deposit profile](SPH_glass_sphere_calibration/07_column_collapse/plots/deposit_profile.png)
-
-*Rest-state deposit for the representative `a = 2` case, used as a visual check
-that the finite pile is being measured rather than a runaway sheet.*
-
----
-
-## What is not validated (scope summary)
-
-- **No direct experimental comparison** — references are analytical, empirical
-  correlations, the Maw theory curve, or LAMMPS.
-- **The contact model is partly assumed** — Hertz–Mindlin stiffness and the viscoelastic
-  damping/restitution mapping; LAMMPS agreement tests shared implementation, not physical
-  correctness.
-- **Several "analytical" checks are self-consistent** (jkr, fiber_crossover, much of
-  rolling_decay; partly sliding_friction).
-- **Convergence studies** — timestep, particle count, and periodic box size are
-  now covered by `bench_convergence` (see "Numerical convergence" above).
-- **Empirical references** (Beverloo, Bekker) are correlations with fitted constants;
-  only forms/exponents are tested.
-- **Other `examples/`** (bonds, granular_gas_benchmark,
-  granular_basic, lj_argon) are outside this document.
-
-## Capabilities implemented but not benchmarked
-
-Physics DIRT exposes that no `bench_*` currently exercises (bonds excluded — they
-have their own non-`bench_` examples). The cleanest open gaps:
-
-- **`dirt_fixes` viscous drag / prescribed motion**. GPU-vs-CPU equivalence is
-  only recorded in historical validation notes; current main does not ship the
-  GPU crates/plugins those notes exercised.
-
-Recent benchmark work removed several former gaps from this list:
-
-- **Linear Hooke contact** is covered by `bench_hooke_rebound`, an exact damped
-  oscillator collision check.
-- **Twisting friction** (`constant` and `sds`) is covered by
-  `bench_twisting_friction`, a pure torsional spin-down check.
-- **SDS rolling** is covered by `bench_sds_rolling`, including elastic
-  spring-dashpot and Coulomb-cap regimes.
-- **Multi-material / polydisperse pair mixing** is covered by
-  `bench_polydisperse_mixing`, including `R*`, `E*`, restitution, and friction
-  mixing for unequal-radius and different-material pairs.
-- **Timestep, particle-count, and periodic-box convergence** are covered by
-  `bench_convergence`.
-- **MPI domain decomposition** is covered by `bench_mpi_decomposition`: a
-  contact-rich `2×1×1` / `2×2×1` run reproduces the `1×1×1` trajectory to the FP
-  floor with momentum, energy, and atom count conserved.
-
 ## `bench_mdr_elastoplastic_normal` — MDR elastic-plastic normal contact
 
 The MDR (Method of Dimensionality Reduction) contact model captures *elastic–plastic*
@@ -1557,38 +990,14 @@ will need a benchmark when re-added.)
 
 ## Summary table
 
-## `ecosystem_head_compatibility` — GRASS → SOIL → DIRT source resolution
-
-[`ecosystem_head_compatibility`](ecosystem_head_compatibility/README.md) records
-the temporary-path-patch gate with a reviewed passing source tuple and a newer
-SOIL revision that must expose the `AtomData::snapshot` migration drift in
-`dirt_granular` and `dirt_bond`.
-
-![GRASS → SOIL → DIRT compatibility matrix](ecosystem_head_compatibility/plots/ecosystem_head_compatibility_matrix.png)
-
-Current result: PASS—the compatible tuple completes metadata and the non-MPI
-precision-double check, while the intentionally incompatible tuple is rejected
-with visible API diagnostics.
-
-## Bonded-fiber integration timestep
-
-[`bench_fiber_timestep`](bench_fiber_timestep/README.md) checks fixed--free
-16-sphere axial and coupled bending/translation limits against independently
-assembled discrete-lattice spectra. Its axial limit agrees with Guo et al.
-(2013), Eq. 41; the figure shows DIRT's measured stable/failure brackets and
-the declared growth diagnostic.
-
-![DIRT fiber timestep stability](bench_fiber_timestep/plots/fiber_timestep_stability.png)
-
 | Example | Reference | Tier | Status / main gap |
 |---|---|---|---|
-| hertz_rebound | Hertz + LAMMPS | analytical (strong) | PASS; damped vs elastic only; damping mapping calibrated |
+| hertz_rebound | Hertz + LAMMPS | analytical + cross-code | PARTIAL; elastic anchor and DIRT–LAMMPS parity pass, damped mapping unresolved |
 | hooke_rebound | linear damped-oscillator collision (COR=e, t_c=π/ω_d, δ_max) | analytical (strong, exact) | PASS; exact closed form (not just elastic), COR/t_c/overlap ≤0.05%; velocity-independence confirmed |
 | oblique_impact | Maw 1976 + LAMMPS | analytical + cross-code (strong) | PASS; full S-curve; vs theory not raw experiment |
-| mindlin_rescale_tangential | LAMMPS documented unloading recurrence | analytical / documented law | PASS; isolates load-unload gate; prescribed path, not free dynamics |
-| kharaz_oblique | Kharaz 2001 protocol: rigid-body kinematics + Maw, anchored to measured eₙ, μ | analytical + experiment-anchored (strong) | PASS; eₙ=0.980 flat, sliding branch exact; raw glass-anvil points paywalled |
+| mindlin_rescale_tangential | LAMMPS documented unloading recurrence | documented law | PASS at equation level; no independently executed LAMMPS trajectory |
+| kharaz_oblique | Kharaz 2001 protocol: rigid-body kinematics + Maw, anchored to measured eₙ, μ | analytical + experiment-anchored (strong) | PASS; raw glass-anvil points and matched LAMMPS run not yet included |
 | sliding_friction | rigid-body slip-to-roll | analytical | PASS; (5/7)v₀ model-independent; a=μg partly self-consistent |
-| wall_activate_by_name | active/inactive named wall control | API behavior | PASS; inactive force zero within 1e-14 N, reactivated mean force recovers initial active force within 1e-12 relative |
 | rolling_decay | own-model rate + LAMMPS | analytical (self-consistent) | PASS; rate derived from same model |
 | sds_rolling | own-model damped-oscillator + Coulomb cap | analytical (self-consistent) | PASS; elastic ω(t) to 0.1 %/0.56 % (springless control 2.4 %/131 %), cap slope 0.00 % |
 | twisting_friction | own-model torsional spin-down | analytical (self-consistent) | PASS; constant and SDS twisting spin-down match α=(5/4)μ_tw g/R to round-off; off-axis spin and drift remain zero |
@@ -1598,19 +1007,36 @@ the declared growth diagnostic.
 | mdr_elastoplastic_normal | LAMMPS MDR pair loading/yield/plastic-unloading trace | LAMMPS source equations | PASS; max relative error 3.724e-13; full LAMMPS apparent-radius/free-surface MDR state intentionally not included |
 | fiber_crossover | Coulomb limit μN | analytical (self-consistent) | PASS; ratio circular vs measured N |
 | bond_fiber_tensile | input Young's modulus via `K_n = E A / L` | analytical (self-consistent) | PASS; fitted E = 1.000050 GPa vs input 1.000001 GPa (0.005% error) |
-| bond_cantilever | Euler-Bernoulli uniform-load cantilever tip deflection | analytical | PASS; final tip deflection −9.476884e-07 m vs −9.535320e-07 m (0.61% error, 5% gate), 9/9 bonds present |
 | curtis_cantilever | Guo/Curtis flexible-fiber cantilever load curve and profiles | analytical | PASS; tip curve max error 2.988%, deflection profile 2.828%, bending-moment profile 1.791%, 0 broken bonds |
-| sphere/clump haff | Haff law + LAMMPS + kinetic tc ensemble | law (cross-code) + kinetic theory band | PASS; ensemble median tc/theory = 0.51 (sphere) and 0.57 (clump), R² min 0.9987, existing slope gates unchanged |
-| rod haff | Haff law + optional LAMMPS + kinetic tc ensemble | law (cross-code when available) + kinetic theory band | PASS; ensemble median tc/theory = 1.54, R² min 0.9998, current 1.6M-step run gives slope −1.841 at t/tc=12.9 against the unchanged −2.3<slope<−1.6 gate |
-| SPH glass column collapse | Lube/Lajeunesse (empirical) + LAMMPS overlay | empirical macro gate | FAIL (remaining macro limitation); uses canonical `mu_r=0.10` because 03_angle_of_repose has no transferable closure; linear exponent 1.407 vs 1.0 outside ±0.25, power exponent 0.885 inside gate; exits 1 |
-| clump_insertion_determinism | own repeated config run | reproducibility | PASS; same-seed config path byte-identical, changed seed diverges |
+| sphere haff | Haff law + LAMMPS | law + cross-code | PASS at curve level; clump/rod claims withheld pending multisphere energy audit |
 | angle_of_repose | empirical (none exact) | qualitative | PASS; trends only; default bounded smoke gate PASSes 4/4 with committed pass-criterion graph; full sweep stands on real frictional wall |
 | column_collapse | Lube/Lajeunesse (empirical) + LAMMPS cross-check | empirical scaling + cross-code | FAIL (genuine finite-size limit, not fit noise); linear exponent 1.54 vs 1.0 outside ±0.25 after seed-averaging + 11-pt sweep + sub-diameter metric; LAMMPS misses identically (1.27); exits 1 |
-| lebc_shear | Lun / extended kinetic theory + LAMMPS / Fortran / LIGGGHTS; GDR MiDi / da Cruz μ(I) form | kinetic theory + calibration | PASS; bounded smoke gate keeps CI fast (`0.15 <= μ <= 0.90`, `P>0`, drift <15%); full KT gate requires ≥60% of points within 15% normal-stress and 20% shear-stress bands; dense/jamming deviations expected |
-| rod_shear_aspect_ratio | Guo/Wassgren/Ketterhagen/Hancock/James/Curtis rod-like shear DEM trends | published DEM trend | PASS; elongated glued-sphere rods show decreasing Bagnold-normalized pressure and shear stress with AR (2→4→6); apparent friction / alignment plotted but not absolute-gated |
+| lebc_shear | Lun / extended kinetic theory + LAMMPS / Fortran / LIGGGHTS | kinetic theory + cross-code | PASS for frictionless stress comparison; μ(I), Φ(I), and Walton dashboards omitted |
 | hopper_beverloo | Beverloo (empirical) + Choi/Kudrolli/Bazant quasi-2D experiment | empirical correlation / published slot exponent | PASS; exponent 1.53 vs 1.5 and published 1.48; prefactor untested |
-| hopper_quiescence | unoptimized baseline run | optimization fidelity | PASS; short matched run preserves discharge within ±1% and fill height within 0.34 mm of baseline; phase wall time speedup 1.15x |
-| plate_sinkage | Bekker (empirical) + NASA/TM-20250006958 Table 1 fitted `n` range | empirical / qualitative | PASS; monotone/power-law/width checks plus representative `b020_mu05` fitted `n=1.074` inside published sandy/loam range 0.66..1.10; softened grains, absolute pressures diagnostic |
-| convergence | finest-dt / large-N / large-box limit (+ Hertz anchor) | numerical (self-convergence) | PASS; dt, N, and box-size convergence; observed order p≈2; box-size error 3.80→2.27→1.64→0% |
-| mpi_decomposition | own 1×1×1 trajectory | parallel-correctness (decomposition-invariance) | PASS; 2×1×1 & 2×2×1 reproduce serial to FP floor (pos ~6e-17, vel ~8e-14); momentum/energy/atom-count conserved |
-| bond_mpi_drift | expected BPM bond metrics | parallel-correctness (bond migration) | PASS; 2-rank migration keeps `bond_count` = 2 and `bond_missing` = 0 over 200 samples |
+| plate_sinkage | Bekker form only | empirical / qualitative | DIAGNOSTIC; shallow trend plausible, deep-sinkage departure unresolved; no soil-specific parameter claim |
+
+## What is not validated
+
+- **Damped Hertz restitution mapping.** DIRT and LAMMPS agree with each other,
+  but the nominal COR and reduced viscoelastic model do not fully explain the
+  measured damped response.
+- **Multisphere dynamics.** Clump and rod cooling show a start-up energy injection;
+  clump/rod Haff and rod-shear claims are withheld pending an energy audit.
+- **Bond cantilever equilibrium.** The trace remains oscillatory, so sampling a
+  near-reference instant is not accepted as a static validation.
+- **Wet-fiber agglomerate breakage.** Four broad-tolerance points are insufficient;
+  a larger, better-resolved sweep is required.
+- **Granular-temperature conductivity.** The bounded smoke run checks only sign,
+  finiteness, and order of magnitude; it is not scientific validation.
+- **Plate sinkage at depth.** The deep-sinkage departure is unresolved and no
+  soil-specific Bekker parameters are claimed.
+- **Kharaz LAMMPS parity.** The experiment-anchored DIRT result has no matched
+  LAMMPS trajectory yet.
+- **Direct experiment coverage remains sparse.** Most references are analytical,
+  empirical correlations, published simulation trends, or LAMMPS. Shared-code
+  agreement does not establish physical correctness.
+- **Several analytical checks are self-consistent**, especially JKR,
+  `fiber_crossover`, much of `rolling_decay`, and part of `sliding_friction`.
+- **Viscous drag and prescribed motion** in `dirt_fixes` have no current scientific
+  benchmark. Other general examples such as `granular_basic` and `lj_argon` are
+  outside this ledger.

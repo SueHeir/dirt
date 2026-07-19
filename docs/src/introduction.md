@@ -52,7 +52,9 @@ Every benchmark also states plainly where it is weak, and some stay **red on
 purpose** (e.g. `bench_column_collapse`) rather than being tuned green. These
 tests catch real bugs — the oblique-impact check alone drove two contact-model
 fixes. The full write-up is [Validation & Benchmarks](./reference/validation.md),
-and the authoritative per-figure log is `examples/VALIDATION.md`.
+and the authoritative scientific ledger is `examples/VALIDATION.md`. Numerical,
+reproducibility, MPI, API, and build checks are indexed separately in
+`examples/VERIFICATION.md`.
 
 ## What DIRT gives you
 

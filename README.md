@@ -118,8 +118,10 @@ contact-model fixes — a tangential damping-sign error that was injecting energ
 and a requirement that a frozen contact partner also freeze its rotation — and
 the rebound benchmark surfaced a mislabeled damping constant.
 
-The authoritative, continuously-updated write-up of every figure and every weak
-spot lives in [`examples/VALIDATION.md`](examples/VALIDATION.md).
+Scientific validation and cross-code evidence live in
+[`examples/VALIDATION.md`](examples/VALIDATION.md). Numerical convergence,
+reproducibility, MPI correctness, API contracts, and build compatibility live
+separately in [`examples/VERIFICATION.md`](examples/VERIFICATION.md).
 
 ## The physics menu (opt in per plugin)
 
