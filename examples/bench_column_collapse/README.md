@@ -162,8 +162,12 @@ reference, material, aspect range, toe metric, or ±0.25 exponent bands.
 does **not** import `sweep.py`, use `runout.csv`, or use its gridded toe
 measurement. It independently reads all raw release, final, terminal, and
 arrest witnesses; checks population, release width, and sustained Froude rest;
-then identifies the immutable rough-base coordinates from the release witness
-and excludes them from the final deposit before estimating the same stated
+it separately counts the generated active-column and rough-base source files
+and requires the release witness to contain those exact populations and the
+same frozen support. Equal release/final snapshots alone would otherwise let a
+runtime underfill evade the independent check. It then identifies the immutable
+rough-base coordinates from the release witness and excludes them from the final
+deposit before estimating the same stated
 two-layer toe via a continuous, footprint-anchored particle silhouette with a
 one-diameter physical gap. It fits the same externally cited
 planar targets and unchanged ±0.25 bands. A missing witness or disagreement

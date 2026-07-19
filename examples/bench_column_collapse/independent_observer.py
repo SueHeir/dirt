@@ -70,6 +70,32 @@ def particles(path):
     return answer
 
 
+def source_particles(path):
+    """Read a generated three-column source file without using the driver.
+
+    The release/final equality check alone cannot detect a runtime underfill:
+    two equally underfilled snapshots would otherwise be admissible to this
+    independent observer.  The source files are the pre-run population
+    witnesses shared by the two solvers, so count them here rather than trusting
+    a nominal aspect label or the driver's aggregate CSV.
+    """
+    answer = []
+    with open(path, newline="") as source:
+        for row in csv.reader(source):
+            if len(row) != 3:
+                raise ValueError("expected x,y,z source rows")
+            try:
+                point = tuple(float(value) for value in row)
+            except ValueError as exc:
+                raise ValueError("non-numeric source coordinate") from exc
+            if not all(math.isfinite(value) for value in point):
+                raise ValueError("non-finite source coordinate")
+            answer.append(point)
+    if not answer:
+        raise ValueError("empty source coordinate file")
+    return answer
+
+
 def terminal(path, expected):
     with open(path, newline="") as source:
         rows = list(csv.DictReader(source))
@@ -137,6 +163,32 @@ def split_frozen_support(release, deposit):
     if len(mobile_final) != len(active):
         raise ValueError("mobile population changed after support exclusion")
     return active, mobile_final
+
+
+def verify_source_population(aspect, seed, release, active, frozen):
+    """Bind a raw witness to its declared, exact input populations.
+
+    This is intentionally independent of ``sweep.py``'s manifest/receipt
+    machinery.  It catches the original failure mode where a bounded inserter
+    produced fewer grains than requested but the resulting trajectories still
+    had equal release/final populations.  It does not supply an aspect or a
+    reference value; it only verifies the executable saw every generated grain
+    and the immutable rough support it was meant to use.
+    """
+    root = os.path.join(SWEEP, tag(aspect) if seed == 0 else f"{tag(aspect)}_s{seed}")
+    expected_active = source_particles(os.path.join(root, "active_column.csv"))
+    expected_frozen = source_particles(os.path.join(SWEEP, "rough_base.csv"))
+    if len(release) != len(expected_active) + len(expected_frozen):
+        raise ValueError("release population does not equal generated source populations")
+    if len(active) != len(expected_active):
+        raise ValueError("active release population does not equal active source")
+    if len(frozen) != len(expected_frozen):
+        raise ValueError("frozen release population does not equal rough-base source")
+    expected_keys = {coordinate_key((x, y, z, DIAMETER / 2.0))
+                     for x, y, z in expected_frozen}
+    frozen_keys = {coordinate_key(p) for p in frozen}
+    if frozen_keys != expected_keys:
+        raise ValueError("release frozen support differs from rough-base source")
 
 
 def release_aspect(active):
@@ -217,6 +269,8 @@ def observe_case(aspect, seed):
     terminal(paths["terminal"], len(release))
     arrested(paths["arrest"])
     active, mobile_deposit = split_frozen_support(release, deposit)
+    frozen = [p for p in release if p[2] <= BASE_TOP]
+    verify_source_population(aspect, seed, release, active, frozen)
     return release_aspect(active), (interval_toe(mobile_deposit) - L0) / L0
 
 

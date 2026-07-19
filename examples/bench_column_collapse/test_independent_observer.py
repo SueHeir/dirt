@@ -3,6 +3,7 @@
 
 import importlib.util
 import pathlib
+import tempfile
 import unittest
 
 
@@ -45,6 +46,26 @@ class IndependentObserverGeometryTests(unittest.TestCase):
         final = [(0.00001, 0.0, 0.003, 0.0015), (0.01, 0.0, 0.006, 0.0015)]
         with self.assertRaisesRegex(ValueError, "frozen support"):
             OBSERVER.split_frozen_support(release, final)
+
+    def test_source_population_rejects_underfilled_release(self):
+        """Equal release/final counts must not admit an underfilled source."""
+        with tempfile.TemporaryDirectory() as directory:
+            sweep = pathlib.Path(directory) / "sweep"
+            case = sweep / "a0p5"
+            case.mkdir(parents=True)
+            (sweep / "rough_base.csv").write_text("0,0,0.0015\n")
+            (case / "active_column.csv").write_text("0.0015,0.0015,0.0045\n0.0045,0.0015,0.0045\n")
+            release = [(0.0, 0.0, 0.0015, 0.0015),
+                       (0.0015, 0.0015, 0.0045, 0.0015)]
+            frozen = [release[0]]
+            active = [release[1]]
+            old = OBSERVER.SWEEP
+            OBSERVER.SWEEP = str(sweep)
+            try:
+                with self.assertRaisesRegex(ValueError, "population"):
+                    OBSERVER.verify_source_population(0.5, 0, release, active, frozen)
+            finally:
+                OBSERVER.SWEEP = old
 
 
 if __name__ == "__main__":
