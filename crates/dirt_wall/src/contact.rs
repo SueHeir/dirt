@@ -96,10 +96,8 @@ fn wall_tangential_force(
 /// particle's spin with its normal/twisting component removed).
 ///
 /// Supports both the `constant` (fixed-magnitude couple opposing the roll) and
-/// `sds` (spring–dashpot–slider, Coulomb-capped) models.  SDS follows the
-/// LAMMPS pseudo-force convention: it stores a length, computes a force, then
-/// converts it to a couple. `r_eff = radius` for a flat wall. Returns
-/// `(torque_on_particle, new_rolling_displacement)`; the
+/// `sds` (spring–dashpot–slider, Coulomb-capped) models. `r_eff = radius` for a
+/// flat wall. Returns `(torque_on_particle, new_rolling_displacement)`; the
 /// displacement is only meaningful (and stored) for the `sds` model. Returns
 /// zeros when `mu_r <= 0`.
 #[allow(clippy::too_many_arguments)]
@@ -128,45 +126,31 @@ fn wall_rolling_torque(
     let tau_max = mu_r * f_n.abs() * radius;
 
     if sds {
-        // LAMMPS GranularModel: v_rl = R_eff (omega_rel x n).  The history is
-        // therefore a displacement in metres and k_roll/gamma_roll have the
-        // pseudo-force units N/m and N s/m.
-        let vrl = [
-            radius * (omega[1] * n[2] - omega[2] * n[1]),
-            radius * (omega[2] * n[0] - omega[0] * n[2]),
-            radius * (omega[0] * n[1] - omega[1] * n[0]),
-        ];
         let mut rd = old_roll_disp;
         let rdn = rd[0] * n[0] + rd[1] * n[1] + rd[2] * n[2];
         rd = [
-            rd[0] - rdn * n[0] + vrl[0] * dt,
-            rd[1] - rdn * n[1] + vrl[1] * dt,
-            rd[2] - rdn * n[2] + vrl[2] * dt,
+            rd[0] - rdn * n[0] + roll[0] * dt,
+            rd[1] - rdn * n[1] + roll[1] * dt,
+            rd[2] - rdn * n[2] + roll[2] * dt,
         ];
-        let mut fr = [
-            -k_roll * rd[0] - gamma_roll * vrl[0],
-            -k_roll * rd[1] - gamma_roll * vrl[1],
-            -k_roll * rd[2] - gamma_roll * vrl[2],
+        let mut tr = [
+            -k_roll * rd[0] - gamma_roll * roll[0],
+            -k_roll * rd[1] - gamma_roll * roll[1],
+            -k_roll * rd[2] - gamma_roll * roll[2],
         ];
-        let fr_mag = (fr[0] * fr[0] + fr[1] * fr[1] + fr[2] * fr[2]).sqrt();
-        let fr_max = mu_r * f_n.abs();
-        if fr_mag > fr_max && fr_mag > 1e-30 {
-            let s = fr_max / fr_mag;
-            fr = [fr[0] * s, fr[1] * s, fr[2] * s];
+        let tr_mag = (tr[0] * tr[0] + tr[1] * tr[1] + tr[2] * tr[2]).sqrt();
+        if tr_mag > tau_max && tr_mag > 1e-30 {
+            let s = tau_max / tr_mag;
+            tr = [tr[0] * s, tr[1] * s, tr[2] * s];
             if k_roll > 1e-30 {
                 rd = [
-                    (fr[0] + gamma_roll * vrl[0]) / (-k_roll),
-                    (fr[1] + gamma_roll * vrl[1]) / (-k_roll),
-                    (fr[2] + gamma_roll * vrl[2]) / (-k_roll),
+                    (tr[0] + gamma_roll * roll[0]) / (-k_roll),
+                    (tr[1] + gamma_roll * roll[1]) / (-k_roll),
+                    (tr[2] + gamma_roll * roll[2]) / (-k_roll),
                 ];
             }
         }
-        let torque = [
-            radius * (n[1] * fr[2] - n[2] * fr[1]),
-            radius * (n[2] * fr[0] - n[0] * fr[2]),
-            radius * (n[0] * fr[1] - n[1] * fr[0]),
-        ];
-        (torque, rd)
+        (tr, rd)
     } else {
         // Constant-torque model: fixed magnitude opposing the rolling direction.
         let roll_mag = (roll[0] * roll[0] + roll[1] * roll[1] + roll[2] * roll[2]).sqrt();

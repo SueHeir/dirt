@@ -228,11 +228,6 @@ path = "examples/bench_liquid_bridge_cohesion/main.rs"
 name = "bench_curtis_wet_fiber_breakage"
 path = "examples/bench_curtis_wet_fiber_breakage/main.rs"
 
-# Maintained standalone DEM calibration: a lift-and-relax glass-sphere heap.
-[[example]]
-name = "sphcal_angle_of_repose"
-path = "examples/SPH_glass_sphere_calibration/03_angle_of_repose/main.rs"
-
 [profile.release]
 opt-level = 3
 lto = "fat"

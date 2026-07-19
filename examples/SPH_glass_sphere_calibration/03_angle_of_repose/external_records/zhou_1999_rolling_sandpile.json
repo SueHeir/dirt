@@ -1,9 +1,0 @@
-{
-  "doi": "10.1016/S0378-4371(99)00183-1",
-  "title": "Rolling friction in the dynamic simulation of sandpile formation",
-  "first_author_family": "Zhou",
-  "published_year": 1999,
-  "source_url": "https://doi.org/10.1016/S0378-4371(99)00183-1",
-  "comparability": "incompatible",
-  "reason": "Different material, surface state, vessel, deposition, release, and angle measurement; this is an audit negative control, not a numerical target."
-}
