@@ -109,6 +109,7 @@ those target exponents.
 
 | Check | Tolerance |
 |-------|-----------|
+| Measured pre-release aspect `H/L0` vs scheduled aspect | within 2% |
 | Linear-regime exponent (a ≤ 3) vs 1 | within ±0.25 |
 | Power-regime exponent (a ≥ 3) vs 2/3 | within ±0.25 |
 
@@ -152,8 +153,8 @@ grains and discovering an underfill later. Its triangular layers span the full
 release width; a bounded seed-specific in-plane perturbation removes the
 special all-contact crystal network without changing the walls or column
 envelope.
-The independently recorded release witness must confirm coverage before a fit
-is allowed. This is a preparation correction, not a change to the empirical
+The independently recorded release witness must confirm coverage and the
+scheduled aspect (within 2%) before a fit is allowed. This is a preparation correction, not a change to the empirical
 reference, material, aspect range, toe metric, or ±0.25 exponent bands.
 
 ### Independent observer

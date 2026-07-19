@@ -180,6 +180,8 @@ EXP_TOL = 0.25             # |fitted exponent - target| pass band
 LINEAR_TARGET = 1.0        # (L_f-L0)/L0 ~ a^1   for a <~ 2-3
 POWER_TARGET = 2.0 / 3.0   # (L_f-L0)/L0 ~ a^2/3 for a >~ 3
 REGIME_SPLIT = 3.0         # aspect ratio dividing the two regimes
+# Initialization-fidelity admission check, not a fitted-exponent tolerance.
+ASPECT_REL_TOL = 0.02
 
 # Filled lazily after the source-coordinate functions are defined.  A common
 # population is retained across seeds so seed averaging does not alter mass.
@@ -209,6 +211,7 @@ def protocol_fingerprint():
                      "frozen_close_packed_bead_layer_full_runout"],
         "measurement": [FINE_BINS, GAP_TOL_D, TOE_MIN_HEIGHT_D],
         "validation": [EXP_TOL, LINEAR_TARGET, POWER_TARGET, REGIME_SPLIT,
+                       ASPECT_REL_TOL,
                        REST_FROUDE_MAX, ARREST_WINDOW_SAMPLES,
                        ARREST_SAMPLE_INTERVAL],
     }
@@ -1379,6 +1382,20 @@ def release_height(path):
     return release_geometry(path)[0]
 
 
+def checked_release_aspect(height, nominal_aspect):
+    """Admit only a release whose physical aspect matches its scheduled case."""
+    actual = height / L0
+    if not math.isfinite(actual) or actual <= 0.0:
+        raise ValueError("non-positive measured release aspect")
+    relative_error = abs(actual - nominal_aspect) / nominal_aspect
+    if relative_error > ASPECT_REL_TOL:
+        raise ValueError(
+            f"release aspect {actual:.6f} differs from scheduled {nominal_aspect:.6f} "
+            f"by {relative_error:.2%} (limit {ASPECT_REL_TOL:.0%})"
+        )
+    return actual
+
+
 def checked_final_state(path, expected_count):
     with open(path, newline="") as f:
         rows = list(csv.DictReader(f))
@@ -1458,6 +1475,7 @@ def derive_dirt_ensemble():
                     vmax = checked_final_state(terminal, expected)
                     arrest_speeds = checked_arrest_window(arrest)
                     h, _ = release_geometry(release)
+                    checked_release_aspect(h, a)
                     _, lf = measure_column(deposit)
             except (OSError, ValueError, csv.Error) as exc:
                 failures.append(f"a={a} seed={s}: malformed witness ({exc})")
@@ -1518,7 +1536,8 @@ def _case_evidence_error(a, seed):
             return f"population is not {expected} at release/final"
         vmax = checked_final_state(terminal, expected)
         arrest_speeds = checked_arrest_window(arrest)
-        release_geometry(release)
+        height, _ = release_geometry(release)
+        checked_release_aspect(height, a)
         _, lf = measure_column(deposit)
         if not math.isfinite(lf):
             return "non-finite deposit measurement"
@@ -2044,6 +2063,7 @@ def derive_lammps_ensemble():
                 vmax = lammps_max_speed(deposit_dump)
                 arrest_speeds = lammps_arrest_window(arrest)
                 h, _ = release_geometry(release)
+                checked_release_aspect(h, a)
                 _, lf = measure_column(deposit)
                 if not all(math.isfinite(v) for v in (vmax, h, lf)):
                     raise ValueError("non-finite LAMMPS witness")

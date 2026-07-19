@@ -42,6 +42,7 @@ ARREST_SAMPLES = 4
 LINEAR_TARGET = 1.0
 POWER_TARGET = 2.0 / 3.0
 TOLERANCE = 0.25
+ASPECT_REL_TOLERANCE = 0.02
 
 
 def tag(aspect):
@@ -203,6 +204,19 @@ def release_aspect(active):
     return height / L0
 
 
+def checked_release_aspect(actual, nominal):
+    """Require the pre-release geometry to represent its declared schedule."""
+    if not math.isfinite(actual) or actual <= 0.0:
+        raise ValueError("invalid measured release aspect")
+    error = abs(actual - nominal) / nominal
+    if error > ASPECT_REL_TOLERANCE:
+        raise ValueError(
+            f"release aspect {actual:.6f} differs from scheduled {nominal:.6f} "
+            f"by {error:.2%} (limit {ASPECT_REL_TOLERANCE:.0%})"
+        )
+    return actual
+
+
 def interval_toe(deposit):
     """Continuous silhouette toe for the mobile deposit.
 
@@ -271,7 +285,8 @@ def observe_case(aspect, seed):
     active, mobile_deposit = split_frozen_support(release, deposit)
     frozen = [p for p in release if p[2] <= BASE_TOP]
     verify_source_population(aspect, seed, release, active, frozen)
-    return release_aspect(active), (interval_toe(mobile_deposit) - L0) / L0
+    return (checked_release_aspect(release_aspect(active), aspect),
+            (interval_toe(mobile_deposit) - L0) / L0)
 
 
 def main():

@@ -1022,9 +1022,10 @@ from the bounded smoke output.
 ## `bench_column_collapse` — granular column runout
 
 > Current protocol notice: the plots below are historical 8d × 3d output and are
-> not validation evidence for the current 16d × 6d protocol. The current driver
+> not validation evidence for the current 32d × 10d protocol. The current driver
 > records each settled pre-release column, requires all 11 aspects × 3 seeds with
-> exact populations, and rejects terminal states with `Fr > 0.05` before fitting.
+> exact populations, measured `H/L0` within 2% of the scheduled aspect, and
+> rejects terminal states with `Fr > 0.05` before fitting.
 > A fresh complete campaign and regenerated figures are required before any PASS.
 
 A quasi-2D column is released on a flat frictional floor; the runout `L_f` vs aspect
