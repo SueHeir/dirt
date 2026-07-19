@@ -203,6 +203,10 @@ python3 examples/bench_column_collapse/sweep.py graph      # fit exponents + wri
 # scheduling; graphing still requires the complete 11 × 3 physical ensemble.
 python3 examples/bench_column_collapse/sweep.py start --jobs 4
 
+# A batch worker may run exactly one declared witness.  This records raw
+# release/final/arrest evidence only; it neither fits nor claims a result.
+python3 examples/bench_column_collapse/sweep.py start --case 2,0
+
 # `start` resumes an interrupted campaign, but reuses a case only after it
 # independently rechecks its release/final populations, release geometry,
 # deposit readability, and four-sample Froude arrest witness.  Invalid or
@@ -211,6 +215,13 @@ python3 examples/bench_column_collapse/sweep.py start --jobs 4
 # regenerate all DIRT witnesses under the same frozen protocol.
 python3 examples/bench_column_collapse/sweep.py start --jobs 4 --rerun
 ```
+
+For a distributed campaign, run `generate` once, dispatch each of the 33
+declared `--case ASPECT,SEED` pairs, then run `start` without `--case` to
+independently re-admit every completed witness and produce `runout.csv`.
+Finally, `graph` is the only command that fits the exponents and can return
+PASS.  A successful individual worker is therefore not a partial validation
+claim.
 
 ### Representative current-protocol case
 

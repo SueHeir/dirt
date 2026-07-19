@@ -14,6 +14,7 @@ Commands (from anywhere):
     python3 examples/bench_column_collapse/sweep.py generate   # write per-case configs
     python3 examples/bench_column_collapse/sweep.py start      # build + resume qualified sims -> CSV
     python3 examples/bench_column_collapse/sweep.py start --rerun # rerun every DIRT witness
+    python3 examples/bench_column_collapse/sweep.py start --case 2,0 # one immutable witness
     python3 examples/bench_column_collapse/sweep.py graph       # extract L_f, validate + plot
     python3 examples/bench_column_collapse/sweep.py            # all three, in order
 
@@ -1236,7 +1237,17 @@ def _run_dirt_case(a, seed, binary, env):
     return a, seed
 
 
-def start(jobs=1, rerun=False):
+def start(jobs=1, rerun=False, selected_cases=None):
+    """Launch either the full campaign or an explicit subset of its witnesses.
+
+    A full-scale 11 x 3 collapse campaign is deliberately expensive.  The
+    individual aspect/seed simulations have no data dependency, so an HPC or
+    batch scheduler must be able to run one named witness without pretending
+    that the partial result is a fitted ensemble.  A subset launch therefore
+    writes only its raw executable evidence; it never writes ``runout.csv`` or
+    declares PASS.  ``graph`` remains the sole path to aggregate all 33 raw
+    witnesses and enforce the unchanged exponent gates.
+    """
     if jobs < 1:
         raise ValueError("jobs must be at least one")
     os.makedirs(DATA_DIR, exist_ok=True)
@@ -1248,6 +1259,16 @@ def start(jobs=1, rerun=False):
     except ValueError as exc:
         print(f"ERROR: {exc}; refusing to launch non-canonical ensemble.")
         sys.exit(1)
+    all_cases = [(a, s) for a in ASPECTS for s in SEEDS]
+    if selected_cases is None:
+        selected_cases = all_cases
+    else:
+        selected_cases = list(selected_cases)
+        invalid = [(a, s) for a, s in selected_cases if a not in ASPECTS or s not in SEEDS]
+        if invalid:
+            raise ValueError(f"case(s) outside the declared 11x3 campaign: {invalid}")
+        if len(set(selected_cases)) != len(selected_cases):
+            raise ValueError("duplicate --case selection")
     print(f"Building {EXAMPLE} (release)...", flush=True)
     env = dict(os.environ)
     # macOS: ensure system libffi is found if the workspace needs it.
@@ -1259,9 +1280,8 @@ def start(jobs=1, rerun=False):
     binary = os.path.join(REPO_ROOT, "target", "release", "examples", EXAMPLE)
     if not os.path.isfile(binary):
         raise RuntimeError(f"release binary missing after build: {binary}")
-    all_cases = [(a, s) for a in ASPECTS for s in SEEDS]
     reusable, cases = [], []
-    for a, seed in all_cases:
+    for a, seed in selected_cases:
         reason = None if rerun else _case_evidence_error(a, seed)
         if reason is None:
             reusable.append((a, seed))
@@ -1271,12 +1291,20 @@ def start(jobs=1, rerun=False):
                 print(f"  rerun a={a:<4} seed={seed}: {reason}", flush=True)
     if reusable:
         print(f"Reusing {len(reusable)} independently admitted DIRT case(s).", flush=True)
-    print(f"Running {len(cases)} of {len(all_cases)} independent DIRT cases with {jobs} worker(s)...", flush=True)
+    print(f"Running {len(cases)} selected DIRT case(s) with {jobs} worker(s)...", flush=True)
     with concurrent.futures.ThreadPoolExecutor(max_workers=jobs) as pool:
         futures = [pool.submit(_run_dirt_case, a, s, binary, env) for a, s in cases]
         for k, future in enumerate(concurrent.futures.as_completed(futures), 1):
             a, s = future.result()
             print(f"  [{k}/{len(cases)}] complete a={a:<4} seed={s}", flush=True)
+
+    # A partial worker must return success when its own witness is qualified;
+    # otherwise a batch scheduler cannot distinguish a sound individual run
+    # from the intentionally incomplete global campaign.  It is still not a
+    # validation result: only an unfiltered launch may write the aggregate CSV.
+    if set(selected_cases) != set(all_cases):
+        print("Subset complete: raw witnesses recorded only; run 'graph' after all 33 cases.")
+        return
 
     try:
         rows = derive_dirt_ensemble()
@@ -1661,11 +1689,33 @@ def main():
     if jobs < 1:
         print("ERROR: --jobs requires a positive integer")
         sys.exit(2)
+    selected_cases = None
+    if "--case" in args:
+        selected_cases = []
+        case_positions = [i for i, arg in enumerate(args) if arg == "--case"]
+        for i in case_positions:
+            try:
+                a_text, seed_text = args[i + 1].split(",", 1)
+                a, seed = float(a_text), int(seed_text)
+            except (IndexError, ValueError):
+                print("ERROR: --case requires ASPECT,SEED (for example --case 2,0)")
+                sys.exit(2)
+            selected_cases.append((a, seed))
     if cmd == "generate":
+        if selected_cases is not None:
+            print("ERROR: --case is valid only with start")
+            sys.exit(2)
         generate()
     elif cmd == "start":
-        start(jobs, rerun="--rerun" in args)
+        try:
+            start(jobs, rerun="--rerun" in args, selected_cases=selected_cases)
+        except ValueError as exc:
+            print(f"ERROR: {exc}")
+            sys.exit(2)
     elif cmd == "graph":
+        if selected_cases is not None:
+            print("ERROR: --case is valid only with start")
+            sys.exit(2)
         sys.exit(0 if graph() else 1)
     elif cmd == "all":
         generate()
