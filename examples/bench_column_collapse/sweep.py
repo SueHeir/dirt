@@ -1164,6 +1164,11 @@ def run_lammps_sweep(lammps):
                 failures.append(f"a={a} seed={seed}: LAMMPS population not {expected} at release/final")
                 continue
             try:
+                # External-code admission is deliberately independent of the
+                # DIRT receipt: establish from LAMMPS's own release dump that
+                # its frozen granular support was neither lost nor moved.
+                checked_lammps_release_support(release_csv)
+                release_geometry(release_csv)
                 vmax = lammps_max_speed(deposit_dump)
                 arrest_speeds = lammps_arrest_window(arrest)
             except ValueError as exc:
@@ -1199,11 +1204,52 @@ REST_FROUDE_MAX = 0.05
 # not a relaxation of the existing Froude threshold.
 ARREST_WINDOW_SAMPLES = 4
 ARREST_SAMPLE_INTERVAL = 25_000
+# LAMMPS's default custom-dump coordinate format is six decimal places.  This
+# is still 30,000 times smaller than a bead diameter (3 mm), while allowing the
+# documented text round-trip (worst-case 0.5 micrometre in displayed units).
+# It is an input/output comparison tolerance, never a physics acceptance band.
+RELEASE_COORDINATE_TOL = 1.0e-7
 
 
 def csv_particle_count(path):
     with open(path, newline="") as f:
         return sum(1 for _ in csv.DictReader(f))
+
+
+def _coordinate_key(point):
+    """Stable text-round-trip key for an immobile source coordinate."""
+    return tuple(int(round(value / RELEASE_COORDINATE_TOL)) for value in point)
+
+
+def checked_lammps_release_support(path):
+    """Require the independent solver to retain the declared rough support.
+
+    ``fix freeze`` is intended to make the emitted LAMMPS rough-base particles
+    immobile.  A release/final population check alone cannot establish that it
+    did: a missing support particle can be replaced by a mobile particle while
+    preserving the total count.  Compare the raw release dump with the
+    canonical base coordinates before using it as an external-code witness.
+
+    This checks a boundary-condition invariant, not DIRT's runout or either
+    experimental exponent.  It therefore cannot make the DIRT-vs-experiment
+    gate pass; it only prevents a non-equivalent LAMMPS boundary from being
+    displayed as a cross-code comparison.
+    """
+    expected = {_coordinate_key(point) for point in rough_base_positions()}
+    if len(expected) != len(rough_base_positions()):
+        raise ValueError("rough-base source has duplicate coordinates")
+    with open(path, newline="") as f:
+        rows = list(csv.DictReader(f))
+    try:
+        observed = {_coordinate_key((float(row["x"]), float(row["y"]),
+                                     float(row["z"]))) for row in rows}
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError("malformed LAMMPS release-state record") from exc
+    missing = expected - observed
+    if missing:
+        raise ValueError(
+            f"LAMMPS release does not retain {len(missing)} frozen rough-base coordinate(s)"
+        )
 
 
 def sha256_file(path):

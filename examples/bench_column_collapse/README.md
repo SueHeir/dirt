@@ -327,13 +327,16 @@ packing.
 Historical LAMMPS values from the superseded small-system protocol are not evidence
 for the current geometry. A fresh overlay is written only after all 33 LAMMPS
 realizations finish with the exact requested population at release and final state
-and meet the same terminal Froude limit; a partial campaign is discarded rather
-than used to support either a PASS or a failure diagnosis.
+and meet the same terminal Froude limit. In addition, each raw LAMMPS release
+must retain every canonical frozen rough-base coordinate (within a text
+round-trip precision of `1e-7 m`); equal total populations cannot substitute for
+the declared rough boundary. A partial campaign is discarded rather than used to
+support either a PASS or a failure diagnosis.
 
 `graph` independently reconstructs that optional overlay from all 33 raw LAMMPS
 release/deposit/arrest witnesses and requires exact agreement with the cached
-summary. If any witness is missing, non-arrested, population-inconsistent, or the
-summary disagrees, the overlay is withheld. This is a provenance check only: it
+summary. If any witness is missing, non-arrested, population- or support-inconsistent,
+or the summary disagrees, the overlay is withheld. This is a provenance check only: it
 does not make LAMMPS a pass criterion and it does not establish experimental
 validity of an unrun DIRT campaign.
 
