@@ -26,6 +26,7 @@ SWEEP = os.path.join(HERE, "sweep")
 # silently change both analyses together.
 L0 = 0.096
 DIAMETER = 0.003
+GATE_RELEASE_WIDTH_MAX = L0 + 1.05 * (DIAMETER / 2.0)
 # The support is a frozen bead bed, not a horizontal z cut.  Its top beads and
 # mobile grains overlap in z, so classifying the final deposit by height would
 # silently turn the 0.60 m long support into a runout.  The release witness
@@ -195,10 +196,15 @@ def verify_source_population(aspect, seed, release, active, frozen):
 def release_aspect(active):
     if not active:
         raise ValueError("release has no grains above frozen base")
-    width = max(x + r for x, _, r in active) - min(x - r for x, _, r in active)
+    # ``particles`` returns raw (x, y, z, radius) witnesses.  Preserve y here
+    # even though the planar envelope itself is measured in x/z.
+    right = max(x + r for x, _, _, r in active)
+    width = right - min(x - r for x, _, _, r in active)
     if width < 0.95 * L0:
         raise ValueError("release does not span the controlled column width")
-    height = max(z + r for _, z, r in active) - DIAMETER
+    if right > GATE_RELEASE_WIDTH_MAX:
+        raise ValueError("release crossed the still-active gate")
+    height = max(z + r for _, _, z, r in active) - DIAMETER
     if height <= 0.0 or not math.isfinite(height):
         raise ValueError("invalid release height")
     return height / L0

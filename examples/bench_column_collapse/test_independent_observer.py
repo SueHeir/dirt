@@ -67,6 +67,14 @@ class IndependentObserverGeometryTests(unittest.TestCase):
             finally:
                 OBSERVER.SWEEP = old
 
+    def test_release_geometry_rejects_grains_past_closed_gate(self):
+        active = [
+            (0.0015, 0.0015, 0.006, 0.0015),
+            (0.1010, 0.0015, 0.006, 0.0015),
+        ]
+        with self.assertRaisesRegex(ValueError, "still-active gate"):
+            OBSERVER.release_aspect(active)
+
 
 if __name__ == "__main__":
     unittest.main()

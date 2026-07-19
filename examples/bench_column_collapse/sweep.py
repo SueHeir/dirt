@@ -99,6 +99,10 @@ DENSITY = 2500.0           # kg/m^3 (glass)
 # two-to-three-grain feature.
 L0 = 0.096                 # initial column width [m] (= 32 diameters)
 W = 0.030                  # slab width in y [m] (= 10 diameters, quasi-3D)
+# Before the named gate is removed, no active grain may pass its physical face.
+# This admits one radius for contact with the plane plus a small numerical margin;
+# it is a boundary-condition witness, not a fitted acceptance tolerance.
+GATE_RELEASE_WIDTH_MAX = L0 + 1.05 * RADIUS
 # The bead bed must cover every place the deposit may come to rest.  Stopping it
 # at L0 would change the basal boundary from rough grains to the smooth safety
 # plane immediately after release, precisely where runout is determined.
@@ -198,7 +202,7 @@ def protocol_fingerprint():
     included in any numerical result; it is an evidence provenance guard.
     """
     contract = {
-        "geometry": [RADIUS, DENSITY, L0, W, PACKING, INSERT_PACKING,
+        "geometry": [RADIUS, DENSITY, L0, W, GATE_RELEASE_WIDTH_MAX, PACKING, INSERT_PACKING,
                      SOURCE_DILATION, SOURCE_JITTER,
                      BASE_Z, BASE_SELECT_Z],
         "material": [YOUNGS_MOD, POISSON, RESTITUTION, FRICTION, DT],
@@ -1374,6 +1378,11 @@ def release_geometry(path):
     width = right - left
     if not math.isfinite(width) or width < 0.95 * L0:
         raise ValueError(f"release width {width / L0:.3f} L0 is below 0.95 L0")
+    if right > GATE_RELEASE_WIDTH_MAX:
+        raise ValueError(
+            f"release crossed the still-active gate: right envelope {right / L0:.3f} L0 "
+            f"exceeds {GATE_RELEASE_WIDTH_MAX / L0:.3f} L0"
+        )
     return h, width
 
 

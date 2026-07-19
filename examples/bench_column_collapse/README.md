@@ -85,6 +85,11 @@ those target exponents.
   whose recorded pre-release active-grain envelopes span less than 95% of
   `L0`. Population alone cannot establish that the controlled initial width
   used to normalize runout was physically present.
+- **Closed-gate witness.** Before `collapse` begins, the active-grain right
+  envelope must remain no farther than one radius (plus a small numerical
+  margin) beyond the gate face at `L0`. The driver and the independent observer
+  each reject a release that already crossed the gate; such a trajectory is a
+  settling/boundary failure, not a column-collapse datum.
 - `a` is varied by the **particle count** at fixed L0. The 32d × 10d section
   uses roughly 5,000 active grains at `a = 0.5` and 50,000 at `a = 5`.
   Crucially, that population is not computed from an infinite-packing volume
