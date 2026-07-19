@@ -1,0 +1,16 @@
+SOURCE_ADMISSION_RECEIPT v1
+
+Command environment: BENCH_PYTHON with pypdf 6.14.2
+Primary source: Cundall & Strack, Geotechnique 29(1), 1979, DOI 10.1680/geot.1979.29.1.47
+Observed SHA-256: 9fe966e2e470e66848d74a1f0c45ae157931e3b9c3566ba3a0521b3fbf0f1b84
+PDF pages: 17
+Affirmative scope statements:
+  qualitative verification: page 15
+  qualitative scope: page 15
+  digitised geometry: page 15
+  unknown pre-load geometry: page 17
+  control mismatch: page 17
+Result: REPLICATION_UNAVAILABLE (expected exit status 2)
+
+This receipt is deliberately not a stress, strain, volume, or fabric reference.
+It must not be used to score a DEM run.
