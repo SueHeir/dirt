@@ -214,7 +214,7 @@ def compare_independent_lammps(dirt_rows, path=LAMMPS_RESULTS):
             "normalized_axial_rmse": rmse, "dirt_normalized": d, "lammps_normalized": l}
 
 
-def plot(rows, checks, passed, source, comparison=None):
+def plot(rows, checks, passed, source, comparison):
     try:
         import matplotlib
         matplotlib.use("Agg")
@@ -225,10 +225,42 @@ def plot(rows, checks, passed, source, comparison=None):
 
     os.makedirs(PLOTS, exist_ok=True)
     x = [row["axial_strain"] for row in rows]
-    panels = 3 if comparison else 2
-    fig, axes = plt.subplots(panels, 1, figsize=(7.2, 9.2 if comparison else 7.0),
-                             sharex=True)
-    ratio, diagnostic = axes[:2]
+    lammps = read(LAMMPS_RESULTS)
+    lammps_x = [row["axial_strain"] for row in lammps if row["syy"] > 0.0]
+    lammps_y_raw = [row["syy"] for row in lammps if row["syy"] > 0.0]
+    dirt_vertical = [row["f_v_mean"] for row in rows if row["f_v_mean"] > 0.0]
+    dirt_vertical_x = [row["axial_strain"] for row in rows if row["f_v_mean"] > 0.0]
+
+    fig, (cross_code, state, ratio) = plt.subplots(3, 1, figsize=(7.2, 9.4), sharex=True)
+    # This is the decisive falsification panel.  The normalization is fixed at
+    # the first common strain sample in compare_independent_lammps(), not fit
+    # to improve agreement.  LAMMPS is an analogue, so disagreement is shown
+    # rather than turned into a source-replication verdict.
+    cross_code.plot(dirt_vertical_x, [value / dirt_vertical[0] for value in dirt_vertical],
+                    "o-", ms=2.5, label="DIRT platen reaction / first positive reaction")
+    cross_code.plot(lammps_x, [value / lammps_y_raw[0] for value in lammps_y_raw],
+                    "-", lw=1.4, label="independent LAMMPS $\\sigma_{yy}$ / initial")
+    cross_code.axvspan(0.01, 0.065, color="0.85", alpha=.55,
+                       label="fixed comparison interval")
+    cross_code.set_ylabel("normalized axial response")
+    cross_code.set_title(
+        "Independent analogue: NOT a source replication "
+        f"($r={comparison['normalized_axial_correlation']:.3f}$, "
+        f"NRMSE={comparison['normalized_axial_rmse']:.3f}$)"
+    )
+    cross_code.legend(fontsize=7, loc="best")
+    cross_code.grid(alpha=.25)
+
+    state.plot(x, [row["volumetric_strain"] for row in rows],
+               label="DIRT volumetric strain")
+    state.plot(x, [row["fabric_anisotropy"] for row in rows],
+               label="DIRT contact-fabric anisotropy")
+    state.plot(x, [row["coordination"] for row in rows],
+               label="DIRT coordination")
+    state.set_ylabel("DIRT state observables")
+    state.legend(fontsize=7, loc="best")
+    state.grid(alpha=.25)
+
     ratio.plot(x, [row["wall_force_ratio"] for row in rows], "o-", ms=2.5,
                label="DIRT direct x-wall/platen resultant")
     for stage, value in sorted(source.items()):
@@ -239,31 +271,9 @@ def plot(rows, checks, passed, source, comparison=None):
     ratio.set_ylabel(r"$F_H/F_V$")
     ratio.set_title("Wall measurement integrity: " + ("PASS" if passed else "FAIL") +
                     "; source stages are not state-registered")
-    ratio.legend(fontsize=8)
+    ratio.legend(fontsize=7)
     ratio.grid(alpha=.25)
-    diagnostic.plot(x, [row["contacts"] for row in rows], label="live contacts")
-    diagnostic.set_ylabel("contacts")
-    diagnostic.legend(fontsize=8)
-    diagnostic.grid(alpha=.25)
-    if comparison:
-        # Plot the exact interpolated vectors used for correlation/RMSE.  This
-        # is evidence of a failed independent analogue comparison, not a
-        # fitted surrogate or a source-derived acceptance curve.
-        grid = [0.01 + 0.005 * i for i in range(comparison["samples"])]
-        external = axes[2]
-        external.plot(grid, comparison["dirt_normalized"], "o-", ms=3,
-                      label="DIRT normalized platen reaction")
-        external.plot(grid, comparison["lammps_normalized"], "s--", ms=3,
-                      label="LAMMPS normalized axial stress")
-        external.set_xlabel("axial strain")
-        external.set_ylabel("normalized axial response")
-        external.set_title("Independent analogue comparison: NOT REPRODUCED "
-                           f"(r={comparison['normalized_axial_correlation']:.3f}, "
-                           f"RMSE={comparison['normalized_axial_rmse']:.3f})")
-        external.legend(fontsize=8)
-        external.grid(alpha=.25)
-    else:
-        diagnostic.set_xlabel("axial platen strain from first recorder state")
+    ratio.set_xlabel("axial platen strain from first recorder state")
     fig.tight_layout()
     fig.savefig(os.path.join(PLOTS, "stress_volume_response.png"), dpi=180)
     plt.close(fig)
@@ -289,9 +299,8 @@ def main():
         protocol = read_protocol()
         missing = audit_external_evidence()
         passed, checks = evaluate(rows)
-        # Generate the raw solver comparison even though `external` exits 1:
-        # a negative result must remain visible in the committed graph.
-        plot(rows, checks, passed, source, compare_independent_lammps(rows))
+        comparison = compare_independent_lammps(rows)
+        plot(rows, checks, passed, source, comparison)
         print("wall-reaction measurement: " + "; ".join(
             f"{key}={value}" for key, value in checks.items()))
         if not passed:
@@ -302,6 +311,9 @@ def main():
               "because the paper provides no state-registration rule")
         print("external replication unavailable; missing source evidence: "
               + ", ".join(missing))
+        print("independent LAMMPS analogue: " + "; ".join(
+            f"{key}={value}" for key, value in comparison.items()
+            if key not in {"dirt_normalized", "lammps_normalized"}))
     if command not in ("all", "run", "graph", "external"):
         raise SystemExit(f"unknown command {command!r}; use all, run, graph, or external")
 

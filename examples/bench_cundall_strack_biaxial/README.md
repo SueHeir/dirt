@@ -12,7 +12,13 @@ friction only.
 $BENCH_PYTHON examples/bench_cundall_strack_biaxial/sweep.py
 ```
 
-![DIRT response and independent comparator](plots/stress_volume_response.png)
+![Measured DIRT states and independent LAMMPS analogue](plots/stress_volume_response.png)
+
+The top panel is the deliberately unfitted, fixed-interval cross-code result:
+the present analogue does **not** agree (`r=-0.457`, normalized RMSE `1.870`).
+The middle panel exposes DIRT's volumetric and contact/fabric observables; it
+does not imply that the primary paper published corresponding curves. The
+bottom panel is only the recorder-integrity check described below.
 
 The committed figure includes the raw normalized DIRT-versus-LAMMPS axial
 response panel used for the independent comparison, alongside wall-ratio and
@@ -61,5 +67,8 @@ beside the deck. After `sweep.py run`, `sweep.py external` compares normalized
 axial response over strain 0.01--0.065 without fitting, selecting, or applying
 a pass allowance. The present DIRT result disagrees (correlation -0.457,
 normalized RMSE 1.870); the command exits non-zero and is evidence of
-non-reproduction, not a successful external validation. This replaces the
-prior recorder-only external mode with a falsifiable independent-solver check.
+non-reproduction, not a successful external validation. The graph renders the
+same raw comparison alongside the DIRT-only volumetric/fabric observables so a
+reader cannot mistake a recorder pass for a bulk-response replication. This
+does not meet the frozen acceptance criterion: a protocol-comparable external
+trajectory with stress, dilatancy, and fabric/contact paths remains required.
