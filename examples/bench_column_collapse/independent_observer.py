@@ -26,7 +26,13 @@ SWEEP = os.path.join(HERE, "sweep")
 # silently change both analyses together.
 L0 = 0.096
 DIAMETER = 0.003
+# The support is a frozen bead bed, not a horizontal z cut.  Its top beads and
+# mobile grains overlap in z, so classifying the final deposit by height would
+# silently turn the 0.60 m long support into a runout.  The release witness
+# supplies the actual frozen coordinates for each case; the observer identifies
+# those same immutable particles again in the final witness.
 BASE_TOP = 0.00375
+FROZEN_COORDINATE_TOLERANCE = 1.0e-9
 ASPECTS = (0.5, 0.75, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0)
 SEEDS = (0, 1, 2)
 GRAVITY = 9.81
@@ -97,8 +103,43 @@ def arrested(path):
         raise ValueError("terminal arrest window exceeds Froude limit")
 
 
-def release_aspect(release):
-    active = [(x, z, r) for x, _, z, r in release if z > BASE_TOP]
+def coordinate_key(particle):
+    """A stable key for a frozen witness coordinate.
+
+    Recorder CSVs are text serializations, so round only enough to tolerate
+    serialization noise, not enough to confuse two physical grains.
+    """
+    return tuple(round(value / FROZEN_COORDINATE_TOLERANCE)
+                 for value in particle)
+
+
+def split_frozen_support(release, deposit):
+    """Return mobile release/final particles after exact support matching.
+
+    A rough base cannot be removed by a final-state z threshold: its upper
+    spheres occupy the same height range as grains in the toe.  Instead, use
+    the pre-release record to identify the frozen support and require every
+    such coordinate to remain present in the final frame.  This is a physical
+    boundary check as well as an exclusion rule; a moving or missing support
+    invalidates the observation.
+    """
+    frozen = [p for p in release if p[2] <= BASE_TOP]
+    active = [p for p in release if p[2] > BASE_TOP]
+    if not frozen or not active:
+        raise ValueError("release does not separate frozen support and active grains")
+    frozen_keys = {coordinate_key(p) for p in frozen}
+    if len(frozen_keys) != len(frozen):
+        raise ValueError("duplicate frozen-support coordinates")
+    final_keys = [coordinate_key(p) for p in deposit]
+    if not frozen_keys.issubset(final_keys):
+        raise ValueError("frozen support moved or is missing from final witness")
+    mobile_final = [p for p, key in zip(deposit, final_keys) if key not in frozen_keys]
+    if len(mobile_final) != len(active):
+        raise ValueError("mobile population changed after support exclusion")
+    return active, mobile_final
+
+
+def release_aspect(active):
     if not active:
         raise ValueError("release has no grains above frozen base")
     width = max(x + r for x, _, r in active) - min(x - r for x, _, r in active)
@@ -111,13 +152,15 @@ def release_aspect(release):
 
 
 def interval_toe(deposit):
-    """Bin-free connected-component toe estimate.
+    """Continuous silhouette toe for the mobile deposit.
 
-    Eligible particles are at least one diameter above the support plane.  Their
-    radius-expanded x intervals are merged from the back wall outward; a physical
-    gap greater than one diameter ends the connected deposit.  This avoids the
-    driver's occupancy grid and is intentionally an independently implemented
-    estimator of the same stated two-layer toe observable.
+    Eligible mobile particles are at least one diameter above the containment
+    plane.  Their radius-expanded x intervals are unioned continuously, then
+    the deposit component that overlaps the original [0, L0] column footprint
+    is followed to its downstream edge.  A physical gap greater than one
+    diameter separates components.  This avoids the driver's occupancy grid
+    and, unlike a leftmost-interval walk, cannot let an isolated rear grain
+    select the toe.
     """
     intervals = []
     for x, _, z, radius in deposit:
@@ -126,12 +169,20 @@ def interval_toe(deposit):
     if not intervals:
         raise ValueError("deposit has no two-layer toe particles")
     intervals.sort()
-    _, right = intervals[0]
-    for left, end in intervals[1:]:
-        if left - right > DIAMETER:
-            break
-        right = max(right, end)
-    return max(L0, right)
+    components = []
+    left, right = intervals[0]
+    for start, end in intervals[1:]:
+        if start - right > DIAMETER:
+            components.append((left, right))
+            left, right = start, end
+        else:
+            right = max(right, end)
+    components.append((left, right))
+    anchored = [(left, right) for left, right in components
+                if left <= L0 and right >= 0.0]
+    if len(anchored) != 1:
+        raise ValueError("deposit has no unique component anchored to release footprint")
+    return max(L0, anchored[0][1])
 
 
 def slope(points):
@@ -165,7 +216,8 @@ def observe_case(aspect, seed):
         raise ValueError("release/final population changed")
     terminal(paths["terminal"], len(release))
     arrested(paths["arrest"])
-    return release_aspect(release), (interval_toe(deposit) - L0) / L0
+    active, mobile_deposit = split_frozen_support(release, deposit)
+    return release_aspect(active), (interval_toe(mobile_deposit) - L0) / L0
 
 
 def main():

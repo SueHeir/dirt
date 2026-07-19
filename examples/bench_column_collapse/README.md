@@ -162,8 +162,10 @@ reference, material, aspect range, toe metric, or ±0.25 exponent bands.
 does **not** import `sweep.py`, use `runout.csv`, or use its gridded toe
 measurement. It independently reads all raw release, final, terminal, and
 arrest witnesses; checks population, release width, and sustained Froude rest;
-then estimates the same stated two-layer toe by merging radius-expanded particle
-intervals with a one-diameter physical gap. It fits the same externally cited
+then identifies the immutable rough-base coordinates from the release witness
+and excludes them from the final deposit before estimating the same stated
+two-layer toe via a continuous, footprint-anchored particle silhouette with a
+one-diameter physical gap. It fits the same externally cited
 planar targets and unchanged ±0.25 bands. A missing witness or disagreement
 fails closed, so it is corroboration rather than a criterion engineered from the
 driver's result. The implementation was AI-assisted (2026-07-19); it is not a
