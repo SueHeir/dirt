@@ -107,6 +107,12 @@ Before fitting, it independently re-derives every row from all **33** release,
 final-deposit, and sustained-rest witnesses; it rejects a missing witness or any
 summary value that disagrees with those raw measurements. Thus `runout.csv` is a
 cache, not evidence that can make a partial or edited campaign pass.
+Each completed realization also carries a content receipt: SHA-256 digests of
+the generated configuration, active source, rough-base source, recorder source,
+and all four raw witnesses. Reuse and graphing recompute the receipt and reject
+a stale or mixed case before it can enter a seed average. This is an ordinary
+reproducibility guard, not a cryptographic signature and not physical evidence
+in place of a completed campaign.
 The scheduled aspect proves coverage; the fit itself uses the executable's measured
 pre-release height `H/L0`, so loose insertion and settling cannot silently shift a
 point horizontally. A LAMMPS overlay is emitted only for a complete, exact-population

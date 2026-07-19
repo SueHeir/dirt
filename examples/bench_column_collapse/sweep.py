@@ -75,6 +75,7 @@ PLOT_DIR = os.path.join(SCRIPT_DIR, "plots")
 RUNOUT_CSV = os.path.join(DATA_DIR, "runout.csv")          # DIRT runout per aspect
 LAMMPS_CSV = os.path.join(DATA_DIR, "lammps_results.csv")  # LAMMPS runout per aspect
 MANIFEST_NAME = "column_collapse_protocol.json"
+CASE_RECEIPT_NAME = "column_collapse_case_receipt.json"
 
 # LAMMPS binary candidates, in preference order. LAMMPS is optional: if none is
 # found, the LAMMPS leg is skipped and only DIRT is run/plotted.
@@ -1016,6 +1017,92 @@ def csv_particle_count(path):
         return sum(1 for _ in csv.DictReader(f))
 
 
+def sha256_file(path):
+    """Return the content digest of one campaign input or raw witness."""
+    digest = hashlib.sha256()
+    with open(path, "rb") as f:
+        for block in iter(lambda: f.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def dirt_case_paths(a, seed):
+    """Return the four raw executable witnesses for one DIRT realization."""
+    case_data = os.path.join(case_dir_seed(a, seed), "data")
+    return {
+        "deposit": os.path.join(case_data, "column_collapse_results.csv"),
+        "release": os.path.join(case_data, "column_collapse_release.csv"),
+        "terminal": os.path.join(case_data, "column_collapse_final_state.csv"),
+        "arrest": os.path.join(case_data, "column_collapse_arrest.csv"),
+    }
+
+
+def case_receipt_path(a, seed):
+    return os.path.join(case_dir_seed(a, seed), "data", CASE_RECEIPT_NAME)
+
+
+def case_receipt(a, seed):
+    """Make an immutable-content receipt for a completed DIRT witness.
+
+    A complete set of CSV files is necessary but not sufficient evidence: a
+    resumed campaign must also establish which generated source, executable
+    recorder, and configuration produced them.  The receipt deliberately hashes
+    raw files rather than fit results, so it cannot tune or manufacture an
+    exponent.  It detects ordinary stale/mixed artifacts; it is not a signature
+    scheme and makes no claim to defend against a writer able to replace both
+    data and receipt.
+    """
+    cdir = case_dir_seed(a, seed)
+    paths = dirt_case_paths(a, seed)
+    required = {
+        "config": os.path.join(cdir, "config.toml"),
+        "active_source": os.path.join(cdir, "active_column.csv"),
+        "rough_base": os.path.join(SWEEP_DIR, "rough_base.csv"),
+        "recorder_source": os.path.join(SCRIPT_DIR, "main.rs"),
+        **paths,
+    }
+    missing = [name for name, path in required.items() if not os.path.isfile(path)]
+    if missing:
+        raise ValueError("missing receipt input(s): " + ", ".join(missing))
+    return {
+        "schema": 1,
+        "nominal_aspect": a,
+        "seed": seed,
+        "protocol_sha256": protocol_fingerprint(),
+        "expected_particle_count": total_particles(a),
+        "input_sha256": {
+            "config": sha256_file(required["config"]),
+            "active_source": sha256_file(required["active_source"]),
+            "rough_base": sha256_file(required["rough_base"]),
+            "recorder_source": sha256_file(required["recorder_source"]),
+        },
+        "witness_sha256": {name: sha256_file(path) for name, path in paths.items()},
+    }
+
+
+def write_case_receipt(a, seed):
+    receipt = case_receipt(a, seed)
+    path = case_receipt_path(a, seed)
+    with open(path, "w") as f:
+        json.dump(receipt, f, sort_keys=True, indent=2)
+        f.write("\n")
+
+
+def checked_case_receipt(a, seed):
+    """Reject a witness whose raw artifacts no longer match its run receipt."""
+    path = case_receipt_path(a, seed)
+    if not os.path.isfile(path):
+        raise ValueError("missing per-case content receipt")
+    try:
+        with open(path) as f:
+            recorded = json.load(f)
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        raise ValueError("malformed per-case content receipt") from exc
+    current = case_receipt(a, seed)
+    if recorded != current:
+        raise ValueError("per-case receipt disagrees with inputs or raw witnesses")
+
+
 def total_particles(aspect):
     return n_particles(aspect) + len(rough_base_positions())
 
@@ -1122,16 +1209,15 @@ def derive_dirt_ensemble():
     for a in ASPECTS:
         lfs, hs = [], []
         for s in SEEDS:
-            case_data = os.path.join(case_dir_seed(a, s), "data")
-            deposit = os.path.join(case_data, "column_collapse_results.csv")
-            release = os.path.join(case_data, "column_collapse_release.csv")
-            terminal = os.path.join(case_data, "column_collapse_final_state.csv")
-            arrest = os.path.join(case_data, "column_collapse_arrest.csv")
+            paths = dirt_case_paths(a, s)
+            deposit, release = paths["deposit"], paths["release"]
+            terminal, arrest = paths["terminal"], paths["arrest"]
             expected = total_particles(a)
             if not all(os.path.isfile(p) for p in (deposit, release, terminal, arrest)):
                 failures.append(f"a={a} seed={s}: missing release, final, terminal, or arrest evidence")
                 continue
             try:
+                checked_case_receipt(a, s)
                 release_n = csv_particle_count(release)
                 deposit_n = csv_particle_count(deposit)
                 vmax = checked_final_state(terminal, expected)
@@ -1185,16 +1271,14 @@ def _case_evidence_error(a, seed):
     released and terminal populations, measured release geometry, deposit
     readability, and sustained Froude arrest.
     """
-    cdir = case_dir_seed(a, seed)
-    case_data = os.path.join(cdir, "data")
-    deposit = os.path.join(case_data, "column_collapse_results.csv")
-    release = os.path.join(case_data, "column_collapse_release.csv")
-    terminal = os.path.join(case_data, "column_collapse_final_state.csv")
-    arrest = os.path.join(case_data, "column_collapse_arrest.csv")
+    paths = dirt_case_paths(a, seed)
+    deposit, release = paths["deposit"], paths["release"]
+    terminal, arrest = paths["terminal"], paths["arrest"]
     if not all(os.path.isfile(p) for p in (deposit, release, terminal, arrest)):
         return "missing release, final, terminal, or arrest evidence"
     expected = total_particles(a)
     try:
+        checked_case_receipt(a, seed)
         if csv_particle_count(release) != expected or csv_particle_count(deposit) != expected:
             return f"population is not {expected} at release/final"
         vmax = checked_final_state(terminal, expected)
@@ -1218,7 +1302,8 @@ def _clear_case_evidence(a, seed):
     """Remove only an inadmissible case's derived witnesses before rerunning."""
     cdir = case_dir_seed(a, seed)
     for name in ("column_collapse_results.csv", "column_collapse_release.csv",
-                 "column_collapse_final_state.csv", "column_collapse_arrest.csv"):
+                 "column_collapse_final_state.csv", "column_collapse_arrest.csv",
+                 CASE_RECEIPT_NAME):
         stale = os.path.join(cdir, "data", name)
         if os.path.isfile(stale):
             os.remove(stale)
@@ -1234,6 +1319,9 @@ def _run_dirt_case(a, seed, binary, env):
     with open(os.path.join(cdir, "run.log"), "w") as log:
         subprocess.run([binary, config], cwd=REPO_ROOT, stdout=log,
                        stderr=subprocess.STDOUT, env=env, check=True)
+    # Write only after every raw witness exists.  A later graph/reuse operation
+    # re-hashes this receipt instead of trusting filenames or the aggregate CSV.
+    write_case_receipt(a, seed)
     return a, seed
 
 
