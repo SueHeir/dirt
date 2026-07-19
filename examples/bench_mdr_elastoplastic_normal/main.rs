@@ -81,26 +81,25 @@ fn main() {
     let mut mt = MaterialTable::new();
     mt.contact_model = "mdr".to_string();
     mt.limit_damping = false;
-    mt.add_material_with_mdr(
-        "powder",
-        cfg.youngs_mod,
-        cfg.poisson_ratio,
-        1.0,
-        0.0,
-        0.0,
-        0.0,
-        cfg.surface_energy,
-        0.0,
-        0.0,
-        0.0,
-        0.0,
-        0.0,
-        0.0,
-        0.0,
-        cfg.yield_stress,
-        0.5,
-        cfg.damping,
-    );
+    mt.add(
+        Material::new(
+            "powder",
+            Elastic::new(cfg.youngs_mod, cfg.poisson_ratio, 1.0),
+        )
+        .with_friction(Friction {
+            sliding: 0.0,
+            ..Friction::default()
+        })
+        .with_adhesion(Adhesion::SurfaceEnergy {
+            energy: cfg.surface_energy,
+        })
+        .with_mdr(Mdr {
+            yield_stress: cfg.yield_stress,
+            psi_b: 0.5,
+            damping: cfg.damping,
+        }),
+    )
+    .unwrap();
     mt.build_pair_tables();
 
     if let Some(parent) = std::path::Path::new(&cfg.output_csv).parent() {

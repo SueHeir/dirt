@@ -1495,7 +1495,7 @@ pub fn is_body_atom(clump_data: &ClumpAtom, i: usize) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dirt_atom::{DemAtom, DemAtomPlugin};
+    use dirt_atom::{DemAtom, DemAtomPlugin, Elastic, Friction, Material};
     use dirt_test_utils::{ParticleFixture, ParticleSpec};
     use soil_core::{Atom, AtomData, AtomDataRegistry, ParticleStoreError, SingleProcessComm};
 
@@ -1693,7 +1693,14 @@ region = { type = "block", min = [1.0, 1.0, 1.0], max = [1.0, 2.0, 2.0] }
         };
 
         let mut materials = dirt_atom::MaterialTable::new();
-        materials.add_material("glass", 8.7e9, 0.3, 0.9, 0.5, 0.0, 0.0);
+        materials
+            .add(
+                Material::new("glass", Elastic::new(8.7e9, 0.3, 0.9)).with_friction(Friction {
+                    sliding: 0.5,
+                    ..Friction::default()
+                }),
+            )
+            .unwrap();
         materials.build_pair_tables();
 
         app.add_resource(Atom::new());

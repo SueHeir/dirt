@@ -24,6 +24,7 @@ fn hooke_and_hertz_publish_the_same_typed_contact_seam() {
 
 fn contact_seam_consumer() {}
 use dirt_atom::DemAtom;
+use dirt_atom::{Adhesion, Elastic, Friction, Material, Rolling, Twisting};
 use dirt_test_utils::{make_material_table, push_dem_test_atom, ParticleFixture, ParticleSpec};
 use soil_core::Neighbor;
 use soil_core::{Atom, AtomDataRegistry};
@@ -288,14 +289,29 @@ fn fused_contact_no_force_for_gap() {
 
 fn make_material_table_cohesion() -> MaterialTable {
     let mut mt = MaterialTable::new();
-    mt.add_material("glass", 8.7e9, 0.3, 0.95, 0.4, 0.0, 1e9);
+    mt.add(
+        Material::new("glass", Elastic::new(8.7e9, 0.3, 0.95))
+            .with_friction(Friction {
+                sliding: 0.4,
+                ..Friction::default()
+            })
+            .with_adhesion(Adhesion::Sjkr { energy: 1e9 }),
+    )
+    .unwrap();
     mt.build_pair_tables();
     mt
 }
 
 fn make_material_table_rolling() -> MaterialTable {
     let mut mt = MaterialTable::new();
-    mt.add_material("glass", 8.7e9, 0.3, 0.95, 0.4, 0.3, 0.0);
+    mt.add(
+        Material::new("glass", Elastic::new(8.7e9, 0.3, 0.95)).with_friction(Friction {
+            sliding: 0.4,
+            rolling: 0.3,
+            twisting: 0.0,
+        }),
+    )
+    .unwrap();
     mt.build_pair_tables();
     mt
 }
@@ -391,7 +407,14 @@ fn zero_cohesion_matches_original() {
 
     let f_default = run(make_material_table());
     let mut mt_zero = MaterialTable::new();
-    mt_zero.add_material("glass", 8.7e9, 0.3, 0.95, 0.4, 0.0, 0.0);
+    mt_zero
+        .add(
+            Material::new("glass", Elastic::new(8.7e9, 0.3, 0.95)).with_friction(Friction {
+                sliding: 0.4,
+                ..Friction::default()
+            }),
+        )
+        .unwrap();
     mt_zero.build_pair_tables();
     let f_zero = run(mt_zero);
 
@@ -409,7 +432,15 @@ fn zero_cohesion_matches_original() {
 fn make_material_table_jkr() -> MaterialTable {
     let mut mt = MaterialTable::new();
     // Use high surface energy (1.0 J/m²) so adhesion clearly dominates at small overlaps
-    mt.add_material_full("glass", 8.7e9, 0.3, 0.95, 0.4, 0.0, 0.0, 1.0);
+    mt.add(
+        Material::new("glass", Elastic::new(8.7e9, 0.3, 0.95))
+            .with_friction(Friction {
+                sliding: 0.4,
+                ..Friction::default()
+            })
+            .with_adhesion(Adhesion::SurfaceEnergy { energy: 1.0 }),
+    )
+    .unwrap();
     mt.build_pair_tables();
     mt
 }
@@ -578,7 +609,17 @@ fn jkr_no_interaction_beyond_pulloff() {
 
 fn make_material_table_hooke() -> MaterialTable {
     let mut mt = MaterialTable::new();
-    mt.add_material_extended("glass", 8.7e9, 0.3, 0.95, 0.4, 0.0, 0.0, 0.0, 0.0, 1e6, 5e5);
+    mt.add(
+        Material::new(
+            "glass",
+            Elastic::new(8.7e9, 0.3, 0.95).with_hooke_stiffness(1e6, 5e5),
+        )
+        .with_friction(Friction {
+            sliding: 0.4,
+            ..Friction::default()
+        }),
+    )
+    .unwrap();
     mt.contact_model = "hooke".to_string();
     mt.build_pair_tables();
     mt
@@ -586,9 +627,14 @@ fn make_material_table_hooke() -> MaterialTable {
 
 fn make_material_table_twisting() -> MaterialTable {
     let mut mt = MaterialTable::new();
-    mt.add_material_extended(
-        "glass", 8.7e9, 0.3, 0.95, 0.4, 0.0, 0.0, 0.0, 0.05, 0.0, 0.0,
-    );
+    mt.add(
+        Material::new("glass", Elastic::new(8.7e9, 0.3, 0.95)).with_friction(Friction {
+            sliding: 0.4,
+            rolling: 0.0,
+            twisting: 0.05,
+        }),
+    )
+    .unwrap();
     mt.build_pair_tables();
     mt
 }
@@ -828,13 +874,19 @@ fn rolling_resistance_opposes_angular_velocity() {
 fn make_material_table_sds_rolling() -> MaterialTable {
     let mut mt = MaterialTable::new();
     mt.rolling_model = "sds".to_string();
-    mt.add_material_with_sds(
-        "glass", 8.7e9, 0.3, 0.95, 0.4, 0.3, // rolling_friction (mu_r)
-        0.0, 0.0, 0.0, // twisting_friction
-        0.0, 0.0, 1e3, // rolling_stiffness
-        0.5, // rolling_damping
-        0.0, 0.0,
-    );
+    mt.add(
+        Material::new("glass", Elastic::new(8.7e9, 0.3, 0.95))
+            .with_friction(Friction {
+                sliding: 0.4,
+                rolling: 0.3,
+                twisting: 0.0,
+            })
+            .with_rolling(Rolling::Sds {
+                stiffness: 1e3,
+                damping: 0.5,
+            }),
+    )
+    .unwrap();
     mt.build_pair_tables();
     mt
 }
@@ -842,12 +894,19 @@ fn make_material_table_sds_rolling() -> MaterialTable {
 fn make_material_table_sds_twisting() -> MaterialTable {
     let mut mt = MaterialTable::new();
     mt.twisting_model = "sds".to_string();
-    mt.add_material_with_sds(
-        "glass", 8.7e9, 0.3, 0.95, 0.4, 0.0, // rolling_friction
-        0.0, 0.0, 0.3, // twisting_friction (mu_tw)
-        0.0, 0.0, 0.0, 0.0, 1e3, // twisting_stiffness
-        0.5, // twisting_damping
-    );
+    mt.add(
+        Material::new("glass", Elastic::new(8.7e9, 0.3, 0.95))
+            .with_friction(Friction {
+                sliding: 0.4,
+                rolling: 0.0,
+                twisting: 0.3,
+            })
+            .with_twisting(Twisting::Sds {
+                stiffness: 1e3,
+                damping: 0.5,
+            }),
+    )
+    .unwrap();
     mt.build_pair_tables();
     mt
 }
@@ -1160,23 +1219,19 @@ fn make_material_table_marshall_twisting(
 ) -> MaterialTable {
     let mut mt = MaterialTable::new();
     mt.twisting_model = "marshall".to_string();
-    mt.add_material_with_sds(
-        "glass",
-        8.7e9,
-        0.3,
-        0.95,
-        friction, // tangential μ_t — Marshall derives μ_twist = (2/3) a μ_t from this
-        0.0,      // rolling_friction
-        0.0,
-        0.0,
-        0.0, // twisting_friction (unused by Marshall)
-        0.0,
-        0.0, // kn, kt (Hertz path ignores these)
-        0.0,
-        0.0, // rolling sds
-        twist_stiff,
-        twist_damp, // twisting sds — must NOT affect Marshall
-    );
+    mt.add(
+        Material::new("glass", Elastic::new(8.7e9, 0.3, 0.95))
+            .with_friction(Friction {
+                sliding: friction,
+                rolling: 0.0,
+                twisting: 0.0,
+            })
+            .with_twisting(Twisting::Sds {
+                stiffness: twist_stiff,
+                damping: twist_damp,
+            }),
+    )
+    .unwrap();
     mt.build_pair_tables();
     mt
 }
@@ -1336,9 +1391,19 @@ fn constant_model_unchanged_with_sds_config() {
     // Use constant model but with SDS parameters set (they should be ignored)
     let mut mt = MaterialTable::new();
     // rolling_model defaults to "constant"
-    mt.add_material_with_sds(
-        "glass", 8.7e9, 0.3, 0.95, 0.4, 0.3, 0.0, 0.0, 0.0, 0.0, 0.0, 1e3, 0.5, 0.0, 0.0,
-    );
+    mt.add(
+        Material::new("glass", Elastic::new(8.7e9, 0.3, 0.95))
+            .with_friction(Friction {
+                sliding: 0.4,
+                rolling: 0.3,
+                twisting: 0.0,
+            })
+            .with_rolling(Rolling::Sds {
+                stiffness: 1e3,
+                damping: 0.5,
+            }),
+    )
+    .unwrap();
     mt.build_pair_tables();
 
     let mut registry = AtomDataRegistry::new();
@@ -1389,7 +1454,15 @@ fn constant_model_unchanged_with_sds_config() {
 fn make_material_table_dmt() -> MaterialTable {
     let mut mt = MaterialTable::new();
     // Use high surface energy (1.0 J/m²) so adhesion clearly dominates at small overlaps
-    mt.add_material_full("glass", 8.7e9, 0.3, 0.95, 0.4, 0.0, 0.0, 1.0);
+    mt.add(
+        Material::new("glass", Elastic::new(8.7e9, 0.3, 0.95))
+            .with_friction(Friction {
+                sliding: 0.4,
+                ..Friction::default()
+            })
+            .with_adhesion(Adhesion::SurfaceEnergy { energy: 1.0 }),
+    )
+    .unwrap();
     mt.adhesion_model = "dmt".to_string();
     mt.build_pair_tables();
     mt
@@ -1793,7 +1866,14 @@ fn linear_momentum_conserved_during_elastic_contact() {
     // (LAMMPS `damping tsuji` has the same residual), so momentum is conserved to
     // that order rather than machine epsilon.
     let mut mt = MaterialTable::new();
-    mt.add_material("elastic", 8.7e9, 0.3, 1.0, 0.0, 0.0, 0.0);
+    mt.add(
+        Material::new("elastic", Elastic::new(8.7e9, 0.3, 1.0)).with_friction(Friction {
+            sliding: 0.0,
+            rolling: 0.0,
+            twisting: 0.0,
+        }),
+    )
+    .unwrap();
     mt.build_pair_tables();
     assert!(
         mt.beta_ij[0][0].abs() < 1e-3,
