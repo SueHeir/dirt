@@ -32,7 +32,7 @@ const GATE_NAME: &str = "gate";
 ///
 /// The benchmark is single-rank, so this records the complete population used
 /// by the runout analysis rather than a rank-local proxy.
-const ARREST_SAMPLE_INTERVAL: u64 = 25_000;
+const ARREST_SAMPLE_INTERVAL: u64 = 100_000;
 
 /// Tracks gate release so it happens exactly once.
 struct CollapseTracker {

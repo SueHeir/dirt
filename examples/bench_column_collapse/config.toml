@@ -86,7 +86,7 @@ gamma_a = 0.8
 
 [[nve_limit]]
 group = "all"
-max_displacement = 1.0e-5
+max_displacement = 1.0e-6
 
 [[wall]]
 type = "plane"
@@ -131,12 +131,12 @@ interval = 1000000
 
 [[run]]
 name = "settle"
-steps = 80000
+steps = 320000
 thermo = 20000
-dt = 4.000e-06
+dt = 1.000e-06
 
 [[run]]
 name = "collapse"
-steps = 1000000
+steps = 4000000
 thermo = 20000
-dt = 4.000e-06
+dt = 1.000e-06

@@ -116,9 +116,24 @@ YOUNGS_MOD = 7.0e7         # Pa (softened from ~65 GPa real glass)
 POISSON = 0.245
 RESTITUTION = 0.926        # measured glass–glass COR
 FRICTION = 0.16            # measured glass–glass sliding friction
-DT = 4.0e-6               # s
-SETTLE_STEPS = 80000
-COLLAPSE_STEPS = 1000000   # 4 s: enough for a high-e glass bed to arrest
+# The exact source/base coordinates are non-overlapping (their minimum centre
+# distance is one diameter), but the 32d x 10d source creates thousands of
+# simultaneous Hertz contacts on its first loaded step.  dt=4 us advances that
+# network through the kernel's large-overlap safeguard during settling.  Use
+# 1 us; the reciprocal step-count change retains the same 0.32 s preparation
+# and 4 s released evolution.
+DT = 1.0e-6
+SETTLE_STEPS = 320000
+COLLAPSE_STEPS = 4000000   # 4 s: enough for a high-e glass bed to arrest
+# The inserted fabric is deliberately dense and supports a full 32d x 10d
+# column from its first gravity step.  At 10 um/step the former limiter allowed
+# a newly loaded contact to advance several Hertz overlaps before Cundall
+# damping could dissipate its insertion transient; the reference a=0.5 source
+# then aborted during settling with the force kernel's >500-large-overlap
+# safeguard.  Limit the *settling-only* displacement to one micrometre.  Both
+# this limiter and Cundall damping are removed before gate release, so it is a
+# stable preparation integrator, not a change to the released contact law.
+PREPARATION_MAX_DISPLACEMENT = 1.0e-6
 
 PACKING = 0.60             # settled solid fraction used to size the particle count
 # The source is a non-overlapping close packing, not a dilute airborne cloud.
@@ -208,7 +223,8 @@ def protocol_fingerprint():
         "geometry": [RADIUS, DENSITY, L0, W, GATE_RELEASE_WIDTH_MAX, PACKING, INSERT_PACKING,
                      SOURCE_DILATION, SOURCE_JITTER,
                      BASE_Z, BASE_SELECT_Z],
-        "material": [YOUNGS_MOD, POISSON, RESTITUTION, FRICTION, DT],
+                     "material": [YOUNGS_MOD, POISSON, RESTITUTION, FRICTION, DT,
+                                  PREPARATION_MAX_DISPLACEMENT],
         "schedule": [SETTLE_STEPS, COLLAPSE_STEPS, ASPECTS, SEEDS],
         # Source preparation is part of the physical protocol: a campaign made
         # with an earlier translated crystal cannot be relabelled as this
@@ -770,7 +786,7 @@ gamma_a = 0.8
 
 [[nve_limit]]
 group = "all"
-max_displacement = 1.0e-5
+max_displacement = {preparation_max_displacement}
 
 [[wall]]
 type = "plane"
@@ -860,6 +876,7 @@ def generate():
                     insert_top=f"{insert_top:.4f}", z_high=f"{z_high:.4f}",
                     active_column=os.path.relpath(active_column, REPO_ROOT),
                     output_dir=os.path.relpath(cdir, REPO_ROOT), dt=f"{DT:.3e}",
+                    preparation_max_displacement=f"{PREPARATION_MAX_DISPLACEMENT:.3e}",
                     settle_steps=SETTLE_STEPS, collapse_steps=COLLAPSE_STEPS,
                     ))
                 n_cfg += 1
@@ -983,7 +1000,7 @@ fix             gate mobile wall/gran granular hertz/material {E} {e} {nu} tange
 # removed together before gate release, mirroring DIRT's stage-local Cundall
 # damping and displacement cap below.
 fix             settle_damp mobile damping/cundall 0.8 0.8
-fix             integrate mobile nve/limit 1.0e-5
+fix             integrate mobile nve/limit {preparation_max_displacement}
 # Match DIRT's sustained-quiescence evidence: the final four samples, rather
 # than one terminal dump, must all satisfy the shared Froude threshold.
 variable        speed atom sqrt(vx*vx+vy*vy+vz*vz)
@@ -1147,6 +1164,7 @@ def write_lammps_input(path, aspect, seed):
             E=f"{YOUNGS_MOD:.6e}", e=RESTITUTION, nu=POISSON,
             tdamp=1.0, mu=FRICTION, g=9.81,
             W=W, L0=L0, dt=f"{DT:.3e}", thermo=40000,
+            preparation_max_displacement=f"{PREPARATION_MAX_DISPLACEMENT:.3e}",
             settle_steps=SETTLE_STEPS, collapse_steps=COLLAPSE_STEPS,
             release_dump=lammps_dump_path(aspect, seed, "release"),
             dump=lammps_dump_path(aspect, seed, "deposit"),
@@ -1299,7 +1317,8 @@ REST_FROUDE_MAX = 0.05
 # equally spaced collapse witnesses instead; this is a stricter arrest check,
 # not a relaxation of the existing Froude threshold.
 ARREST_WINDOW_SAMPLES = 4
-ARREST_SAMPLE_INTERVAL = 25_000
+# Preserve the 0.1 s physical sampling interval after the timestep refinement.
+ARREST_SAMPLE_INTERVAL = 100_000
 # LAMMPS's default custom-dump coordinate format is six decimal places.  This
 # is still 30,000 times smaller than a bead diameter (3 mm), while allowing the
 # documented text round-trip (worst-case 0.5 micrometre in displayed units).
