@@ -61,6 +61,8 @@ import csv
 import math
 import shutil
 import subprocess
+import contextlib
+import fcntl
 import hashlib
 import json
 import concurrent.futures
@@ -77,6 +79,7 @@ LAMMPS_CSV = os.path.join(DATA_DIR, "lammps_results.csv")  # LAMMPS runout per a
 LAMMPS_RECEIPT_NAME = "lammps_receipt.json"
 MANIFEST_NAME = "column_collapse_protocol.json"
 CASE_RECEIPT_NAME = "column_collapse_case_receipt.json"
+CAMPAIGN_LOCK_NAME = ".column_collapse_campaign.lock"
 
 # LAMMPS binary candidates, in preference order. LAMMPS is optional: if none is
 # found, the LAMMPS leg is skipped and only DIRT is run/plotted.
@@ -549,6 +552,38 @@ def case_dir_seed(aspect, seed):
     return os.path.join(SWEEP_DIR, f"{case_tag(aspect)}_s{seed}")
 
 
+@contextlib.contextmanager
+def exclusive_campaign_lock(operation):
+    """Exclude concurrent writers to the generated sources and raw witnesses.
+
+    Case output paths are deterministic.  Without an inter-process lock, two
+    independent ``start --rerun --case a,seed`` commands can truncate the same
+    release/deposit CSV while each process subsequently hashes whatever the
+    other left behind.  That is neither an independent realization nor an
+    auditable one.  The lock is intentionally local to the generated campaign
+    directory so clean worktrees and distinct campaign directories may run in
+    parallel, while a single evidence tree has exactly one writer.
+    """
+    os.makedirs(SWEEP_DIR, exist_ok=True)
+    path = os.path.join(SWEEP_DIR, CAMPAIGN_LOCK_NAME)
+    with open(path, "a+") as lock:
+        try:
+            fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as exc:
+            raise ValueError(
+                "another column-collapse generation or run owns this campaign; "
+                "wait for it to finish rather than mixing raw witnesses"
+            ) from exc
+        lock.seek(0)
+        lock.truncate()
+        lock.write(f"pid={os.getpid()} operation={operation}\n")
+        lock.flush()
+        try:
+            yield
+        finally:
+            fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
+
+
 def data_case_dir(aspect):
     return os.path.join(DATA_DIR, case_tag(aspect))
 
@@ -674,21 +709,22 @@ dt = {dt}
 
 
 def generate():
-    os.makedirs(SWEEP_DIR, exist_ok=True)
-    rough_base = write_rough_base()
-    n_cfg = 0
-    for a in ASPECTS:
-        n = n_particles(a)
-        insert_top = loose_insert_top(n, a)
-        z_high = max(0.2, insert_top + 0.05)
-        for s in SEEDS:
-            cdir = case_dir_seed(a, s)
-            os.makedirs(cdir, exist_ok=True)
-            active_column = write_active_column(
-                os.path.join(cdir, "active_column.csv"), n, a, s
-            )
-            with open(os.path.join(cdir, "config.toml"), "w") as f:
-                f.write(TOML_TEMPLATE.format(
+    with exclusive_campaign_lock("generate"):
+        os.makedirs(SWEEP_DIR, exist_ok=True)
+        rough_base = write_rough_base()
+        n_cfg = 0
+        for a in ASPECTS:
+            n = n_particles(a)
+            insert_top = loose_insert_top(n, a)
+            z_high = max(0.2, insert_top + 0.05)
+            for s in SEEDS:
+                cdir = case_dir_seed(a, s)
+                os.makedirs(cdir, exist_ok=True)
+                active_column = write_active_column(
+                    os.path.join(cdir, "active_column.csv"), n, a, s
+                )
+                with open(os.path.join(cdir, "config.toml"), "w") as f:
+                    f.write(TOML_TEMPLATE.format(
                     aspect=a, count=n, seed=s,
                     youngs=YOUNGS_MOD, poisson=POISSON,
                     restitution=RESTITUTION, friction=FRICTION,
@@ -706,12 +742,12 @@ def generate():
                     active_column=os.path.relpath(active_column, REPO_ROOT),
                     output_dir=os.path.relpath(cdir, REPO_ROOT), dt=f"{DT:.3e}",
                     settle_steps=SETTLE_STEPS, collapse_steps=COLLAPSE_STEPS,
-                ))
-            n_cfg += 1
-    # Generation itself is a physics preflight: retain a digestible witness of
-    # the exact base and all 33 source fabrics, but do not mistake it for
-    # dynamic evidence.  ``start`` rewrites it immediately before execution.
-    checked_protocol_manifest(write=True)
+                    ))
+                n_cfg += 1
+        # Generation itself is a physics preflight: retain a digestible witness of
+        # the exact base and all 33 source fabrics, but do not mistake it for
+        # dynamic evidence.  ``start`` rewrites it immediately before execution.
+        checked_protocol_manifest(write=True)
     print(f"Generated {n_cfg} configs ({len(ASPECTS)} aspects x {len(SEEDS)} seeds) "
           f"under {SWEEP_DIR}")
 
@@ -1407,7 +1443,7 @@ def _run_dirt_case(a, seed, binary, env):
     return a, seed
 
 
-def start(jobs=1, rerun=False, selected_cases=None):
+def _start(jobs=1, rerun=False, selected_cases=None):
     """Launch either the full campaign or an explicit subset of its witnesses.
 
     A full-scale 11 x 3 collapse campaign is deliberately expensive.  The
@@ -1507,6 +1543,12 @@ def start(jobs=1, rerun=False, selected_cases=None):
             print("LAMMPS: incomplete independent campaign — refusing overlay.")
     else:
         print("LAMMPS: not found on PATH — running DIRT only.")
+
+
+def start(jobs=1, rerun=False, selected_cases=None):
+    """Run a campaign while holding the evidence-tree writer lock."""
+    with exclusive_campaign_lock("start"):
+        return _start(jobs=jobs, rerun=rerun, selected_cases=selected_cases)
 
 
 def _write_runout(path, rows):

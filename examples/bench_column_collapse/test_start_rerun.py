@@ -38,6 +38,15 @@ class StartRerunTest(unittest.TestCase):
 
         self.assertEqual(calls, [case])
 
+    def test_campaign_lock_rejects_a_second_writer(self):
+        """One evidence tree cannot host two writers for the same case."""
+        with tempfile.TemporaryDirectory() as directory, \
+             mock.patch.object(sweep, "SWEEP_DIR", directory):
+            with sweep.exclusive_campaign_lock("first"):
+                with self.assertRaisesRegex(ValueError, "another column-collapse"):
+                    with sweep.exclusive_campaign_lock("second"):
+                        pass
+
 
 if __name__ == "__main__":
     unittest.main()
