@@ -95,6 +95,15 @@ model-specific, independently validated study would be an unsupported
 cross-substrate transfer.  This check rules out a misleading relocation claim;
 it does not validate DIRT, dev_soil_sph, or a glass angle of repose.
 
+The removal itself was independently checked from Git objects, not inferred
+from this narrative: DIRT merge `f7fe1a4` removes 141 SPH campaign files
+(20,284 deleted lines) relative to its first parent, and neither current DIRT
+`main` nor this PR head contains a path named
+`examples/SPH_glass_sphere_calibration`.  That is a scope/availability check,
+not a scientific result.  It explains why the frozen exit-zero criterion
+cannot be exercised in DIRT without restoring a removed solver surface or
+formally re-scoping the goal.
+
 To reproduce this disposition against that exact snapshot:
 
 ```bash
@@ -105,11 +114,21 @@ git -C ~/projects/dev_soil_sph grep -n -i -E \
   'rolling friction|angle.of.repose|mu_r|μ_r' \
   b4997642678bf8072baa4d98be60429a4dfc59a9 -- \
   Cargo.toml crates examples README.md docs ':!docs/dem-campaign-dirt.md'
+git diff --shortstat f7fe1a4^1 f7fe1a4 -- \
+  examples/SPH_glass_sphere_calibration Cargo.toml
+if git ls-tree -r --name-only HEAD -- examples crates | \
+  rg -q '^examples/SPH_glass_sphere_calibration/'; then
+  echo 'retired SPH surface unexpectedly present' >&2
+  exit 1
+fi
 ```
 
-The first command returns no candidate validation surface.  The second finds
-only the v0/deferred rolling-friction statement and unrelated `mu_ref` names;
-neither is a target, a calibration, or a replacement pass criterion.
+The first command returns no angle-of-repose or calibration executable.  The
+second finds the v0/deferred rolling-friction statement; its continuum
+`mu_s`, `mu_2`, and `i0` fields are deliberately not searched as a substitute
+for the deleted contact coefficient.  The final two commands check the DIRT
+removal and current-path absence directly.  None is a target, a calibration,
+or a replacement pass criterion.
 
 This retirement note and the decision to withhold a coefficient were prepared
 with AI assistance.  They are a provenance boundary, not experimental work,
