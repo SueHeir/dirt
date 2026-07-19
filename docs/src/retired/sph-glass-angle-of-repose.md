@@ -101,6 +101,15 @@ The first command returns no candidate validation surface.  The second finds
 only the v0/deferred rolling-friction statement and unrelated `mu_ref` names;
 neither is a target, a calibration, or a replacement pass criterion.
 
+`ci/verify-retired-sph-repose.sh` runs the local DIRT boundary check in
+pull-request CI. It verifies the exact historical deletion (3,511 lines from
+the retired case), confirms that the removal commit remains an ancestor, and
+checks the current path is absent. This is a scope-regression guard, not a
+scientific validation suite: its success cannot certify an angle, a material
+parameter, or the frozen calibration contract. With `--soil-sph` it performs
+the separate pinned-snapshot check above, and `--online` adds the Crossref
+bibliographic identity check only.
+
 This retirement note and the decision to withhold a coefficient were prepared
 with AI assistance.  They are a provenance boundary, not experimental work,
 an external-reference validation, or a substitute for an independent review.

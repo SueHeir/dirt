@@ -84,6 +84,11 @@ jobs:
       - name: Cache cargo build
         uses: Swatinem/rust-cache@v2
 
+      # Scope/provenance guard only: this cannot certify a repose angle or a
+      # material parameter, and is not part of the scientific validation suite.
+      - name: Verify retired SPH repose boundary
+        run: ci/verify-retired-sph-repose.sh
+
       - name: Build (no default features + precision-double)
         run: cargo build --workspace --no-default-features --features "$DIRT_FEATURES" --verbose
 
