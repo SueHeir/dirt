@@ -1452,7 +1452,14 @@ def start(jobs=1, rerun=False, selected_cases=None):
         raise RuntimeError(f"release binary missing after build: {binary}")
     reusable, cases = [], []
     for a, seed in selected_cases:
-        reason = None if rerun else _case_evidence_error(a, seed)
+        # ``--rerun`` is an explicit request for a new dynamic witness.  It
+        # must therefore bypass reuse *by making the cached case ineligible*,
+        # not by assigning the successful ``None`` admission result.  The old
+        # inversion silently reported a successful forced rerun after launching
+        # zero simulations, which is especially unsafe for this expensive
+        # validation campaign: users could believe raw evidence had been
+        # refreshed when it was merely retained.
+        reason = "forced rerun" if rerun else _case_evidence_error(a, seed)
         if reason is None:
             reusable.append((a, seed))
         else:
