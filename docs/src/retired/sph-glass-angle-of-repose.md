@@ -15,6 +15,21 @@ not evidence for the current DIRT revision: they cannot be regenerated from
 the current source tree and were obtained under a different solver/protocol
 history.
 
+## Mechanically checkable retirement boundary
+
+The source-tree boundary can be checked without trusting this narrative:
+
+```bash
+python3 validation/check_retired_sph_repose.py
+```
+
+It verifies that DIRT does not track the retired executable or SPH crate, does
+not retain its dependency/handoff tokens in the workspace manifests, and keeps
+this non-claim disclosure.  `RETIREMENT BOUNDARY: PASS` means only that this
+repository has not silently revived the deleted validation surface.  It is not
+a calibration pass, does not measure an angle, and cannot turn the historical
+22--26 degree requirement into a result.
+
 ## Preserved scientific contract
 
 If a maintained SPH implementation later proposes this calibration again, its
