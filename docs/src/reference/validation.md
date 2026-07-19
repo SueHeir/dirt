@@ -34,6 +34,8 @@ analytical, empirical, the experimentally-established Maw oblique-impact curve
 (used as a theory curve), or LAMMPS. The authoritative, continuously-updated
 write-up — what each figure shows and exactly where each test is weak — lives in
 [`examples/VALIDATION.md`](https://github.com/SueHeir/dirt/blob/main/examples/VALIDATION.md).
+Numerical and software checks are kept separate in
+[`examples/VERIFICATION.md`](https://github.com/SueHeir/dirt/blob/main/examples/VERIFICATION.md).
 
 ## The benchmarks
 
