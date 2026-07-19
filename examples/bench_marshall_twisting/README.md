@@ -8,8 +8,8 @@ sphere twisting on an enduring contact.
 
 This complements `bench_twisting_friction` (which validates the `constant` and
 `sds` twist forms, whose coefficients are direct user inputs). Together they
-cover DIRT's full twisting-model set and close gap #4 of the
-[LAMMPS DEM parity](../../docs/src/comparisons/lammps-dem-parity.md) audit.
+cover DIRT's full twisting-model set. Its scientific status is recorded in the
+[validation ledger](../VALIDATION.md).
 
 ## The Marshall model
 

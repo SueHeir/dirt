@@ -60,6 +60,14 @@ precision-double = ["dirt_core/precision-double"]
 precision-mixed = ["dirt_core/precision-mixed"]
 precision-single = ["dirt_core/precision-single"]
 
+[[test]]
+name = "run_config_errors"
+path = "examples/run/config_errors.rs"
+
+[[test]]
+name = "measure_plane_public_output"
+path = "examples/measure_plane_throughput/public_output.rs"
+
 [[example]]
 name = "run"
 path = "examples/run/main.rs"

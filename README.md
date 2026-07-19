@@ -39,10 +39,10 @@ and reproducible validation examples as one usable simulation code.
 - JKR and DMT adhesion, SJKR cohesion, and Willett liquid-bridge cohesion where
   supported by the selected contact and boundary path.
 
-Not every model combination is meaningful or implemented. The contact
-documentation records important boundaries, including adhesion support by
-contact model and differences between plane and curved walls:
-[Contact Models](docs/src/physics/contact.md).
+Not every model combination is meaningful or implemented. The
+[`dirt_granular`](crates/dirt_granular/README.md) and
+[`dirt_wall`](crates/dirt_wall/README.md) crate references record the supported
+contact and boundary paths.
 
 ### Boundaries, loading, and control
 
@@ -91,8 +91,7 @@ fn main() {
 
 A plugin registers state and scheduled systems. Custom physics or measurements
 are ordinary Rust functions added at the appropriate typed DEM phase. The
-[Your First Simulation](docs/src/getting-started/first-simulation.md) tutorial
-walks through a complete example and adds a custom system.
+[`hello_bed`](examples/hello_bed/) example is the smallest complete simulation.
 
 ### Run a declarative scenario
 
@@ -107,7 +106,8 @@ This is convenient for shipped scenarios and parameter sweeps because the same
 binary can run many configurations without recompiling. TOML selects existing
 capabilities; a new physical model still belongs in a Rust plugin.
 
-See [Run from a Config](docs/src/getting-started/run-from-config.md).
+Start with [`examples/run/config.toml`](examples/run/config.toml); the same
+directory contains ready-to-run pour, hopper, shear, and compression cases.
 
 ## Parallel particle execution
 
@@ -167,8 +167,8 @@ cargo build --release
 mpirun -np 4 ./target/release/examples/hopper examples/hopper/config.toml
 ```
 
-See [Installation and Building](docs/src/getting-started/installation.md) for
-library dependencies, feature selection, and MPI requirements.
+Applications can depend on `dirt_core` for the complete prelude and plugin
+groups, or on individual workspace crates for narrower control.
 
 ## Crate map
 
@@ -186,10 +186,11 @@ individual pieces for applications that need direct control:
 | [`dirt_fixes`](crates/dirt_fixes/README.md) | gravity, damping, constraints, motion, and applied forces |
 | [`dirt_contact_analysis`](crates/dirt_contact_analysis/README.md) | contact records, coordination number, fabric tensor, and rattlers |
 | [`dirt_measure_plane`](crates/dirt_measure_plane/README.md) | measurement planes for counts, flow, flux, and profiles |
-| [`dirt_schedule`](crates/dirt_schedule/README.md) | typed DEM scheduler labels shared by plugins |
+| `dirt_schedule` | typed DEM scheduler labels shared by plugins |
 | [`dirt_test_utils`](crates/dirt_test_utils/README.md) | shared test helpers |
 
-The mdBook under `docs/` contains the complete user and physics documentation.
+Configuration examples live beside the programs that consume them. Public API
+and model details live in the crate READMEs and Rust documentation.
 
 ## Ecosystem
 

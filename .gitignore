@@ -1,8 +1,6 @@
 target/
 Cargo.lock
 
-# mdBook rendered output (source lives in docs/src)
-docs/book/
 **/*.rs.bk
 .DS_Store
 .claude/*
@@ -35,10 +33,6 @@ examples/perf_mpi_scaling/runs/
 # run driver: generated per-config output dirs (dumps, vtp, figures) are
 # reproducible by re-running the driver + analyze_discharge.py
 examples/run/hopper_discharge/
-
-# precision-validation: raw per-run trajectories are reproducible via the harness
-validation/results/
-validation/run.log
 
 # local knowledge-graph tooling output
 graphify-out/

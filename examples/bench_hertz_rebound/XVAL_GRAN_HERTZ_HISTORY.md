@@ -12,9 +12,9 @@ $BENCH_PYTHON examples/bench_hertz_rebound/sweep.py start   # produces DIRT refe
 $BENCH_PYTHON examples/bench_hertz_rebound/xval_gran_hertz_history.py
 ```
 
-Driver: [`xval_gran_hertz_history.py`](xval_gran_hertz_history.py). Results:
-[`data/xval_gran_hertz_history.csv`](data/xval_gran_hertz_history.csv). Per-case
-LAMMPS inputs/logs/traces under `xval/`.
+Driver: [`xval_gran_hertz_history.py`](xval_gran_hertz_history.py). Generated
+results are written to `data/xval_gran_hertz_history.csv`; per-case LAMMPS
+inputs, logs, and traces are written under `xval/`.
 
 ## Why this is *independent* provenance
 
