@@ -68,6 +68,39 @@ report both favorable and adverse controls, retain raw solver output, and make
 the calibration decision reproducible independently of the fitting/plotting
 code.
 
+## Relocation check (2026-07-19)
+
+Retiring the DIRT surface does **not** relocate this calibration automatically.
+As an independent cross-tier check, the tracked `dev_soil_sph` `origin/main`
+snapshot `b4997642678bf8072baa4d98be60429a4dfc59a9` was inspected separately.
+Its `MaterialParams` has continuum `mu_s`, `mu_2`, and `i0` parameters, but no
+rolling-contact coefficient; its tracked `examples/` tree contains no
+angle-of-repose or calibration executable.  Its campaign document lists
+rolling friction as `mu_r = 0.0` for v0 and explicitly defers adding it.
+
+Thus there is presently no maintained target to which the deleted DIRT command
+can be moved.  A continuum static-friction parameter is not a calibrated DEM
+rolling-friction coefficient, and mapping one to the other without a
+model-specific, independently validated study would be an unsupported
+cross-substrate transfer.  This check rules out a misleading relocation claim;
+it does not validate DIRT, dev_soil_sph, or a glass angle of repose.
+
+To reproduce this disposition against that exact snapshot:
+
+```bash
+git -C ~/projects/dev_soil_sph ls-tree -r --name-only \
+  b4997642678bf8072baa4d98be60429a4dfc59a9 -- examples | \
+  rg -i 'repose|calibrat|glass' || true
+git -C ~/projects/dev_soil_sph grep -n -i -E \
+  'rolling friction|angle.of.repose|mu_r|μ_r' \
+  b4997642678bf8072baa4d98be60429a4dfc59a9 -- \
+  Cargo.toml crates examples README.md docs ':!docs/dem-campaign-dirt.md'
+```
+
+The first command returns no candidate validation surface.  The second finds
+only the v0/deferred rolling-friction statement and unrelated `mu_ref` names;
+neither is a target, a calibration, or a replacement pass criterion.
+
 This retirement note and the decision to withhold a coefficient were prepared
 with AI assistance.  They are a provenance boundary, not experimental work,
 an external-reference validation, or a substitute for an independent review.
