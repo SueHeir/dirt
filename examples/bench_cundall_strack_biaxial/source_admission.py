@@ -33,6 +33,20 @@ MISSING_REPLICATION_OBSERVABLES = (
     "contact or fabric evolution at common states",
 )
 
+# Tables 1--3 and Figs. 10--13 report these *individual wall-force snapshots*.
+# They are retained solely to stop a future benchmark from silently treating a
+# handful of unregistered states as a strain trajectory.  The values are not a
+# curve, do not have common strain/volume coordinates, and are therefore never
+# returned as an admissible validation oracle.
+WALL_FORCE_SNAPSHOTS = (
+    ("experiment-A", 0.39),
+    ("experiment-B", 0.33),
+    ("BALL-1", 0.43),
+    ("BALL-2", 0.40),
+    ("BALL-3", 0.46),
+    ("BALL-4", 0.47),
+)
+
 
 class SourceAdmissionError(RuntimeError):
     """The proposed source cannot be admitted for this replication claim."""
@@ -45,6 +59,7 @@ class AdmissionResult:
     statement_pages: dict[str, tuple[int, ...]]
     eligible: bool
     missing_observables: tuple[str, ...]
+    wall_force_snapshots: tuple[tuple[str, float], ...]
 
 
 def sha256(path: Path) -> str:
@@ -88,6 +103,7 @@ def audit_primary_source(path: str | Path, reader_factory: Callable | None = Non
         statement_pages=statement_pages,
         eligible=False,
         missing_observables=MISSING_REPLICATION_OBSERVABLES,
+        wall_force_snapshots=WALL_FORCE_SNAPSHOTS,
     )
 
 
@@ -105,6 +121,9 @@ def main(argv: list[str]) -> int:
         f"{label}@{','.join(map(str, pages))}" for label, pages in result.statement_pages.items()
     ))
     print("REPLICATION_UNAVAILABLE: cited source is qualitative and lacks registered response data")
+    print("WALL_FORCE_SNAPSHOTS_ONLY=" + ", ".join(
+        f"{label}:{ratio:.2f}" for label, ratio in result.wall_force_snapshots
+    ))
     for missing in result.missing_observables:
         print(f"MISSING: {missing}")
     return 2

@@ -59,6 +59,12 @@ class SourceAdmissionTests(unittest.TestCase):
         self.assertEqual(set(result.statement_pages), set(admission.REQUIRED_SCOPE_STATEMENTS))
         self.assertEqual(result.statement_pages["qualitative verification"], (1,))
         self.assertEqual(len(result.missing_observables), 5)
+        self.assertEqual(
+            result.wall_force_snapshots,
+            (("experiment-A", 0.39), ("experiment-B", 0.33),
+             ("BALL-1", 0.43), ("BALL-2", 0.40),
+             ("BALL-3", 0.46), ("BALL-4", 0.47)),
+        )
 
     def test_missing_affirmative_scope_statement_is_rejected(self) -> None:
         with self.assertRaisesRegex(admission.SourceAdmissionError, "control mismatch"):
