@@ -166,18 +166,6 @@ by μ = 0.3–0.5. Absolute angles vary within the quoted spread between
 independent random packs; the trend is reproducible. (`graph` PASSes on this
 data.)
 
-### CPU precision baseline
-
-The repository-level CPU precision baseline also fingerprints this bulk benchmark
-under `precision-double`, `precision-mixed`, and `precision-single`. The plot shows
-the angle-of-repose signature deltas alongside the other completed contact and bulk
-benchmarks, with non-OK runs kept as explicit statuses.
-
-![CPU precision deltas](../../validation/plots/cpu_precision_deltas.png)
-
-*Mixed/single precision signature deltas relative to double. The dashed 10% line is
-a large-drift reference; this benchmark completed in all three precision modes.*
-
 The "lift the cylinder" protocol, per case:
 1. **fill** — 1200 mobile spheres are inserted inside a narrow 25 mm cylinder
    (a tall poured-column geometry), resting on the frictional floor wall, and

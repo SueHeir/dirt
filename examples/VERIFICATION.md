@@ -10,20 +10,6 @@ Scientific validation and cross-code comparisons live in
 
 ## Numerical verification
 
-### CPU precision baseline
-
-The archived precision sweep records deterministic output fingerprints for
-contact and bulk benchmarks under `precision-double`, `precision-mixed`, and
-`precision-single`. The machine-readable results live in
-[`validation/cpu_precision_baseline.csv`](../validation/cpu_precision_baseline.csv)
-and the detailed interpretation in
-[`validation/cpu_precision_baseline.md`](../validation/cpu_precision_baseline.md).
-
-![CPU precision deltas](../validation/plots/cpu_precision_deltas.png)
-
-Completed mixed/single runs are shown relative to double precision. Missing or
-timed-out runs remain explicit statuses rather than being silently dropped.
-
 ### Timestep, particle-count, and box-size convergence
 
 [`bench_convergence`](bench_convergence/) re-runs the Hertz rebound and sphere
@@ -150,11 +136,3 @@ checks behavior preservation and timing, not hopper physics against an external
 reference.
 
 ![Hopper quiescence validation](hopper_quiescence/plots/hopper_quiescence_validation.png)
-
-## Build and ecosystem compatibility
-
-[`ecosystem_head_compatibility`](ecosystem_head_compatibility/README.md) verifies
-the reviewed GRASS -> SOIL -> DIRT source tuple and confirms that an intentionally
-incompatible SOIL revision fails with visible API diagnostics.
-
-![GRASS -> SOIL -> DIRT compatibility matrix](ecosystem_head_compatibility/plots/ecosystem_head_compatibility_matrix.png)
