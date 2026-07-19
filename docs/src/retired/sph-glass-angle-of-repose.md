@@ -15,40 +15,36 @@ not evidence for the current DIRT revision: they cannot be regenerated from
 the current source tree and were obtained under a different solver/protocol
 history.
 
-## Re-derived admission contract
+## Frozen acceptance contract and additional evidence needed
 
-An angle of repose is an outcome of the material, particle and surface state,
-apparatus, deposition/release history, measurement rule, and the model.  A
-numeric band cannot therefore be admitted merely because it appeared in an
-archived input deck or an earlier review.  If a maintained SPH implementation
-later proposes this calibration, it must establish the following *before* it
-chooses a coefficient or an acceptance interval:
+The assigned calibration retains its acceptance criterion. A future maintained
+SPH implementation must run the declared multi-value rolling-friction sweep
+with independent replicates, demonstrate the existing monotonic trend and
+replicate-spread gate, and report at least one calibrated coefficient whose
+measured angle lies in the **22–26 degree glass band**. Those requirements are
+not met here and have not been relaxed or replaced.
 
-1. Obtain an inspectable, protocol-matched external glass reference with the
-   material, particle/surface condition, vessel, formation/release procedure,
-   estimator, and uncertainty recorded.  Only that record may define the
-   numerical target and its uncertainty interval.
-2. Pre-register the parameter domain, independent replicate count, estimator,
-   stopping/arrest rule, and decision rule without using results from the
-   proposed sweep.  The rule must report every eligible candidate, including
-   failures; it may not substitute a fitted interval for the external one.
-3. Run the declared sweep from solver-produced deposits while retaining the
-   complete formation history.  Publish a hash-bound ledger of inputs, solver
-   revision, seeds, raw outputs, fitted angles, and the command that rebuilds
-   every plot from that ledger.
-4. Check at least one independent failure mode that the fitting routine cannot
-   make pass: for example, a blinded manual/geometry-based angle measurement
-   on retained snapshots, and a separately implemented replay or
-   implementation-parity comparison.  Neither is a physical reference.
-5. Resolve or quantitatively bound any cross-code discrepancy before a
-   coefficient is transferred across a solver or substrate boundary.
+The review history also shows why an exit status alone would be inadequate:
+historical executions produced unresolved flanks, angles below the required
+band, and an adverse DIRT/LAMMPS replay. Any restarted campaign must retain its
+complete formation history and publish a hash-bound ledger of inputs, solver
+revision, seeds, raw outputs, fitted angles, and the command that rebuilds the
+measured-versus-reference figure. The figure must include the unchanged band
+and replicate spread so that the criterion can fail visibly.
 
-The former 22–26 degree range is an **unadmitted archival claim**, not a
-preserved target: the available citation check does not connect it to a
-protocol-matched glass experiment.  Likewise, monotonicity and a replicate
-spread limit are useful pre-registered diagnostics, but no particular form or
-tolerance is adopted here.  This page is not an executable pass gate and does
-not assert that any of the requirements have been met.
+An angle of repose also depends on material and particle/surface state,
+apparatus, deposition/release history, estimator, and model. Before any
+coefficient may be represented as physically calibrated or transferred across
+a solver boundary, the campaign additionally needs an inspectable,
+protocol-matched external glass reference and an independent check that is not
+the fitted campaign itself (for example a separately implemented replay or a
+blinded geometry-based measurement of retained snapshots). A LAMMPS replay may
+test implementation parity but is not a physical reference. These are
+additional evidence requirements; they do not alter the existing 22–26 degree,
+monotonicity, or spread acceptance gates.
+
+This page is not an executable pass gate and does not assert that any of the
+requirements have been met.
 
 ## Adversarial evidence disposition
 
@@ -59,9 +55,9 @@ completion may be inferred from this page.
 | Question | Minimum independent evidence | Current disposition |
 | --- | --- | --- |
 | Is the cited literature record the claimed publication? | A resolvable DOI and bibliographic metadata checked independently of the solver | **Negative control only.** Crossref resolves Zhou, Wright, Yang, Xu, and Yu, *Rolling friction in the dynamic simulation of sandpile formation*, *Physica A* 269 (1999), DOI [10.1016/S0378-4371(99)00183-1](https://doi.org/10.1016/S0378-4371(99)00183-1). Bibliographic identity does not establish material or protocol comparability. |
-| Does that source establish the historical 22–26 degree glass claim for this protocol? | Recoverable observations plus matching glass material, particle/surface state, vessel, formation/release procedure, estimator, and uncertainty | **No.** The source is a different sandpile simulation and is retained only as an incompatibility control; it is not a numerical target. |
+| Does that source establish the 22–26 degree glass target for this protocol? | Recoverable observations plus matching glass material, particle/surface state, vessel, formation/release procedure, estimator, and uncertainty | **No.** The source is a different sandpile simulation and is retained only as an incompatibility control; it is not sufficient external provenance for the unchanged acceptance band. |
 | Does a solver reproduce a retained campaign? | A complete, hash-bound input/seed/raw-output/fitted-angle ledger and a regenerated plot | **No current DIRT surface.** The executable and its ledger were removed with DIRT #163, so archived branch plots cannot answer this question. |
-| May a fitted coefficient cross from DIRT to an SPH solver? | The preceding evidence, a pre-registered result ledger, and a qualified independent-code reconciliation | **No.** There is no calibrated coefficient to transfer. |
+| May a fitted coefficient cross from DIRT to an SPH solver? | The preceding evidence, the unchanged monotonicity/spread/band gates, a complete result ledger, and a qualified independent-code reconciliation | **No.** There is no calibrated coefficient to transfer. |
 
 This separation is a deliberate adversarial check: a DOI lookup, a unit-level
 contact-law parity result, or a visually plausible archived heap must never be
