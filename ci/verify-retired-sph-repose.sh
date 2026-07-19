@@ -76,7 +76,20 @@ if $online; then
         echo "FAIL: unexpected Crossref identity: $record" >&2
         exit 1
     fi
-    echo 'Crossref identity verified; it remains bibliographic metadata only.'
+    # A different Crossref route must also find the work. This guards against a
+    # DOI typo or a stale hand-copied title without treating either metadata
+    # response as a material or protocol reference.
+    search=$(curl -LfsS 'https://api.crossref.org/works?query.title=Rolling%20friction%20in%20the%20dynamic%20simulation%20of%20sandpile%20formation&rows=20' |
+        jq -r '[.message.items[] | .DOI | ascii_downcase] | join(" ")')
+    if [[ " $search " != *' 10.1016/s0378-4371(99)00183-1 '* ]]; then
+        echo 'FAIL: Crossref title search did not recover the cited DOI' >&2
+        exit 1
+    fi
+    if [[ " $search " != *' 10.1016/j.physa.2005.01.019 '* ]]; then
+        echo 'FAIL: Crossref title search did not recover the published comment' >&2
+        exit 1
+    fi
+    echo 'Crossref DOI and independent title-search identities verified; both remain bibliographic metadata only.'
 fi
 
 echo 'PASS: retirement facts verified; no calibration claim has been established.'

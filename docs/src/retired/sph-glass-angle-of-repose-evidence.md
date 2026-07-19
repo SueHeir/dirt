@@ -74,7 +74,8 @@ test:
 ci/verify-retired-sph-repose.sh --soil-sph ~/projects/dev_soil_sph --online
 ```
 
-It deliberately verifies only the DOI/title/type, not a mutable full-record
+It deliberately verifies the DOI/title/type and a separate Crossref title
+search (which must recover both the cited DOI and its published comment), not a mutable full-record
 hash; the hashes above retain the exact 2026-07-19 retrieval receipt.
 
 This audit did **not** obtain or read the full paper, inspect a primary glass
