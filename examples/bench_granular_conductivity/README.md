@@ -2,9 +2,8 @@
 
 Measures the one kinetic-theory transport coefficient the homogeneous LEBC
 rheometer (`bench_lebc_shear`) can't see: the **conductivity of granular
-fluctuation energy, κ**. It's the missing ingredient for a granular-temperature
-SPH model's energy balance — and the rig doubles as a **de-fluidization** testbed,
-the regime of interest for landing.
+fluctuation energy, κ**. The rig is a DEM transport benchmark and also provides
+a controlled cooling-and-consolidation testbed.
 
 ## Rig
 
@@ -82,5 +81,5 @@ descends. This is the landing-relevant transient; the homogeneous limit is the
 ## References
 - Lun, Savage, Jeffrey & Chepurniy, *JFM* **140** (1984); Gidaspow, *Multiphase
   Flow and Fluidization* (1994) — KT conductivity.
-- Companion: `bench_lebc_shear` (viscosity, dissipation, pressure); the two
-  together calibrate the granular-temperature SPH (de-fluidization) model.
+- Companion: `bench_lebc_shear` covers viscosity, dissipation, and pressure in
+  homogeneous shear; this rig isolates the inhomogeneous conductivity term.

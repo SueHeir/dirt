@@ -1,6 +1,0 @@
-# Generated run artifacts (validation log + VTP visualization dumps).
-data/
-vtp/
-*.vtp
-*.pvd
-*.log

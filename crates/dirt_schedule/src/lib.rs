@@ -134,18 +134,6 @@ seam!(
     "Measurement-plane elapsed-time seam."
 );
 seam!(
-    InteropLattice,
-    INTEROP_LATTICE,
-    "interop_lattice",
-    "Peridynamic/DEM interoperation lattice-creation seam."
-);
-seam!(
-    InteropFamilies,
-    INTEROP_FAMILIES,
-    "interop_families",
-    "Peridynamic/DEM interoperation family-construction seam."
-);
-seam!(
     MeasurePlaneReport,
     MEASURE_PLANE_REPORT,
     "measure_plane_report",

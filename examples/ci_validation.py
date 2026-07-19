@@ -22,8 +22,7 @@ Sweep = tuple[str, tuple[str, ...]]
 # Representative gated validation drivers for every PR. This is deliberately a
 # bounded smoke suite, not one token benchmark: it covers normal/tangential
 # contact, wall impact, friction/rolling/twisting, Haff cooling, thermal
-# conductivity, restart determinism, damping, a no-history tangential model, and
-# the peri/DEM interop gate.
+# conductivity, restart determinism, damping, and a no-history tangential model.
 SMOKE_SWEEPS: list[Sweep] = [
     ("examples/bench_hertz_rebound/sweep.py", ()),
     ("examples/bench_hooke_rebound/sweep.py", ()),
@@ -36,7 +35,6 @@ SMOKE_SWEEPS: list[Sweep] = [
     ("examples/bench_restart_determinism/sweep.py", ()),
     ("examples/bench_cundall_damping/sweep.py", ()),
     ("examples/bench_nohistory_tangential/sweep.py", ()),
-    ("examples/peri_dem_interop/sweep.py", ()),
 ]
 
 # Broader green no-MPI suite for scheduled/manual CI. It intentionally excludes
@@ -79,18 +77,6 @@ FULL_SWEEPS: list[Sweep] = [
     ("examples/bench_twisting_friction/sweep.py", ()),
     ("examples/bench_wall_activate_by_name/sweep.py", ()),
     ("examples/bench_wall_twisting_parity/sweep.py", ()),
-    ("examples/peri_dem_interop/sweep.py", ()),
-    (
-        "examples/SPH_glass_sphere_calibration/01_shear_rheology/sweep.py",
-        ("smoke",),
-    ),
-    ("examples/SPH_glass_sphere_calibration/02_compressibility/sweep.py", ()),
-    (
-        "examples/SPH_glass_sphere_calibration/04_enduring_contact/sweep.py",
-        ("smoke",),
-    ),
-    ("examples/SPH_glass_sphere_calibration/05_cooling_dissipation/sweep.py", ()),
-    ("examples/SPH_glass_sphere_calibration/06_conductivity/sweep.py", ("smoke",)),
     ("examples/bond_cantilever/sweep.py", ()),
     ("examples/fiber_bond/sweep.py", ()),
     ("examples/fiber_bond_breakage/sweep.py", ()),
@@ -108,18 +94,6 @@ DOCUMENTED_EXCLUSIONS = {
     "examples/bond_mpi_drift/sweep.py": (
         "requires a two-rank MPI run, while this workflow deliberately uses the "
         "stock no-MPI quickstart configuration"
-    ),
-    "examples/SPH_glass_sphere_calibration/03_angle_of_repose/sweep.py": (
-        "documented honest FAIL in its README: measured glass sliding friction "
-        "does not reach the target repose band for any swept rolling friction"
-    ),
-    "examples/SPH_glass_sphere_calibration/07_column_collapse/sweep.py": (
-        "documented provisional macro validation: depends on the calibrated "
-        "rolling friction from 03_angle_of_repose, which is currently unavailable"
-    ),
-    "examples/SPH_glass_sphere_calibration/08_cooperativity_length/sweep.py": (
-        "documented exploratory calibration rig: no independent reference value "
-        "or justified tolerance exists yet for A or the g∝sqrt(T) bridge"
     ),
 }
 
