@@ -12,7 +12,8 @@ experimental aspect-ratio scaling laws (Lube et al. 2004; Lajeunesse et al. 2004
 
 Commands (from anywhere):
     python3 examples/bench_column_collapse/sweep.py generate   # write per-case configs
-    python3 examples/bench_column_collapse/sweep.py start      # build + run all sims -> CSV
+    python3 examples/bench_column_collapse/sweep.py start      # build + resume qualified sims -> CSV
+    python3 examples/bench_column_collapse/sweep.py start --rerun # rerun every DIRT witness
     python3 examples/bench_column_collapse/sweep.py graph       # extract L_f, validate + plot
     python3 examples/bench_column_collapse/sweep.py            # all three, in order
 
@@ -1173,24 +1174,69 @@ def derive_dirt_ensemble():
     return rows
 
 
-def _run_dirt_case(a, seed, binary, env):
-    """Run one independent witness after invalidating only its stale evidence."""
+def _case_evidence_error(a, seed):
+    """Return the reason a cached case cannot be reused, or ``None``.
+
+    This is deliberately the same physical admission test used before fitting:
+    a resumable campaign must not turn a merely present CSV into a completed
+    realization.  In particular, source provenance is checked by the manifest
+    at ``start``/``derive_dirt_ensemble`` and this per-case check verifies the
+    released and terminal populations, measured release geometry, deposit
+    readability, and sustained Froude arrest.
+    """
     cdir = case_dir_seed(a, seed)
-    config = os.path.join(cdir, "config.toml")
-    if not os.path.isfile(config):
-        raise FileNotFoundError(f"missing {config} — run 'generate' first")
+    case_data = os.path.join(cdir, "data")
+    deposit = os.path.join(case_data, "column_collapse_results.csv")
+    release = os.path.join(case_data, "column_collapse_release.csv")
+    terminal = os.path.join(case_data, "column_collapse_final_state.csv")
+    arrest = os.path.join(case_data, "column_collapse_arrest.csv")
+    if not all(os.path.isfile(p) for p in (deposit, release, terminal, arrest)):
+        return "missing release, final, terminal, or arrest evidence"
+    expected = total_particles(a)
+    try:
+        if csv_particle_count(release) != expected or csv_particle_count(deposit) != expected:
+            return f"population is not {expected} at release/final"
+        vmax = checked_final_state(terminal, expected)
+        arrest_speeds = checked_arrest_window(arrest)
+        release_geometry(release)
+        _, lf = measure_column(deposit)
+        if not math.isfinite(lf):
+            return "non-finite deposit measurement"
+    except (OSError, ValueError, csv.Error) as exc:
+        return f"malformed witness ({exc})"
+    froude_scale = math.sqrt(9.81 * 2.0 * RADIUS)
+    if vmax / froude_scale > REST_FROUDE_MAX:
+        return f"terminal Fr={vmax / froude_scale:.6g} > {REST_FROUDE_MAX}"
+    if max(arrest_speeds) / froude_scale > REST_FROUDE_MAX:
+        return (f"final {ARREST_WINDOW_SAMPLES}-sample Fr="
+                f"{max(arrest_speeds) / froude_scale:.6g} > {REST_FROUDE_MAX}")
+    return None
+
+
+def _clear_case_evidence(a, seed):
+    """Remove only an inadmissible case's derived witnesses before rerunning."""
+    cdir = case_dir_seed(a, seed)
     for name in ("column_collapse_results.csv", "column_collapse_release.csv",
                  "column_collapse_final_state.csv", "column_collapse_arrest.csv"):
         stale = os.path.join(cdir, "data", name)
         if os.path.isfile(stale):
             os.remove(stale)
+
+
+def _run_dirt_case(a, seed, binary, env):
+    """Run one independent witness after invalidating only that case's evidence."""
+    cdir = case_dir_seed(a, seed)
+    config = os.path.join(cdir, "config.toml")
+    if not os.path.isfile(config):
+        raise FileNotFoundError(f"missing {config} — run 'generate' first")
+    _clear_case_evidence(a, seed)
     with open(os.path.join(cdir, "run.log"), "w") as log:
         subprocess.run([binary, config], cwd=REPO_ROOT, stdout=log,
                        stderr=subprocess.STDOUT, env=env, check=True)
     return a, seed
 
 
-def start(jobs=1):
+def start(jobs=1, rerun=False):
     if jobs < 1:
         raise ValueError("jobs must be at least one")
     os.makedirs(DATA_DIR, exist_ok=True)
@@ -1213,8 +1259,19 @@ def start(jobs=1):
     binary = os.path.join(REPO_ROOT, "target", "release", "examples", EXAMPLE)
     if not os.path.isfile(binary):
         raise RuntimeError(f"release binary missing after build: {binary}")
-    cases = [(a, s) for a in ASPECTS for s in SEEDS]
-    print(f"Running {len(cases)} independent DIRT cases with {jobs} worker(s)...", flush=True)
+    all_cases = [(a, s) for a in ASPECTS for s in SEEDS]
+    reusable, cases = [], []
+    for a, seed in all_cases:
+        reason = None if rerun else _case_evidence_error(a, seed)
+        if reason is None:
+            reusable.append((a, seed))
+        else:
+            cases.append((a, seed))
+            if not rerun and os.path.isdir(case_dir_seed(a, seed)):
+                print(f"  rerun a={a:<4} seed={seed}: {reason}", flush=True)
+    if reusable:
+        print(f"Reusing {len(reusable)} independently admitted DIRT case(s).", flush=True)
+    print(f"Running {len(cases)} of {len(all_cases)} independent DIRT cases with {jobs} worker(s)...", flush=True)
     with concurrent.futures.ThreadPoolExecutor(max_workers=jobs) as pool:
         futures = [pool.submit(_run_dirt_case, a, s, binary, env) for a, s in cases]
         for k, future in enumerate(concurrent.futures.as_completed(futures), 1):
@@ -1607,17 +1664,17 @@ def main():
     if cmd == "generate":
         generate()
     elif cmd == "start":
-        start(jobs)
+        start(jobs, rerun="--rerun" in args)
     elif cmd == "graph":
         sys.exit(0 if graph() else 1)
     elif cmd == "all":
         generate()
-        start(jobs)
+        start(jobs, rerun="--rerun" in args)
         print()
         sys.exit(0 if graph() else 1)
     else:
         print(f"Unknown command: {cmd!r}")
-        print("Usage: sweep.py [generate|start|graph] [--jobs N]   (no arg = all three)")
+        print("Usage: sweep.py [generate|start|graph] [--jobs N] [--rerun]   (no arg = all three)")
         sys.exit(2)
 
 

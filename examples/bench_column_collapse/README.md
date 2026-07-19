@@ -202,6 +202,14 @@ python3 examples/bench_column_collapse/sweep.py graph      # fit exponents + wri
 # Independent aspect/seed witnesses can run concurrently. This changes only
 # scheduling; graphing still requires the complete 11 × 3 physical ensemble.
 python3 examples/bench_column_collapse/sweep.py start --jobs 4
+
+# `start` resumes an interrupted campaign, but reuses a case only after it
+# independently rechecks its release/final populations, release geometry,
+# deposit readability, and four-sample Froude arrest witness.  Invalid or
+# partial case evidence is deleted and rerun; `graph` still rebuilds every
+# summary row from all 33 raw witnesses.  Use --rerun only to intentionally
+# regenerate all DIRT witnesses under the same frozen protocol.
+python3 examples/bench_column_collapse/sweep.py start --jobs 4 --rerun
 ```
 
 ### Representative current-protocol case
