@@ -66,6 +66,7 @@ import fcntl
 import hashlib
 import json
 import concurrent.futures
+import tempfile
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.abspath(os.path.join(SCRIPT_DIR, "..", ".."))
@@ -80,6 +81,7 @@ LAMMPS_RECEIPT_NAME = "lammps_receipt.json"
 MANIFEST_NAME = "column_collapse_protocol.json"
 CASE_RECEIPT_NAME = "column_collapse_case_receipt.json"
 CAMPAIGN_LOCK_NAME = ".column_collapse_campaign.lock"
+CASE_LOCK_NAME = ".column_collapse_case.lock"
 
 # LAMMPS binary candidates, in preference order. LAMMPS is optional: if none is
 # found, the LAMMPS leg is skipped and only DIRT is run/plotted.
@@ -529,9 +531,13 @@ def checked_protocol_manifest(write=False):
             raise ValueError(f"active source does not match protocol a={case['nominal_aspect']} seed={case['seed']}")
     if write:
         os.makedirs(DATA_DIR, exist_ok=True)
-        with open(os.path.join(DATA_DIR, MANIFEST_NAME), "w") as f:
+        target = os.path.join(DATA_DIR, MANIFEST_NAME)
+        fd, temporary = tempfile.mkstemp(prefix=".column_collapse_protocol.",
+                                         dir=DATA_DIR, text=True)
+        with os.fdopen(fd, "w") as f:
             json.dump(manifest, f, sort_keys=True, indent=2)
             f.write("\n")
+        os.replace(temporary, target)
     return manifest
 
 
@@ -554,15 +560,12 @@ def case_dir_seed(aspect, seed):
 
 @contextlib.contextmanager
 def exclusive_campaign_lock(operation):
-    """Exclude concurrent writers to the generated sources and raw witnesses.
+    """Exclude writers while replacing the shared generated source fabric.
 
-    Case output paths are deterministic.  Without an inter-process lock, two
-    independent ``start --rerun --case a,seed`` commands can truncate the same
-    release/deposit CSV while each process subsequently hashes whatever the
-    other left behind.  That is neither an independent realization nor an
-    auditable one.  The lock is intentionally local to the generated campaign
-    directory so clean worktrees and distinct campaign directories may run in
-    parallel, while a single evidence tree has exactly one writer.
+    This lock deliberately protects only generation and the short manifest
+    snapshot that follows it.  A full campaign contains 33 independent dynamic
+    witnesses, so holding a single campaign lock during simulation would make
+    scheduler-dispatched, non-overlapping cases needlessly conflict.
     """
     os.makedirs(SWEEP_DIR, exist_ok=True)
     path = os.path.join(SWEEP_DIR, CAMPAIGN_LOCK_NAME)
@@ -571,13 +574,81 @@ def exclusive_campaign_lock(operation):
             fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError as exc:
             raise ValueError(
-                "another column-collapse generation or run owns this campaign; "
-                "wait for it to finish rather than mixing raw witnesses"
+                "another column-collapse source generation owns this campaign; "
+                "wait for it to finish before replacing the source fabric"
             ) from exc
         lock.seek(0)
         lock.truncate()
         lock.write(f"pid={os.getpid()} operation={operation}\n")
         lock.flush()
+        try:
+            yield
+        finally:
+            fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
+
+
+@contextlib.contextmanager
+def shared_campaign_lock(operation):
+    """Keep source generation out while one or more campaigns consume it."""
+    os.makedirs(SWEEP_DIR, exist_ok=True)
+    path = os.path.join(SWEEP_DIR, CAMPAIGN_LOCK_NAME)
+    with open(path, "a+") as lock:
+        try:
+            fcntl.flock(lock.fileno(), fcntl.LOCK_SH | fcntl.LOCK_NB)
+        except BlockingIOError as exc:
+            raise ValueError(
+                "column-collapse source generation is in progress; retry after it completes"
+            ) from exc
+        try:
+            yield
+        finally:
+            fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
+
+
+@contextlib.contextmanager
+def exclusive_case_lock(aspect, seed, operation):
+    """Lease one deterministic witness directory for its complete write.
+
+    The release, deposit, arrest window, and content receipt form one atomic
+    evidence unit.  A non-blocking per-case lease rejects only a duplicate
+    ``(aspect, seed)`` launch; other members of the declared 11x3 ensemble may
+    run concurrently in the same campaign directory.
+    """
+    cdir = case_dir_seed(aspect, seed)
+    os.makedirs(cdir, exist_ok=True)
+    path = os.path.join(cdir, CASE_LOCK_NAME)
+    with open(path, "a+") as lock:
+        try:
+            fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as exc:
+            raise ValueError(
+                f"column-collapse witness a={aspect} seed={seed} is already being {operation}"
+            ) from exc
+        lock.seek(0)
+        lock.truncate()
+        lock.write(f"pid={os.getpid()} operation={operation}\n")
+        lock.flush()
+        try:
+            yield
+        finally:
+            fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
+
+
+@contextlib.contextmanager
+def shared_case_lock(aspect, seed, operation):
+    """Admit a stable completed witness without blocking an active writer."""
+    cdir = case_dir_seed(aspect, seed)
+    path = os.path.join(cdir, CASE_LOCK_NAME)
+    if not os.path.isdir(cdir):
+        raise ValueError(f"missing witness directory a={aspect} seed={seed}")
+    with open(path, "a+") as lock:
+        try:
+            fcntl.flock(lock.fileno(), fcntl.LOCK_SH | fcntl.LOCK_NB)
+        except BlockingIOError as exc:
+            raise ValueError(
+                f"column-collapse witness a={aspect} seed={seed} is being written; "
+                f"cannot {operation} a mixed snapshot"
+            ) from exc
         try:
             yield
         finally:
@@ -1327,21 +1398,21 @@ def derive_dirt_ensemble():
     for a in ASPECTS:
         lfs, hs = [], []
         for s in SEEDS:
-            paths = dirt_case_paths(a, s)
-            deposit, release = paths["deposit"], paths["release"]
-            terminal, arrest = paths["terminal"], paths["arrest"]
-            expected = total_particles(a)
-            if not all(os.path.isfile(p) for p in (deposit, release, terminal, arrest)):
-                failures.append(f"a={a} seed={s}: missing release, final, terminal, or arrest evidence")
-                continue
             try:
-                checked_case_receipt(a, s)
-                release_n = csv_particle_count(release)
-                deposit_n = csv_particle_count(deposit)
-                vmax = checked_final_state(terminal, expected)
-                arrest_speeds = checked_arrest_window(arrest)
-                h, _ = release_geometry(release)
-                _, lf = measure_column(deposit)
+                with shared_case_lock(a, s, "derive the ensemble"):
+                    paths = dirt_case_paths(a, s)
+                    deposit, release = paths["deposit"], paths["release"]
+                    terminal, arrest = paths["terminal"], paths["arrest"]
+                    expected = total_particles(a)
+                    if not all(os.path.isfile(p) for p in (deposit, release, terminal, arrest)):
+                        raise ValueError("missing release, final, terminal, or arrest evidence")
+                    checked_case_receipt(a, s)
+                    release_n = csv_particle_count(release)
+                    deposit_n = csv_particle_count(deposit)
+                    vmax = checked_final_state(terminal, expected)
+                    arrest_speeds = checked_arrest_window(arrest)
+                    h, _ = release_geometry(release)
+                    _, lf = measure_column(deposit)
             except (OSError, ValueError, csv.Error) as exc:
                 failures.append(f"a={a} seed={s}: malformed witness ({exc})")
                 continue
@@ -1429,17 +1500,18 @@ def _clear_case_evidence(a, seed):
 
 def _run_dirt_case(a, seed, binary, env):
     """Run one independent witness after invalidating only that case's evidence."""
-    cdir = case_dir_seed(a, seed)
-    config = os.path.join(cdir, "config.toml")
-    if not os.path.isfile(config):
-        raise FileNotFoundError(f"missing {config} — run 'generate' first")
-    _clear_case_evidence(a, seed)
-    with open(os.path.join(cdir, "run.log"), "w") as log:
-        subprocess.run([binary, config], cwd=REPO_ROOT, stdout=log,
-                       stderr=subprocess.STDOUT, env=env, check=True)
-    # Write only after every raw witness exists.  A later graph/reuse operation
-    # re-hashes this receipt instead of trusting filenames or the aggregate CSV.
-    write_case_receipt(a, seed)
+    with exclusive_case_lock(a, seed, "written"):
+        cdir = case_dir_seed(a, seed)
+        config = os.path.join(cdir, "config.toml")
+        if not os.path.isfile(config):
+            raise FileNotFoundError(f"missing {config} — run 'generate' first")
+        _clear_case_evidence(a, seed)
+        with open(os.path.join(cdir, "run.log"), "w") as log:
+            subprocess.run([binary, config], cwd=REPO_ROOT, stdout=log,
+                           stderr=subprocess.STDOUT, env=env, check=True)
+        # Write only after every raw witness exists.  A later graph/reuse operation
+        # re-hashes this receipt instead of trusting filenames or the aggregate CSV.
+        write_case_receipt(a, seed)
     return a, seed
 
 
@@ -1546,8 +1618,11 @@ def _start(jobs=1, rerun=False, selected_cases=None):
 
 
 def start(jobs=1, rerun=False, selected_cases=None):
-    """Run a campaign while holding the evidence-tree writer lock."""
-    with exclusive_campaign_lock("start"):
+    """Run independent witnesses; duplicate case launches fail closed."""
+    # Shared source admission lets multiple non-overlapping cases proceed while
+    # preventing ``generate`` from replacing active/base coordinates underneath
+    # an executable.  It is compatible with other shared campaign readers.
+    with shared_campaign_lock("start"):
         return _start(jobs=jobs, rerun=rerun, selected_cases=selected_cases)
 
 
