@@ -59,32 +59,19 @@ respectively, retaining all 1,200 particles. The shared fitter measured
 previous non-settling failure; it is adverse calibration evidence, not a full
 six-by-two campaign, an experimental comparison, or a pinned `mu_r`.
 
-### Cross-substrate hand-off boundary
+### Repository-scope boundary
 
-This DIRT experiment does **not** currently produce an SPH constitutive input.
-`μ_r` is a DEM rolling-contact parameter, while the checked `dev_soil_sph`
-glass-bead material interface exposes continuum parameters such as `μ_s`,
-`μ_2`, `I_0`, density, and bulk modulus—not a rolling-friction parameter.
-Consequently `../calibration.yaml` records `mu_r_pinned: null` and a withheld
-status. This prevents an unqualified DEM number from being represented as a
-cross-substrate calibration. A future hand-off needs (a) a defined SPH model
-term that actually consumes the quantity, (b) a protocol-matched experimental
-record, and (c) a cross-substrate validation of the resulting SPH prediction.
-The current LAMMPS disagreement is adverse evidence, not a substitute for any
-of those requirements.
+This is a standalone **DEM** formation study. DIRT no longer contains the SPH
+glass-bead suite or a `calibration.yaml` hand-off file, so this directory must
+not imply that `μ_r` is exported to an SPH constitutive model. `μ_r` is a DEM
+rolling-contact parameter; the retained LAMMPS replay checks an independently
+implemented DEM contact law, not a continuum-model transfer.
 
-### Handoff metadata correction (2026-07-18)
-
-The shared calibration header previously described `μ_r=0.10` as a canonical
-glass value while its machine-readable handoff correctly contained
-`mu_r_pinned: null`. Those statements are incompatible: a reader can copy a
-headline value even when no consuming SPH field exists. The header now omits
-rolling friction and states the same withheld boundary as the structured field.
-The regression rejects either a numerical `μ_r=0.10` claim or loss of the
-explicit omission notice. This is provenance protection, not a numerical
-calibration, a replacement for an experiment, or a change to the 22--26° gate.
-It was implemented and checked with AI assistance; the Crossref lookup checks
-bibliographic identity only, not experimental extraction or model transfer.
+The absence of a downstream hand-off is intentional and is tested directly.
+If a future repository adds a consuming model, it must define the consumed
+quantity and provide a protocol-matched experimental validation of its
+prediction before a fitted `μ_r` may be presented as transferable. The current
+LAMMPS comparison is an implementation diagnostic, not that validation.
 
 ### Qualification and external-reference boundary
 
