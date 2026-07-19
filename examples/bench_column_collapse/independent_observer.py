@@ -193,13 +193,14 @@ def verify_source_population(aspect, seed, release, active, frozen):
         raise ValueError("release frozen support differs from rough-base source")
 
 
-def release_aspect(active):
+def release_dimensions(active):
     if not active:
         raise ValueError("release has no grains above frozen base")
     # ``particles`` returns raw (x, y, z, radius) witnesses.  Preserve y here
     # even though the planar envelope itself is measured in x/z.
     right = max(x + r for x, _, _, r in active)
-    width = right - min(x - r for x, _, _, r in active)
+    left = min(x - r for x, _, _, r in active)
+    width = right - left
     if width < 0.95 * L0:
         raise ValueError("release does not span the controlled column width")
     if right > GATE_RELEASE_WIDTH_MAX:
@@ -207,7 +208,15 @@ def release_aspect(active):
     height = max(z + r for _, _, z, r in active) - DIAMETER
     if height <= 0.0 or not math.isfinite(height):
         raise ValueError("invalid release height")
-    return height / L0
+    if abs(width - L0) / L0 > ASPECT_REL_TOLERANCE:
+        raise ValueError("release width differs from scheduled controlled width")
+    return height, width, left, right
+
+
+def release_aspect(active):
+    """Compatibility helper; campaign observation uses all release dimensions."""
+    height, width, _, _ = release_dimensions(active)
+    return height / width
 
 
 def checked_release_aspect(actual, nominal):
@@ -223,7 +232,7 @@ def checked_release_aspect(actual, nominal):
     return actual
 
 
-def interval_toe(deposit):
+def interval_toe(deposit, release_left=0.0, release_right=L0):
     """Continuous silhouette toe for the mobile deposit.
 
     Eligible mobile particles are at least one diameter above the containment
@@ -251,10 +260,10 @@ def interval_toe(deposit):
             right = max(right, end)
     components.append((left, right))
     anchored = [(left, right) for left, right in components
-                if left <= L0 and right >= 0.0]
+                if left <= release_right and right >= release_left]
     if len(anchored) != 1:
         raise ValueError("deposit has no unique component anchored to release footprint")
-    return max(L0, anchored[0][1])
+    return max(release_right, anchored[0][1])
 
 
 def slope(points):
@@ -291,8 +300,9 @@ def observe_case(aspect, seed):
     active, mobile_deposit = split_frozen_support(release, deposit)
     frozen = [p for p in release if p[2] <= BASE_TOP]
     verify_source_population(aspect, seed, release, active, frozen)
-    return (checked_release_aspect(release_aspect(active), aspect),
-            (interval_toe(mobile_deposit) - L0) / L0)
+    height, width, left, right = release_dimensions(active)
+    return (checked_release_aspect(height / width, aspect),
+            (interval_toe(mobile_deposit, left, right) - right) / width)
 
 
 def main():

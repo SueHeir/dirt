@@ -31,6 +31,21 @@ class ReleaseAspectAdmissionTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "differs from scheduled"):
             OBSERVER.checked_release_aspect(3.07, 3.0)
 
+    def test_driver_rejects_a_height_correct_but_compacted_release_width(self):
+        """The external law uses the released H_i/L_i, not the gate location."""
+        with self.assertRaisesRegex(ValueError, "release width"):
+            SWEEP.checked_release_dimensions(2.0 * SWEEP.L0, 0.95 * SWEEP.L0, 2.0)
+
+    def test_observer_normalizes_to_the_measured_release_front(self):
+        active = [
+            (0.0015, 0.0015, 0.006, 0.0015),
+            (0.0945, 0.0015, 0.006, 0.0015),
+        ]
+        height, width, left, right = OBSERVER.release_dimensions(active)
+        self.assertAlmostEqual(width, OBSERVER.L0)
+        self.assertAlmostEqual(right - left, OBSERVER.L0)
+        self.assertAlmostEqual(height / width, OBSERVER.release_aspect(active))
+
 
 if __name__ == "__main__":
     unittest.main()

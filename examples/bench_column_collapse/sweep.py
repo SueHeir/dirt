@@ -2,7 +2,7 @@
 """
 Granular column-collapse benchmark driver.
 
-Releases a quasi-2D rectangular column of grains (initial width L0, height H) on a
+Releases a quasi-2D rectangular column of grains (released width L_i, height H_i) on a
 flat floor for a range of aspect ratios a = H/L0, then extracts the final runout
 L_f from each settled deposit and checks the dimensionless runout against the
 experimental planar aspect-ratio scaling law of Lajeunesse et al. (2004):
@@ -18,8 +18,8 @@ Commands (from anywhere):
     python3 examples/bench_column_collapse/sweep.py graph       # extract L_f, validate + plot
     python3 examples/bench_column_collapse/sweep.py            # all three, in order
 
-The aspect ratio is swept by changing the particle count (settled column height H)
-at fixed column width L0. Each aspect is run at several insertion seeds and the
+The aspect ratio is swept by changing the particle count at fixed scheduled gate
+width L0. Each realization is fitted using its measured released H_i/L_i. Each aspect is run at several insertion seeds and the
 runout is AVERAGED over seeds. Each DIRT run dumps the rest-state deposit
 (x, y, z, radius) to data/<case>/column_collapse_results.csv; this script reads
 those, computes L_f as the far edge of the deposit toe on a sub-diameter grid
@@ -181,8 +181,8 @@ EMPIRICAL_REFERENCE = {
 # Validation tolerances on the externally sourced fitted exponents. UNCHANGED —
 # the measurement is improved, the pass band is not touched.
 EXP_TOL = 0.25             # |fitted exponent - target| pass band
-LINEAR_TARGET = 1.0        # (L_f-L0)/L0 ~ a^1   for a <~ 2-3
-POWER_TARGET = 2.0 / 3.0   # (L_f-L0)/L0 ~ a^2/3 for a >~ 3
+LINEAR_TARGET = 1.0        # (L_f-L_i)/L_i ~ a^1   for a <~ 2-3
+POWER_TARGET = 2.0 / 3.0   # (L_f-L_i)/L_i ~ a^2/3 for a >~ 3
 REGIME_SPLIT = 3.0         # aspect ratio dividing the two regimes
 # Initialization-fidelity admission check, not a fitted-exponent tolerance.
 ASPECT_REL_TOL = 0.02
@@ -1371,7 +1371,7 @@ def total_particles(aspect):
 
 
 def release_geometry(path):
-    """Measured active-bed height and supported width before gate removal.
+    """Measured active-bed dimensions before gate removal.
 
     ``L0`` is a physical control variable in both normalized runout and aspect
     ratio.  Therefore the recorded release fabric must actually span it; a
@@ -1404,7 +1404,7 @@ def release_geometry(path):
             f"release crossed the still-active gate: right envelope {right / L0:.3f} L0 "
             f"exceeds {GATE_RELEASE_WIDTH_MAX / L0:.3f} L0"
         )
-    return h, width
+    return h, width, left, right
 
 
 def release_height(path):
@@ -1412,9 +1412,24 @@ def release_height(path):
     return release_geometry(path)[0]
 
 
-def checked_release_aspect(height, nominal_aspect):
-    """Admit only a release whose physical aspect matches its scheduled case."""
-    actual = height / L0
+def checked_release_dimensions(height, width, nominal_aspect):
+    """Admit only a release that preserves the scheduled physical geometry.
+
+    Lajeunesse et al.'s control parameter is the *released* H_i / L_i, and its
+    normalized runout is (L_f - L_i) / L_i.  A gate location is a useful
+    construction control, but is not a substitute for L_i after the source has
+    settled.  In particular, a column that compacts away from the gate can pass
+    a height-only check while being fitted at the wrong aspect and normalization.
+    """
+    if not math.isfinite(width) or width <= 0.0:
+        raise ValueError("non-positive measured release width")
+    width_error = abs(width - L0) / L0
+    if width_error > ASPECT_REL_TOL:
+        raise ValueError(
+            f"release width {width:.6f} differs from scheduled {L0:.6f} "
+            f"by {width_error:.2%} (limit {ASPECT_REL_TOL:.0%})"
+        )
+    actual = height / width
     if not math.isfinite(actual) or actual <= 0.0:
         raise ValueError("non-positive measured release aspect")
     relative_error = abs(actual - nominal_aspect) / nominal_aspect
@@ -1424,6 +1439,15 @@ def checked_release_aspect(height, nominal_aspect):
             f"by {relative_error:.2%} (limit {ASPECT_REL_TOL:.0%})"
         )
     return actual
+
+
+def checked_release_aspect(height, nominal_aspect):
+    """Legacy height-only helper retained for focused compatibility tests.
+
+    Dynamic evidence must call :func:`checked_release_dimensions`; it is the
+    only admission path used by campaign execution and graphing.
+    """
+    return checked_release_dimensions(height, L0, nominal_aspect)
 
 
 def checked_final_state(path, expected_count):
@@ -1489,7 +1513,7 @@ def derive_dirt_ensemble():
     rows = []
     failures = []
     for a in ASPECTS:
-        lfs, hs = [], []
+        lfs, hs, widths, rights, aspects = [], [], [], [], []
         for s in SEEDS:
             try:
                 with shared_case_lock(a, s, "derive the ensemble"):
@@ -1504,8 +1528,8 @@ def derive_dirt_ensemble():
                     deposit_n = csv_particle_count(deposit)
                     vmax = checked_final_state(terminal, expected)
                     arrest_speeds = checked_arrest_window(arrest)
-                    h, _ = release_geometry(release)
-                    checked_release_aspect(h, a)
+                    h, width, _, right = release_geometry(release)
+                    actual_aspect = checked_release_dimensions(h, width, a)
                     _, lf = measure_column(deposit)
             except (OSError, ValueError, csv.Error) as exc:
                 failures.append(f"a={a} seed={s}: malformed witness ({exc})")
@@ -1529,12 +1553,21 @@ def derive_dirt_ensemble():
                 continue
             hs.append(h)
             lfs.append(lf)
+            # Keep the per-realization measured geometry: averaging an H/L_i
+            # surrogate would reintroduce the very substitution this gate
+            # prevents.
+            widths.append(width)
+            rights.append(right)
+            aspects.append(actual_aspect)
         if len(lfs) != len(SEEDS):
             continue
-        rn = [(v - L0) / L0 for v in lfs]
+        rn = [(v - initial_right) / width
+              for v, initial_right, width in zip(lfs, rights, widths)]
         rn_mean = sum(rn) / len(rn)
-        rows.append({"nominal_aspect": a, "aspect": sum(hs) / len(hs) / L0,
-                     "L0": L0, "H": sum(hs) / len(hs), "L_f": sum(lfs) / len(lfs),
+        rows.append({"nominal_aspect": a,
+                     "L0": sum(widths) / len(widths), "H": sum(hs) / len(hs), "L_f": sum(lfs) / len(lfs),
+                     "release_front": sum(rights) / len(rights),
+                     "aspect": sum(aspects) / len(aspects),
                      "runout_norm": rn_mean,
                      "runout_std": (sum((v - rn_mean) ** 2 for v in rn) / len(rn)) ** 0.5,
                      "n_seeds": len(lfs), "protocol_sha256": protocol_fingerprint()})
@@ -1566,8 +1599,8 @@ def _case_evidence_error(a, seed):
             return f"population is not {expected} at release/final"
         vmax = checked_final_state(terminal, expected)
         arrest_speeds = checked_arrest_window(arrest)
-        height, _ = release_geometry(release)
-        checked_release_aspect(height, a)
+        height, width, _, _ = release_geometry(release)
+        checked_release_dimensions(height, width, a)
         _, lf = measure_column(deposit)
         if not math.isfinite(lf):
             return "non-finite deposit measurement"
@@ -1726,7 +1759,7 @@ def _write_runout(path, rows):
         w = csv.DictWriter(
             f,
             fieldnames=["nominal_aspect", "aspect", "L0", "H", "L_f", "runout_norm",
-                        "runout_std", "n_seeds", "protocol_sha256"],
+                        "release_front", "runout_std", "n_seeds", "protocol_sha256"],
             restval="", extrasaction="ignore",
         )
         w.writeheader()
@@ -1948,7 +1981,7 @@ def compare_codes(dirt_rows, lammps_rows):
     dirt = {float(r["nominal_aspect"]): float(r["runout_norm"]) for r in dirt_rows}
     lammps = {float(r["nominal_aspect"]): float(r["runout_norm"]) for r in lammps_rows}
     print("\n" + "=" * 58)
-    print("Normalized runout (L_f-L0)/L0: DIRT vs LAMMPS")
+    print("Normalized runout (L_f-L_i)/L_i: DIRT vs LAMMPS")
     print("=" * 58)
     print(f"  {'a':>5} | {'DIRT':>8} {'LAMMPS':>8} | {'diff':>8}")
     for a in sorted(set(dirt) & set(lammps)):
@@ -2073,7 +2106,7 @@ def derive_lammps_ensemble():
     rows, failures = [], []
     froude_scale = math.sqrt(9.81 * 2.0 * RADIUS)
     for a in ASPECTS:
-        lfs, hs = [], []
+        lfs, hs, widths, rights, aspects = [], [], [], [], []
         for seed in SEEDS:
             cdir = case_dir_seed(a, seed)
             release_dump = lammps_dump_path(a, seed, "release")
@@ -2092,8 +2125,8 @@ def derive_lammps_ensemble():
                     raise ValueError(f"population is not {expected} at release/final")
                 vmax = lammps_max_speed(deposit_dump)
                 arrest_speeds = lammps_arrest_window(arrest)
-                h, _ = release_geometry(release)
-                checked_release_aspect(h, a)
+                h, width, _, right = release_geometry(release)
+                actual_aspect = checked_release_dimensions(h, width, a)
                 _, lf = measure_column(deposit)
                 if not all(math.isfinite(v) for v in (vmax, h, lf)):
                     raise ValueError("non-finite LAMMPS witness")
@@ -2106,11 +2139,16 @@ def derive_lammps_ensemble():
                 continue
             hs.append(h)
             lfs.append(lf)
+            widths.append(width)
+            rights.append(right)
+            aspects.append(actual_aspect)
         if len(lfs) == len(SEEDS):
-            rn = [(value - L0) / L0 for value in lfs]
+            rn = [(value - initial_right) / width
+                  for value, initial_right, width in zip(lfs, rights, widths)]
             rn_mean = sum(rn) / len(rn)
-            rows.append({"nominal_aspect": a, "aspect": sum(hs) / len(hs) / L0,
-                         "L0": L0, "H": sum(hs) / len(hs), "L_f": sum(lfs) / len(lfs),
+            rows.append({"nominal_aspect": a, "aspect": sum(aspects) / len(aspects),
+                         "L0": sum(widths) / len(widths), "H": sum(hs) / len(hs), "L_f": sum(lfs) / len(lfs),
+                         "release_front": sum(rights) / len(rights),
                          "runout_norm": rn_mean,
                          "runout_std": (sum((value - rn_mean) ** 2 for value in rn) / len(rn)) ** 0.5,
                          "n_seeds": len(lfs), "protocol_sha256": protocol_fingerprint()})

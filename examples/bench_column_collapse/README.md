@@ -120,7 +120,8 @@ those target exponents.
 
 | Check | Tolerance |
 |-------|-----------|
-| Measured pre-release aspect `H/L0` vs scheduled aspect | within 2% |
+| Measured pre-release width `L_i` vs scheduled `L0` | within 2% |
+| Measured pre-release aspect `H_i/L_i` vs scheduled aspect | within 2% |
 | Linear-regime exponent (a ≤ 3) vs 1 | within ±0.25 |
 | Power-regime exponent (a ≥ 3) vs 2/3 | within ±0.25 |
 
@@ -144,8 +145,8 @@ the SHA-256 identity of the executable that produced it. Graphing withholds an
 overlay if either changes. This records solver provenance; it does not make a
 LAMMPS result an experimental target or replace the required complete campaign.
 The scheduled aspect proves coverage; the fit itself uses the executable's measured
-pre-release height `H/L0`, so loose insertion and settling cannot silently shift a
-point horizontally. A LAMMPS overlay is emitted only for a complete, exact-population
+pre-release `H_i/L_i` and `(L_f-L_i)/L_i`, so settling cannot silently substitute
+the gate location for the physical initial footprint. A LAMMPS overlay is emitted only for a complete, exact-population
 **11 × 3** independent campaign with the same release and arrest checks. Fresh runout figures display each fitted exponent and its
 unchanged ±0.25 acceptance band directly on the plot.
 
@@ -164,8 +165,8 @@ grains and discovering an underfill later. Its triangular layers span the full
 release width; a bounded seed-specific in-plane perturbation removes the
 special all-contact crystal network without changing the walls or column
 envelope.
-The independently recorded release witness must confirm coverage and the
-scheduled aspect (within 2%) before a fit is allowed. This is a preparation correction, not a change to the empirical
+The independently recorded release witness must confirm coverage, released width,
+and the scheduled aspect (within 2%) before a fit is allowed. This is a preparation correction, not a change to the empirical
 reference, material, aspect range, toe metric, or ±0.25 exponent bands.
 
 ### Independent observer
