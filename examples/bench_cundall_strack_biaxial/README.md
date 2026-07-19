@@ -14,6 +14,11 @@ $BENCH_PYTHON examples/bench_cundall_strack_biaxial/sweep.py
 
 ![DIRT response and independent comparator](plots/stress_volume_response.png)
 
+The committed figure includes the raw normalized DIRT-versus-LAMMPS axial
+response panel used for the independent comparison, alongside wall-ratio and
+contact measurements. Its divergence makes clear that recorder integrity is
+not a replication PASS.
+
 The executable check verifies forward compression, live contacts, a positive
 platen reaction, finite output, and—independently from the precomputed
 column—that `F_H/F_V` equals the recorded x-wall mean divided by the recorded

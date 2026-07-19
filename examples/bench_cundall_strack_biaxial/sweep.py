@@ -214,7 +214,7 @@ def compare_independent_lammps(dirt_rows, path=LAMMPS_RESULTS):
             "normalized_axial_rmse": rmse, "dirt_normalized": d, "lammps_normalized": l}
 
 
-def plot(rows, checks, passed, source):
+def plot(rows, checks, passed, source, comparison=None):
     try:
         import matplotlib
         matplotlib.use("Agg")
@@ -225,7 +225,10 @@ def plot(rows, checks, passed, source):
 
     os.makedirs(PLOTS, exist_ok=True)
     x = [row["axial_strain"] for row in rows]
-    fig, (ratio, diagnostic) = plt.subplots(2, 1, figsize=(7.2, 7.0), sharex=True)
+    panels = 3 if comparison else 2
+    fig, axes = plt.subplots(panels, 1, figsize=(7.2, 9.2 if comparison else 7.0),
+                             sharex=True)
+    ratio, diagnostic = axes[:2]
     ratio.plot(x, [row["wall_force_ratio"] for row in rows], "o-", ms=2.5,
                label="DIRT direct x-wall/platen resultant")
     for stage, value in sorted(source.items()):
@@ -239,10 +242,28 @@ def plot(rows, checks, passed, source):
     ratio.legend(fontsize=8)
     ratio.grid(alpha=.25)
     diagnostic.plot(x, [row["contacts"] for row in rows], label="live contacts")
-    diagnostic.set_xlabel("axial platen strain from first recorder state")
     diagnostic.set_ylabel("contacts")
     diagnostic.legend(fontsize=8)
     diagnostic.grid(alpha=.25)
+    if comparison:
+        # Plot the exact interpolated vectors used for correlation/RMSE.  This
+        # is evidence of a failed independent analogue comparison, not a
+        # fitted surrogate or a source-derived acceptance curve.
+        grid = [0.01 + 0.005 * i for i in range(comparison["samples"])]
+        external = axes[2]
+        external.plot(grid, comparison["dirt_normalized"], "o-", ms=3,
+                      label="DIRT normalized platen reaction")
+        external.plot(grid, comparison["lammps_normalized"], "s--", ms=3,
+                      label="LAMMPS normalized axial stress")
+        external.set_xlabel("axial strain")
+        external.set_ylabel("normalized axial response")
+        external.set_title("Independent analogue comparison: NOT REPRODUCED "
+                           f"(r={comparison['normalized_axial_correlation']:.3f}, "
+                           f"RMSE={comparison['normalized_axial_rmse']:.3f})")
+        external.legend(fontsize=8)
+        external.grid(alpha=.25)
+    else:
+        diagnostic.set_xlabel("axial platen strain from first recorder state")
     fig.tight_layout()
     fig.savefig(os.path.join(PLOTS, "stress_volume_response.png"), dpi=180)
     plt.close(fig)
@@ -268,7 +289,9 @@ def main():
         protocol = read_protocol()
         missing = audit_external_evidence()
         passed, checks = evaluate(rows)
-        plot(rows, checks, passed, source)
+        # Generate the raw solver comparison even though `external` exits 1:
+        # a negative result must remain visible in the committed graph.
+        plot(rows, checks, passed, source, compare_independent_lammps(rows))
         print("wall-reaction measurement: " + "; ".join(
             f"{key}={value}" for key, value in checks.items()))
         if not passed:
