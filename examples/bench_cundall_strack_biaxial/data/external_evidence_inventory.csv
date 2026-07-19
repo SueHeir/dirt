@@ -1,0 +1,5 @@
+observable,required_for_replication,source_support,source_location,limitation
+state_registration,yes,no,"Cundall & Strack (1979), pp. 60--63","Fig. 10 labels snapshots A/B but supplies neither coordinates, wall positions, nor a strain/time coordinate."
+stress_or_deviatoric_path,yes,no,"Cundall & Strack (1979), pp. 60--63","Published figures are force-network snapshots, not a stress/deviatoric-stress-versus-strain trace."
+volumetric_strain_or_dilatancy_path,yes,no,"Cundall & Strack (1979), pp. 60--63","No volume/dilatancy trajectory is reported for the Fig. 10 assembly."
+contact_or_fabric_evolution,yes,no,"Cundall & Strack (1979), pp. 60--63","Force-vector images do not provide a registered contact/fabric evolution series."
