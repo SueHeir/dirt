@@ -1663,9 +1663,105 @@ def load_optional(path):
         return list(csv.DictReader(f))
 
 
+def derive_lammps_ensemble():
+    """Reconstruct the optional cross-code overlay from raw LAMMPS witnesses.
+
+    The LAMMPS CSV is a convenience cache, not independent evidence.  In
+    particular, accepting it directly would make it possible to show a stale,
+    partial, or hand-edited comparison beside a freshly re-derived DIRT result.
+    This has no bearing on the experimental PASS/FAIL gate (which remains DIRT
+    versus the published exponents); it only makes the optional external-code
+    comparison auditable to the same standard as the DIRT campaign.
+    """
+    try:
+        checked_protocol_manifest(write=False)
+    except ValueError as exc:
+        raise ValueError(f"LAMMPS source provenance is inadmissible: {exc}") from exc
+
+    rows, failures = [], []
+    froude_scale = math.sqrt(9.81 * 2.0 * RADIUS)
+    for a in ASPECTS:
+        lfs, hs = [], []
+        for seed in SEEDS:
+            cdir = case_dir_seed(a, seed)
+            release_dump = lammps_dump_path(a, seed, "release")
+            deposit_dump = lammps_dump_path(a, seed, "deposit")
+            release = os.path.join(cdir, "lammps_release.csv")
+            deposit = os.path.join(cdir, "lammps_deposit.csv")
+            arrest = os.path.join(cdir, "lammps_arrest.txt")
+            required = (release_dump, deposit_dump, release, deposit, arrest)
+            if not all(os.path.isfile(p) for p in required):
+                failures.append(f"a={a} seed={seed}: missing LAMMPS raw witness")
+                continue
+            try:
+                expected = total_particles(a)
+                if csv_particle_count(release) != expected or csv_particle_count(deposit) != expected:
+                    raise ValueError(f"population is not {expected} at release/final")
+                vmax = lammps_max_speed(deposit_dump)
+                arrest_speeds = lammps_arrest_window(arrest)
+                h, _ = release_geometry(release)
+                _, lf = measure_column(deposit)
+                if not all(math.isfinite(v) for v in (vmax, h, lf)):
+                    raise ValueError("non-finite LAMMPS witness")
+                if vmax / froude_scale > REST_FROUDE_MAX:
+                    raise ValueError("terminal LAMMPS state is not arrested")
+                if max(arrest_speeds) / froude_scale > REST_FROUDE_MAX:
+                    raise ValueError("final sustained LAMMPS state is not arrested")
+            except (OSError, ValueError, csv.Error) as exc:
+                failures.append(f"a={a} seed={seed}: {exc}")
+                continue
+            hs.append(h)
+            lfs.append(lf)
+        if len(lfs) == len(SEEDS):
+            rn = [(value - L0) / L0 for value in lfs]
+            rn_mean = sum(rn) / len(rn)
+            rows.append({"nominal_aspect": a, "aspect": sum(hs) / len(hs) / L0,
+                         "L0": L0, "H": sum(hs) / len(hs), "L_f": sum(lfs) / len(lfs),
+                         "runout_norm": rn_mean,
+                         "runout_std": (sum((value - rn_mean) ** 2 for value in rn) / len(rn)) ** 0.5,
+                         "n_seeds": len(lfs), "protocol_sha256": protocol_fingerprint()})
+    if failures or len(rows) != len(ASPECTS):
+        detail = "; ".join(failures) if failures else "missing scheduled LAMMPS aspect"
+        raise ValueError(f"incomplete LAMMPS 11x3 ensemble: {detail}")
+    return rows
+
+
+def load_verified_lammps():
+    """Return an externally reproducible overlay, or no overlay at all."""
+    cached = load_optional(LAMMPS_CSV)
+    if not cached:
+        return []
+    try:
+        witnessed = derive_lammps_ensemble()
+    except ValueError as exc:
+        print(f"LAMMPS overlay withheld: {exc}")
+        return []
+    by_aspect = {float(row["nominal_aspect"]): row for row in cached}
+    numeric = ("aspect", "L0", "H", "L_f", "runout_norm", "runout_std")
+    if len(by_aspect) != len(ASPECTS):
+        print("LAMMPS overlay withheld: cached summary has an incomplete aspect set")
+        return []
+    for row in witnessed:
+        cached_row = by_aspect.get(float(row["nominal_aspect"]))
+        if cached_row is None:
+            print("LAMMPS overlay withheld: cached summary omits a witnessed aspect")
+            return []
+        try:
+            same = (int(cached_row["n_seeds"]) == row["n_seeds"]
+                    and cached_row["protocol_sha256"] == row["protocol_sha256"]
+                    and all(math.isclose(float(cached_row[key]), row[key], rel_tol=0.0, abs_tol=1.0e-12)
+                            for key in numeric))
+        except (KeyError, TypeError, ValueError):
+            same = False
+        if not same:
+            print("LAMMPS overlay withheld: cached summary disagrees with raw witnesses")
+            return []
+    return witnessed
+
+
 def graph():
     rows = load_runout()
-    lammps_rows = load_optional(LAMMPS_CSV)
+    lammps_rows = load_verified_lammps()
     ok = validate(rows)            # DIRT-vs-theory only; LAMMPS never gates PASS.
     if lammps_rows:
         compare_codes(rows, lammps_rows)

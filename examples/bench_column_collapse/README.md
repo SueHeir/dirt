@@ -287,6 +287,13 @@ realizations finish with the exact requested population at release and final sta
 and meet the same terminal Froude limit; a partial campaign is discarded rather
 than used to support either a PASS or a failure diagnosis.
 
+`graph` independently reconstructs that optional overlay from all 33 raw LAMMPS
+release/deposit/arrest witnesses and requires exact agreement with the cached
+summary. If any witness is missing, non-arrested, population-inconsistent, or the
+summary disagrees, the overlay is withheld. This is a provenance check only: it
+does not make LAMMPS a pass criterion and it does not establish experimental
+validity of an unrun DIRT campaign.
+
 ## Assumptions
 
 - **Quasi-2D** slab geometry (thin in y, confined by frictionless side walls).
@@ -321,3 +328,11 @@ particle–particle tangential path in `dirt_granular`.
    mass on a horizontal plane", *Phys. Fluids* 16 (2004) 2371–2381.
 3. N.J. Balmforth, R.R. Kerswell, "Granular collapse in two dimensions",
    *J. Fluid Mech.* 538 (2005) 399–428.
+
+## Authorship and validation boundary
+
+This revision was AI-assisted. The raw DIRT and LAMMPS campaigns have not been
+executed as part of this source-only change, so it makes no new PASS, solver-parity,
+or experimental-replication claim. The LAMMPS guard was checked by Python syntax
+compilation and fail-closed inspection of absent evidence; a complete fresh 11 × 3
+campaign in each solver remains necessary to validate the physical result.
