@@ -13,7 +13,7 @@
 //! - `mindlin_rescale/force`: elastic-force history is gated by `a/a_prev`.
 //! - `linear_nohistory`: no history survives, so unloading force is zero.
 
-use dirt_core::dirt_atom::{DemAtom, MaterialTable};
+use dirt_core::dirt_atom::{DemAtom, Elastic, Friction, Material, MaterialTable};
 use dirt_core::dirt_granular::contact::{contact_force_core, ForcePass};
 use dirt_core::dirt_granular::tangential::{ContactHistoryStore, CONTACT_HISTORY_LEN};
 use dirt_core::soil_core::{Atom, AtomDataRegistry, Neighbor};
@@ -55,15 +55,17 @@ fn build_system(
     let mut mt = MaterialTable::new();
     mt.contact_model = "hertz".to_string();
     mt.tangential_model = tangential_model.to_string();
-    mt.add_material(
-        &mat.name,
-        mat.youngs_mod,
-        mat.poisson_ratio,
-        mat.restitution,
-        mat.friction,
-        0.0,
-        0.0,
-    );
+    mt.add(
+        Material::new(
+            &mat.name,
+            Elastic::new(mat.youngs_mod, mat.poisson_ratio, mat.restitution),
+        )
+        .with_friction(Friction {
+            sliding: mat.friction,
+            ..Friction::default()
+        }),
+    )
+    .unwrap();
     mt.build_pair_tables();
 
     let r = sc.radius;

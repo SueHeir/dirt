@@ -1,7 +1,18 @@
 use super::*;
-use crate::RadiusDistribution;
+use crate::{Elastic, Friction, Material, RadiusDistribution};
 use soil_core::{toml, AtomData, AtomDataRegistry, ParticleStoreError};
 use soil_derive::AtomData;
+
+fn add_test_glass(materials: &mut MaterialTable) {
+    materials
+        .add(
+            Material::new("glass", Elastic::new(8.7e9, 0.3, 0.9)).with_friction(Friction {
+                sliding: 0.5,
+                ..Friction::default()
+            }),
+        )
+        .unwrap();
+}
 
 /// A second extension registered after construction.  This represents an
 /// optional DIRT plugin arriving after particles were inserted.
@@ -80,7 +91,7 @@ fn run_rate_once(
     config: InsertConfig,
 ) -> (Atom, usize, u32, CommState) {
     let mut materials = MaterialTable::new();
-    let _ = materials.add_material("glass", 8.7e9, 0.3, 0.9, 0.5, 0.0, 0.0);
+    add_test_glass(&mut materials);
     materials.build_pair_tables();
     let prepared = prepare_random_insert(
         &config,
@@ -158,7 +169,7 @@ fn run_immediate_once(domain: Domain, config: &InsertConfig) -> Atom {
     stage_table.insert("particles".into(), toml::Value::Table(particles));
 
     let mut materials = MaterialTable::new();
-    let _ = materials.add_material("glass", 8.7e9, 0.3, 0.9, 0.5, 0.0, 0.0);
+    add_test_glass(&mut materials);
     materials.build_pair_tables();
     let mut app = App::new();
     app.add_resource(CommResource(Box::new(soil_core::SingleProcessComm::new())));
@@ -195,7 +206,7 @@ fn unit_domain(low_x: f64, high_x: f64) -> Domain {
 #[test]
 fn immediate_and_rate_share_fixed_seed_candidate_and_tag_streams() {
     let mut materials = MaterialTable::new();
-    let _ = materials.add_material("glass", 8.7e9, 0.3, 0.9, 0.5, 0.0, 0.0);
+    add_test_glass(&mut materials);
     materials.build_pair_tables();
     let domain = unit_domain(0.0, 1.0);
     let mut config = rate_config(20260712);
@@ -231,7 +242,7 @@ fn immediate_and_rate_share_fixed_seed_candidate_and_tag_streams() {
 #[test]
 fn prepared_insert_rejects_malformed_random_config_before_scheduling() {
     let mut materials = MaterialTable::new();
-    let _ = materials.add_material("glass", 8.7e9, 0.3, 0.9, 0.5, 0.0, 0.0);
+    add_test_glass(&mut materials);
     materials.build_pair_tables();
     let mut config = rate_config(1);
     config.density = None;
@@ -257,7 +268,7 @@ fn production_immediate_and_rate_match_accepted_rows_tags_after_rejection() {
     immediate_config.region = None;
 
     let mut materials = MaterialTable::new();
-    let _ = materials.add_material("glass", 8.7e9, 0.3, 0.9, 0.5, 0.0, 0.0);
+    add_test_glass(&mut materials);
     materials.build_pair_tables();
     let seed = (0..10_000u64)
         .find(|&seed| {
