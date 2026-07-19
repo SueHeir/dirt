@@ -19,7 +19,10 @@ use soil_core::region::Region;
 ///
 /// The signed distance from the particle center to the wall plane is
 /// `dot(pos - point, normal)`. Overlap is `delta = radius - distance`.
-/// Force is applied only when `delta > 0` (or within JKR adhesion range).
+/// Force is applied whenever the particle overlaps the plane.  If an
+/// integration step has carried a centre through the plane, the same inward
+/// normal still restores it; a containment wall must not silently lose contact
+/// on its forbidden side.
 pub struct WallPlane {
     /// Current X-coordinate of a point on the plane (updated by motion).
     pub point_x: f64,

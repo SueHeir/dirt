@@ -235,6 +235,18 @@ The original 11 × 3 schedule, experimental reference, two-layer toe rule, and
 ±0.25 exponent bands are unchanged. **No tolerance is loosened to force a pass**;
 a fresh campaign remains required.
 
+The current protocol also corrects a generic plane-wall containment defect found
+by replaying the `a=0.5`, seed-0 release: after an integration step carried a
+particle centre past a one-sided gate plane, the wall code stopped applying any
+restoring force.  A loaded settling bed could consequently leak through the
+still-active gate before the release witness, producing an apparent envelope of
+`6.03 L0` and invalidating that run.  Plane walls now retain their capped
+restoring contact on the forbidden side and a unit test covers the crossed-gate
+case.  This is a boundary-condition repair, not a change to the aspect schedule,
+runout estimator, external law, exponent tolerance, or an assertion of a new
+experimental result.  The full campaign must be regenerated; until then this
+benchmark remains unvalidated rather than passed.
+
 ## How to Run
 
 Everything is driven by `sweep.py`; with no argument it runs all three stages.

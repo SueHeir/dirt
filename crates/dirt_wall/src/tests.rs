@@ -318,6 +318,39 @@ fn wall_repulsive_for_overlap() {
 }
 
 #[test]
+fn plane_wall_restores_particle_that_crossed_forbidden_side() {
+    // A gate normal points into the retained column.  The former one-sided
+    // centre test stopped applying contact after this particle crossed x=0,
+    // allowing a loaded column to leak permanently through its gate.
+    let mut atom = Atom::new();
+    let mut dem = DemAtom::new();
+    let radius = 0.001;
+    push_dem_test_atom(&mut atom, &mut dem, 0, [0.0005, 0.0, 0.0], radius);
+    atom.nlocal = 1;
+    atom.natoms = 1;
+
+    let mut registry = AtomDataRegistry::new();
+    registry.try_register(dem, atom.len()).unwrap();
+    let walls = make_walls(vec![make_wall_plane(0.0, 0.0, 0.0, -1.0, 0.0, 0.0)]);
+
+    let mut app = App::new();
+    app.add_resource(atom);
+    app.add_resource(registry);
+    app.add_resource(make_material_table());
+    app.add_resource(walls);
+    app.add_update_system(wall_contact_force, ParticleSimScheduleSet::Force);
+    app.organize_systems();
+    app.run();
+
+    let atom = app.get_resource_ref::<Atom>().unwrap();
+    assert!(
+        atom.force[0][0] < 0.0,
+        "crossed gate must restore particle inward, got {}",
+        atom.force[0][0]
+    );
+}
+
+#[test]
 fn wall_zero_for_no_overlap() {
     let mut atom = Atom::new();
     let mut dem = DemAtom::new();
