@@ -212,11 +212,6 @@ Because these layers expose typed state and scheduled behavior, DIRT can be used
 as one component of a larger application. Such application-specific composition
 is optional and is not part of DIRT's core scientific claim.
 
-## Citing
-
-Machine-readable citation metadata is in [`CITATION.cff`](CITATION.cff), with
-per-version changes in [`CHANGELOG.md`](CHANGELOG.md). Please cite the version
-you ran. A JOSS paper is planned.
 
 ## License
 
