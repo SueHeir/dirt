@@ -88,18 +88,20 @@ it does not validate DIRT, dev_soil_sph, or a glass angle of repose.
 To reproduce this disposition against that exact snapshot:
 
 ```bash
-git -C ~/projects/dev_soil_sph ls-tree -r --name-only \
-  b4997642678bf8072baa4d98be60429a4dfc59a9 -- examples | \
-  rg -i 'repose|calibrat|glass' || true
-git -C ~/projects/dev_soil_sph grep -n -i -E \
-  'rolling friction|angle.of.repose|mu_r|μ_r' \
-  b4997642678bf8072baa4d98be60429a4dfc59a9 -- \
-  Cargo.toml crates examples README.md docs ':!docs/dem-campaign-dirt.md'
+python3 docs/verify_sph_repose_boundary.py --self-test
+python3 docs/verify_sph_repose_boundary.py \
+  --sph-repo ~/projects/dev_soil_sph \
+  --rev b4997642678bf8072baa4d98be60429a4dfc59a9
 ```
 
-The first command returns no candidate validation surface.  The second finds
-only the v0/deferred rolling-friction statement and unrelated `mu_ref` names;
-neither is a target, a calibration, or a replacement pass criterion.
+The second command independently reads the SPH revision's tracked example tree
+and `MaterialParams` declaration, then verifies the Crossref identity of the
+Zhou citation as an explicitly incompatible negative control.  Its only
+successful outcome is `WITHHELD_NO_MAINTAINED_TARGET`; that result prevents an
+unsupported transfer but is not, and must never be reported as, a calibration
+pass.  If a future SPH revision adds either a candidate repose executable or a
+rolling-contact parameter, the audit fails closed and requires a new
+model-specific validation plan.
 
 This retirement note and the decision to withhold a coefficient were prepared
 with AI assistance.  They are a provenance boundary, not experimental work,
