@@ -32,10 +32,11 @@ its SHA-256 is
 
 This is deliberately an adversarial result: the independently supplied title
 describes a **dynamic simulation of sandpile formation**, rather than a
-protocol-matched experiment on the glass material and apparatus claimed by a
+protocol-matched experiment on the glass material and apparatus required by a
 future calibration.  It verifies bibliographic identity and exposes a scope
 mismatch; it does not establish a numerical angle, a material specification,
-or a contact-law parameter.
+or a contact-law parameter.  In particular, the historical 22--26 degree
+range is not admitted as a target on the strength of this lookup.
 
 For a second, non-identical check, Crossref's title-search endpoint returned
 the target record together with a later comment and a different 2011
@@ -67,10 +68,10 @@ curl -LfsS 'https://api.crossref.org/works?query.title=Rolling%20friction%20in%2
 
 This audit did **not** obtain or read the full paper, inspect a primary glass
 experiment, recover its apparatus/protocol, run a solver, or assess
-uncertainty.  It therefore cannot decide whether any particular future
-22--26 degree target is correct.  It only demonstrates why this citation
-cannot carry that burden by itself.  Admission of a future claim still
-requires the independent material/protocol evidence, solver ledger,
+uncertainty.  It therefore cannot decide whether any numerical target is
+correct.  It only demonstrates why this citation cannot carry that burden by
+itself.  Admission of a future claim still requires the independent
+material/protocol evidence, a pre-registered solver ledger and decision rule,
 replicates, and cross-code reconciliation listed in the retirement record;
 those requirements have not been relaxed.
 

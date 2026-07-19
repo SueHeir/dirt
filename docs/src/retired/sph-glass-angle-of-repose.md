@@ -15,30 +15,40 @@ not evidence for the current DIRT revision: they cannot be regenerated from
 the current source tree and were obtained under a different solver/protocol
 history.
 
-## Preserved scientific contract
+## Re-derived admission contract
 
-If a maintained SPH implementation later proposes this calibration again, its
-validation plan must retain all of the following requirements rather than
-retuning them around a preferred result:
+An angle of repose is an outcome of the material, particle and surface state,
+apparatus, deposition/release history, measurement rule, and the model.  A
+numeric band cannot therefore be admitted merely because it appeared in an
+archived input deck or an earlier review.  If a maintained SPH implementation
+later proposes this calibration, it must establish the following *before* it
+chooses a coefficient or an acceptance interval:
 
-1. Run the declared multi-value rolling-friction sweep with the required
-   independent replicates, using solver-produced deposits and retained
-   formation history.
-2. Demonstrate the predeclared monotonic trend and the predeclared
-   replicate-spread bound, and show at least one measured angle in the
-   22–26 degree glass target band.
-3. Publish a complete, hash-bound ledger of inputs, solver version, seeds,
-   raw outputs, and fitted angles; regenerate the measured-versus-reference
-   plot from that ledger.
-4. Supply an inspectable, protocol-matched external glass reference.  A
-   LAMMPS comparison may test implementation parity, but it is not a physical
-   reference and cannot substitute for one.
-5. Resolve or explicitly bound any cross-code discrepancy before transferring
-   a coefficient across the DIRT/SPH boundary.
+1. Obtain an inspectable, protocol-matched external glass reference with the
+   material, particle/surface condition, vessel, formation/release procedure,
+   estimator, and uncertainty recorded.  Only that record may define the
+   numerical target and its uncertainty interval.
+2. Pre-register the parameter domain, independent replicate count, estimator,
+   stopping/arrest rule, and decision rule without using results from the
+   proposed sweep.  The rule must report every eligible candidate, including
+   failures; it may not substitute a fitted interval for the external one.
+3. Run the declared sweep from solver-produced deposits while retaining the
+   complete formation history.  Publish a hash-bound ledger of inputs, solver
+   revision, seeds, raw outputs, fitted angles, and the command that rebuilds
+   every plot from that ledger.
+4. Check at least one independent failure mode that the fitting routine cannot
+   make pass: for example, a blinded manual/geometry-based angle measurement
+   on retained snapshots, and a separately implemented replay or
+   implementation-parity comparison.  Neither is a physical reference.
+5. Resolve or quantitatively bound any cross-code discrepancy before a
+   coefficient is transferred across a solver or substrate boundary.
 
-The 22–26 degree band, monotonicity, and spread requirements above describe
-the historical acceptance contract; this page is not an executable pass gate
-and does not assert that those requirements have been met.
+The former 22–26 degree range is an **unadmitted archival claim**, not a
+preserved target: the available citation check does not connect it to a
+protocol-matched glass experiment.  Likewise, monotonicity and a replicate
+spread limit are useful pre-registered diagnostics, but no particular form or
+tolerance is adopted here.  This page is not an executable pass gate and does
+not assert that any of the requirements have been met.
 
 ## Adversarial evidence disposition
 
@@ -49,9 +59,9 @@ completion may be inferred from this page.
 | Question | Minimum independent evidence | Current disposition |
 | --- | --- | --- |
 | Is the cited literature record the claimed publication? | A resolvable DOI and bibliographic metadata checked independently of the solver | **Negative control only.** Crossref resolves Zhou, Wright, Yang, Xu, and Yu, *Rolling friction in the dynamic simulation of sandpile formation*, *Physica A* 269 (1999), DOI [10.1016/S0378-4371(99)00183-1](https://doi.org/10.1016/S0378-4371(99)00183-1). Bibliographic identity does not establish material or protocol comparability. |
-| Does that source establish the 22–26 degree glass target for this protocol? | Recoverable observations plus matching glass material, particle/surface state, vessel, formation/release procedure, and estimator | **No.** The source is a different sandpile simulation and is retained only as an incompatibility control; it is not a numerical target. |
+| Does that source establish the historical 22–26 degree glass claim for this protocol? | Recoverable observations plus matching glass material, particle/surface state, vessel, formation/release procedure, estimator, and uncertainty | **No.** The source is a different sandpile simulation and is retained only as an incompatibility control; it is not a numerical target. |
 | Does a solver reproduce a retained campaign? | A complete, hash-bound input/seed/raw-output/fitted-angle ledger and a regenerated plot | **No current DIRT surface.** The executable and its ledger were removed with DIRT #163, so archived branch plots cannot answer this question. |
-| May a fitted coefficient cross from DIRT to an SPH solver? | The preceding evidence, unchanged monotonicity/spread/band gates, and a qualified independent-code reconciliation | **No.** There is no calibrated coefficient to transfer. |
+| May a fitted coefficient cross from DIRT to an SPH solver? | The preceding evidence, a pre-registered result ledger, and a qualified independent-code reconciliation | **No.** There is no calibrated coefficient to transfer. |
 
 This separation is a deliberate adversarial check: a DOI lookup, a unit-level
 contact-law parity result, or a visually plausible archived heap must never be
