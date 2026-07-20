@@ -234,6 +234,12 @@ release/population/rest gates and regenerated both figures. In particular, an
 old DIRT/LAMMPS comparison cannot establish the behavior of this different
 geometry and boundary condition.
 
+`python3 examples/bench_column_collapse/sweep.py status` is a read-only
+campaign ledger. It reports source admission and the exact per-case witness
+shortfalls without fitting any partial data. `INCOMPLETE` is therefore neither
+a numerical failure nor a PASS; only `graph`, after all 33 cases are admitted
+and independently observed, evaluates the unchanged experimental gate.
+
 Arrest is not inferred from a convenient final frame. DIRT records the maximum
 grain speed every 100,000 collapse steps (0.1 s at the configured timestep), and the last four samples must each
 satisfy `Fr = v_max / sqrt(g d) <= 0.05`; LAMMPS writes and is checked against

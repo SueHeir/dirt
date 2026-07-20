@@ -942,6 +942,65 @@ def emit_jobs():
     return path
 
 
+def campaign_status():
+    """Report admission of the declared raw ensemble without fitting it.
+
+    This is deliberately a provenance/status operation, not a cheaper form of
+    ``graph``.  In particular, an all-admitted ensemble is reported only as
+    ``READY_FOR_GRAPH``: the independent observer and the experimental
+    exponent gate must still run before either PASS or FAIL can be claimed.
+    Conversely, one missing, malformed, moving, or stale witness leaves the
+    physical result *incomplete*, rather than inviting a partial fit.
+    """
+    result = {
+        "declared_cases": len(ASPECTS) * len(SEEDS),
+        "protocol_sha256": protocol_fingerprint(),
+        "state": "UNPREPARED",
+        "admitted_cases": [],
+        "inadmissible_cases": [],
+    }
+    try:
+        with shared_campaign_lock("inspect campaign status"):
+            manifest = checked_protocol_manifest(write=False)
+            result["protocol_sha256"] = manifest["protocol_sha256"]
+            for aspect in ASPECTS:
+                for seed in SEEDS:
+                    reason = _case_evidence_error(aspect, seed)
+                    case = {"aspect": aspect, "seed": seed}
+                    if reason is None:
+                        result["admitted_cases"].append(case)
+                    else:
+                        case["reason"] = reason
+                        result["inadmissible_cases"].append(case)
+    except ValueError as exc:
+        result["reason"] = str(exc)
+        return result
+
+    result["state"] = (
+        "READY_FOR_GRAPH" if not result["inadmissible_cases"] else "INCOMPLETE"
+    )
+    return result
+
+
+def print_campaign_status():
+    """Print a compact, scheduler-safe ledger and return its machine state."""
+    status = campaign_status()
+    admitted = len(status["admitted_cases"])
+    total = status["declared_cases"]
+    print(f"Column-collapse campaign: {status['state']} ({admitted}/{total} admitted)")
+    print(f"  protocol: {status['protocol_sha256']}")
+    if status["state"] == "UNPREPARED":
+        print(f"  source admission failed: {status['reason']}")
+    elif status["state"] == "INCOMPLETE":
+        for case in status["inadmissible_cases"]:
+            print(f"  a={case['aspect']:g}, seed={case['seed']}: {case['reason']}")
+        print("  No runout, exponent, PASS, or numerical-failure claim is available.")
+    else:
+        print("  Raw witnesses are admitted; run 'graph' for independent observation and")
+        print("  the unchanged experimental exponent gate. This is not a PASS or FAIL.")
+    return status["state"]
+
+
 # ── LAMMPS leg (optional cross-code overlay) ─────────────────────────────────
 def find_lammps():
     """Return the first available LAMMPS binary on PATH, or None."""
@@ -2387,6 +2446,14 @@ def main():
             print("ERROR: --case is valid only with start")
             sys.exit(2)
         emit_jobs()
+    elif cmd == "status":
+        if selected_cases is not None:
+            print("ERROR: --case is valid only with start")
+            sys.exit(2)
+        # An incomplete or unprepared campaign is an honest, expected state;
+        # make it visible to a scheduler without mislabelling it as a failed
+        # physical validation.  Only malformed CLI use is an error here.
+        print_campaign_status()
     elif cmd == "start":
         try:
             start(jobs, rerun="--rerun" in args, selected_cases=selected_cases)
@@ -2405,7 +2472,7 @@ def main():
         sys.exit(0 if graph() else 1)
     else:
         print(f"Unknown command: {cmd!r}")
-        print("Usage: sweep.py [generate|emit-jobs|start|graph] [--jobs N] [--rerun]   (no arg = all three)")
+        print("Usage: sweep.py [generate|emit-jobs|status|start|graph] [--jobs N] [--rerun]   (no arg = all three)")
         sys.exit(2)
 
 
