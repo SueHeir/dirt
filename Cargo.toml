@@ -22,18 +22,18 @@ repository = "https://github.com/SueHeir/dirt"
 # manifests retain only their local feature/default-feature choices.
 [workspace.dependencies]
 # GRASS framework
-grass_app = { git = "https://github.com/SueHeir/grass.git", rev = "83198be92efa43320b32f986d7dd72550e3bc141" }
-grass_derive = { git = "https://github.com/SueHeir/grass.git", rev = "83198be92efa43320b32f986d7dd72550e3bc141" }
-grass_scheduler = { git = "https://github.com/SueHeir/grass.git", rev = "83198be92efa43320b32f986d7dd72550e3bc141" }
+grass_app = { git = "https://github.com/SueHeir/grass.git", rev = "83198be92efa43320b32f986d7dd72550e3bc141", version = "0.1.1" }
+grass_derive = { git = "https://github.com/SueHeir/grass.git", rev = "83198be92efa43320b32f986d7dd72550e3bc141", version = "0.1.1" }
+grass_scheduler = { git = "https://github.com/SueHeir/grass.git", rev = "83198be92efa43320b32f986d7dd72550e3bc141", version = "0.1.1" }
 # SOIL particle substrate
 # Keep every SOIL crate on one audited revision so particle layout, migration,
 # and scheduler contracts cannot drift independently.
-soil_core = { git = "https://github.com/SueHeir/soil.git", rev = "7369c69b5835069fc5bbc911b7417497173406e8", default-features = false }
-soil_deform = { git = "https://github.com/SueHeir/soil.git", rev = "7369c69b5835069fc5bbc911b7417497173406e8", default-features = false }
-soil_derive = { git = "https://github.com/SueHeir/soil.git", rev = "7369c69b5835069fc5bbc911b7417497173406e8" }
-soil_fixes = { git = "https://github.com/SueHeir/soil.git", rev = "7369c69b5835069fc5bbc911b7417497173406e8", default-features = false }
-soil_print = { git = "https://github.com/SueHeir/soil.git", rev = "7369c69b5835069fc5bbc911b7417497173406e8", default-features = false }
-soil_verlet = { git = "https://github.com/SueHeir/soil.git", rev = "7369c69b5835069fc5bbc911b7417497173406e8", default-features = false }
+soil_core = { git = "https://github.com/SueHeir/soil.git", rev = "aa89792d020cfc783cf9c930847ea424f1153ba7", version = "0.1.4", default-features = false }
+soil_deform = { git = "https://github.com/SueHeir/soil.git", rev = "aa89792d020cfc783cf9c930847ea424f1153ba7", version = "0.1.4", default-features = false }
+soil_derive = { git = "https://github.com/SueHeir/soil.git", rev = "aa89792d020cfc783cf9c930847ea424f1153ba7", version = "0.1.4" }
+soil_fixes = { git = "https://github.com/SueHeir/soil.git", rev = "aa89792d020cfc783cf9c930847ea424f1153ba7", version = "0.1.4", default-features = false }
+soil_print = { git = "https://github.com/SueHeir/soil.git", rev = "aa89792d020cfc783cf9c930847ea424f1153ba7", version = "0.1.4", default-features = false }
+soil_verlet = { git = "https://github.com/SueHeir/soil.git", rev = "aa89792d020cfc783cf9c930847ea424f1153ba7", version = "0.1.4", default-features = false }
 # DIRT workspace members
 dirt_atom = { path = "crates/dirt_atom", version = "0.1.4" }
 dirt_bond = { path = "crates/dirt_bond", version = "0.1.4" }
