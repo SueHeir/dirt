@@ -55,7 +55,8 @@ those target exponents.
 | Friction μ | 0.16 | — (particle–particle and grain–base) |
 | Column width L0 | 96 | mm (32 diameters) |
 | Slab width W | 30 | mm (10 diameters) |
-| Timestep dt | 1 × 10⁻⁶ | s |
+| Preparation timestep `dt_settle` | 1 × 10⁻⁶ | s |
+| Released timestep `dt_collapse` | 4 × 10⁻⁶ | s |
 
 ## Parameter Sweep
 
@@ -106,13 +107,14 @@ those target exponents.
   still records the post-settlement coordinates and fits that measured height;
   the source qualification prevents the *input* from silently relabelling the
   11-point schedule. This is not an adjustment to a fit or acceptance criterion.
-- Each case runs two stages: `settle` (800 000 steps / 0.8 s — pack and quiesce the
-  loosely-inserted column against the gate) then `collapse` (4 000 000 steps / 4 s — gate removed
+- Each case runs two stages: `settle` (800 000 steps / 0.8 s at 1 µs — pack and quiesce the
+  loosely-inserted column against the gate) then `collapse` (1 000 000 steps / 4 s at 4 µs — gate removed
   on the first step, column spreads and must meet the terminal-rest criterion).
 - **Preparation dynamics.** The dense but non-overlapping source is settled with
   Cundall global damping and a `1 µm` per-step displacement cap. The exact
-  source/base coordinates are non-overlapping; the 1 µs timestep resolves the
-  first dense Hertz contacts without the solver's large-overlap abort. The longer 0.8 s
+  source/base coordinates are non-overlapping; the 1 µs preparation timestep resolves the
+  first dense Hertz contacts without the solver's large-overlap abort. The released, undamped
+  stage returns to 4 µs while retaining its full 4 s physical duration. The longer 0.8 s
   preparation is required because the release-rest witness is a physical admission
   criterion, not a record written after a fixed transient. The 8%-dilated
   fcc preparation is initialized one dilation-height taller, so closure of its
@@ -246,7 +248,7 @@ or replacing that executable invalidates reuse of the old witness; this is a
 provenance check, not a numerical criterion.
 
 Arrest is not inferred from a convenient final frame. DIRT records the maximum
-grain speed every 100,000 collapse steps (0.1 s at the configured timestep), and the last four samples must each
+grain speed every 25,000 collapse steps (0.1 s at the released timestep), and the last four samples must each
 satisfy `Fr = v_max / sqrt(g d) <= 0.05`; LAMMPS writes and is checked against
 the same window. A candidate with a low final speed but a recent velocity burst
 is rejected before either a fit or a cross-code overlay can be made. This

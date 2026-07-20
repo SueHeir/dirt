@@ -36,7 +36,8 @@ class GateSupportSeparationTests(unittest.TestCase):
                 rough_base=base, active_z_low=f"{sweep.BASE_Z + sweep.RADIUS:.4f}",
                 base_select_z=f"{sweep.BASE_SELECT_Z:.4f}",
                 gate_z_low=f"{sweep.GATE_Z_LOW:.4f}", insert_top="0.0100", z_high="0.2000",
-                active_column=active, output_dir=tmp, dt=f"{sweep.DT:.3e}",
+                active_column=active, output_dir=tmp,
+                settle_dt=f"{sweep.SETTLE_DT:.3e}", collapse_dt=f"{sweep.COLLAPSE_DT:.3e}",
                 preparation_max_displacement=f"{sweep.PREPARATION_MAX_DISPLACEMENT:.3e}",
                 settle_steps=sweep.SETTLE_STEPS, collapse_steps=sweep.COLLAPSE_STEPS,
             )
@@ -53,7 +54,8 @@ class GateSupportSeparationTests(unittest.TestCase):
             rough_base="rough.csv", active_z_low=f"{sweep.BASE_Z + sweep.RADIUS:.4f}",
             base_select_z=f"{sweep.BASE_SELECT_Z:.4f}",
             gate_z_low=f"{sweep.GATE_Z_LOW:.4f}", insert_top="0.0100", z_high="0.2000",
-            active_column="active.csv", output_dir="output", dt=f"{sweep.DT:.3e}",
+            active_column="active.csv", output_dir="output",
+            settle_dt=f"{sweep.SETTLE_DT:.3e}", collapse_dt=f"{sweep.COLLAPSE_DT:.3e}",
             preparation_max_displacement=f"{sweep.PREPARATION_MAX_DISPLACEMENT:.3e}",
             settle_steps=sweep.SETTLE_STEPS, collapse_steps=sweep.COLLAPSE_STEPS,
         )

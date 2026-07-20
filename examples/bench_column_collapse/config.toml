@@ -142,6 +142,6 @@ dt = 1.000e-06
 
 [[run]]
 name = "collapse"
-steps = 4000000
+steps = 1000000
 thermo = 20000
-dt = 1.000e-06
+dt = 4.000e-06

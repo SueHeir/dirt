@@ -117,12 +117,15 @@ FRICTION = 0.16            # measured glass–glass sliding friction
 # distance is one diameter), but the 32d x 10d source creates thousands of
 # simultaneous Hertz contacts on its first loaded step.  dt=4 us advances that
 # network through the kernel's large-overlap safeguard during settling.  Use
-# 1 us resolves the initial dense Hertz contact network.  The release now also
-# has to be demonstrably quiescent, so preparation is deliberately longer than
-# the old 0.32 s transient while the released evolution remains 4 s.
-DT = 1.0e-6
+# 1 us *only while that dense, damped preparation network exists*.  Once the
+# gate is removed, the preparatory damping and displacement cap are gone and
+# the released bed uses the pre-refinement 4 us timestep.  This preserves the
+# four-second physical release interval while avoiding four times as many
+# integration steps where the original stability failure did not occur.
+SETTLE_DT = 1.0e-6
+COLLAPSE_DT = 4.0e-6
 SETTLE_STEPS = 800000      # 0.8 s overdamped preparation; released law unchanged
-COLLAPSE_STEPS = 4000000   # 4 s: enough for a high-e glass bed to arrest
+COLLAPSE_STEPS = 1000000   # 4 s at COLLAPSE_DT: enough for a high-e glass bed to arrest
 # The inserted fabric is deliberately dense and supports a full 32d x 10d
 # column from its first gravity step.  At 10 um/step the former limiter allowed
 # a newly loaded contact to advance several Hertz overlaps before Cundall
@@ -230,7 +233,7 @@ def protocol_fingerprint():
         "geometry": [RADIUS, DENSITY, L0, W, GATE_RELEASE_WIDTH_MAX, PACKING, INSERT_PACKING,
                      SOURCE_DILATION, SOURCE_JITTER,
                      BASE_Z, BASE_SELECT_Z, GATE_Z_LOW],
-                     "material": [YOUNGS_MOD, POISSON, RESTITUTION, FRICTION, DT,
+                     "material": [YOUNGS_MOD, POISSON, RESTITUTION, FRICTION, SETTLE_DT, COLLAPSE_DT,
                                   PREPARATION_MAX_DISPLACEMENT],
         "schedule": [SETTLE_STEPS, COLLAPSE_STEPS, ASPECTS, SEEDS],
         # Source preparation is part of the physical protocol: a campaign made
@@ -845,13 +848,13 @@ interval = 1000000
 name = "settle"
 steps = {settle_steps}
 thermo = 20000
-dt = {dt}
+dt = {settle_dt}
 
 [[run]]
 name = "collapse"
 steps = {collapse_steps}
 thermo = 20000
-dt = {dt}
+dt = {collapse_dt}
 """
 
 
@@ -888,7 +891,8 @@ def generate():
                     gate_z_low=f"{GATE_Z_LOW:.4f}",
                     insert_top=f"{insert_top:.4f}", z_high=f"{z_high:.4f}",
                     active_column=os.path.relpath(active_column, REPO_ROOT),
-                    output_dir=os.path.relpath(cdir, REPO_ROOT), dt=f"{DT:.3e}",
+                    output_dir=os.path.relpath(cdir, REPO_ROOT),
+                    settle_dt=f"{SETTLE_DT:.3e}", collapse_dt=f"{COLLAPSE_DT:.3e}",
                     preparation_max_displacement=f"{PREPARATION_MAX_DISPLACEMENT:.3e}",
                     settle_steps=SETTLE_STEPS, collapse_steps=COLLAPSE_STEPS,
                     ))
@@ -1081,7 +1085,7 @@ compute         max_speed mobile reduce max v_speed
 fix             preparation mobile ave/time {preparation_interval} 1 {preparation_interval} c_max_speed file {preparation_file} mode scalar
 
 thermo_modify   lost warn flush yes
-timestep        {dt}
+timestep        {settle_dt}
 thermo          {thermo}
 
 # Stage 1: settle the loose column against the gate.
@@ -1093,6 +1097,7 @@ unfix           gate
 unfix           settle_damp
 unfix           integrate
 unfix           preparation
+timestep        {collapse_dt}
 fix             integrate mobile nve/sphere
 fix             arrest mobile ave/time {arrest_interval} 1 {arrest_interval} c_max_speed file {arrest_file} mode scalar
 run             {collapse_steps}
@@ -1239,7 +1244,8 @@ def write_lammps_input(path, aspect, seed):
             diam=2.0 * RADIUS, density=DENSITY,
             E=f"{YOUNGS_MOD:.6e}", e=RESTITUTION, nu=POISSON,
             tdamp=1.0, mu=FRICTION, g=9.81,
-            W=W, L0=L0, dt=f"{DT:.3e}", thermo=40000,
+            W=W, L0=L0, settle_dt=f"{SETTLE_DT:.3e}",
+            collapse_dt=f"{COLLAPSE_DT:.3e}", thermo=40000,
             preparation_max_displacement=f"{PREPARATION_MAX_DISPLACEMENT:.3e}",
             settle_steps=SETTLE_STEPS, collapse_steps=COLLAPSE_STEPS,
             release_dump=lammps_dump_path(aspect, seed, "release"),
@@ -1436,8 +1442,8 @@ RELEASE_FROUDE_MAX = REST_FROUDE_MAX
 # equally spaced collapse witnesses instead; this is a stricter arrest check,
 # not a relaxation of the existing Froude threshold.
 ARREST_WINDOW_SAMPLES = 4
-# Preserve the 0.1 s physical sampling interval after the timestep refinement.
-ARREST_SAMPLE_INTERVAL = 100_000
+# Preserve the 0.1 s physical sampling interval under the released 4 us step.
+ARREST_SAMPLE_INTERVAL = 25_000
 PREPARATION_WINDOW_SAMPLES = 4
 PREPARATION_SAMPLE_INTERVAL = 100_000
 # LAMMPS's default custom-dump coordinate format is six decimal places.  This
