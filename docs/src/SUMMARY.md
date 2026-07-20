@@ -30,11 +30,6 @@
 
 - [LAMMPS vs DIRT — DEM Parity](./comparisons/lammps-dem-parity.md)
 
-# Retired validation surfaces
-
-- [Retired SPH glass angle-of-repose calibration](./retired/sph-glass-angle-of-repose.md)
-- [Retired SPH repose: external-evidence audit](./retired/sph-glass-angle-of-repose-evidence.md)
-
 # Reference
 
 - [Configuration Reference](./reference/config.md)
