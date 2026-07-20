@@ -1,0 +1,117 @@
+# Cundall--Strack (1979) Fig. 10 quasi-2-D walled assembly.
+# The 0.70 mm y gap holds one nominal particle diameter; only x-wall and
+# loading-platen reactions enter the source-equivalent F_H/F_V observable.
+
+[comm]
+processors_x = 1
+processors_y = 1
+processors_z = 1
+
+[domain]
+x_low = 0.0
+x_high = 0.0100
+y_low = 0.0
+y_high = 0.00070
+z_low = 0.0
+z_high = 0.0140
+boundary_x = "fixed"
+boundary_y = "fixed"
+boundary_z = "fixed"
+
+[neighbor]
+skin_fraction = 1.2
+bin_size = 0.00075
+every = 1
+
+[gravity]
+gx = 0.0
+gy = 0.0
+gz = 0.0
+
+[dem]
+contact_model = "hertz"
+
+[[dem.materials]]
+name = "glass"
+youngs_mod = 7.0e7
+poisson_ratio = 0.245
+restitution = 0.70
+# Cundall & Strack (1979), Table 3: tan(phi)_dd = 0.40.
+friction = 0.40
+
+# Table 3 also gives tan(phi)_dw = 0.08.  DIRT's geometric mixing rule gives
+# sqrt(0.40 * 0.016) = 0.08 for disk/wall contacts.
+[[dem.materials]]
+name = "source_wall"
+youngs_mod = 7.0e7
+poisson_ratio = 0.245
+restitution = 0.70
+friction = 0.016
+
+[[particles.insert]]
+material = "glass"
+count = 197
+radius = { distribution = "uniform", min = 0.00027, max = 0.00033 }
+density = 2500.0
+velocity = 0.005
+seed = 1979
+# Leave adequate random-insertion free volume for all 197 grains; the source
+# does not publish specimen dimensions, so these dimensions are not a Fig. 10
+# state registration.
+region = { type = "block", min = [0.00034, 0.00034, 0.00034], max = [0.00966, 0.00036, 0.01366] }
+
+# The platen advances while the x walls apply lateral compression at a prescribed rate. The
+# initial insertion solid fraction is deliberately loose (~0.25); the last
+# recording interval is a dense, finite-wall cell (phi approximately 0.5--0.6)
+# rather than the sparse transient that random insertion creates.  No
+# controller is given a published force ratio; the source snapshots remain
+# predictions, not servo targets.
+[[wall]]
+name = "x_low"
+point_x = 0.0
+normal_x = 1.0
+material = "source_wall"
+velocity = [0.070, 0.0, 0.0]
+
+[[wall]]
+name = "x_high"
+point_x = 0.0100
+normal_x = -1.0
+material = "source_wall"
+velocity = [-0.070, 0.0, 0.0]
+
+[[wall]]
+name = "y_low"
+point_y = 0.0
+normal_y = 1.0
+material = "source_wall"
+
+[[wall]]
+name = "y_high"
+point_y = 0.00070
+normal_y = -1.0
+material = "source_wall"
+
+[[wall]]
+name = "base"
+point_z = 0.0
+normal_z = 1.0
+material = "source_wall"
+
+[[wall]]
+name = "loading_top"
+point_z = 0.0140
+normal_z = -1.0
+material = "source_wall"
+velocity = [0.0, 0.0, -3.00]
+
+[output]
+dir = "examples/bench_cundall_strack_biaxial"
+
+[[run]]
+name = "walled_compression"
+# This bounded run records only after the loose packing has been driven into a
+# dense cell; it is not an attempt to select either unpublished Fig. 10 state.
+steps = 14000
+thermo = 1000
+dt = 2.0e-7

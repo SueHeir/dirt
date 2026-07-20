@@ -928,6 +928,18 @@ CDF with a Kolmogorov-Smirnov gate.
 weakest-link Weibull CDF. Latest regenerated run: PASS, max per-seed error 3.8%
 and KS `D = 0.075` below the 0.18 gate.*
 
+## `bench_cundall_strack_biaxial` — quasi-2-D wall-cell measurement diagnostic
+
+This runnable 197-grain wall-cell diagnostic records dense DIRT wall reactions,
+volumetric strain, and contact/fabric observables. The primary Cundall--Strack
+paper supplies apparatus provenance only: its Fig. 10 snapshots have no strain
+registration and are not targets. An earlier periodic 2-D LAMMPS trace has been
+removed rather than presented beside the finite-wall 3-D response; it was not a
+protocol-comparable reference. This is a measurement diagnostic, not a completed
+replication; the README documents the missing external trajectory requirement.
+
+![Wall-cell diagnostic](bench_cundall_strack_biaxial/plots/stress_volume_response.png)
+
 ## `bench_potyondy_cundall_bpm` — Potyondy-Cundall BPM rock compression
 
 This benchmark runs a reduced DIRT bonded-particle compression specimen with
