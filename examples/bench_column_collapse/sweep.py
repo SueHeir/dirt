@@ -120,19 +120,22 @@ FRICTION = 0.16            # measured glass–glass sliding friction
 # distance is one diameter), but the 32d x 10d source creates thousands of
 # simultaneous Hertz contacts on its first loaded step.  dt=4 us advances that
 # network through the kernel's large-overlap safeguard during settling.  Use
-# 1 us; the reciprocal step-count change retains the same 0.32 s preparation
-# and 4 s released evolution.
+# 1 us resolves the initial dense Hertz contact network.  The release now also
+# has to be demonstrably quiescent, so preparation is deliberately longer than
+# the old 0.32 s transient while the released evolution remains 4 s.
 DT = 1.0e-6
-SETTLE_STEPS = 320000
+SETTLE_STEPS = 800000      # 0.8 s overdamped preparation; released law unchanged
 COLLAPSE_STEPS = 4000000   # 4 s: enough for a high-e glass bed to arrest
 # The inserted fabric is deliberately dense and supports a full 32d x 10d
 # column from its first gravity step.  At 10 um/step the former limiter allowed
 # a newly loaded contact to advance several Hertz overlaps before Cundall
 # damping could dissipate its insertion transient; the reference a=0.5 source
 # then aborted during settling with the force kernel's >500-large-overlap
-# safeguard.  Limit the *settling-only* displacement to one micrometre.  Both
-# this limiter and Cundall damping are removed before gate release, so it is a
-# stable preparation integrator, not a change to the released contact law.
+# safeguard.  Limit the *settling-only* displacement to one micrometre.  The
+# 0.8 s duration gives that overdamped preparation time to dissipate the load
+# wave before the independently checked release frame.  Both this limiter and
+# Cundall damping are removed before gate release, so this is a stable
+# preparation integrator, not a change to the released contact law.
 PREPARATION_MAX_DISPLACEMENT = 1.0e-6
 
 PACKING = 0.60             # settled solid fraction used to size the particle count

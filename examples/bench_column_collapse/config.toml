@@ -3,7 +3,7 @@
 # Generate its exact source coordinates first:
 #   python3 examples/bench_column_collapse/sweep.py generate
 # This file intentionally shares the full campaign's material, 32d x 10d
-# geometry, frozen rough base, and 80k/1M-step schedule.  It is not evidence
+# geometry, frozen rough base, and 800k/4M-step schedule.  It is not evidence
 # for the 11 x 3 ensemble; only sweep.py graph can make that determination.
 
 [comm]
@@ -136,7 +136,7 @@ interval = 1000000
 
 [[run]]
 name = "settle"
-steps = 320000
+steps = 800000
 thermo = 20000
 dt = 1.000e-06
 

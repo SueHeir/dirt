@@ -106,13 +106,15 @@ those target exponents.
   still records the post-settlement coordinates and fits that measured height;
   the source qualification prevents the *input* from silently relabelling the
   11-point schedule. This is not an adjustment to a fit or acceptance criterion.
-- Each case runs two stages: `settle` (320 000 steps / 0.32 s — pack the loosely-inserted
-  column against the gate) then `collapse` (4 000 000 steps / 4 s — gate removed
+- Each case runs two stages: `settle` (800 000 steps / 0.8 s — pack and quiesce the
+  loosely-inserted column against the gate) then `collapse` (4 000 000 steps / 4 s — gate removed
   on the first step, column spreads and must meet the terminal-rest criterion).
 - **Preparation dynamics.** The dense but non-overlapping source is settled with
   Cundall global damping and a `1 µm` per-step displacement cap. The exact
   source/base coordinates are non-overlapping; the 1 µs timestep resolves the
-  first dense Hertz contacts without the solver's large-overlap abort. The 8%-dilated
+  first dense Hertz contacts without the solver's large-overlap abort. The longer 0.8 s
+  preparation is required because the release-rest witness is a physical admission
+  criterion, not a record written after a fixed transient. The 8%-dilated
   fcc preparation is initialized one dilation-height taller, so closure of its
   deliberately inserted void targets the scheduled **released** aspect rather
   than making it systematically short. This is a preparation compensation, not
