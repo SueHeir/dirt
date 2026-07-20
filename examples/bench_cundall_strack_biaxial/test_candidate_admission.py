@@ -1,10 +1,16 @@
 import pathlib
+import tempfile
 import unittest
 
-from candidate_admission import REQUIRED_PROTOCOL_FIELDS, decide
+from candidate_admission import (
+    REQUIRED_PROTOCOL_FIELDS,
+    audit_archived_lammps_deck,
+    decide,
+)
 
 
 LEDGER = pathlib.Path(__file__).with_name("data") / "lammps_22jul2025_periodic_candidate.csv"
+DECK = pathlib.Path(__file__).with_name("data") / "lammps_22jul2025_periodic_candidate.lmp"
 
 
 class CandidateAdmissionTests(unittest.TestCase):
@@ -17,6 +23,16 @@ class CandidateAdmissionTests(unittest.TestCase):
         decision = decide(LEDGER)
         self.assertIn("lateral_boundary_and_resultant", decision.failures)
         self.assertIn("contact_or_fabric_evolution", decision.failures)
+
+    def test_archived_deck_authenticates_the_negative_control_protocol(self):
+        self.assertIsNone(audit_archived_lammps_deck(DECK))
+
+    def test_tampered_deck_is_rejected_before_ledger_interpretation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            tampered = pathlib.Path(directory) / "candidate.lmp"
+            tampered.write_text(DECK.read_text() + "\n# tampered\n")
+            with self.assertRaisesRegex(RuntimeError, "checksum mismatch"):
+                audit_archived_lammps_deck(tampered)
 
 
 if __name__ == "__main__":

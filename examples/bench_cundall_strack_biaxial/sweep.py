@@ -13,7 +13,7 @@ import os
 import subprocess
 import sys
 from replication_contract import REQUIRED_SERIES, decide
-from candidate_admission import decide as decide_candidate
+from candidate_admission import audit_archived_lammps_deck, decide as decide_candidate
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.abspath(os.path.join(HERE, "..", ".."))
@@ -24,6 +24,9 @@ PROTOCOL = os.path.join(HERE, "data", "cundall_strack_protocol.csv")
 EVIDENCE_INVENTORY = os.path.join(HERE, "data", "external_evidence_inventory.csv")
 REJECTED_LAMMPS_CANDIDATE = os.path.join(
     HERE, "data", "lammps_22jul2025_periodic_candidate.csv"
+)
+REJECTED_LAMMPS_DECK = os.path.join(
+    HERE, "data", "lammps_22jul2025_periodic_candidate.lmp"
 )
 PLOTS = os.path.join(HERE, "plots")
 REQUIRED = ("axial_strain", "f_h_mean", "f_v_mean", "wall_force_ratio", "contacts")
@@ -145,6 +148,7 @@ def replication_evidence_decision():
 
 def rejected_lammps_candidate_decision():
     """Audit the archived LAMMPS negative control before any trace is scored."""
+    audit_archived_lammps_deck(REJECTED_LAMMPS_DECK)
     return decide_candidate(REJECTED_LAMMPS_CANDIDATE)
 
 

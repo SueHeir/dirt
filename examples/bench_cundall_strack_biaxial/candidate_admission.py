@@ -10,6 +10,7 @@ comparison merely because it has the same particle count or friction.
 from __future__ import annotations
 
 import csv
+import hashlib
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -26,6 +27,39 @@ REQUIRED_PROTOCOL_FIELDS = (
     "volumetric_strain_or_dilatancy_path",
     "contact_or_fabric_evolution",
 )
+
+# The archived deck is a negative control, not an admissible comparison.  Bind
+# the ledger to its exact bytes so the protocol findings can be independently
+# reproduced and cannot silently drift with an untracked local input.
+ARCHIVED_LAMMPS_SHA256 = "e69d0b4e99b102b4e949d4172d9862606277a44d5f7b1e2452fcfb2f24928777"
+
+
+def audit_archived_lammps_deck(path: str | Path) -> None:
+    """Authenticate and structurally verify the rejected periodic input.
+
+    This audit intentionally verifies only the facts used to reject the
+    candidate.  It cannot make the candidate eligible: the response-series
+    fields remain absent from the ledger and are separately required.
+    """
+    raw = Path(path).read_bytes()
+    actual = hashlib.sha256(raw).hexdigest()
+    if actual != ARCHIVED_LAMMPS_SHA256:
+        raise RuntimeError(
+            "archived LAMMPS negative-control checksum mismatch: "
+            f"expected {ARCHIVED_LAMMPS_SHA256}, got {actual}"
+        )
+    text = " ".join(raw.decode("utf-8").lower().split())
+    required_fragments = (
+        "dimension 2",
+        "boundary p p p",
+        "fix planar all enforce2d",
+        "fix seat all press/berendsen",
+        "fix drive all deform 1 y erate -25.0",
+        "thermo_style custom step temp press v_e v_sxx v_syy lx ly atoms",
+    )
+    absent = [fragment for fragment in required_fragments if fragment not in text]
+    if absent:
+        raise RuntimeError("archived LAMMPS deck lacks expected protocol facts: " + ", ".join(absent))
 
 
 @dataclass(frozen=True)

@@ -69,3 +69,10 @@ be scored. The ledger records the original deck feature and the corresponding
 DIRT difference for every `no`; a candidate cannot become eligible by omitting
 the wall-resultant, volume, or fabric rows. This is a negative-control audit,
 not a replacement reference or a tolerance.
+
+`data/lammps_22jul2025_periodic_candidate.lmp` is the immutable archived input
+for that negative control. Before reading the ledger, the runner checks its
+SHA-256 (`e69d0b4e99b102b4e949d4172d9862606277a44d5f7b1e2452fcfb2f24928777`)
+and independently checks the 2-D periodic, `enforce2d`, Berendsen seating,
+deformation, and virial-output directives. Thus the rejection is reproducible
+from the actual candidate protocol rather than an unbound CSV description.
