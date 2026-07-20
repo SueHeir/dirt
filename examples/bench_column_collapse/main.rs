@@ -53,16 +53,11 @@ fn main() {
         collapse_steps: 0,
     });
 
-    // Remove the gate on the first step of the "collapse" stage.
+    // Start the released dynamics at the first collapse integration boundary.
+    // The gate must not remain active for one unassisted force evaluation after
+    // the preparation aids have been removed.
     app.add_update_system(
-        open_gate.run_if(in_stage("collapse")),
-        ParticleSimScheduleSet::PostFinalIntegration,
-    );
-    // A dense source is relaxed with explicitly stage-local numerical aids.
-    // Remove them before the first collapse force evaluation: the released DEM
-    // material/contact model remains exactly the declared experimental protocol.
-    app.add_update_system(
-        end_preparation_relaxation.run_if(in_stage("collapse")),
+        begin_collapse.run_if(in_stage("collapse")),
         ParticleSimScheduleSet::PreInitialIntegration,
     );
     app.add_update_system(
@@ -76,21 +71,16 @@ fn main() {
     dump_deposit(&app);
 }
 
-/// Remove source-preparation damping and the transient displacement limiter.
+/// Begin the released stage before its first force/integration evaluation.
 ///
-/// Both definitions are present in the generated configuration only to settle
-/// the initially dense, non-overlapping packing.  Keeping either after release
-/// would make the runout a property of a numerical relaxation algorithm rather
-/// than the stated Hertz–Mindlin material model.
-fn end_preparation_relaxation(mut fixes: ResMut<FixesRegistry>) {
-    fixes.cundall.clear();
-    fixes.nve_limit.clear();
-}
-
-/// Deactivate the vertical gate wall on the first "collapse" step, releasing the
-/// column. Static support removal — no per-particle contact state to reset.
-fn open_gate(
+/// Damping and the displacement limiter are strictly source-preparation aids,
+/// while the gate is a retained support.  Removing all three at this common
+/// pre-integration boundary prevents a one-step hybrid state (unlimited,
+/// undamped, but still gated) and makes the release witness the initial state
+/// of the actual collapse dynamics.
+fn begin_collapse(
     mut tracker: ResMut<CollapseTracker>,
+    mut fixes: ResMut<FixesRegistry>,
     mut walls: ResMut<Walls>,
     run_state: Res<RunState>,
     comm: Res<CommResource>,
@@ -101,6 +91,8 @@ fn open_gate(
     if tracker.gate_opened {
         return;
     }
+    fixes.cundall.clear();
+    fixes.nve_limit.clear();
     // The released geometry is evidence, not an inferred nominal particle
     // count.  Record it before support removal so analysis can fit the actual
     // settled aspect ratio of each realization.
