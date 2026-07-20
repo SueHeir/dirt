@@ -74,6 +74,13 @@ must expose monotone registered states plus stress-ratio, volumetric-strain,
 and fabric-anisotropy series.  This prevents a prose assertion of equivalence
 from being scored as a replication.
 
+`response_score.py` is the separate positive-score boundary.  It accepts only
+SHA-256-bound DIRT/reference response tables on exactly the same registered
+states, with a predeclared positive error bound and external citation for each
+of stress ratio, volumetric strain, and fabric anisotropy.  It forbids
+interpolation and window selection.  No such package is committed here because
+the available primary and periodic negative-control artefacts are ineligible.
+
 ## Authorship and validation boundary
 
 This benchmark and its evidence-contract code were AI-assisted. The committed
