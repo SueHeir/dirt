@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
-"""Run and independently check DIRT's Cundall--Strack-inspired wall cell.
+"""Run a DIRT wall-cell diagnostic and fail closed on replication status.
 
 The paper gives two *configurations* (Fig. 10), but does not report a loading
 history or a strain/state marker that identifies either configuration.  A
 DIRT time/strain window therefore cannot be called source stage A or B.  This
 driver checks the live, directly measured wall reactions and deliberately has
-no external PASS claim.
+no external PASS claim.  In particular, its default command is a *replication
+verifier*: a good DIRT diagnostic is necessary evidence, but it returns a
+non-zero status until an admissible external trajectory exists.  ``diagnostic``
+is the explicit opt-in command for the solver/recorder smoke check alone.
 """
 import csv
 import math
@@ -157,6 +160,20 @@ def rejected_lammps_candidate_decision():
     return decide_candidate(REJECTED_LAMMPS_CANDIDATE)
 
 
+def replication_status(rows):
+    """Combine independent DIRT integrity and external-evidence decisions.
+
+    The two decisions intentionally cannot be substituted for one another:
+    finite, dense DIRT data do not validate a response without a comparable
+    reference, while a purported reference does not rescue a broken recorder.
+    This is the sole status used by the default verifier, preventing a caller
+    from interpreting the diagnostic's local PASS as replication completion.
+    """
+    diagnostic_passed, checks = evaluate(rows)
+    evidence = replication_evidence_decision()
+    return diagnostic_passed and evidence.eligible, diagnostic_passed, checks, evidence
+
+
 def source_registration(path=REGISTRATION):
     """Load an independently justified state map or fail closed.
 
@@ -257,7 +274,7 @@ def plot(rows, checks, passed):
 
 
 def main():
-    command = sys.argv[1] if len(sys.argv) > 1 else "all"
+    command = sys.argv[1] if len(sys.argv) > 1 else "verify"
     if command == "audit":
         source = read_reference()
         protocol = read_protocol()
@@ -279,31 +296,40 @@ def main():
         print(f"{decision.candidate}: INELIGIBLE; {decision.reason}")
         print(f"{lammps.candidate}: INELIGIBLE; {lammps.reason}")
         raise SystemExit("external replication unavailable: no traceable complete trajectory")
-    if command in ("all", "run"):
+    if command in ("verify", "diagnostic", "run"):
         build_run()
-    if command in ("all", "graph"):
+    if command in ("verify", "diagnostic", "graph"):
         rows = read(RESULTS)
         source = read_reference()
         protocol = read_protocol()
         missing = audit_external_evidence()
         decision = replication_evidence_decision()
         lammps = rejected_lammps_candidate_decision()
-        passed, checks = evaluate(rows)
-        plot(rows, checks, passed)
+        passed, diagnostic_passed, checks, evidence = replication_status(rows)
+        plot(rows, checks, diagnostic_passed)
         print("wall-reaction measurement: " + "; ".join(
             f"{key}={value}" for key, value in checks.items()))
-        if not passed:
+        if not diagnostic_passed:
             raise SystemExit("WALL-REACTION MEASUREMENT FAILED")
-        print("MEASUREMENT CHECK PASSED; source A-to-B protocol audited "
+        print("DIAGNOSTIC CHECK PASSED; source A-to-B protocol audited "
               f"(V={protocol['B']['vertical_load_factor']}, H={protocol['B']['horizontal_load_factor']}); "
               "Fig. 10 values audited but not used as targets "
               "because the paper provides no state-registration rule")
+        if command == "verify" and not passed:
+            raise SystemExit(
+                "REPLICATION BLOCKED: DIRT diagnostic passed, but "
+                f"{evidence.candidate} is INELIGIBLE ({evidence.reason})"
+            )
+        if command == "verify":
+            print("REPLICATION PASSED")
         print("external replication unavailable; missing source evidence: "
               + ", ".join(missing))
         print(f"evidence decision: {decision.candidate}: INELIGIBLE; {decision.reason}")
         print(f"candidate decision: {lammps.candidate}: INELIGIBLE; {lammps.reason}")
-    if command not in ("all", "run", "graph", "audit", "external"):
-        raise SystemExit(f"unknown command {command!r}; use all, run, graph, audit, or external")
+    if command not in ("verify", "diagnostic", "run", "graph", "audit", "external"):
+        raise SystemExit(
+            f"unknown command {command!r}; use verify, diagnostic, run, graph, audit, or external"
+        )
 
 
 if __name__ == "__main__":

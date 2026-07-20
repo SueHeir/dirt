@@ -9,7 +9,12 @@ unpublished coordinates or controller history. The original paper is
 provenance for particle count and friction only; it is not a trajectory oracle.
 
 ```bash
-$BENCH_PYTHON examples/bench_cundall_strack_biaxial/sweep.py
+# This is the replication verdict.  It currently exits non-zero, by design:
+# the required external trajectory has not been published.
+$BENCH_PYTHON examples/bench_cundall_strack_biaxial/sweep.py verify
+
+# This separately runs only DIRT's wall-cell/recorder diagnostic.
+$BENCH_PYTHON examples/bench_cundall_strack_biaxial/sweep.py diagnostic
 ```
 
 ![Measured DIRT wall-cell diagnostics](plots/stress_volume_response.png)
@@ -20,7 +25,7 @@ panel is the recorder-integrity check described below. It deliberately contains
 no external curve: no available artefact measures the same cell and all
 acceptance observables.
 
-The executable check verifies forward axial and lateral compression, a dense
+The `diagnostic` command verifies forward axial and lateral compression, a dense
 late-stage contact network, a positive platen reaction, finite output, and—independently from the precomputed
 column—that `F_H/F_V` equals the recorded x-wall mean divided by the recorded
 platen mean. It separately audits the committed primary-source transcription
@@ -96,3 +101,13 @@ the fixed domain/decomposition bounds. This matters for the diagnostic itself:
 the prescribed x walls move during loading, so volumetric strain and solid
 fraction must follow their live separation. It improves the internal
 measurement but does not repair the missing external trajectory.
+
+## Executable verdict boundary
+
+The default `verify` command composes two independent decisions: DIRT recorder
+integrity and external-evidence eligibility. It returns success only if both
+are true. At present the diagnostic may pass, but `verify` deliberately exits
+non-zero with `REPLICATION BLOCKED`; this is the executable status of the
+active replication goal, not a failing numerical tolerance. The explicit
+`diagnostic` command exists so that solver development can reproduce the
+internal DEM evidence without misrepresenting it as external validation.

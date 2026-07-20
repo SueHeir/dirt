@@ -58,6 +58,13 @@ class MeasurementContractTests(unittest.TestCase):
         self.assertFalse(decision.eligible)
         self.assertEqual(decision.candidate, "Cundall--Strack 1979 primary source")
 
+    def test_green_diagnostic_cannot_be_reported_as_replication(self):
+        rows = [row(0.0, 2.0, 4.0, 0.5), row(0.1, 3.0, 6.0, 0.5)]
+        passed, diagnostic_passed, _checks, evidence = SWEEP.replication_status(rows)
+        self.assertTrue(diagnostic_passed)
+        self.assertFalse(evidence.eligible)
+        self.assertFalse(passed)
+
 
 if __name__ == "__main__":
     unittest.main()
