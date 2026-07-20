@@ -67,6 +67,13 @@ primary source lacks all four; the command exits INELIGIBLE. This does not meet
 the frozen acceptance criterion: a protocol-comparable external trajectory
 with stress, dilatancy, and fabric/contact paths remains required.
 
+For a future positive comparison, `candidate_package.py` additionally requires
+SHA-256-bound independent solver input, protocol ledger, and response CSV
+artifacts.  An all-`yes` protocol ledger alone is insufficient: the response
+must expose monotone registered states plus stress-ratio, volumetric-strain,
+and fabric-anisotropy series.  This prevents a prose assertion of equivalence
+from being scored as a replication.
+
 ## Authorship and validation boundary
 
 This benchmark and its evidence-contract code were AI-assisted. The committed
