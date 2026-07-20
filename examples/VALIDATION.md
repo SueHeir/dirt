@@ -101,8 +101,8 @@ tangential (sliding) spring with a Coulomb cap** on plane walls (using the
 material's `friction`), with per-contact tangential history — not just normal force.
 This unblocked `bench_sliding_friction` (now a clean flat-wall test) and let the
 `bench_column_collapse` deposit come to rest as a finite pile instead of a runaway
-monolayer (though that bench still **FAILs** its exponent gate — a genuine finite-size
-limitation confirmed cross-code against LAMMPS, see below), and let
+monolayer (the current 32d × 10d campaign remains incomplete; historical
+cross-code output is not used to diagnose it, see below), and let
 `bench_angle_of_repose` stand its
 heap on a real frictional floor wall. Two examples still use a **frozen partner**
 for legitimate reasons: `oblique_impact` uses a sphere–sphere contact to exercise
@@ -1021,56 +1021,24 @@ from the bounded smoke output.
 
 ## `bench_column_collapse` — granular column runout
 
-> Current protocol notice: the plots below are historical 8d × 3d output and are
-> not validation evidence for the current 32d × 10d protocol. The current driver
+> Current protocol notice: the historical 8d × 3d plots formerly shown here have
+> been removed because they are not validation evidence for the current 32d × 10d
+> protocol. The current driver
 > records each settled pre-release column, requires all 11 aspects × 3 seeds with
 > exact populations, measured `H/L0` within 2% of the scheduled aspect, and
 > rejects terminal states with `Fr > 0.05` before fitting.
 > A fresh complete campaign and regenerated figures are required before any PASS.
 
 A quasi-2D column is released on a flat frictional floor; the runout `L_f` vs aspect
-ratio `a = H/L0` is fit against the experimental scalings of Lube (2004) and Lajeunesse
+ratio `a = H/L0` is fit against the planar experimental scaling of Lajeunesse
 (2004): `(L_f−L0)/L0 ≈ 1.2a` for a ≲ 3, `≈ 1.6a^(2/3)` for a ≳ 3.
 
-![Runout scaling](bench_column_collapse/plots/runout_scaling.png)
-
-*Normalized runout vs aspect ratio (log–log) with the two experimental regime lines,
-seed-averaged over 3 seeds on an 11-point sweep. Fitted exponents are 1.54 (a ≤ 3,
-target 1.0) and 0.59 (a ≥ 3, target 2/3): the power-regime exponent is inside the
-±0.25 band but the linear-regime exponent is outside it, so the benchmark **FAILs**
-its exponent gate (`sweep.py graph` exits 1).*
-
-![Deposit profile](bench_column_collapse/plots/deposit_profile.png)
-
-*Side view of the rest-state deposit for the representative case — with wall friction it
-comes to rest as a finite pile rather than running to the wall.*
-
-**Honest read:** **FAIL — genuine finite-size result, not a fit artifact.** Adding
-particle–wall sliding friction to `dirt_wall` fixed the earlier runaway-monolayer
-failure mode — the column now arrests as a finite pile instead of sliding to the domain
-wall — but the fitted **linear-regime exponent still lands outside the ±0.25 band**.
-
-The measurement was hardened to test the earlier "fit noise" hypothesis directly. The
-three suspected artifacts — single seed, a coarse 6-point sweep, and diameter-scale
-runout quantization — were all removed: the runout is now **seed-averaged (3 seeds)**,
-the sweep is **11 points** (7 linear / 5 power), and the runout uses a **sub-diameter
-deposit-toe metric** (same physical definition — the far edge where the deposit is ≳1
-diameter tall — with the diameter-scale binning removed). **After all three fixes the
-linear exponent barely moved, 1.57 → 1.54**, with small residual seed scatter (σ ≲
-0.1–0.6). So the miss is not a measurement artifact.
-
-Two independent lines of evidence show it is a genuine **finite-size** limitation of
-this deliberately small benchmark, not a DIRT model defect:
-
-- **Front-definition dependence.** The fitted linear exponent swings with the runout
-  definition (2-layer toe ≈ 1.5; 1-diameter-connected front ≈ 0.5) because at these
-  particle counts (~80–1100, 3-grain-deep slab) the low-aspect deposits are only a few
-  grains thick with no sharp front — a system in the self-similar regime the `1.2 a`
-  law describes would not be this sensitive.
-- **Cross-code agreement.** The *identical* geometry, model, and metric in **LAMMPS**
-  (authoritative granular DEM) give linear **1.27** and power **0.97** — LAMMPS misses
-  the linear target the same way DIRT does. A code-independent miss is a property of the
-  benchmark size, not of DIRT.
+**Current evidence:** incomplete — no current 11 × 3 DIRT witness set or regenerated
+figures exist. The old 8d × 3d/mixed-boundary figures and their fitted exponents were
+removed rather than being presented as a failure diagnosis for this distinct protocol.
+The predeclared planar Lajeunesse targets (1 and 2/3) and ±0.25 bands remain unchanged.
+`sweep.py graph` exits non-zero until all current raw witnesses are present, and it will
+then report the measured result without using historical DIRT or LAMMPS data.
 
 The reference is empirical with material-dependent prefactors, so only the exponents /
 regime change are tested. **Concrete fix path:** a substantially larger system (thicker
@@ -1599,7 +1567,7 @@ the declared growth diagnostic.
 | SPH glass column collapse | Lube/Lajeunesse (empirical) + LAMMPS overlay | empirical macro gate | FAIL (remaining macro limitation); uses canonical `mu_r=0.10` because 03_angle_of_repose has no transferable closure; linear exponent 1.407 vs 1.0 outside ±0.25, power exponent 0.885 inside gate; exits 1 |
 | clump_insertion_determinism | own repeated config run | reproducibility | PASS; same-seed config path byte-identical, changed seed diverges |
 | angle_of_repose | empirical (none exact) | qualitative | PASS; trends only; default bounded smoke gate PASSes 4/4 with committed pass-criterion graph; full sweep stands on real frictional wall |
-| column_collapse | Lube/Lajeunesse (empirical) + LAMMPS cross-check | empirical scaling + cross-code | FAIL (genuine finite-size limit, not fit noise); linear exponent 1.54 vs 1.0 outside ±0.25 after seed-averaging + 11-pt sweep + sub-diameter metric; LAMMPS misses identically (1.27); exits 1 |
+| column_collapse | Lajeunesse planar empirical law + optional LAMMPS overlay | empirical scaling + cross-code | INCOMPLETE: current 32d × 10d rough-base 11 × 3 raw campaign and regenerated figures are absent; graph fails closed without them. Historical 8d × 3d/mixed-boundary results are not evidence for this protocol. |
 | lebc_shear | Lun / extended kinetic theory + LAMMPS / Fortran / LIGGGHTS; GDR MiDi / da Cruz μ(I) form | kinetic theory + calibration | PASS; bounded smoke gate keeps CI fast (`0.15 <= μ <= 0.90`, `P>0`, drift <15%); full KT gate requires ≥60% of points within 15% normal-stress and 20% shear-stress bands; dense/jamming deviations expected |
 | rod_shear_aspect_ratio | Guo/Wassgren/Ketterhagen/Hancock/James/Curtis rod-like shear DEM trends | published DEM trend | PASS; elongated glued-sphere rods show decreasing Bagnold-normalized pressure and shear stress with AR (2→4→6); apparent friction / alignment plotted but not absolute-gated |
 | hopper_beverloo | Beverloo (empirical) + Choi/Kudrolli/Bazant quasi-2D experiment | empirical correlation / published slot exponent | PASS; exponent 1.53 vs 1.5 and published 1.48; prefactor untested |

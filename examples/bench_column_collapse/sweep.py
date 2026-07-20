@@ -25,16 +25,13 @@ runout is AVERAGED over seeds. Each DIRT run dumps the rest-state deposit
 those, computes L_f as the far edge of the deposit toe on a sub-diameter grid
 (see measure_column), and fits the runout exponent in each regime.
 
-Measurement quality (not the tolerance) was hardened to remove the three fit
-artifacts the original coarse sweep was suspected of: (1) diameter-scale runout
-quantization (now a sub-diameter deposit-toe metric that keeps the original height
-definition), (2) single-seed packing scatter of ~±20-25% (now seed-averaged), and
-(3) a coarse 6-point aspect sweep (now 11 points across both regimes). The ±0.25
-exponent tolerance is UNCHANGED and the gate still exits non-zero on a genuine
-miss. With those artifacts removed the linear-regime exponent barely moved (from
-1.57 to 1.54), and an independent code (LAMMPS) run through the identical metric
-misses the target the same way — so the miss is a genuine finite-size result of
-this deliberately small benchmark, not a measurement artifact (see README).
+Measurement quality (not the tolerance) was hardened to remove three possible
+fit artifacts: diameter-scale runout quantization (now a sub-diameter toe
+metric), single-fabric scatter (three deterministic fabrics), and a coarse
+aspect sweep (11 points).  The ±0.25 exponent tolerance is unchanged.  Results
+from the superseded 8d × 3d protocol are deliberately not reported by this
+driver: they are neither evidence for nor a numerical prediction of the
+current 32d × 10d rough-base campaign.
 
 If a LAMMPS binary (lmp_serial / lmp / lmp_mpi / lammps) is on PATH, each aspect
 ratio is ALSO run in LAMMPS with the equivalent granular model (pair_style
@@ -2110,12 +2107,10 @@ def validate(rows):
     ok = low_ok and high_ok
     if not ok:
         print()
-        print("  NOTE: this bench does NOT validate to tolerance. Measurement quality")
-        print("  has been hardened (seed-averaged runout, 11-point aspect sweep, and a")
-        print("  sub-diameter deposit-toe metric — no tolerance loosened), yet the")
-        print("  linear exponent barely moved (1.57 -> 1.54) and an independent code")
-        print("  (LAMMPS) misses identically: a genuine finite-size result, not a fit")
-        print("  artifact. See README/VALIDATION.md for the documented root cause.")
+        print("  NOTE: this complete current campaign does NOT validate to tolerance.")
+        print("  The unchanged target and ±0.25 band remain visible above.  Historical")
+        print("  8d × 3d outputs are not used to explain, soften, or substitute for this")
+        print("  32d × 10d rough-base result; see README/VALIDATION.md for scope.")
     print("\nALL CHECKS PASSED" if ok else "VALIDATION FAILED (see note above)")
     return ok
 

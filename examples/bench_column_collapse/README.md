@@ -225,11 +225,14 @@ new experiment and cannot remove the need for a completed 11 × 3 campaign.
 
 ## Status — current evidence required
 
-The tracked figures are historical output and are not evidence for this full-length,
-continuum-resolution rough-base protocol. No exponent PASS is claimed until a fresh, complete 11 × 3
-campaign has passed the release/population/rest gates and regenerated both figures.
-This avoids turning historical 8d × 3d or mixed-boundary output into an implicit
-claim about the new continuum-resolution rough-base protocol.
+No tracked runout or deposit figure is evidence for this full-length,
+continuum-resolution rough-base protocol: the prior figures were produced by a
+superseded 8d × 3d or mixed-boundary setup and have been removed rather than
+being relabelled. No exponent PASS or current numerical failure diagnosis is
+claimed until a fresh, complete 11 × 3 campaign has passed the
+release/population/rest gates and regenerated both figures. In particular, an
+old DIRT/LAMMPS comparison cannot establish the behavior of this different
+geometry and boundary condition.
 
 Arrest is not inferred from a convenient final frame. DIRT records the maximum
 grain speed every 100,000 collapse steps (0.1 s at the configured timestep), and the last four samples must each
@@ -249,27 +252,11 @@ smoke: release and final populations were both 8,062, across gate removal.
 This is an initialization and population-integrity check, not a DIRT/LAMMPS
 agreement result or an exponent PASS.
 
-**The earlier "fit noise" hypothesis was tested and rejected.** The suspected causes
-— single seed, a coarse 6-point sweep, and diameter-scale runout quantization — were
-all removed: the runout is now **seed-averaged (3 seeds)**, the sweep is **11 points**,
-and the runout uses a **sub-diameter deposit-toe metric** (same physical definition
-as before — the far edge where the deposit is ≳1 diameter tall — but with the
-diameter-scale binning removed). After all three fixes the linear exponent **barely
-moved, 1.57 → 1.54**, and the run-to-run seed scatter is now small (σ ≲ 0.1–0.6 in
-normalized runout). So the miss is **not** a measurement artifact.
-
-Two independent lines of evidence show it is a genuine **finite-size** limitation of
-this deliberately small benchmark, not a DIRT model defect:
-
-1. **Front-definition dependence.** The fitted linear exponent swings with the runout
-   definition — a 2-layer deposit toe gives ≈1.5, a 1-diameter-connected-front gives
-   ≈0.5 — because at these particle counts (~80–1100, a 3-grain-deep slab) the
-   low-aspect deposits are only a few grains thick with no sharp front. A benchmark
-   in the self-similar regime the `1.2 a` law describes would not be this sensitive.
-2. **Cross-code agreement (superseded boundary).** The earlier LAMMPS comparison
-   used the same small, mixed-boundary protocol and also missed the target. It
-   informs that old protocol, but is not evidence for this full-length rough-base
-   case. A fresh matched LAMMPS campaign is required before any code-to-code claim.
+The seed average, 11-point sweep, and sub-diameter toe metric address plausible
+measurement limitations, but they do not themselves establish agreement or a
+finite-size diagnosis. Those questions remain open until the current raw
+campaign exists. A fresh matched LAMMPS campaign may be shown as a secondary
+code-to-code check, but it cannot replace DIRT's experimental-law gate.
 
 **Current correction:** source populations are derived from the actual bounded
 coordinate generator, rather than from an incompatible infinite-packing formula.
