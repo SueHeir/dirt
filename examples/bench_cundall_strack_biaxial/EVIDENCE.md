@@ -51,13 +51,12 @@ file is committed: the source does not supply the necessary state information.
 This makes it impossible for the measurement-smoke PASS to be re-labelled as
 external agreement by choosing a convenient DIRT force-ratio window.
 
-## Independent solver countercheck
+## Rejected analogue
 
-The `reference/lammps/` directory contains a LAMMPS 22Jul2025 input deck and
-the raw `lammps_results.csv` it produced. It independently implements a 2-D
-197-grain, `tan(phi)=0.40` compression trajectory; it does not use DIRT output
-as input and is not a reconstruction of unpublished Fig. 10 geometry. Against
-the deterministic DIRT run, the fixed-grid comparison reports its values in
-the generated figure. No tolerance or selected window is introduced. Thus this
-is independent negative evidence, not a claim
-that LAMMPS validates the source paper or that DIRT reproduces it.
+A formerly bundled LAMMPS trace was independently re-examined and removed.
+It used periodic 2-D deformation and virial stress, while DIRT records finite
+moving-wall resultants in a one-grain-deep 3-D slice. It also supplied neither
+dilatancy nor fabric evolution. It is not an eligible external response and
+must not be shown as a DIRT comparison curve. The absence is intentional: it
+prevents an unmatched analogue from becoming a visual substitute for the
+missing source trajectory.

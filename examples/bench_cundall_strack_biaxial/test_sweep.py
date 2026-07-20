@@ -2,7 +2,6 @@
 import importlib.util
 import pathlib
 import unittest
-from unittest import mock
 
 
 SPEC = importlib.util.spec_from_file_location(
@@ -54,25 +53,10 @@ class MeasurementContractTests(unittest.TestCase):
         self.assertFalse(checks["dense_solid_fraction"])
         self.assertFalse(checks["dense_coordination"])
 
-    def test_independent_comparison_reports_raw_disagreement(self):
-        rows = [row(0.0, 1.0, 1.0, 1.0), row(0.07, 1.0, 2.0, 0.5)]
-        reference = [
-            {"axial_strain": 0.0, "syy": 1.0},
-            {"axial_strain": 0.07, "syy": 3.0},
-        ]
-        with mock.patch.object(SWEEP, "read", return_value=reference):
-            comparison = SWEEP.compare_independent_lammps(rows)
-        self.assertEqual(comparison["samples"], 12)
-        self.assertGreater(comparison["normalized_axial_rmse"], 0.0)
-        self.assertEqual(comparison["strain_grid"], [0.01 + 0.005 * i for i in range(12)])
-        self.assertEqual(len(comparison["dirt_normalized"]), comparison["samples"])
-        self.assertEqual(len(comparison["lammps_normalized"]), comparison["samples"])
-
-    def test_committed_lammps_artifact_has_a_stable_identity(self):
-        self.assertEqual(
-            SWEEP.audit_lammps_artifact(),
-            "0e13ab5c2c2295a2e72822ab793a57291340211ba8b8b7d4d5a1d08e53497b18",
-        )
+    def test_only_the_primary_source_is_considered_for_replication_admission(self):
+        decision = SWEEP.replication_evidence_decision()
+        self.assertFalse(decision.eligible)
+        self.assertEqual(decision.candidate, "Cundall--Strack 1979 primary source")
 
 
 if __name__ == "__main__":

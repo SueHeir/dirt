@@ -8,12 +8,10 @@ driver checks the live, directly measured wall reactions and deliberately has
 no external PASS claim.
 """
 import csv
-import hashlib
 import math
 import os
 import subprocess
 import sys
-from protocol_admission import admission_failures
 from replication_contract import REQUIRED_SERIES, decide
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -23,10 +21,6 @@ REFERENCE = os.path.join(HERE, "data", "cundall_strack_stages.csv")
 REGISTRATION = os.path.join(HERE, "data", "source_state_registration.csv")
 PROTOCOL = os.path.join(HERE, "data", "cundall_strack_protocol.csv")
 EVIDENCE_INVENTORY = os.path.join(HERE, "data", "external_evidence_inventory.csv")
-LAMMPS_RESULTS = os.path.join(HERE, "reference", "lammps", "lammps_results.csv")
-# LAMMPS 22Jul2025 output from the committed input deck.  This is an
-# evidence-integrity fingerprint, not a numerical response tolerance.
-LAMMPS_RESULTS_SHA256 = "0e13ab5c2c2295a2e72822ab793a57291340211ba8b8b7d4d5a1d08e53497b18"
 PLOTS = os.path.join(HERE, "plots")
 REQUIRED = ("axial_strain", "f_h_mean", "f_v_mean", "wall_force_ratio", "contacts")
 # These are executable specimen-integrity floors, not external response
@@ -54,25 +48,6 @@ def read(path):
         return [{key: float(value) for key, value in row.items()}
                 for row in csv.DictReader(f)]
 
-
-def audit_lammps_artifact(path=LAMMPS_RESULTS):
-    """Refuse to score a cross-code artifact whose committed bytes changed.
-
-    A changed reference must be regenerated and independently reviewed with
-    its deck; treating a modified CSV as the same external observation would
-    make the comparison non-reproducible.
-    """
-    digest = hashlib.sha256()
-    with open(path, "rb") as handle:
-        for block in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(block)
-    actual = digest.hexdigest()
-    if actual != LAMMPS_RESULTS_SHA256:
-        raise RuntimeError(
-            "LAMMPS artifact checksum mismatch; regenerate and review the "
-            f"external trajectory (expected {LAMMPS_RESULTS_SHA256}, got {actual})"
-        )
-    return actual
 
 
 def read_reference(path=REFERENCE):
@@ -149,27 +124,19 @@ def audit_external_evidence(path=EVIDENCE_INVENTORY):
     return missing
 
 
-def replication_evidence_decisions():
-    """Classify the two available external artifacts before any response score.
+def replication_evidence_decision():
+    """Classify the cited source before any response score is attempted.
 
-    This is not a numerical gate.  It only prevents a source snapshot or an
-    unmatched solver analogue from acquiring the status of a replication
-    reference through plotting or normalization.
+    The former bundled LAMMPS curve has been deliberately removed: its
+    periodic, 2-D virial measurement was not the finite-wall, 3-D resultant
+    protocol measured here.  Keeping it in a response plot invited a visual
+    comparison that the protocol contract already rejected.
     """
     primary_missing = set(audit_external_evidence())
     primary = decide("Cundall--Strack 1979 primary source", {
         series: series not in primary_missing for series in REQUIRED_SERIES
     })
-    # The committed LAMMPS file records an axial response only.  In addition to
-    # that incomplete observable set, its independently audited protocol is
-    # not equivalent to the DIRT cell.
-    lammps = decide("bundled LAMMPS analogue", {
-        "state_registration": True,
-        "stress_or_deviatoric_path": True,
-        "volumetric_strain_or_dilatancy_path": False,
-        "contact_or_fabric_evolution": False,
-    }, admission_failures())
-    return primary, lammps
+    return primary
 
 
 def source_registration(path=REGISTRATION):
@@ -236,53 +203,7 @@ def evaluate(rows):
                                         "positive_platen_reaction", "ratio_recomputed")), checks
 
 
-def _interpolate(points, x):
-    for (x0, y0), (x1, y1) in zip(points, points[1:]):
-        if x0 <= x <= x1:
-            return y0 + (y1 - y0) * (x - x0) / (x1 - x0)
-    raise RuntimeError("comparison strain lies outside a trajectory")
-
-
-def compare_independent_lammps(dirt_rows, path=LAMMPS_RESULTS, *, scored=False):
-    """Report a solver-to-solver response comparison without a fitted gate.
-
-    The source paper does not provide a trajectory.  LAMMPS is therefore an
-    independently executable *equivalent-protocol* reference, not a substitute
-    primary-source curve.  There is intentionally no tolerance here: this
-    function reports measured disagreement, which reviewers can inspect along
-    with the raw external trajectory.
-    """
-    failures = admission_failures()
-    if scored and failures:
-        raise RuntimeError(
-            "refusing a scored cross-code replication comparison; protocol mismatches: "
-            + ", ".join(failures)
-        )
-    # The checked-in reference is a solver-produced artifact, not Python
-    # fixture data.  Verify its identity before it is plotted or measured.
-    if os.path.abspath(path) == os.path.abspath(LAMMPS_RESULTS):
-        audit_lammps_artifact(path)
-    lammps = read(path)
-    dirt = [(r["axial_strain"], r["f_v_mean"]) for r in dirt_rows
-            if r["f_v_mean"] > 0.0]
-    ext = [(r["axial_strain"], r["syy"]) for r in lammps if r["syy"] > 0.0]
-    grid = [0.01 + 0.005 * i for i in range(12)]
-    if dirt[0][0] > grid[0] or dirt[-1][0] < grid[-1] or ext[0][0] > grid[0] or ext[-1][0] < grid[-1]:
-        raise RuntimeError("DIRT and LAMMPS trajectories must span 0.01 <= strain <= 0.065")
-    d = [_interpolate(dirt, x) for x in grid]
-    l = [_interpolate(ext, x) for x in grid]
-    d = [v / d[0] for v in d]
-    l = [v / l[0] for v in l]
-    d_mean, l_mean = sum(d) / len(d), sum(l) / len(l)
-    denominator = math.sqrt(sum((v - d_mean) ** 2 for v in d) * sum((v - l_mean) ** 2 for v in l))
-    correlation = sum((a - d_mean) * (b - l_mean) for a, b in zip(d, l)) / denominator
-    rmse = math.sqrt(sum((a - b) ** 2 for a, b in zip(d, l)) / len(d))
-    return {"samples": len(grid), "strain_grid": grid,
-            "normalized_axial_correlation": correlation,
-            "normalized_axial_rmse": rmse, "dirt_normalized": d, "lammps_normalized": l}
-
-
-def plot(rows, checks, passed, source, comparison):
+def plot(rows, checks, passed):
     try:
         import matplotlib
         matplotlib.use("Agg")
@@ -293,23 +214,7 @@ def plot(rows, checks, passed, source, comparison):
 
     os.makedirs(PLOTS, exist_ok=True)
     x = [row["axial_strain"] for row in rows]
-    fig, (cross_code, state, ratio) = plt.subplots(3, 1, figsize=(7.2, 9.4), sharex=True)
-    # The plot uses precisely the fixed-grid vectors used for the reported
-    # diagnostic metrics. Showing a denser raw trace normalized at a different
-    # origin previously made the visible curves and printed r/NRMSE disagree.
-    cross_code.plot(comparison["strain_grid"], comparison["dirt_normalized"],
-                    "o-", ms=2.5, label="DIRT platen reaction / fixed-grid origin")
-    cross_code.plot(comparison["strain_grid"], comparison["lammps_normalized"],
-                    "s-", ms=2.5, label="independent LAMMPS $\\sigma_{yy}$ / fixed-grid origin")
-    cross_code.set_ylabel("normalized axial response")
-    cross_code.set_title(
-        "Independent analogue: NOT a source replication "
-        f"($r={comparison['normalized_axial_correlation']:.3f}$, "
-        f"NRMSE={comparison['normalized_axial_rmse']:.3f}$)"
-    )
-    cross_code.legend(fontsize=7, loc="best")
-    cross_code.grid(alpha=.25)
-
+    fig, (state, ratio) = plt.subplots(2, 1, figsize=(7.2, 6.4), sharex=True)
     state.plot(x, [row["volumetric_strain"] for row in rows],
                label="DIRT volumetric strain")
     state.plot(x, [row["fabric_anisotropy"] for row in rows],
@@ -322,14 +227,9 @@ def plot(rows, checks, passed, source, comparison):
 
     ratio.plot(x, [row["wall_force_ratio"] for row in rows], "o-", ms=2.5,
                label="DIRT direct x-wall/platen resultant")
-    for stage, value in sorted(source.items()):
-        ratio.axhline(value, color="tab:orange", ls="--", lw=1.2,
-                     label="Cundall--Strack Fig. 10 (unregistered)" if stage == "A" else None)
-        ratio.annotate(f"Fig. 10 {stage}: {value:.2f}", (x[-1], value),
-                       xytext=(-5, 4), textcoords="offset points", ha="right", fontsize=7)
     ratio.set_ylabel(r"$F_H/F_V$")
     ratio.set_title("Wall measurement integrity: " + ("PASS" if passed else "FAIL") +
-                    "; source stages are not state-registered")
+                    "; recorder integrity only")
     ratio.legend(fontsize=7)
     ratio.grid(alpha=.25)
     ratio.set_xlabel("axial platen strain from first recorder state")
@@ -340,11 +240,23 @@ def plot(rows, checks, passed, source, comparison):
 
 def main():
     command = sys.argv[1] if len(sys.argv) > 1 else "all"
+    if command == "audit":
+        source = read_reference()
+        protocol = read_protocol()
+        missing = audit_external_evidence()
+        decision = replication_evidence_decision()
+        print("SOURCE-TRAJECTORY REPLICATION INELIGIBLE: " + ", ".join(missing))
+        print("audited source facts only: Fig. 10 A={A:.2f}, B={B:.2f}; "
+              "A-to-B V={v}, H={h}".format(
+                  A=source["A"], B=source["B"],
+                  v=protocol["B"]["vertical_load_factor"],
+                  h=protocol["B"]["horizontal_load_factor"]))
+        print(f"evidence decision: {decision.candidate}: INELIGIBLE; {decision.reason}")
+        return
     if command == "external":
-        decisions = replication_evidence_decisions()
-        for decision in decisions:
-            print(f"{decision.candidate}: {'ELIGIBLE' if decision.eligible else 'INELIGIBLE'}; {decision.reason}")
-        raise SystemExit("external replication unavailable: no protocol-comparable complete trajectory")
+        decision = replication_evidence_decision()
+        print(f"{decision.candidate}: INELIGIBLE; {decision.reason}")
+        raise SystemExit("external replication unavailable: no traceable complete trajectory")
     if command in ("all", "run"):
         build_run()
     if command in ("all", "graph"):
@@ -352,10 +264,9 @@ def main():
         source = read_reference()
         protocol = read_protocol()
         missing = audit_external_evidence()
-        decisions = replication_evidence_decisions()
+        decision = replication_evidence_decision()
         passed, checks = evaluate(rows)
-        comparison = compare_independent_lammps(rows)
-        plot(rows, checks, passed, source, comparison)
+        plot(rows, checks, passed)
         print("wall-reaction measurement: " + "; ".join(
             f"{key}={value}" for key, value in checks.items()))
         if not passed:
@@ -366,14 +277,9 @@ def main():
               "because the paper provides no state-registration rule")
         print("external replication unavailable; missing source evidence: "
               + ", ".join(missing))
-        for decision in decisions:
-            print(f"evidence decision: {decision.candidate}: "
-                  f"{'ELIGIBLE' if decision.eligible else 'INELIGIBLE'}; {decision.reason}")
-        print("independent LAMMPS analogue: " + "; ".join(
-            f"{key}={value}" for key, value in comparison.items()
-            if key not in {"strain_grid", "dirt_normalized", "lammps_normalized"}))
-    if command not in ("all", "run", "graph", "external"):
-        raise SystemExit(f"unknown command {command!r}; use all, run, graph, or external")
+        print(f"evidence decision: {decision.candidate}: INELIGIBLE; {decision.reason}")
+    if command not in ("all", "run", "graph", "audit", "external"):
+        raise SystemExit(f"unknown command {command!r}; use all, run, graph, audit, or external")
 
 
 if __name__ == "__main__":

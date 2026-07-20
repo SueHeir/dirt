@@ -1,6 +1,5 @@
 import unittest
 
-from protocol_admission import admission_failures
 from replication_contract import REQUIRED_SERIES, decide
 from sweep import audit_external_evidence
 
@@ -13,14 +12,6 @@ class ReplicationContractTests(unittest.TestCase):
         })
         self.assertFalse(decision.eligible)
         self.assertEqual(missing, set(REQUIRED_SERIES))
-
-    def test_cross_code_analogue_requires_evidence_and_protocol_equivalence(self):
-        decision = decide("bundled LAMMPS analogue", {
-            series: series != "contact_or_fabric_evolution" for series in REQUIRED_SERIES
-        }, admission_failures())
-        self.assertFalse(decision.eligible)
-        self.assertIn("dimension", decision.protocol_failures)
-        self.assertIn("contact_or_fabric_evolution", decision.missing)
 
     def test_complete_equivalent_data_is_admissible_without_a_tolerance(self):
         decision = decide("future independent data", {

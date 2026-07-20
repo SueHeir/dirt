@@ -5,36 +5,27 @@ compression benchmark.  It records only the dense late-loading part of a
 loose-insertion-to-compaction path, rather than interpreting the sparse
 insertion transient as a biaxial specimen. It is motivated by the wall-resultant apparatus in
 Cundall & Strack (1979), but it does not claim to reconstruct that paper's
-unpublished coordinates or controller history.  Its quantitative comparator is
-the committed, independently executable LAMMPS 2-D counterpart under the
-documented protocol; the original paper is provenance for particle count and
-friction only.
+unpublished coordinates or controller history. The original paper is
+provenance for particle count and friction only; it is not a trajectory oracle.
 
 ```bash
 $BENCH_PYTHON examples/bench_cundall_strack_biaxial/sweep.py
 ```
 
-![Measured DIRT states and independent LAMMPS analogue](plots/stress_volume_response.png)
+![Measured DIRT wall-cell diagnostics](plots/stress_volume_response.png)
 
-The top panel is the deliberately unfitted, fixed-grid cross-code diagnostic.
-Its plotted points are exactly the vectors used for the reported metrics; the
-present analogue does **not** agree (the generated figure reports the values).
-The middle panel exposes DIRT's volumetric and contact/fabric observables; it
-does not imply that the primary paper published corresponding curves. The
-bottom panel is only the recorder-integrity check described below.
-
-The committed figure includes the fixed-grid normalized DIRT-versus-LAMMPS
-axial-response panel used for the independent comparison, alongside wall-ratio and
-contact measurements. Its divergence makes clear that recorder integrity is
-not a replication PASS.
+The top panel exposes DIRT's volumetric and contact/fabric observables; it does
+not imply that the primary paper published corresponding curves. The lower
+panel is the recorder-integrity check described below. It deliberately contains
+no external curve: no available artefact measures the same cell and all
+acceptance observables.
 
 The executable check verifies forward axial and lateral compression, a dense
 late-stage contact network, a positive platen reaction, finite output, and—independently from the precomputed
 column—that `F_H/F_V` equals the recorded x-wall mean divided by the recorded
 platen mean. It separately audits the committed primary-source transcription
-of Fig. 10 A=`0.39` and B=`0.33`, and shows those values as explicitly
-*unregistered* lines on the result figure. It does not compare a selected DIRT
-time window with those numbers.
+of Fig. 10 A=`0.39` and B=`0.33`. It does not compare a selected DIRT time
+window with those numbers.
 
 "Dense" is an executable integrity condition, not a label: every recorded
 state must have `phi >= 0.50` and coordination `>= 4.0`. These floors protect
@@ -56,11 +47,10 @@ one-grain-deep 3-D sphere slice, Hertz contacts, and prescribed wall velocity.
 
 The primary source does not publish a state-registered trajectory. Therefore
 its two Fig. 10 snapshots are never used as a curve, interpolation target, or
-tolerance.  The bundled LAMMPS trajectory is an independent solver comparison,
-not a substitute for the primary experiment.  It has a different lateral
-boundary, while DIRT is a one-grain-deep 3-D Hertzian slice.  Agreement can
-test a declared analogue protocol; it cannot establish 2-D force-network
-identity or a reproduction of the original photograph.
+tolerance. A previously bundled LAMMPS trace was removed because its periodic
+2-D virial measurement and preparation do not match this finite-wall 3-D
+resultant protocol. Plotting two unlike traces as an "independent comparison"
+would make the missing common observable look like a numerical disagreement.
 
 The executable also inventories the full acceptance evidence rather than
 checking only snapshot ratios. The primary source has no registered state
@@ -68,31 +58,24 @@ coordinate, stress/deviatoric path, volumetric/dilatancy path, or
 contact/fabric-evolution series for this assembly. A state map alone would
 therefore still not satisfy the replication contract.
 
-## Independent-solver check
+## External-admission gate
 
-`reference/lammps/in_biaxial.lmp` is a committed, independently implemented
-LAMMPS 2-D 197-grain compression diagnostic. Its raw solver output is committed
-beside the deck, but it is not a replication reference. `sweep.py external`
-first evaluates a claim-level evidence contract: a candidate must provide a
-registered state map plus stress/deviatoric, dilatancy, and fabric/contact
-series, and its dimensionality, boundaries, contact kinematics, preparation,
-loading, and observables must match. The primary source lacks all four series;
-the LAMMPS diagnostic lacks dilatancy/fabric and fails every protocol category.
-It therefore exits INELIGIBLE before reading or scoring a response. The
-measured disagreement is retained only as a counterexample, not a validation
-result. This does not meet the frozen acceptance criterion: a
-protocol-comparable external trajectory with stress, dilatancy, and
-fabric/contact paths remains required.
+`sweep.py external` evaluates the cited source before a response is read or a
+tolerance is considered. A candidate must provide a registered state map plus
+stress/deviatoric, dilatancy, and fabric/contact series at common states. The
+primary source lacks all four; the command exits INELIGIBLE. This does not meet
+the frozen acceptance criterion: a protocol-comparable external trajectory
+with stress, dilatancy, and fabric/contact paths remains required.
 
 ## Authorship and validation boundary
 
 This benchmark and its evidence-contract code were AI-assisted. The committed
-DIRT and LAMMPS executions demonstrate only the stated solver behavior on this
-host; they are not independent experimental confirmation or a substitute for
-the unavailable primary-source trajectory. Any future positive claim requires
-an independently traceable external data set and review of its protocol
-equivalence; this code supplies no tolerance or criterion that can turn the
-present evidence into a pass.
+DIRT execution demonstrates only the stated solver behavior on this host; it
+is not independent experimental confirmation or a substitute for the
+unavailable primary-source trajectory. Any future positive claim requires an
+independently traceable external data set and review of its protocol equivalence;
+this code supplies no tolerance or criterion that can turn the present evidence
+into a pass.
 
 The cell observables use the instantaneous named x-wall positions, rather than
 the fixed domain/decomposition bounds. This matters for the diagnostic itself:
