@@ -152,6 +152,13 @@ SOURCE_DILATION = 1.08
 SOURCE_JITTER = 0.005      # fraction of a diameter, per horizontal coordinate
 BASE_Z = 2.0 * RADIUS
 BASE_SELECT_Z = 2.5 * RADIUS
+# The removable gate starts at the *top surface* of the frozen rough base.  A
+# plane wall is otherwise infinite, so after the containment-side repair it
+# would also push on the downstream base beads that deliberately extend beyond
+# the gate.  Those beads are support, not retained-column particles.  Bounding
+# the gate above the base makes the two boundary conditions disjoint while
+# retaining a full-height barrier for every mobile grain.
+GATE_Z_LOW = 2.0 * RADIUS
 
 # Aspect ratios to sweep. Spans both regimes (linear a<~2-3, power-law a>~3) so a
 # regime change is resolvable. The sweep is deliberately FINE — extra points in
@@ -222,7 +229,7 @@ def protocol_fingerprint():
     contract = {
         "geometry": [RADIUS, DENSITY, L0, W, GATE_RELEASE_WIDTH_MAX, PACKING, INSERT_PACKING,
                      SOURCE_DILATION, SOURCE_JITTER,
-                     BASE_Z, BASE_SELECT_Z],
+                     BASE_Z, BASE_SELECT_Z, GATE_Z_LOW],
                      "material": [YOUNGS_MOD, POISSON, RESTITUTION, FRICTION, DT,
                                   PREPARATION_MAX_DISPLACEMENT],
         "schedule": [SETTLE_STEPS, COLLAPSE_STEPS, ASPECTS, SEEDS],
@@ -822,6 +829,9 @@ point_x = {l0}
 normal_x = -1.0
 material = "glass"
 name = "gate"
+# This finite gate begins at the rough-base surface.  It must not contact the
+# frozen downstream support, which intentionally spans beyond x=L0.
+bound_z_low = {gate_z_low}
 
 [output]
 dir = "{output_dir}"
@@ -873,6 +883,7 @@ def generate():
                     # silently retaining the workstation that generated it.
                     rough_base=os.path.relpath(rough_base, REPO_ROOT), active_z_low=f"{BASE_Z + RADIUS:.4f}",
                     base_select_z=f"{BASE_SELECT_Z:.4f}",
+                    gate_z_low=f"{GATE_Z_LOW:.4f}",
                     insert_top=f"{insert_top:.4f}", z_high=f"{z_high:.4f}",
                     active_column=os.path.relpath(active_column, REPO_ROOT),
                     output_dir=os.path.relpath(cdir, REPO_ROOT), dt=f"{DT:.3e}",

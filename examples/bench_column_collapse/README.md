@@ -125,6 +125,10 @@ those target exponents.
   The base uses a separate but physically identical material type solely so its
   dynamic group membership follows atom sorting; a static spatial group can
   otherwise freeze whichever particles later occupy its original slots.
+- The removable gate is bounded below at the top of that rough-base layer. This
+  keeps its containment contact off the frozen downstream support, which must
+  already exist beyond the gate to provide the same rough basal condition after
+  release. It does not shorten the mobile-column barrier.
 
 ## Validation Criteria
 
@@ -218,7 +222,7 @@ This avoids turning historical 8d × 3d or mixed-boundary output into an implici
 claim about the new continuum-resolution rough-base protocol.
 
 Arrest is not inferred from a convenient final frame. DIRT records the maximum
-grain speed every 25,000 collapse steps, and the last four samples must each
+grain speed every 100,000 collapse steps (0.1 s at the configured timestep), and the last four samples must each
 satisfy `Fr = v_max / sqrt(g d) <= 0.05`; LAMMPS writes and is checked against
 the same window. A candidate with a low final speed but a recent velocity burst
 is rejected before either a fit or a cross-code overlay can be made. This

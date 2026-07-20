@@ -122,6 +122,9 @@ point_x = 0.0960
 normal_x = -1.0
 material = "glass"
 name = "gate"
+# Start at the top of the rough-base beads so this gate does not load the
+# frozen support that extends downstream of x=0.096 m.
+bound_z_low = 0.0030
 
 [output]
 dir = "examples/bench_column_collapse/sweep/a2"
