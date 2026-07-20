@@ -25,8 +25,8 @@ response panel used for the independent comparison, alongside wall-ratio and
 contact measurements. Its divergence makes clear that recorder integrity is
 not a replication PASS.
 
-The executable check verifies forward compression, live contacts, a positive
-platen reaction, finite output, and—independently from the precomputed
+The executable check verifies forward axial and lateral compression, live
+contacts, a positive platen reaction, finite output, and—independently from the precomputed
 column—that `F_H/F_V` equals the recorded x-wall mean divided by the recorded
 platen mean. It separately audits the committed primary-source transcription
 of Fig. 10 A=`0.39` and B=`0.33`, and shows those values as explicitly
@@ -84,3 +84,9 @@ the unavailable primary-source trajectory. Any future positive claim requires
 an independently traceable external data set and review of its protocol
 equivalence; this code supplies no tolerance or criterion that can turn the
 present evidence into a pass.
+
+The cell observables use the instantaneous named x-wall positions, rather than
+the fixed domain/decomposition bounds. This matters for the diagnostic itself:
+the prescribed x walls move during loading, so volumetric strain and solid
+fraction must follow their live separation. It improves the internal
+measurement but does not repair the missing external trajectory.

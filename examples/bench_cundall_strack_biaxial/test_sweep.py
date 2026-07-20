@@ -15,7 +15,7 @@ SPEC.loader.exec_module(SWEEP)
 
 def row(strain, horizontal, vertical, ratio):
     return {"axial_strain": strain, "f_h_mean": horizontal, "f_v_mean": vertical,
-            "wall_force_ratio": ratio, "contacts": 1.0}
+            "wall_force_ratio": ratio, "contacts": 1.0, "lateral_strain": -strain}
 
 
 class MeasurementContractTests(unittest.TestCase):
@@ -36,6 +36,13 @@ class MeasurementContractTests(unittest.TestCase):
         passed, checks = SWEEP.evaluate([row(0.0, 2.0, 4.0, 0.5), row(0.1, 3.0, 6.0, 0.6)])
         self.assertFalse(passed)
         self.assertFalse(checks["ratio_recomputed"])
+
+    def test_lateral_wall_motion_is_required_for_a_moving_wall_cell(self):
+        rows = [row(0.0, 2.0, 4.0, 0.5), row(0.1, 3.0, 6.0, 0.5)]
+        rows[-1]["lateral_strain"] = 0.0
+        passed, checks = SWEEP.evaluate(rows)
+        self.assertFalse(passed)
+        self.assertFalse(checks["lateral_compression"])
 
     def test_independent_comparison_reports_raw_disagreement(self):
         rows = [row(0.0, 1.0, 1.0, 1.0), row(0.07, 1.0, 2.0, 0.5)]

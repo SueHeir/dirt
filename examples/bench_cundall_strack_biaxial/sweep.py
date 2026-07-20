@@ -193,6 +193,7 @@ def evaluate(rows):
     checks = {
         "rows": len(rows),
         "forward_compression": rows[-1]["axial_strain"] > rows[0]["axial_strain"],
+        "lateral_compression": rows[-1]["lateral_strain"] < rows[0]["lateral_strain"],
         "positive_contacts": max(row["contacts"] for row in rows) > 0.0,
         "positive_platen_reaction": True,
         "ratio_recomputed": ratio_recomputed,
@@ -200,7 +201,7 @@ def evaluate(rows):
         "ratio_min": min(row["wall_force_ratio"] for row in loaded),
         "ratio_max": max(row["wall_force_ratio"] for row in loaded),
     }
-    return all(checks[key] for key in ("forward_compression", "positive_contacts",
+    return all(checks[key] for key in ("forward_compression", "lateral_compression", "positive_contacts",
                                         "positive_platen_reaction", "ratio_recomputed")), checks
 
 

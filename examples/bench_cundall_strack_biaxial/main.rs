@@ -71,7 +71,24 @@ fn record_biaxial(
         return;
     }
 
-    let lx = (domain.boundaries_high[0] - domain.boundaries_low[0]) as f64;
+    // `Domain` owns the fixed neighbour/decomposition bounds.  It is not the
+    // specimen cell once plane walls move, so using it here silently reported
+    // zero lateral strain and an incorrect volume.  The measured cell is
+    // bounded by the live, named specimen walls.
+    let wall_position_x = |name: &str| {
+        walls
+            .planes
+            .iter()
+            .find(|wall| wall.name.as_deref() == Some(name))
+            .map(|wall| wall.point_x)
+            .expect("biaxial benchmark requires named x walls")
+    };
+    let x_low = wall_position_x("x_low");
+    let x_high = wall_position_x("x_high");
+    let lx = x_high - x_low;
+    if lx <= 0.0 {
+        return;
+    }
     let ly = (domain.boundaries_high[1] - domain.boundaries_low[1]) as f64;
     let loading_top_z = walls
         .planes
