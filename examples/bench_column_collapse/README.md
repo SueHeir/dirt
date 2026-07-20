@@ -240,6 +240,11 @@ shortfalls without fitting any partial data. `INCOMPLETE` is therefore neither
 a numerical failure nor a PASS; only `graph`, after all 33 cases are admitted
 and independently observed, evaluates the unchanged experimental gate.
 
+Each admitted DIRT witness also carries a content receipt for its generated
+inputs, recorder source, raw CSVs, and the exact release executable. Rebuilding
+or replacing that executable invalidates reuse of the old witness; this is a
+provenance check, not a numerical criterion.
+
 Arrest is not inferred from a convenient final frame. DIRT records the maximum
 grain speed every 100,000 collapse steps (0.1 s at the configured timestep), and the last four samples must each
 satisfy `Fr = v_max / sqrt(g d) <= 0.05`; LAMMPS writes and is checked against

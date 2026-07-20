@@ -1470,7 +1470,21 @@ def case_receipt_path(a, seed):
     return os.path.join(case_dir_seed(a, seed), "data", CASE_RECEIPT_NAME)
 
 
-def case_receipt(a, seed):
+def dirt_binary_identity(binary):
+    """Content identity of the DIRT recorder used for one raw witness.
+
+    The configuration and recorder source identify the intended protocol, but
+    neither one establishes which executable actually wrote a trajectory.  A
+    content digest binds the receipt to the executable that was launched,
+    rather than trusting a target-path spelling that a later build can replace.
+    """
+    resolved = os.path.realpath(binary)
+    if not os.path.isfile(resolved):
+        raise ValueError("DIRT executable is not a regular file")
+    return {"path": resolved, "sha256": sha256_file(resolved)}
+
+
+def case_receipt(a, seed, binary):
     """Make an immutable-content receipt for a completed DIRT witness.
 
     A complete set of CSV files is necessary but not sufficient evidence: a
@@ -1499,6 +1513,7 @@ def case_receipt(a, seed):
         "seed": seed,
         "protocol_sha256": protocol_fingerprint(),
         "expected_particle_count": total_particles(a),
+        "dirt": dirt_binary_identity(binary),
         "input_sha256": {
             "config": sha256_file(required["config"]),
             "active_source": sha256_file(required["active_source"]),
@@ -1509,8 +1524,8 @@ def case_receipt(a, seed):
     }
 
 
-def write_case_receipt(a, seed):
-    receipt = case_receipt(a, seed)
+def write_case_receipt(a, seed, binary):
+    receipt = case_receipt(a, seed, binary)
     path = case_receipt_path(a, seed)
     with open(path, "w") as f:
         json.dump(receipt, f, sort_keys=True, indent=2)
@@ -1525,11 +1540,12 @@ def checked_case_receipt(a, seed):
     try:
         with open(path) as f:
             recorded = json.load(f)
-    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        binary = recorded["dirt"]["path"]
+        current = case_receipt(a, seed, binary)
+    except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError) as exc:
         raise ValueError("malformed per-case content receipt") from exc
-    current = case_receipt(a, seed)
     if recorded != current:
-        raise ValueError("per-case receipt disagrees with inputs or raw witnesses")
+        raise ValueError("per-case receipt disagrees with executable, inputs, or raw witnesses")
 
 
 def total_particles(aspect):
@@ -1840,7 +1856,7 @@ def _run_dirt_case(a, seed, binary, env):
                            stderr=subprocess.STDOUT, env=env, check=True)
         # Write only after every raw witness exists.  A later graph/reuse operation
         # re-hashes this receipt instead of trusting filenames or the aggregate CSV.
-        write_case_receipt(a, seed)
+        write_case_receipt(a, seed, binary)
     return a, seed
 
 
