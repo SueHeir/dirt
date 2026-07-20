@@ -8,6 +8,7 @@ driver checks the live, directly measured wall reactions and deliberately has
 no external PASS claim.
 """
 import csv
+import hashlib
 import math
 import os
 import subprocess
@@ -23,6 +24,9 @@ REGISTRATION = os.path.join(HERE, "data", "source_state_registration.csv")
 PROTOCOL = os.path.join(HERE, "data", "cundall_strack_protocol.csv")
 EVIDENCE_INVENTORY = os.path.join(HERE, "data", "external_evidence_inventory.csv")
 LAMMPS_RESULTS = os.path.join(HERE, "reference", "lammps", "lammps_results.csv")
+# LAMMPS 22Jul2025 output from the committed input deck.  This is an
+# evidence-integrity fingerprint, not a numerical response tolerance.
+LAMMPS_RESULTS_SHA256 = "0e13ab5c2c2295a2e72822ab793a57291340211ba8b8b7d4d5a1d08e53497b18"
 PLOTS = os.path.join(HERE, "plots")
 REQUIRED = ("axial_strain", "f_h_mean", "f_v_mean", "wall_force_ratio", "contacts")
 # These are executable specimen-integrity floors, not external response
@@ -49,6 +53,26 @@ def read(path):
     with open(path, newline="") as f:
         return [{key: float(value) for key, value in row.items()}
                 for row in csv.DictReader(f)]
+
+
+def audit_lammps_artifact(path=LAMMPS_RESULTS):
+    """Refuse to score a cross-code artifact whose committed bytes changed.
+
+    A changed reference must be regenerated and independently reviewed with
+    its deck; treating a modified CSV as the same external observation would
+    make the comparison non-reproducible.
+    """
+    digest = hashlib.sha256()
+    with open(path, "rb") as handle:
+        for block in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(block)
+    actual = digest.hexdigest()
+    if actual != LAMMPS_RESULTS_SHA256:
+        raise RuntimeError(
+            "LAMMPS artifact checksum mismatch; regenerate and review the "
+            f"external trajectory (expected {LAMMPS_RESULTS_SHA256}, got {actual})"
+        )
+    return actual
 
 
 def read_reference(path=REFERENCE):
@@ -234,6 +258,10 @@ def compare_independent_lammps(dirt_rows, path=LAMMPS_RESULTS, *, scored=False):
             "refusing a scored cross-code replication comparison; protocol mismatches: "
             + ", ".join(failures)
         )
+    # The checked-in reference is a solver-produced artifact, not Python
+    # fixture data.  Verify its identity before it is plotted or measured.
+    if os.path.abspath(path) == os.path.abspath(LAMMPS_RESULTS):
+        audit_lammps_artifact(path)
     lammps = read(path)
     dirt = [(r["axial_strain"], r["f_v_mean"]) for r in dirt_rows
             if r["f_v_mean"] > 0.0]

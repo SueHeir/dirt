@@ -16,3 +16,6 @@ lmp -in in_biaxial.lmp
 
 The generated raw `lammps_results.csv` is committed as a solver-produced
 external comparison record; it is not synthesized by the Python evaluator.
+Its SHA-256 is
+`0e13ab5c2c2295a2e72822ab793a57291340211ba8b8b7d4d5a1d08e53497b18`;
+the benchmark verifies that fingerprint before plotting or measuring it.

@@ -68,6 +68,12 @@ class MeasurementContractTests(unittest.TestCase):
         self.assertEqual(len(comparison["dirt_normalized"]), comparison["samples"])
         self.assertEqual(len(comparison["lammps_normalized"]), comparison["samples"])
 
+    def test_committed_lammps_artifact_has_a_stable_identity(self):
+        self.assertEqual(
+            SWEEP.audit_lammps_artifact(),
+            "0e13ab5c2c2295a2e72822ab793a57291340211ba8b8b7d4d5a1d08e53497b18",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
