@@ -9,6 +9,15 @@ Numerical convergence, reproducibility, MPI correctness, API contracts, and
 build compatibility are tracked separately in
 [`VERIFICATION.md`](VERIFICATION.md).
 
+> **Retired SPH calibration boundary.** The former SPH glass angle-of-repose
+> workflow is not a current validation case and contributes no result to this
+> ledger. Its executable, inputs, and historical plots were removed; see the
+> [retirement record](../docs/src/retired/sph-glass-angle-of-repose.md) and its
+> [external-evidence audit](../docs/src/retired/sph-glass-angle-of-repose-evidence.md).
+> These documents explain why no rolling-friction coefficient or glass-angle
+> claim is reported here, and what independent evidence a future maintained
+> SPH campaign must supply.
+
 The intent is to be useful *and* honest: each section states the result, then says
 plainly where the test is weak — an idealization, an empirical fit, a check that is
 really self-consistent (confirming a model returns its own input), or a regime that
