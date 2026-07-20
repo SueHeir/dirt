@@ -90,6 +90,12 @@ those target exponents.
   margin) beyond the gate face at `L0`. The driver and the independent observer
   each reject a release that already crossed the gate; such a trajectory is a
   settling/boundary failure, not a column-collapse datum.
+- **Release-rest witness.** The last still-gated frame records its population
+  and maximum speed. It must already satisfy the same `Fr <= 0.05` rest bound
+  required of the final deposit before the gate can define an experimental
+  release. This prevents residual source-preparation motion from being
+  attributed to gate-driven runout; it neither changes the empirical exponent
+  bands nor replaces the terminal sustained-arrest check.
 - `a` is varied by the **particle count** at fixed L0. The 32d × 10d section
   uses roughly 5,000 active grains at `a = 0.5` and 50,000 at `a = 5`.
   Crucially, that population is not computed from an infinite-packing volume
@@ -148,7 +154,7 @@ summary value that disagrees with those raw measurements. Thus `runout.csv` is a
 cache, not evidence that can make a partial or edited campaign pass.
 Each completed realization also carries a content receipt: SHA-256 digests of
 the generated configuration, active source, rough-base source, recorder source,
-and all four raw witnesses. Reuse and graphing recompute the receipt and reject
+and all five raw witnesses. Reuse and graphing recompute the receipt and reject
 a stale or mixed case before it can enter a seed average. This is an ordinary
 reproducibility guard, not a cryptographic signature and not physical evidence
 in place of a completed campaign.
@@ -198,8 +204,9 @@ reference, material, aspect range, toe metric, or ±0.25 exponent bands.
 
 `graph` also invokes `independent_observer.py`. This standard-library program
 does **not** import `sweep.py`, use `runout.csv`, or use its gridded toe
-measurement. It independently reads all raw release, final, terminal, and
-arrest witnesses; checks population, release width, and sustained Froude rest;
+measurement. It independently reads all raw release, pre-release-rest, final,
+terminal, and arrest witnesses; checks population, release width, and both
+initial and sustained-terminal Froude rest;
 it separately counts the generated active-column and rough-base source files
 and requires the release witness to contain those exact populations and the
 same frozen support. Equal release/final snapshots alone would otherwise let a
@@ -297,12 +304,14 @@ python3 examples/bench_column_collapse/sweep.py graph      # fit exponents + wri
 python3 examples/bench_column_collapse/sweep.py start --jobs 4
 
 # A batch worker may run exactly one declared witness.  This records raw
-# release/final/arrest evidence only; it neither fits nor claims a result.
+# release/pre-release-rest/final/arrest evidence only; it neither fits nor
+# claims a result.
 python3 examples/bench_column_collapse/sweep.py start --case 2,0
 
 # `start` resumes an interrupted campaign, but reuses a case only after it
 # independently rechecks its release/final populations, release geometry,
-# deposit readability, and four-sample Froude arrest witness.  Invalid or
+# pre-release rest, deposit readability, and four-sample Froude arrest witness.
+# Invalid or
 # partial case evidence is deleted and rerun; `graph` still rebuilds every
 # summary row from all 33 raw witnesses.  Use --rerun only to intentionally
 # regenerate all DIRT witnesses under the same frozen protocol.

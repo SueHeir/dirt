@@ -241,7 +241,7 @@ def protocol_fingerprint():
                      "frozen_close_packed_bead_layer_full_runout"],
         "measurement": [FINE_BINS, GAP_TOL_D, TOE_MIN_HEIGHT_D],
         "validation": [EXP_TOL, LINEAR_TARGET, POWER_TARGET, REGIME_SPLIT,
-                       ASPECT_REL_TOL,
+                       ASPECT_REL_TOL, RELEASE_FROUDE_MAX,
                        REST_FROUDE_MAX, ARREST_WINDOW_SAMPLES,
                        ARREST_SAMPLE_INTERVAL],
     }
@@ -652,7 +652,7 @@ def shared_campaign_lock(operation):
 def exclusive_case_lock(aspect, seed, operation):
     """Lease one deterministic witness directory for its complete write.
 
-    The release, deposit, arrest window, and content receipt form one atomic
+    The release, pre-release-rest, deposit, arrest window, and content receipt form one atomic
     evidence unit.  A non-blocking per-case lease rejects only a duplicate
     ``(aspect, seed)`` launch; other members of the declared 11x3 ensemble may
     run concurrently in the same campaign directory.
@@ -1325,6 +1325,10 @@ def run_lammps_sweep(lammps):
 
 # ── start ────────────────────────────────────────────────────────────────────
 REST_FROUDE_MAX = 0.05
+# A gate-release experiment must start from the same quiescent state required
+# at the end of the run. This is an additional admission witness, not a new
+# fit tolerance.
+RELEASE_FROUDE_MAX = REST_FROUDE_MAX
 # A final snapshot may coincide with a transient low-speed phase.  Require four
 # equally spaced collapse witnesses instead; this is a stricter arrest check,
 # not a relaxation of the existing Froude threshold.
@@ -1389,11 +1393,12 @@ def sha256_file(path):
 
 
 def dirt_case_paths(a, seed):
-    """Return the four raw executable witnesses for one DIRT realization."""
+    """Return the five raw executable witnesses for one DIRT realization."""
     case_data = os.path.join(case_dir_seed(a, seed), "data")
     return {
         "deposit": os.path.join(case_data, "column_collapse_results.csv"),
         "release": os.path.join(case_data, "column_collapse_release.csv"),
+        "release_state": os.path.join(case_data, "column_collapse_release_state.csv"),
         "terminal": os.path.join(case_data, "column_collapse_final_state.csv"),
         "arrest": os.path.join(case_data, "column_collapse_arrest.csv"),
     }
@@ -1564,6 +1569,21 @@ def checked_final_state(path, expected_count):
     return vmax
 
 
+def checked_release_state(path, expected_count):
+    """Read the last still-gated kinetic witness before opening the column."""
+    return checked_final_state(path, expected_count)
+
+
+def checked_release_quiescence(vmax):
+    """Require the measured release state to be at rest before gate removal."""
+    if not math.isfinite(vmax) or vmax < 0.0:
+        raise ValueError("invalid pre-release maximum speed")
+    froude = vmax / math.sqrt(9.81 * 2.0 * RADIUS)
+    if froude > RELEASE_FROUDE_MAX:
+        raise ValueError(f"pre-release Fr={froude:.6g} > {RELEASE_FROUDE_MAX}")
+    return froude
+
+
 def checked_arrest_window(path):
     """Return a sustained terminal-speed witness from the executable output.
 
@@ -1593,7 +1613,7 @@ def derive_dirt_ensemble():
     """Derive every fit input from the 11 x 3 executable witnesses.
 
     ``runout.csv`` is a convenience artifact, never primary evidence.  Graphing
-    must therefore re-read every release, final, and terminal-state witness and
+    must therefore re-read every release, pre-release-rest, final, and terminal-state witness and
     reproduce each seed average before it is allowed to fit or write a figure.
     This makes a partial campaign and an edited summary equally inadmissible.
     """
@@ -1618,13 +1638,15 @@ def derive_dirt_ensemble():
                 with shared_case_lock(a, s, "derive the ensemble"):
                     paths = dirt_case_paths(a, s)
                     deposit, release = paths["deposit"], paths["release"]
+                    release_state = paths["release_state"]
                     terminal, arrest = paths["terminal"], paths["arrest"]
                     expected = total_particles(a)
-                    if not all(os.path.isfile(p) for p in (deposit, release, terminal, arrest)):
-                        raise ValueError("missing release, final, terminal, or arrest evidence")
+                    if not all(os.path.isfile(p) for p in (deposit, release, release_state, terminal, arrest)):
+                        raise ValueError("missing release, pre-release, final, terminal, or arrest evidence")
                     checked_case_receipt(a, s)
                     release_n = csv_particle_count(release)
                     deposit_n = csv_particle_count(deposit)
+                    release_vmax = checked_release_state(release_state, expected)
                     vmax = checked_final_state(terminal, expected)
                     arrest_speeds = checked_arrest_window(arrest)
                     h, width, _, right = release_geometry(release)
@@ -1635,6 +1657,11 @@ def derive_dirt_ensemble():
                 continue
             if release_n != expected or deposit_n != expected:
                 failures.append(f"a={a} seed={s}: population is not {expected} at release/final")
+                continue
+            try:
+                checked_release_quiescence(release_vmax)
+            except ValueError as exc:
+                failures.append(f"a={a} seed={s}: {exc}")
                 continue
             froude = vmax / math.sqrt(9.81 * 2.0 * RADIUS)
             if froude > REST_FROUDE_MAX:
@@ -1683,19 +1710,21 @@ def _case_evidence_error(a, seed):
     a resumable campaign must not turn a merely present CSV into a completed
     realization.  In particular, source provenance is checked by the manifest
     at ``start``/``derive_dirt_ensemble`` and this per-case check verifies the
-    released and terminal populations, measured release geometry, deposit
-    readability, and sustained Froude arrest.
+    released and terminal populations, measured release geometry, pre-release
+    rest, deposit readability, and sustained Froude arrest.
     """
     paths = dirt_case_paths(a, seed)
     deposit, release = paths["deposit"], paths["release"]
+    release_state = paths["release_state"]
     terminal, arrest = paths["terminal"], paths["arrest"]
-    if not all(os.path.isfile(p) for p in (deposit, release, terminal, arrest)):
-        return "missing release, final, terminal, or arrest evidence"
+    if not all(os.path.isfile(p) for p in (deposit, release, release_state, terminal, arrest)):
+        return "missing release, pre-release, final, terminal, or arrest evidence"
     expected = total_particles(a)
     try:
         checked_case_receipt(a, seed)
         if csv_particle_count(release) != expected or csv_particle_count(deposit) != expected:
             return f"population is not {expected} at release/final"
+        release_vmax = checked_release_state(release_state, expected)
         vmax = checked_final_state(terminal, expected)
         arrest_speeds = checked_arrest_window(arrest)
         height, width, _, _ = release_geometry(release)
@@ -1706,6 +1735,10 @@ def _case_evidence_error(a, seed):
     except (OSError, ValueError, csv.Error) as exc:
         return f"malformed witness ({exc})"
     froude_scale = math.sqrt(9.81 * 2.0 * RADIUS)
+    try:
+        checked_release_quiescence(release_vmax)
+    except ValueError as exc:
+        return str(exc)
     if vmax / froude_scale > REST_FROUDE_MAX:
         return f"terminal Fr={vmax / froude_scale:.6g} > {REST_FROUDE_MAX}"
     if max(arrest_speeds) / froude_scale > REST_FROUDE_MAX:
@@ -1717,7 +1750,7 @@ def _case_evidence_error(a, seed):
 def _clear_case_evidence(a, seed):
     """Remove only an inadmissible case's derived witnesses before rerunning."""
     cdir = case_dir_seed(a, seed)
-    for name in ("column_collapse_results.csv", "column_collapse_release.csv",
+    for name in ("column_collapse_results.csv", "column_collapse_release.csv", "column_collapse_release_state.csv",
                  "column_collapse_final_state.csv", "column_collapse_arrest.csv",
                  CASE_RECEIPT_NAME):
         stale = os.path.join(cdir, "data", name)

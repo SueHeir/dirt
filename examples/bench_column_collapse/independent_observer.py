@@ -38,7 +38,10 @@ ASPECTS = (0.5, 0.75, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0)
 SEEDS = (0, 1, 2)
 GRAVITY = 9.81
 FROUDE_LIMIT = 0.05
-ARREST_INTERVAL = 25_000
+# The executable records a witness every 100,000 collapse steps (0.1 s at the
+# declared 1 us timestep). Keep this independently stated value aligned with
+# the raw recorder, otherwise a physically valid witness can never be observed.
+ARREST_INTERVAL = 100_000
 ARREST_SAMPLES = 4
 LINEAR_TARGET = 1.0
 POWER_TARGET = 2.0 / 3.0
@@ -110,6 +113,13 @@ def terminal(path, expected):
     if count != expected or not math.isfinite(speed) or speed < 0.0:
         raise ValueError("terminal population or speed is invalid")
     return speed
+
+
+def released_at_rest(path, expected):
+    """Independently admit the last still-gated frame as a settled release."""
+    speed = terminal(path, expected)
+    if speed / math.sqrt(GRAVITY * DIAMETER) > FROUDE_LIMIT:
+        raise ValueError("pre-release kinetic witness exceeds Froude limit")
 
 
 def arrested(path):
@@ -284,6 +294,7 @@ def observe_case(aspect, seed):
         name: os.path.join(directory, filename)
         for name, filename in (
             ("release", "column_collapse_release.csv"),
+            ("release_state", "column_collapse_release_state.csv"),
             ("deposit", "column_collapse_results.csv"),
             ("terminal", "column_collapse_final_state.csv"),
             ("arrest", "column_collapse_arrest.csv"),
@@ -295,6 +306,7 @@ def observe_case(aspect, seed):
     release, deposit = particles(paths["release"]), particles(paths["deposit"])
     if len(release) != len(deposit):
         raise ValueError("release/final population changed")
+    released_at_rest(paths["release_state"], len(release))
     terminal(paths["terminal"], len(release))
     arrested(paths["arrest"])
     active, mobile_deposit = split_frozen_support(release, deposit)

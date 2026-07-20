@@ -14,6 +14,10 @@ SPEC.loader.exec_module(OBSERVER)
 
 
 class IndependentObserverGeometryTests(unittest.TestCase):
+    def test_observer_uses_declared_raw_arrest_cadence(self):
+        """A mismatched cadence would make every genuine DIRT witness fail."""
+        self.assertEqual(OBSERVER.ARREST_INTERVAL, 100_000)
+
     def test_frozen_bed_is_not_measured_as_runout(self):
         # The long support would create a false 0.60 m toe if it were selected
         # by z alone.  It must be removed by its release-frame identity.

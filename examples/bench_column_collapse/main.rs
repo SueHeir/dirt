@@ -106,6 +106,7 @@ fn begin_collapse(
     let path = format!("{data_dir}/column_collapse_release.csv");
     let mut file = fs::File::create(&path).unwrap_or_else(|e| panic!("Cannot create {path}: {e}"));
     writeln!(file, "x,y,z,radius").unwrap();
+    let mut release_vmax = 0.0f64;
     for i in 0..atoms.nlocal as usize {
         writeln!(
             file,
@@ -113,7 +114,21 @@ fn begin_collapse(
             atoms.pos[i][0], atoms.pos[i][1], atoms.pos[i][2], dem.radius[i]
         )
         .unwrap();
+        let velocity = atoms.vel[i];
+        let speed = ((velocity[0] as f64) * (velocity[0] as f64)
+            + (velocity[1] as f64) * (velocity[1] as f64)
+            + (velocity[2] as f64) * (velocity[2] as f64))
+            .sqrt();
+        release_vmax = release_vmax.max(speed);
     }
+    // The reference experiment releases a settled column. Geometry alone
+    // cannot establish that preparation dynamics have actually settled, so
+    // preserve the maximum speed from this last still-gated frame separately.
+    let release_state_path = format!("{data_dir}/column_collapse_release_state.csv");
+    let mut release_state = fs::File::create(&release_state_path)
+        .unwrap_or_else(|e| panic!("Cannot create {release_state_path}: {e}"));
+    writeln!(release_state, "particle_count,max_speed_m_s").unwrap();
+    writeln!(release_state, "{},{release_vmax:.10e}", atoms.nlocal).unwrap();
     walls.deactivate_by_name(GATE_NAME);
     // A new collapse must never inherit a previous run's arrest witnesses.
     let arrest_path = format!("{data_dir}/column_collapse_arrest.csv");
