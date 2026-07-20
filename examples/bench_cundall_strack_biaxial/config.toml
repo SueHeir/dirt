@@ -60,7 +60,7 @@ seed = 1979
 # state registration.
 region = { type = "block", min = [0.00034, 0.00034, 0.00034], max = [0.00966, 0.00036, 0.01366] }
 
-# The platen advances while the x walls move inward at a prescribed rate.  The
+# The platen advances while the x walls apply lateral compression at a prescribed rate. The
 # initial insertion solid fraction is deliberately loose (~0.25); the last
 # recording interval is a dense, finite-wall cell (phi approximately 0.5--0.6)
 # rather than the sparse transient that random insertion creates.  No
