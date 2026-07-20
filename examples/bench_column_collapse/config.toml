@@ -36,15 +36,17 @@ gz = -9.81
 contact_model = "hertz"
 
 [[dem.materials]]
-name = "glass"
+# Physically identical glass reserved for the frozen rough-base membership.
+# It is deliberately type 0: the dynamic `rough_base` group below is keyed by
+# material type so it survives atom sorting.
+name = "rough_glass"
 youngs_mod = 7.000000e+07
 poisson_ratio = 0.245
 restitution = 0.926
 friction = 0.16
 
 [[dem.materials]]
-# Physically identical glass reserved for the frozen rough-base membership.
-name = "rough_glass"
+name = "glass"
 youngs_mod = 7.000000e+07
 poisson_ratio = 0.245
 restitution = 0.926

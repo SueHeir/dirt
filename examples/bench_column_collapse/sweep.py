@@ -735,17 +735,18 @@ gz = -9.81
 contact_model = "hertz"
 
 [[dem.materials]]
-name = "glass"
+# Same glass contact law as the released grains.  This distinct type exists
+# solely to make the frozen rough boundary's membership survive atom sorting;
+# it is not a second material model.  It must remain material type 0 because
+# the dynamic rough-base group below uses that type identity.
+name = "rough_glass"
 youngs_mod = {youngs:.6e}
 poisson_ratio = {poisson}
 restitution = {restitution}
 friction = {friction}
 
 [[dem.materials]]
-# Same glass contact law as the released grains.  This distinct type exists
-# solely to make the frozen rough boundary's membership survive atom sorting;
-# it is not a second material model.
-name = "rough_glass"
+name = "glass"
 youngs_mod = {youngs:.6e}
 poisson_ratio = {poisson}
 restitution = {restitution}
