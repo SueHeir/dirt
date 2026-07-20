@@ -104,7 +104,11 @@ neither is a target, a calibration, or a replacement pass criterion.
 `ci/verify-retired-sph-repose.sh` runs the local DIRT boundary check in
 pull-request CI. It verifies the exact historical deletion (3,511 lines from
 the retired case), confirms that the removal commit remains an ancestor, and
-checks the current path is absent. This is a scope-regression guard, not a
+checks the current path is absent. It also pins the removed directory tree and
+its README blob in the parent revision, then reads the frozen 22–26°,
+monotonicity, and replicate-spread contract tokens from that immutable object.
+This prevents a same-sized unrelated deletion from being presented as evidence
+about this calibration. It remains a scope-regression guard, not a
 scientific validation suite: its success cannot certify an angle, a material
 parameter, or the frozen calibration contract. With `--soil-sph` it performs
 the separate pinned-snapshot check above, and `--online` requires agreement

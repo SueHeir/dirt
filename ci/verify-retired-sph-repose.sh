@@ -6,7 +6,10 @@ set -euo pipefail
 repo_root=$(git rev-parse --show-toplevel)
 source_ref=f7fe1a4
 retired_case=examples/SPH_glass_sphere_calibration/03_angle_of_repose
-# Git-object witness, not a scientific threshold.
+# These Git-object witnesses bind the negative result to the actual retired
+# calibration surface, rather than merely to a plausible number of deletions.
+expected_parent_case_tree=7289b6a3a93955f47f1b86e307192ebd31c0f697
+expected_parent_readme_blob=f74fba79105b7b69e40fe0b51a647b744d40a154
 expected_case_deleted_lines=3511
 soil_sph_ref=b4997642678bf8072baa4d98be60429a4dfc59a9
 soil_sph_dir=${SOIL_SPH_DIR:-}
@@ -45,13 +48,37 @@ if git ls-tree -r --name-only HEAD -- "$retired_case" | grep -q .; then
     echo "FAIL: retired SPH case is present: $retired_case" >&2
     exit 1
 fi
+parent_case_tree=$(git rev-parse "${source_ref}^1:${retired_case}")
+if [[ $parent_case_tree != "$expected_parent_case_tree" ]]; then
+    echo "FAIL: unexpected pre-retirement case tree: $parent_case_tree" >&2
+    exit 1
+fi
+parent_readme_blob=$(git rev-parse "${source_ref}^1:${retired_case}/README.md")
+if [[ $parent_readme_blob != "$expected_parent_readme_blob" ]]; then
+    echo "FAIL: unexpected pre-retirement repose README: $parent_readme_blob" >&2
+    exit 1
+fi
+# The historical document is only a witness to what was retired.  Check the
+# frozen contract tokens directly from that immutable blob; do not read any
+# current documentation as evidence of a calibration result.
+historical_readme=$(git cat-file blob "$parent_readme_blob")
+for contract_token in \
+    'Angle-of-Repose — Rolling-Friction' \
+    '22, 26' \
+    'increases monotonically' \
+    'run-to-run spread'; do
+    if ! grep -Fq "$contract_token" <<<"$historical_readme"; then
+        echo "FAIL: retired contract witness lacks: $contract_token" >&2
+        exit 1
+    fi
+done
 removed=$(git diff --numstat "${source_ref}^1" "$source_ref" -- "$retired_case" |
     awk '{add += $1; del += $2} END {print del}')
 if [[ ${removed:-0} -ne $expected_case_deleted_lines ]]; then
     echo "FAIL: expected $expected_case_deleted_lines deleted lines at $source_ref, got ${removed:-0}" >&2
     exit 1
 fi
-printf 'DIRT retirement boundary verified (%s lines removed from %s at %s).\n' \
+printf 'DIRT retirement boundary verified (%s lines removed from the witnessed %s at %s).\n' \
     "$removed" "$retired_case" "$source_ref"
 
 if [[ -n $soil_sph_dir ]]; then
