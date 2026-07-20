@@ -158,8 +158,9 @@ summary value that disagrees with those raw measurements. Thus `runout.csv` is a
 cache, not evidence that can make a partial or edited campaign pass.
 Each completed realization also carries a content receipt: SHA-256 digests of
 the generated configuration, active source, rough-base source, recorder source,
-and all six raw witnesses. Reuse and graphing recompute the receipt and reject
-a stale or mixed case before it can enter a seed average. This is an ordinary
+all raw CSV witnesses, and the recorder's complete `run.log` (including the
+gate-release and final-population trace). Reuse and graphing recompute the
+receipt and reject a stale or mixed case before it can enter a seed average. This is an ordinary
 reproducibility guard, not a cryptographic signature and not physical evidence
 in place of a completed campaign.
 
@@ -243,8 +244,8 @@ a numerical failure nor a PASS; only `graph`, after all 33 cases are admitted
 and independently observed, evaluates the unchanged experimental gate.
 
 Each admitted DIRT witness also carries a content receipt for its generated
-inputs, recorder source, raw CSVs, and the exact release executable. Rebuilding
-or replacing that executable invalidates reuse of the old witness; this is a
+inputs, recorder source, raw CSVs, execution log, and the exact release executable.
+Rebuilding or replacing that executable invalidates reuse of the old witness; this is a
 provenance check, not a numerical criterion.
 
 Arrest is not inferred from a convenient final frame. DIRT records the maximum

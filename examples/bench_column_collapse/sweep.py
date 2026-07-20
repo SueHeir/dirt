@@ -1502,14 +1502,22 @@ def sha256_file(path):
 
 
 def dirt_case_paths(a, seed):
-    """Return the five raw executable witnesses for one DIRT realization."""
-    case_data = os.path.join(case_dir_seed(a, seed), "data")
+    """Return raw witnesses for one DIRT realization, including its run trace.
+
+    The log is not a fitted observable or an additional numerical criterion.
+    It records the executable's stage/gate/final-population trace, so an
+    independently dispatched receipt cannot be detached from the run that
+    produced its CSV witnesses.
+    """
+    case_dir = case_dir_seed(a, seed)
+    case_data = os.path.join(case_dir, "data")
     return {
         "deposit": os.path.join(case_data, "column_collapse_results.csv"),
         "release": os.path.join(case_data, "column_collapse_release.csv"),
         "terminal": os.path.join(case_data, "column_collapse_final_state.csv"),
         "arrest": os.path.join(case_data, "column_collapse_arrest.csv"),
         "preparation": os.path.join(case_data, "column_collapse_preparation.csv"),
+        "run_log": os.path.join(case_dir, "run.log"),
     }
 
 
@@ -1888,6 +1896,9 @@ def _clear_case_evidence(a, seed):
         stale = os.path.join(cdir, "data", name)
         if os.path.isfile(stale):
             os.remove(stale)
+    log = os.path.join(cdir, "run.log")
+    if os.path.isfile(log):
+        os.remove(log)
 
 
 def _run_dirt_case(a, seed, binary, env):
