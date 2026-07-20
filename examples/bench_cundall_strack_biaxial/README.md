@@ -28,7 +28,10 @@ acceptance observables.
 The `diagnostic` command verifies forward axial and lateral compression, a dense
 late-stage contact network, a positive platen reaction, finite output, and—independently from the precomputed
 column—that `F_H/F_V` equals the recorded x-wall mean divided by the recorded
-platen mean. It separately audits the committed primary-source transcription
+platen mean. It also checks the fabric receipt against its geometric identity:
+the trace of the normalized contact-normal tensor is one and the emitted
+anisotropy is recomputed from that tensor. These are exact recorder invariants
+(up to CSV round-trip precision), not fitted response tolerances. It separately audits the committed primary-source transcription
 of Fig. 10 A=`0.39` and B=`0.33`. It does not compare a selected DIRT time
 window with those numbers.
 

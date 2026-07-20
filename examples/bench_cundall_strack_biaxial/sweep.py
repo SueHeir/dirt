@@ -36,7 +36,8 @@ REJECTED_LAMMPS_DECK = os.path.join(
     HERE, "data", "lammps_22jul2025_periodic_candidate.lmp"
 )
 PLOTS = os.path.join(HERE, "plots")
-REQUIRED = ("axial_strain", "f_h_mean", "f_v_mean", "wall_force_ratio", "contacts")
+REQUIRED = ("axial_strain", "f_h_mean", "f_v_mean", "wall_force_ratio", "contacts",
+            "fxx", "fyy", "fzz", "fabric_anisotropy")
 # These are executable specimen-integrity floors, not external response
 # tolerances.  A loose random-insertion transient is not a dense assembly.
 MIN_DENSE_PHI = 0.50
@@ -220,6 +221,22 @@ def evaluate(rows):
         residual <= CSV_RELATIVE_PRECISION * max(1.0, abs(row["wall_force_ratio"]))
         for residual, row in zip(residuals, loaded)
     )
+    # ``contact_metrics`` accumulates n_i n_j for every contact normal and
+    # divides the tensor by the same (possibly Newton-weighted) contact count.
+    # Consequently tr(F)=n.n=1 is an exact geometric invariant, independent
+    # of material parameters and of the unavailable external trajectory.  The
+    # two residuals below only allow the documented CSV serialization error.
+    trace_residuals = [abs((row["fxx"] + row["fyy"] + row["fzz"]) - 1.0)
+                       for row in rows]
+    anisotropy_residuals = [abs(row["fabric_anisotropy"] -
+                                (row["fzz"] - 0.5 * (row["fxx"] + row["fyy"])))
+                            for row in rows]
+    max_fabric_trace_residual = max(trace_residuals)
+    max_fabric_anisotropy_residual = max(anisotropy_residuals)
+    fabric_trace_recomputed = all(residual <= CSV_RELATIVE_PRECISION
+                                  for residual in trace_residuals)
+    fabric_anisotropy_recomputed = all(residual <= CSV_RELATIVE_PRECISION
+                                       for residual in anisotropy_residuals)
     checks = {
         "rows": len(rows),
         "forward_compression": rows[-1]["axial_strain"] > rows[0]["axial_strain"],
@@ -230,12 +247,18 @@ def evaluate(rows):
         "positive_platen_reaction": True,
         "ratio_recomputed": ratio_recomputed,
         "max_ratio_residual": max_ratio_residual,
+        "fabric_trace_recomputed": fabric_trace_recomputed,
+        "max_fabric_trace_residual": max_fabric_trace_residual,
+        "fabric_anisotropy_recomputed": fabric_anisotropy_recomputed,
+        "max_fabric_anisotropy_residual": max_fabric_anisotropy_residual,
         "ratio_min": min(row["wall_force_ratio"] for row in loaded),
         "ratio_max": max(row["wall_force_ratio"] for row in loaded),
     }
     return all(checks[key] for key in ("forward_compression", "lateral_compression", "positive_contacts",
                                         "dense_solid_fraction", "dense_coordination",
-                                        "positive_platen_reaction", "ratio_recomputed")), checks
+                                        "positive_platen_reaction", "ratio_recomputed",
+                                        "fabric_trace_recomputed",
+                                        "fabric_anisotropy_recomputed")), checks
 
 
 def plot(rows, checks, passed):

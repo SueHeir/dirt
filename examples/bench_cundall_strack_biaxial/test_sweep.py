@@ -15,7 +15,8 @@ SPEC.loader.exec_module(SWEEP)
 def row(strain, horizontal, vertical, ratio):
     return {"axial_strain": strain, "f_h_mean": horizontal, "f_v_mean": vertical,
             "wall_force_ratio": ratio, "contacts": 1.0, "lateral_strain": -strain,
-            "phi": 0.55, "coordination": 4.5}
+            "phi": 0.55, "coordination": 4.5, "fxx": 0.2, "fyy": 0.3,
+            "fzz": 0.5, "fabric_anisotropy": 0.25}
 
 
 class MeasurementContractTests(unittest.TestCase):
@@ -36,6 +37,20 @@ class MeasurementContractTests(unittest.TestCase):
         passed, checks = SWEEP.evaluate([row(0.0, 2.0, 4.0, 0.5), row(0.1, 3.0, 6.0, 0.6)])
         self.assertFalse(passed)
         self.assertFalse(checks["ratio_recomputed"])
+
+    def test_nonunit_fabric_trace_is_rejected(self):
+        rows = [row(0.0, 2.0, 4.0, 0.5), row(0.1, 3.0, 6.0, 0.5)]
+        rows[-1]["fzz"] = 0.49
+        passed, checks = SWEEP.evaluate(rows)
+        self.assertFalse(passed)
+        self.assertFalse(checks["fabric_trace_recomputed"])
+
+    def test_inconsistent_fabric_anisotropy_is_rejected(self):
+        rows = [row(0.0, 2.0, 4.0, 0.5), row(0.1, 3.0, 6.0, 0.5)]
+        rows[-1]["fabric_anisotropy"] = 0.24
+        passed, checks = SWEEP.evaluate(rows)
+        self.assertFalse(passed)
+        self.assertFalse(checks["fabric_anisotropy_recomputed"])
 
     def test_lateral_wall_motion_is_required_for_a_moving_wall_cell(self):
         rows = [row(0.0, 2.0, 4.0, 0.5), row(0.1, 3.0, 6.0, 0.5)]
