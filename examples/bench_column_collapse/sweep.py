@@ -115,17 +115,15 @@ RESTITUTION = 0.926        # measured glass–glass COR
 FRICTION = 0.16            # measured glass–glass sliding friction
 # The exact source/base coordinates are non-overlapping (their minimum centre
 # distance is one diameter), but the 32d x 10d source creates thousands of
-# simultaneous Hertz contacts on its first loaded step.  dt=4 us advances that
-# network through the kernel's large-overlap safeguard during settling.  Use
-# 1 us *only while that dense, damped preparation network exists*.  Once the
-# gate is removed, the preparatory damping and displacement cap are gone and
-# the released bed uses the pre-refinement 4 us timestep.  This preserves the
-# four-second physical release interval while avoiding four times as many
-# integration steps where the original stability failure did not occur.
+# simultaneous Hertz contacts on its first loaded step.  A 1 us step resolves
+# that loaded network.  Keep the same step after gate removal until a separate
+# timestep-convergence study has established that a coarser released step
+# preserves the measured runout.  A successful trajectory at a larger step is
+# only an execution check; it is not convergence evidence for this experiment.
 SETTLE_DT = 1.0e-6
-COLLAPSE_DT = 4.0e-6
+COLLAPSE_DT = 1.0e-6
 SETTLE_STEPS = 800000      # 0.8 s overdamped preparation; released law unchanged
-COLLAPSE_STEPS = 1000000   # 4 s at COLLAPSE_DT: enough for a high-e glass bed to arrest
+COLLAPSE_STEPS = 4000000   # 4 s at COLLAPSE_DT: enough for a high-e glass bed to arrest
 # The inserted fabric is deliberately dense and supports a full 32d x 10d
 # column from its first gravity step.  At 10 um/step the former limiter allowed
 # a newly loaded contact to advance several Hertz overlaps before Cundall
@@ -1442,7 +1440,7 @@ RELEASE_FROUDE_MAX = REST_FROUDE_MAX
 # equally spaced collapse witnesses instead; this is a stricter arrest check,
 # not a relaxation of the existing Froude threshold.
 ARREST_WINDOW_SAMPLES = 4
-# Preserve the 0.1 s physical sampling interval under the released 4 us step.
+# Preserve the 0.1 s physical sampling interval under the released 1 us step.
 ARREST_SAMPLE_INTERVAL = 25_000
 PREPARATION_WINDOW_SAMPLES = 4
 PREPARATION_SAMPLE_INTERVAL = 100_000

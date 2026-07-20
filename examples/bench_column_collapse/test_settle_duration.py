@@ -19,10 +19,10 @@ class SettleDurationTests(unittest.TestCase):
         self.assertEqual(SWEEP.SETTLE_STEPS, 800_000)
         self.assertAlmostEqual(SWEEP.SETTLE_STEPS * SWEEP.SETTLE_DT, 0.8)
 
-    def test_release_preserves_four_seconds_at_its_stable_timestep(self):
-        self.assertEqual(SWEEP.COLLAPSE_STEPS, 1_000_000)
+    def test_release_preserves_four_seconds_at_the_resolved_timestep(self):
+        self.assertEqual(SWEEP.COLLAPSE_STEPS, 4_000_000)
         self.assertAlmostEqual(SWEEP.COLLAPSE_STEPS * SWEEP.COLLAPSE_DT, 4.0)
-        self.assertGreater(SWEEP.COLLAPSE_DT, SWEEP.SETTLE_DT)
+        self.assertEqual(SWEEP.COLLAPSE_DT, SWEEP.SETTLE_DT)
 
     def test_lammps_uses_the_same_settle_duration(self):
         # Rendering receives the same ``settle_steps`` argument in

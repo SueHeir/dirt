@@ -32,9 +32,9 @@ const GATE_NAME: &str = "gate";
 ///
 /// The benchmark is single-rank, so this records the complete population used
 /// by the runout analysis rather than a rank-local proxy.
-// The released stage uses dt = 4 us, so 25,000 steps retain the 0.1 s physical
-// witness interval used by the acceptance protocol.
-const ARREST_SAMPLE_INTERVAL: u64 = 25_000;
+// The released stage retains the 1 us resolved timestep, so 100,000 steps
+// retain the 0.1 s physical witness interval used by the acceptance protocol.
+const ARREST_SAMPLE_INTERVAL: u64 = 100_000;
 const PREPARATION_SAMPLE_INTERVAL: u64 = 100_000;
 
 /// Tracks gate release so it happens exactly once.

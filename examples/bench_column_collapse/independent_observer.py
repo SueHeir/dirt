@@ -38,10 +38,10 @@ ASPECTS = (0.5, 0.75, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0)
 SEEDS = (0, 1, 2)
 GRAVITY = 9.81
 FROUDE_LIMIT = 0.05
-# The executable records a witness every 25,000 collapse steps (0.1 s at the
-# declared 4 us released timestep). Keep this independently stated value aligned with
+# The executable records a witness every 100,000 collapse steps (0.1 s at the
+# declared 1 us released timestep). Keep this independently stated value aligned with
 # the raw recorder, otherwise a physically valid witness can never be observed.
-ARREST_INTERVAL = 25_000
+ARREST_INTERVAL = 100_000
 ARREST_SAMPLES = 4
 PREPARATION_INTERVAL = 100_000
 PREPARATION_SAMPLES = 4
