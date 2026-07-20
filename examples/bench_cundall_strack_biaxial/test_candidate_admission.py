@@ -5,6 +5,7 @@ import unittest
 from candidate_admission import (
     REQUIRED_PROTOCOL_FIELDS,
     audit_archived_lammps_deck,
+    audit_archived_lammps_ledger,
     decide,
 )
 
@@ -27,12 +28,22 @@ class CandidateAdmissionTests(unittest.TestCase):
     def test_archived_deck_authenticates_the_negative_control_protocol(self):
         self.assertIsNone(audit_archived_lammps_deck(DECK))
 
+    def test_archived_ledger_authenticates_the_complete_rejection_record(self):
+        self.assertIsNone(audit_archived_lammps_ledger(LEDGER))
+
     def test_tampered_deck_is_rejected_before_ledger_interpretation(self):
         with tempfile.TemporaryDirectory() as directory:
             tampered = pathlib.Path(directory) / "candidate.lmp"
             tampered.write_text(DECK.read_text() + "\n# tampered\n")
             with self.assertRaisesRegex(RuntimeError, "checksum mismatch"):
                 audit_archived_lammps_deck(tampered)
+
+    def test_tampered_ledger_is_rejected_before_protocol_interpretation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            tampered = pathlib.Path(directory) / "candidate.csv"
+            tampered.write_text(LEDGER.read_text() + "\n# tampered\n")
+            with self.assertRaisesRegex(RuntimeError, "ledger checksum mismatch"):
+                audit_archived_lammps_ledger(tampered)
 
 
 if __name__ == "__main__":

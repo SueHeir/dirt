@@ -13,7 +13,11 @@ import os
 import subprocess
 import sys
 from replication_contract import REQUIRED_SERIES, decide
-from candidate_admission import audit_archived_lammps_deck, decide as decide_candidate
+from candidate_admission import (
+    audit_archived_lammps_deck,
+    audit_archived_lammps_ledger,
+    decide as decide_candidate,
+)
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.abspath(os.path.join(HERE, "..", ".."))
@@ -149,6 +153,7 @@ def replication_evidence_decision():
 def rejected_lammps_candidate_decision():
     """Audit the archived LAMMPS negative control before any trace is scored."""
     audit_archived_lammps_deck(REJECTED_LAMMPS_DECK)
+    audit_archived_lammps_ledger(REJECTED_LAMMPS_CANDIDATE)
     return decide_candidate(REJECTED_LAMMPS_CANDIDATE)
 
 

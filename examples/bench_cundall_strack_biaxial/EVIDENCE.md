@@ -76,3 +76,10 @@ SHA-256 (`e69d0b4e99b102b4e949d4172d9862606277a44d5f7b1e2452fcfb2f24928777`)
 and independently checks the 2-D periodic, `enforce2d`, Berendsen seating,
 deformation, and virial-output directives. Thus the rejection is reproducible
 from the actual candidate protocol rather than an unbound CSV description.
+
+The complete rejection ledger is separately content-addressed as
+`data/lammps_22jul2025_periodic_candidate.csv` (SHA-256
+`5a6cb3b6b5b5e08b15e20a774aa09db6b0ef381f45779936974148fad4f5cf94`).
+Both artifacts must authenticate before any protocol conclusion is printed.
+This prevents a post-hoc CSV edit from changing the recorded exclusion while
+appearing to describe the same archived deck.

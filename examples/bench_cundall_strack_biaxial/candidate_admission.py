@@ -32,6 +32,15 @@ REQUIRED_PROTOCOL_FIELDS = (
 # the ledger to its exact bytes so the protocol findings can be independently
 # reproduced and cannot silently drift with an untracked local input.
 ARCHIVED_LAMMPS_SHA256 = "e69d0b4e99b102b4e949d4172d9862606277a44d5f7b1e2452fcfb2f24928777"
+# The ledger is evidence too: without a content binding, a later edit could
+# silently sever its claimed protocol facts from the archived deck.  This is a
+# negative-control receipt, not a checksum for a positive reference.
+ARCHIVED_LAMMPS_LEDGER_SHA256 = "5a6cb3b6b5b5e08b15e20a774aa09db6b0ef381f45779936974148fad4f5cf94"
+
+
+def _sha256(path: str | Path) -> str:
+    """Return a content address without interpreting an evidence artifact."""
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 
 def audit_archived_lammps_deck(path: str | Path) -> None:
@@ -60,6 +69,21 @@ def audit_archived_lammps_deck(path: str | Path) -> None:
     absent = [fragment for fragment in required_fragments if fragment not in text]
     if absent:
         raise RuntimeError("archived LAMMPS deck lacks expected protocol facts: " + ", ".join(absent))
+
+
+def audit_archived_lammps_ledger(path: str | Path) -> None:
+    """Authenticate the complete rejection ledger before interpreting it.
+
+    Authentication is intentionally performed before CSV parsing.  The ledger
+    cannot be selectively amended to make a periodic candidate appear more
+    comparable while retaining the same archived-deck receipt.
+    """
+    actual = _sha256(path)
+    if actual != ARCHIVED_LAMMPS_LEDGER_SHA256:
+        raise RuntimeError(
+            "archived LAMMPS negative-control ledger checksum mismatch: "
+            f"expected {ARCHIVED_LAMMPS_LEDGER_SHA256}, got {actual}"
+        )
 
 
 @dataclass(frozen=True)
