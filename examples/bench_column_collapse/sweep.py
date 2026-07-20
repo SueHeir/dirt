@@ -1441,7 +1441,7 @@ RELEASE_FROUDE_MAX = REST_FROUDE_MAX
 # not a relaxation of the existing Froude threshold.
 ARREST_WINDOW_SAMPLES = 4
 # Preserve the 0.1 s physical sampling interval under the released 1 us step.
-ARREST_SAMPLE_INTERVAL = 25_000
+ARREST_SAMPLE_INTERVAL = 100_000
 PREPARATION_WINDOW_SAMPLES = 4
 PREPARATION_SAMPLE_INTERVAL = 100_000
 # LAMMPS's default custom-dump coordinate format is six decimal places.  This

@@ -10,6 +10,11 @@ HERE = pathlib.Path(__file__).parent
 spec = importlib.util.spec_from_file_location("collapse_sweep", HERE / "sweep.py")
 SWEEP = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(SWEEP)
+observer_spec = importlib.util.spec_from_file_location(
+    "independent_observer", HERE / "independent_observer.py"
+)
+OBSERVER = importlib.util.module_from_spec(observer_spec)
+observer_spec.loader.exec_module(OBSERVER)
 
 
 class SettleDurationTests(unittest.TestCase):
@@ -23,6 +28,8 @@ class SettleDurationTests(unittest.TestCase):
         self.assertEqual(SWEEP.COLLAPSE_STEPS, 4_000_000)
         self.assertAlmostEqual(SWEEP.COLLAPSE_STEPS * SWEEP.COLLAPSE_DT, 4.0)
         self.assertEqual(SWEEP.COLLAPSE_DT, SWEEP.SETTLE_DT)
+        self.assertAlmostEqual(SWEEP.ARREST_SAMPLE_INTERVAL * SWEEP.COLLAPSE_DT, 0.1)
+        self.assertEqual(OBSERVER.ARREST_INTERVAL, SWEEP.ARREST_SAMPLE_INTERVAL)
 
     def test_lammps_uses_the_same_settle_duration(self):
         # Rendering receives the same ``settle_steps`` argument in
