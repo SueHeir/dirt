@@ -1073,11 +1073,12 @@ fix             gate mobile wall/gran granular hertz/material {E} {e} {nu} tange
 # damping and displacement cap below.
 fix             settle_damp mobile damping/cundall 0.8 0.8
 fix             integrate mobile nve/limit {preparation_max_displacement}
-# Match DIRT's sustained-quiescence evidence: the final four samples, rather
-# than one terminal dump, must all satisfy the shared Froude threshold.
+# Match DIRT's sustained-quiescence evidence.  Preparation and released
+# dynamics get separate files: a low-speed final deposit cannot certify the
+# still-gated state that physically defines a gate-release experiment.
 variable        speed atom sqrt(vx*vx+vy*vy+vz*vz)
 compute         max_speed mobile reduce max v_speed
-fix             arrest mobile ave/time {arrest_interval} 1 {arrest_interval} c_max_speed file {arrest_file} mode scalar
+fix             preparation mobile ave/time {preparation_interval} 1 {preparation_interval} c_max_speed file {preparation_file} mode scalar
 
 thermo_modify   lost warn flush yes
 timestep        {dt}
@@ -1091,7 +1092,9 @@ write_dump      all custom {release_dump} id x y z radius modify sort id
 unfix           gate
 unfix           settle_damp
 unfix           integrate
+unfix           preparation
 fix             integrate mobile nve/sphere
+fix             arrest mobile ave/time {arrest_interval} 1 {arrest_interval} c_max_speed file {arrest_file} mode scalar
 run             {collapse_steps}
 
 write_dump      all custom {dump} id x y z radius vx vy vz modify sort id
@@ -1129,6 +1132,7 @@ def lammps_case_receipt(aspect, seed, binary):
         "deposit_dump": lammps_dump_path(aspect, seed, "deposit"),
         "release_csv": os.path.join(cdir, "lammps_release.csv"),
         "deposit_csv": os.path.join(cdir, "lammps_deposit.csv"),
+        "preparation": os.path.join(cdir, "lammps_preparation.txt"),
         "arrest": os.path.join(cdir, "lammps_arrest.txt"),
     }
     missing = [name for name, path in paths.items() if not os.path.isfile(path)]
@@ -1240,6 +1244,8 @@ def write_lammps_input(path, aspect, seed):
             settle_steps=SETTLE_STEPS, collapse_steps=COLLAPSE_STEPS,
             release_dump=lammps_dump_path(aspect, seed, "release"),
             dump=lammps_dump_path(aspect, seed, "deposit"),
+            preparation_file=os.path.join(case_dir_seed(aspect, seed), "lammps_preparation.txt"),
+            preparation_interval=PREPARATION_SAMPLE_INTERVAL,
             arrest_file=os.path.join(case_dir_seed(aspect, seed), "lammps_arrest.txt"),
             arrest_interval=ARREST_SAMPLE_INTERVAL,
         ))
@@ -1312,6 +1318,38 @@ def lammps_arrest_window(path):
     return [speed for _, speed in window]
 
 
+def lammps_preparation_window(path):
+    """Read the still-gated LAMMPS rest witness ending at gate removal.
+
+    This deliberately mirrors ``checked_preparation_window`` for DIRT.  The
+    LAMMPS overlay is optional, but when it is rendered it must begin from a
+    demonstrably quiet, still-gated source rather than use final arrest as a
+    proxy for a valid release.
+    """
+    rows = []
+    with open(path) as f:
+        for line in f:
+            fields = line.split()
+            if not fields or fields[0].startswith("#"):
+                continue
+            if len(fields) != 2:
+                raise ValueError("malformed LAMMPS preparation-window row")
+            try:
+                step, speed = int(fields[0]), float(fields[1])
+            except ValueError as exc:
+                raise ValueError("non-numeric LAMMPS preparation-window row") from exc
+            rows.append((step, speed))
+    if len(rows) < PREPARATION_WINDOW_SAMPLES:
+        raise ValueError("too few LAMMPS preparation-window samples")
+    window = rows[-PREPARATION_WINDOW_SAMPLES:]
+    if (window[-1][0] != SETTLE_STEPS
+            or any(step <= 0 for step, _ in window)
+            or any(b[0] - a[0] != PREPARATION_SAMPLE_INTERVAL for a, b in zip(window, window[1:]))
+            or not all(math.isfinite(speed) and speed >= 0.0 for _, speed in window)):
+        raise ValueError("invalid LAMMPS preparation-window values")
+    return [speed for _, speed in window]
+
+
 def run_lammps_sweep(lammps):
     """Run the same aspect×seed campaign in LAMMPS or return no overlay.
 
@@ -1332,15 +1370,16 @@ def run_lammps_sweep(lammps):
             deposit_dump = lammps_dump_path(a, seed, "deposit")
             release_csv = os.path.join(cdir, "lammps_release.csv")
             deposit_csv = os.path.join(cdir, "lammps_deposit.csv")
+            preparation = os.path.join(cdir, "lammps_preparation.txt")
             arrest = os.path.join(cdir, "lammps_arrest.txt")
-            for stale in (release_dump, deposit_dump, release_csv, deposit_csv, arrest,
+            for stale in (release_dump, deposit_dump, release_csv, deposit_csv, preparation, arrest,
                           lammps_receipt_path(a, seed)):
                 if os.path.isfile(stale): os.remove(stale)
             write_lammps_input(in_path, a, seed)
             print(f"  [LAMMPS {i}/{len(ASPECTS)}] a={a:<4} seed={seed} N={n_particles(a)}", flush=True)
             proc = subprocess.run([lammps, "-in", in_path, "-log", log_path], cwd=REPO_ROOT,
                                   stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
-            if (proc.returncode != 0 or not all(os.path.isfile(p) for p in (release_dump, deposit_dump, arrest))
+            if (proc.returncode != 0 or not all(os.path.isfile(p) for p in (release_dump, deposit_dump, preparation, arrest))
                     or not lammps_dump_to_csv(release_dump, release_csv)
                     or not lammps_dump_to_csv(deposit_dump, deposit_csv)):
                 failures.append(f"a={a} seed={seed}: no parseable LAMMPS snapshots")
@@ -1355,10 +1394,14 @@ def run_lammps_sweep(lammps):
                 # its frozen granular support was neither lost nor moved.
                 checked_lammps_release_support(release_csv)
                 release_geometry(release_csv)
+                preparation_speeds = lammps_preparation_window(preparation)
                 vmax = lammps_max_speed(deposit_dump)
                 arrest_speeds = lammps_arrest_window(arrest)
             except ValueError as exc:
                 failures.append(f"a={a} seed={seed}: {exc}")
+                continue
+            if max(preparation_speeds) / math.sqrt(9.81 * 2.0 * RADIUS) > RELEASE_FROUDE_MAX:
+                failures.append(f"a={a} seed={seed}: LAMMPS still-gated preparation is not at rest")
                 continue
             if vmax / math.sqrt(9.81 * 2.0 * RADIUS) > REST_FROUDE_MAX:
                 failures.append(f"a={a} seed={seed}: LAMMPS terminal state is not arrested")
@@ -2328,8 +2371,9 @@ def derive_lammps_ensemble():
             deposit_dump = lammps_dump_path(a, seed, "deposit")
             release = os.path.join(cdir, "lammps_release.csv")
             deposit = os.path.join(cdir, "lammps_deposit.csv")
+            preparation = os.path.join(cdir, "lammps_preparation.txt")
             arrest = os.path.join(cdir, "lammps_arrest.txt")
-            required = (release_dump, deposit_dump, release, deposit, arrest)
+            required = (release_dump, deposit_dump, release, deposit, preparation, arrest)
             if not all(os.path.isfile(p) for p in required):
                 failures.append(f"a={a} seed={seed}: missing LAMMPS raw witness")
                 continue
@@ -2338,6 +2382,7 @@ def derive_lammps_ensemble():
                 expected = total_particles(a)
                 if csv_particle_count(release) != expected or csv_particle_count(deposit) != expected:
                     raise ValueError(f"population is not {expected} at release/final")
+                preparation_speeds = lammps_preparation_window(preparation)
                 vmax = lammps_max_speed(deposit_dump)
                 arrest_speeds = lammps_arrest_window(arrest)
                 h, width, _, right = release_geometry(release)
@@ -2347,6 +2392,8 @@ def derive_lammps_ensemble():
                     raise ValueError("non-finite LAMMPS witness")
                 if vmax / froude_scale > REST_FROUDE_MAX:
                     raise ValueError("terminal LAMMPS state is not arrested")
+                if max(preparation_speeds) / froude_scale > RELEASE_FROUDE_MAX:
+                    raise ValueError("still-gated LAMMPS preparation is not at rest")
                 if max(arrest_speeds) / froude_scale > REST_FROUDE_MAX:
                     raise ValueError("final sustained LAMMPS state is not arrested")
             except (OSError, ValueError, csv.Error) as exc:

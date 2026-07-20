@@ -387,7 +387,10 @@ packing.
 Historical LAMMPS values from the superseded small-system protocol are not evidence
 for the current geometry. A fresh overlay is written only after all 33 LAMMPS
 realizations finish with the exact requested population at release and final state
-and meet the same terminal Froude limit. In addition, each raw LAMMPS release
+and meet the same still-gated preparation and terminal Froude limits. LAMMPS
+writes four final preparation speed samples before `unfix gate`, separately from
+the four final released-arrest samples, so terminal rest cannot be substituted
+for a quiescent release. In addition, each raw LAMMPS release
 must retain every canonical frozen rough-base coordinate (within a text
 round-trip precision of `1e-7 m`); equal total populations cannot substitute for
 the declared rough boundary. A partial campaign is discarded rather than used to
