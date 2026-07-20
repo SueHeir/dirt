@@ -249,7 +249,8 @@ def compare_independent_lammps(dirt_rows, path=LAMMPS_RESULTS, *, scored=False):
     denominator = math.sqrt(sum((v - d_mean) ** 2 for v in d) * sum((v - l_mean) ** 2 for v in l))
     correlation = sum((a - d_mean) * (b - l_mean) for a, b in zip(d, l)) / denominator
     rmse = math.sqrt(sum((a - b) ** 2 for a, b in zip(d, l)) / len(d))
-    return {"samples": len(grid), "normalized_axial_correlation": correlation,
+    return {"samples": len(grid), "strain_grid": grid,
+            "normalized_axial_correlation": correlation,
             "normalized_axial_rmse": rmse, "dirt_normalized": d, "lammps_normalized": l}
 
 
@@ -264,23 +265,14 @@ def plot(rows, checks, passed, source, comparison):
 
     os.makedirs(PLOTS, exist_ok=True)
     x = [row["axial_strain"] for row in rows]
-    lammps = read(LAMMPS_RESULTS)
-    lammps_x = [row["axial_strain"] for row in lammps if row["syy"] > 0.0]
-    lammps_y_raw = [row["syy"] for row in lammps if row["syy"] > 0.0]
-    dirt_vertical = [row["f_v_mean"] for row in rows if row["f_v_mean"] > 0.0]
-    dirt_vertical_x = [row["axial_strain"] for row in rows if row["f_v_mean"] > 0.0]
-
     fig, (cross_code, state, ratio) = plt.subplots(3, 1, figsize=(7.2, 9.4), sharex=True)
-    # This is the decisive falsification panel.  The normalization is fixed at
-    # the first common strain sample in compare_independent_lammps(), not fit
-    # to improve agreement.  LAMMPS is an analogue, so disagreement is shown
-    # rather than turned into a source-replication verdict.
-    cross_code.plot(dirt_vertical_x, [value / dirt_vertical[0] for value in dirt_vertical],
-                    "o-", ms=2.5, label="DIRT platen reaction / first positive reaction")
-    cross_code.plot(lammps_x, [value / lammps_y_raw[0] for value in lammps_y_raw],
-                    "-", lw=1.4, label="independent LAMMPS $\\sigma_{yy}$ / initial")
-    cross_code.axvspan(0.01, 0.065, color="0.85", alpha=.55,
-                       label="fixed comparison interval")
+    # The plot uses precisely the fixed-grid vectors used for the reported
+    # diagnostic metrics. Showing a denser raw trace normalized at a different
+    # origin previously made the visible curves and printed r/NRMSE disagree.
+    cross_code.plot(comparison["strain_grid"], comparison["dirt_normalized"],
+                    "o-", ms=2.5, label="DIRT platen reaction / fixed-grid origin")
+    cross_code.plot(comparison["strain_grid"], comparison["lammps_normalized"],
+                    "s-", ms=2.5, label="independent LAMMPS $\\sigma_{yy}$ / fixed-grid origin")
     cross_code.set_ylabel("normalized axial response")
     cross_code.set_title(
         "Independent analogue: NOT a source replication "
@@ -351,7 +343,7 @@ def main():
                   f"{'ELIGIBLE' if decision.eligible else 'INELIGIBLE'}; {decision.reason}")
         print("independent LAMMPS analogue: " + "; ".join(
             f"{key}={value}" for key, value in comparison.items()
-            if key not in {"dirt_normalized", "lammps_normalized"}))
+            if key not in {"strain_grid", "dirt_normalized", "lammps_normalized"}))
     if command not in ("all", "run", "graph", "external"):
         raise SystemExit(f"unknown command {command!r}; use all, run, graph, or external")
 

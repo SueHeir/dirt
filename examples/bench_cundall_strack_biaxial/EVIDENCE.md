@@ -57,7 +57,7 @@ The `reference/lammps/` directory contains a LAMMPS 22Jul2025 input deck and
 the raw `lammps_results.csv` it produced. It independently implements a 2-D
 197-grain, `tan(phi)=0.40` compression trajectory; it does not use DIRT output
 as input and is not a reconstruction of unpublished Fig. 10 geometry. Against
-the deterministic DIRT run, the fixed strain-grid comparison gives normalized
-axial-response correlation `-0.457` and RMSE `1.870`. No tolerance or selected
-window is introduced. Thus this is independent negative evidence, not a claim
+the deterministic DIRT run, the fixed-grid comparison reports its values in
+the generated figure. No tolerance or selected window is introduced. Thus this
+is independent negative evidence, not a claim
 that LAMMPS validates the source paper or that DIRT reproduces it.

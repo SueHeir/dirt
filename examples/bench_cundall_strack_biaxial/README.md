@@ -16,14 +16,15 @@ $BENCH_PYTHON examples/bench_cundall_strack_biaxial/sweep.py
 
 ![Measured DIRT states and independent LAMMPS analogue](plots/stress_volume_response.png)
 
-The top panel is the deliberately unfitted, fixed-interval cross-code result:
-the present analogue does **not** agree (`r=-0.457`, normalized RMSE `1.870`).
+The top panel is the deliberately unfitted, fixed-grid cross-code diagnostic.
+Its plotted points are exactly the vectors used for the reported metrics; the
+present analogue does **not** agree (the generated figure reports the values).
 The middle panel exposes DIRT's volumetric and contact/fabric observables; it
 does not imply that the primary paper published corresponding curves. The
 bottom panel is only the recorder-integrity check described below.
 
-The committed figure includes the raw normalized DIRT-versus-LAMMPS axial
-response panel used for the independent comparison, alongside wall-ratio and
+The committed figure includes the fixed-grid normalized DIRT-versus-LAMMPS
+axial-response panel used for the independent comparison, alongside wall-ratio and
 contact measurements. Its divergence makes clear that recorder integrity is
 not a replication PASS.
 
@@ -77,9 +78,9 @@ registered state map plus stress/deviatoric, dilatancy, and fabric/contact
 series, and its dimensionality, boundaries, contact kinematics, preparation,
 loading, and observables must match. The primary source lacks all four series;
 the LAMMPS diagnostic lacks dilatancy/fabric and fails every protocol category.
-It therefore exits INELIGIBLE before reading or scoring a response. The prior
-raw r=-0.457 / normalized-RMSE=1.870 is retained only as a counterexample, not
-a validation result. This does not meet the frozen acceptance criterion: a
+It therefore exits INELIGIBLE before reading or scoring a response. The
+measured disagreement is retained only as a counterexample, not a validation
+result. This does not meet the frozen acceptance criterion: a
 protocol-comparable external trajectory with stress, dilatancy, and
 fabric/contact paths remains required.
 

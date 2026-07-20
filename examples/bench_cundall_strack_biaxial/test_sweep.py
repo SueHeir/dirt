@@ -64,6 +64,7 @@ class MeasurementContractTests(unittest.TestCase):
             comparison = SWEEP.compare_independent_lammps(rows)
         self.assertEqual(comparison["samples"], 12)
         self.assertGreater(comparison["normalized_axial_rmse"], 0.0)
+        self.assertEqual(comparison["strain_grid"], [0.01 + 0.005 * i for i in range(12)])
         self.assertEqual(len(comparison["dirt_normalized"]), comparison["samples"])
         self.assertEqual(len(comparison["lammps_normalized"]), comparison["samples"])
 
