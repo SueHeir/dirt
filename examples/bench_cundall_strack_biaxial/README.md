@@ -1,7 +1,9 @@
 # Cundall--Strack-style quasi-2-D walled assembly
 
 This deterministic DIRT case is a quasi-2-D, 197-grain dense-assembly
-compression benchmark.  It is motivated by the wall-resultant apparatus in
+compression benchmark.  It records only the dense late-loading part of a
+loose-insertion-to-compaction path, rather than interpreting the sparse
+insertion transient as a biaxial specimen. It is motivated by the wall-resultant apparatus in
 Cundall & Strack (1979), but it does not claim to reconstruct that paper's
 unpublished coordinates or controller history.  Its quantitative comparator is
 the committed, independently executable LAMMPS 2-D counterpart under the
@@ -25,13 +27,19 @@ response panel used for the independent comparison, alongside wall-ratio and
 contact measurements. Its divergence makes clear that recorder integrity is
 not a replication PASS.
 
-The executable check verifies forward axial and lateral compression, live
-contacts, a positive platen reaction, finite output, and—independently from the precomputed
+The executable check verifies forward axial and lateral compression, a dense
+late-stage contact network, a positive platen reaction, finite output, and—independently from the precomputed
 column—that `F_H/F_V` equals the recorded x-wall mean divided by the recorded
 platen mean. It separately audits the committed primary-source transcription
 of Fig. 10 A=`0.39` and B=`0.33`, and shows those values as explicitly
 *unregistered* lines on the result figure. It does not compare a selected DIRT
 time window with those numbers.
+
+"Dense" is an executable integrity condition, not a label: every recorded
+state must have `phi >= 0.50` and coordination `>= 4.0`. These floors protect
+against the prior loose-insertion transient (which could have only a few
+contacts); they are not fitted to the Cundall--Strack force snapshots and do
+not turn the unavailable source trajectory into an external pass condition.
 
 ## Comparison and limitation
 

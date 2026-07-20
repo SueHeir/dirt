@@ -60,22 +60,25 @@ seed = 1979
 # state registration.
 region = { type = "block", min = [0.00034, 0.00034, 0.00034], max = [0.00966, 0.00036, 0.01366] }
 
-# The platen advances while the x walls withdraw at a prescribed rate, matching
-# the source's opposing vertical/horizontal loading change.  No controller is
-# given a published force ratio; the two stage values remain predictions.
+# The platen advances while the x walls move inward at a prescribed rate.  The
+# initial insertion solid fraction is deliberately loose (~0.25); the last
+# recording interval is a dense, finite-wall cell (phi approximately 0.5--0.6)
+# rather than the sparse transient that random insertion creates.  No
+# controller is given a published force ratio; the source snapshots remain
+# predictions, not servo targets.
 [[wall]]
 name = "x_low"
 point_x = 0.0
 normal_x = 1.0
 material = "source_wall"
-velocity = [0.004, 0.0, 0.0]
+velocity = [0.070, 0.0, 0.0]
 
 [[wall]]
 name = "x_high"
 point_x = 0.0100
 normal_x = -1.0
 material = "source_wall"
-velocity = [-0.004, 0.0, 0.0]
+velocity = [-0.070, 0.0, 0.0]
 
 [[wall]]
 name = "y_low"
@@ -100,15 +103,15 @@ name = "loading_top"
 point_z = 0.0140
 normal_z = -1.0
 material = "source_wall"
-velocity = [0.0, 0.0, -0.80]
+velocity = [0.0, 0.0, -3.00]
 
 [output]
 dir = "examples/bench_cundall_strack_biaxial"
 
 [[run]]
 name = "walled_compression"
-# This is a bounded measurement smoke run, not an attempt to select either
-# unpublished Fig. 10 state.  It begins recording after the seating interval.
+# This bounded run records only after the loose packing has been driven into a
+# dense cell; it is not an attempt to select either unpublished Fig. 10 state.
 steps = 14000
 thermo = 1000
 dt = 2.0e-7

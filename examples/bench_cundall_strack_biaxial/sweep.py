@@ -25,6 +25,10 @@ EVIDENCE_INVENTORY = os.path.join(HERE, "data", "external_evidence_inventory.csv
 LAMMPS_RESULTS = os.path.join(HERE, "reference", "lammps", "lammps_results.csv")
 PLOTS = os.path.join(HERE, "plots")
 REQUIRED = ("axial_strain", "f_h_mean", "f_v_mean", "wall_force_ratio", "contacts")
+# These are executable specimen-integrity floors, not external response
+# tolerances.  A loose random-insertion transient is not a dense assembly.
+MIN_DENSE_PHI = 0.50
+MIN_DENSE_COORDINATION = 4.0
 # Every recorder value is serialized with ``{:.8e}``, so this is an output
 # round-trip bound (not a physical or source-comparison tolerance).
 CSV_RELATIVE_PRECISION = 5.0e-8
@@ -195,6 +199,8 @@ def evaluate(rows):
         "forward_compression": rows[-1]["axial_strain"] > rows[0]["axial_strain"],
         "lateral_compression": rows[-1]["lateral_strain"] < rows[0]["lateral_strain"],
         "positive_contacts": max(row["contacts"] for row in rows) > 0.0,
+        "dense_solid_fraction": min(row["phi"] for row in rows) >= MIN_DENSE_PHI,
+        "dense_coordination": min(row["coordination"] for row in rows) >= MIN_DENSE_COORDINATION,
         "positive_platen_reaction": True,
         "ratio_recomputed": ratio_recomputed,
         "max_ratio_residual": max_ratio_residual,
@@ -202,6 +208,7 @@ def evaluate(rows):
         "ratio_max": max(row["wall_force_ratio"] for row in loaded),
     }
     return all(checks[key] for key in ("forward_compression", "lateral_compression", "positive_contacts",
+                                        "dense_solid_fraction", "dense_coordination",
                                         "positive_platen_reaction", "ratio_recomputed")), checks
 
 

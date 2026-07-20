@@ -11,7 +11,10 @@ use std::fs;
 use std::io::Write as IoWrite;
 
 const RECORD_INTERVAL: usize = 100;
-const BIAXIAL_START_STEP: usize = 8_000;
+// The initial random insertion is intentionally loose.  Record only after
+// the prescribed walls have compacted it into the dense late-loading regime;
+// otherwise a handful of transient contacts could be mislabeled "biaxial".
+const BIAXIAL_START_STEP: usize = 13_000;
 
 #[derive(Clone, Copy)]
 struct InitialBox {
