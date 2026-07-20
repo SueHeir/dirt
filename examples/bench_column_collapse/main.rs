@@ -33,11 +33,13 @@ const GATE_NAME: &str = "gate";
 /// The benchmark is single-rank, so this records the complete population used
 /// by the runout analysis rather than a rank-local proxy.
 const ARREST_SAMPLE_INTERVAL: u64 = 100_000;
+const PREPARATION_SAMPLE_INTERVAL: u64 = 100_000;
 
 /// Tracks gate release so it happens exactly once.
 struct CollapseTracker {
     gate_opened: bool,
     collapse_steps: u64,
+    settle_steps: u64,
 }
 
 fn main() {
@@ -51,6 +53,7 @@ fn main() {
     app.add_resource(CollapseTracker {
         gate_opened: false,
         collapse_steps: 0,
+        settle_steps: 0,
     });
 
     // Start the released dynamics at the first collapse integration boundary.
@@ -64,11 +67,58 @@ fn main() {
         record_collapse_quiescence.run_if(in_stage("collapse")),
         ParticleSimScheduleSet::PostFinalIntegration,
     );
+    app.add_update_system(
+        record_preparation_quiescence.run_if(in_stage("settle")),
+        ParticleSimScheduleSet::PostFinalIntegration,
+    );
 
     app.start();
 
     // Dump the final deposit once the run has finished and the bed is at rest.
     dump_deposit(&app);
+}
+
+/// Preserve a sustained, still-gated rest witness.  The fixed 0.8 s protocol
+/// is unchanged; analysis rejects a source that only happens to be slow in
+/// its final frame.
+fn record_preparation_quiescence(
+    mut tracker: ResMut<CollapseTracker>,
+    atoms: Res<Atom>,
+    input: Res<Input>,
+    comm: Res<CommResource>,
+) {
+    tracker.settle_steps += 1;
+    if tracker.settle_steps % PREPARATION_SAMPLE_INTERVAL != 0 {
+        return;
+    }
+    let mut vmax = 0.0f64;
+    for velocity in atoms.vel.iter().take(atoms.nlocal as usize) {
+        vmax = vmax.max(
+            ((velocity[0] as f64).powi(2)
+                + (velocity[1] as f64).powi(2)
+                + (velocity[2] as f64).powi(2))
+            .sqrt(),
+        );
+    }
+    if comm.rank() == 0 {
+        let out_dir = input
+            .output_dir
+            .clone()
+            .unwrap_or_else(|| "examples/bench_column_collapse".to_string());
+        let path = format!("{out_dir}/data/column_collapse_preparation.csv");
+        let mut f = if tracker.settle_steps == PREPARATION_SAMPLE_INTERVAL {
+            let mut created =
+                fs::File::create(&path).unwrap_or_else(|e| panic!("Cannot create {path}: {e}"));
+            writeln!(created, "settle_step,max_speed_m_s").unwrap();
+            created
+        } else {
+            fs::OpenOptions::new()
+                .append(true)
+                .open(&path)
+                .unwrap_or_else(|e| panic!("Cannot append {path}: {e}"))
+        };
+        writeln!(f, "{},{:.10e}", tracker.settle_steps, vmax).unwrap();
+    }
 }
 
 /// Begin the released stage before its first force/integration evaluation.

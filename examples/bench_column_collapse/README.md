@@ -90,12 +90,12 @@ those target exponents.
   margin) beyond the gate face at `L0`. The driver and the independent observer
   each reject a release that already crossed the gate; such a trajectory is a
   settling/boundary failure, not a column-collapse datum.
-- **Release-rest witness.** The last still-gated frame records its population
-  and maximum speed. It must already satisfy the same `Fr <= 0.05` rest bound
-  required of the final deposit before the gate can define an experimental
-  release. This prevents residual source-preparation motion from being
-  attributed to gate-driven runout; it neither changes the empirical exponent
-  bands nor replaces the terminal sustained-arrest check.
+- **Preparation-rest witness.** Four still-gated frames, 0.1 s apart across
+  the final 0.4 s of preparation, record population and maximum speed. Every
+  one must satisfy the same `Fr <= 0.05` rest bound required of the final
+  deposit before the gate can define an experimental release. This rejects a
+  transient low-speed frame without changing the empirical exponent bands,
+  geometry, or terminal sustained-arrest check.
 - `a` is varied by the **particle count** at fixed L0. The 32d × 10d section
   uses roughly 5,000 active grains at `a = 0.5` and 50,000 at `a = 5`.
   Crucially, that population is not computed from an infinite-packing volume
@@ -151,12 +151,12 @@ those target exponents.
 and exits non-zero if either fit is outside the band. It accepts only one row for
 each of the 11 scheduled aspects, with all three seeds and finite measured values.
 Before fitting, it independently re-derives every row from all **33** release,
-final-deposit, and sustained-rest witnesses; it rejects a missing witness or any
+preparation-rest, final-deposit, and sustained-rest witnesses; it rejects a missing witness or any
 summary value that disagrees with those raw measurements. Thus `runout.csv` is a
 cache, not evidence that can make a partial or edited campaign pass.
 Each completed realization also carries a content receipt: SHA-256 digests of
 the generated configuration, active source, rough-base source, recorder source,
-and all five raw witnesses. Reuse and graphing recompute the receipt and reject
+and all six raw witnesses. Reuse and graphing recompute the receipt and reject
 a stale or mixed case before it can enter a seed average. This is an ordinary
 reproducibility guard, not a cryptographic signature and not physical evidence
 in place of a completed campaign.
@@ -206,9 +206,10 @@ reference, material, aspect range, toe metric, or ±0.25 exponent bands.
 
 `graph` also invokes `independent_observer.py`. This standard-library program
 does **not** import `sweep.py`, use `runout.csv`, or use its gridded toe
-measurement. It independently reads all raw release, pre-release-rest, final,
-terminal, and arrest witnesses; checks population, release width, and both
-initial and sustained-terminal Froude rest;
+measurement. It independently reads all raw release, sustained still-gated
+preparation-rest, pre-release-rest, final, terminal, and arrest witnesses;
+checks population, release width, and both preparation and sustained-terminal
+Froude rest;
 it separately counts the generated active-column and rough-base source files
 and requires the release witness to contain those exact populations and the
 same frozen support. Equal release/final snapshots alone would otherwise let a

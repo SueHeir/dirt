@@ -1338,6 +1338,8 @@ RELEASE_FROUDE_MAX = REST_FROUDE_MAX
 ARREST_WINDOW_SAMPLES = 4
 # Preserve the 0.1 s physical sampling interval after the timestep refinement.
 ARREST_SAMPLE_INTERVAL = 100_000
+PREPARATION_WINDOW_SAMPLES = 4
+PREPARATION_SAMPLE_INTERVAL = 100_000
 # LAMMPS's default custom-dump coordinate format is six decimal places.  This
 # is still 30,000 times smaller than a bead diameter (3 mm), while allowing the
 # documented text round-trip (worst-case 0.5 micrometre in displayed units).
@@ -1404,6 +1406,7 @@ def dirt_case_paths(a, seed):
         "release_state": os.path.join(case_data, "column_collapse_release_state.csv"),
         "terminal": os.path.join(case_data, "column_collapse_final_state.csv"),
         "arrest": os.path.join(case_data, "column_collapse_arrest.csv"),
+        "preparation": os.path.join(case_data, "column_collapse_preparation.csv"),
     }
 
 
@@ -1612,6 +1615,27 @@ def checked_arrest_window(path):
     return speeds
 
 
+def checked_preparation_window(path):
+    """Require a sustained quiet tail while the gate is still present."""
+    with open(path, newline="") as f:
+        rows = list(csv.DictReader(f))
+    if len(rows) < PREPARATION_WINDOW_SAMPLES:
+        raise ValueError("too few preparation-rest samples")
+    window = rows[-PREPARATION_WINDOW_SAMPLES:]
+    try:
+        steps = [int(row["settle_step"]) for row in window]
+        speeds = [float(row["max_speed_m_s"]) for row in window]
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError("malformed preparation-rest record") from exc
+    if (any(b - a != PREPARATION_SAMPLE_INTERVAL for a, b in zip(steps, steps[1:]))
+            or not all(math.isfinite(v) and v >= 0.0 for v in speeds)):
+        raise ValueError("invalid preparation-rest values")
+    froude = max(speeds) / math.sqrt(9.81 * 2.0 * RADIUS)
+    if froude > RELEASE_FROUDE_MAX:
+        raise ValueError(f"preparation-rest Fr={froude:.6g} > {RELEASE_FROUDE_MAX}")
+    return froude
+
+
 def derive_dirt_ensemble():
     """Derive every fit input from the 11 x 3 executable witnesses.
 
@@ -1642,9 +1666,9 @@ def derive_dirt_ensemble():
                     paths = dirt_case_paths(a, s)
                     deposit, release = paths["deposit"], paths["release"]
                     release_state = paths["release_state"]
-                    terminal, arrest = paths["terminal"], paths["arrest"]
+                    terminal, arrest, preparation = paths["terminal"], paths["arrest"], paths["preparation"]
                     expected = total_particles(a)
-                    if not all(os.path.isfile(p) for p in (deposit, release, release_state, terminal, arrest)):
+                    if not all(os.path.isfile(p) for p in (deposit, release, release_state, terminal, arrest, preparation)):
                         raise ValueError("missing release, pre-release, final, terminal, or arrest evidence")
                     checked_case_receipt(a, s)
                     release_n = csv_particle_count(release)
@@ -1652,6 +1676,7 @@ def derive_dirt_ensemble():
                     release_vmax = checked_release_state(release_state, expected)
                     vmax = checked_final_state(terminal, expected)
                     arrest_speeds = checked_arrest_window(arrest)
+                    preparation_froude = checked_preparation_window(preparation)
                     h, width, _, right = release_geometry(release)
                     actual_aspect = checked_release_dimensions(h, width, a)
                     _, lf = measure_column(deposit)

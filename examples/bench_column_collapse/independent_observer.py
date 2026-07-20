@@ -43,6 +43,8 @@ FROUDE_LIMIT = 0.05
 # the raw recorder, otherwise a physically valid witness can never be observed.
 ARREST_INTERVAL = 100_000
 ARREST_SAMPLES = 4
+PREPARATION_INTERVAL = 100_000
+PREPARATION_SAMPLES = 4
 LINEAR_TARGET = 1.0
 POWER_TARGET = 2.0 / 3.0
 TOLERANCE = 0.25
@@ -139,6 +141,25 @@ def arrested(path):
         raise ValueError("invalid arrest speed")
     if max(speeds) / math.sqrt(GRAVITY * DIAMETER) > FROUDE_LIMIT:
         raise ValueError("terminal arrest window exceeds Froude limit")
+
+
+def prepared_at_rest(path):
+    with open(path, newline="") as source:
+        rows = list(csv.DictReader(source))
+    if len(rows) < PREPARATION_SAMPLES:
+        raise ValueError("too few preparation-rest samples")
+    window = rows[-PREPARATION_SAMPLES:]
+    try:
+        steps = [int(row["settle_step"]) for row in window]
+        speeds = [float(row["max_speed_m_s"]) for row in window]
+    except (KeyError, ValueError) as exc:
+        raise ValueError("invalid preparation-rest record") from exc
+    if any(b - a != PREPARATION_INTERVAL for a, b in zip(steps, steps[1:])):
+        raise ValueError("preparation samples are not evenly spaced")
+    if any(not math.isfinite(v) or v < 0.0 for v in speeds):
+        raise ValueError("invalid preparation speed")
+    if max(speeds) / math.sqrt(GRAVITY * DIAMETER) > FROUDE_LIMIT:
+        raise ValueError("preparation-rest window exceeds Froude limit")
 
 
 def coordinate_key(particle):
@@ -298,6 +319,7 @@ def observe_case(aspect, seed):
             ("deposit", "column_collapse_results.csv"),
             ("terminal", "column_collapse_final_state.csv"),
             ("arrest", "column_collapse_arrest.csv"),
+            ("preparation", "column_collapse_preparation.csv"),
         )
     }
     absent = [name for name, path in paths.items() if not os.path.isfile(path)]
@@ -307,6 +329,7 @@ def observe_case(aspect, seed):
     if len(release) != len(deposit):
         raise ValueError("release/final population changed")
     released_at_rest(paths["release_state"], len(release))
+    prepared_at_rest(paths["preparation"])
     terminal(paths["terminal"], len(release))
     arrested(paths["arrest"])
     active, mobile_deposit = split_frozen_support(release, deposit)
