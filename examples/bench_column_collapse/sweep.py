@@ -1752,10 +1752,19 @@ def _case_evidence_error(a, seed):
 
 
 def _clear_case_evidence(a, seed):
-    """Remove only an inadmissible case's derived witnesses before rerunning."""
+    """Remove every dynamic witness before a case is rerun.
+
+    The preparation-rest record is as much a part of one realization as its
+    release and terminal records.  In particular, retaining it across a forced
+    rerun would let a newly generated trajectory borrow a quiet tail from an
+    earlier preparation.  A receipt hashes files, not their causal provenance,
+    so the correct boundary is to remove the entire witness set before the
+    executable starts.
+    """
     cdir = case_dir_seed(a, seed)
     for name in ("column_collapse_results.csv", "column_collapse_release.csv",
-                 "column_collapse_final_state.csv", "column_collapse_arrest.csv", "column_collapse_preparation.csv",
+                 "column_collapse_final_state.csv", "column_collapse_arrest.csv",
+                 "column_collapse_preparation.csv",
                  CASE_RECEIPT_NAME):
         stale = os.path.join(cdir, "data", name)
         if os.path.isfile(stale):

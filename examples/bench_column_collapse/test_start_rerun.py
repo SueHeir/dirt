@@ -52,6 +52,29 @@ class StartRerunTest(unittest.TestCase):
                 with sweep.exclusive_case_lock(0.5, 1, "written"):
                     pass
 
+    def test_rerun_clears_preparation_witness_with_the_other_raw_evidence(self):
+        """A new trajectory must not inherit an old quiet-preparation tail."""
+        case = (sweep.ASPECTS[0], sweep.SEEDS[0])
+        with tempfile.TemporaryDirectory() as directory, \
+             mock.patch.object(sweep, "SWEEP_DIR", directory):
+            data = os.path.join(sweep.case_dir_seed(*case), "data")
+            os.makedirs(data)
+            names = (
+                "column_collapse_results.csv",
+                "column_collapse_release.csv",
+                "column_collapse_final_state.csv",
+                "column_collapse_arrest.csv",
+                "column_collapse_preparation.csv",
+                sweep.CASE_RECEIPT_NAME,
+            )
+            for name in names:
+                with open(os.path.join(data, name), "w") as witness:
+                    witness.write("stale\n")
+
+            sweep._clear_case_evidence(*case)
+
+            self.assertEqual(os.listdir(data), [])
+
 
 if __name__ == "__main__":
     unittest.main()
