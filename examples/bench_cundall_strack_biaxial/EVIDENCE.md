@@ -60,3 +60,12 @@ dilatancy nor fabric evolution. It is not an eligible external response and
 must not be shown as a DIRT comparison curve. The absence is intentional: it
 prevents an unmatched analogue from becoming a visual substitute for the
 missing source trajectory.
+
+The rejection is now executable rather than prose-only:
+`data/lammps_22jul2025_periodic_candidate.csv` records all ten required
+apparatus and response fields for the archived installed-LAMMPS deck, and
+`candidate_admission.py` requires every one to match before any trajectory can
+be scored. The ledger records the original deck feature and the corresponding
+DIRT difference for every `no`; a candidate cannot become eligible by omitting
+the wall-resultant, volume, or fabric rows. This is a negative-control audit,
+not a replacement reference or a tolerance.

@@ -13,6 +13,7 @@ import os
 import subprocess
 import sys
 from replication_contract import REQUIRED_SERIES, decide
+from candidate_admission import decide as decide_candidate
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.abspath(os.path.join(HERE, "..", ".."))
@@ -21,6 +22,9 @@ REFERENCE = os.path.join(HERE, "data", "cundall_strack_stages.csv")
 REGISTRATION = os.path.join(HERE, "data", "source_state_registration.csv")
 PROTOCOL = os.path.join(HERE, "data", "cundall_strack_protocol.csv")
 EVIDENCE_INVENTORY = os.path.join(HERE, "data", "external_evidence_inventory.csv")
+REJECTED_LAMMPS_CANDIDATE = os.path.join(
+    HERE, "data", "lammps_22jul2025_periodic_candidate.csv"
+)
 PLOTS = os.path.join(HERE, "plots")
 REQUIRED = ("axial_strain", "f_h_mean", "f_v_mean", "wall_force_ratio", "contacts")
 # These are executable specimen-integrity floors, not external response
@@ -139,6 +143,11 @@ def replication_evidence_decision():
     return primary
 
 
+def rejected_lammps_candidate_decision():
+    """Audit the archived LAMMPS negative control before any trace is scored."""
+    return decide_candidate(REJECTED_LAMMPS_CANDIDATE)
+
+
 def source_registration(path=REGISTRATION):
     """Load an independently justified state map or fail closed.
 
@@ -245,6 +254,7 @@ def main():
         protocol = read_protocol()
         missing = audit_external_evidence()
         decision = replication_evidence_decision()
+        lammps = rejected_lammps_candidate_decision()
         print("SOURCE-TRAJECTORY REPLICATION INELIGIBLE: " + ", ".join(missing))
         print("audited source facts only: Fig. 10 A={A:.2f}, B={B:.2f}; "
               "A-to-B V={v}, H={h}".format(
@@ -252,10 +262,13 @@ def main():
                   v=protocol["B"]["vertical_load_factor"],
                   h=protocol["B"]["horizontal_load_factor"]))
         print(f"evidence decision: {decision.candidate}: INELIGIBLE; {decision.reason}")
+        print(f"candidate decision: {lammps.candidate}: INELIGIBLE; {lammps.reason}")
         return
     if command == "external":
         decision = replication_evidence_decision()
+        lammps = rejected_lammps_candidate_decision()
         print(f"{decision.candidate}: INELIGIBLE; {decision.reason}")
+        print(f"{lammps.candidate}: INELIGIBLE; {lammps.reason}")
         raise SystemExit("external replication unavailable: no traceable complete trajectory")
     if command in ("all", "run"):
         build_run()
@@ -265,6 +278,7 @@ def main():
         protocol = read_protocol()
         missing = audit_external_evidence()
         decision = replication_evidence_decision()
+        lammps = rejected_lammps_candidate_decision()
         passed, checks = evaluate(rows)
         plot(rows, checks, passed)
         print("wall-reaction measurement: " + "; ".join(
@@ -278,6 +292,7 @@ def main():
         print("external replication unavailable; missing source evidence: "
               + ", ".join(missing))
         print(f"evidence decision: {decision.candidate}: INELIGIBLE; {decision.reason}")
+        print(f"candidate decision: {lammps.candidate}: INELIGIBLE; {lammps.reason}")
     if command not in ("all", "run", "graph", "audit", "external"):
         raise SystemExit(f"unknown command {command!r}; use all, run, graph, audit, or external")
 

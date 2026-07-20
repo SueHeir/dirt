@@ -1,0 +1,11 @@
+candidate,field,common,evidence,limitation
+LAMMPS 22Jul2025 periodic granular deck,dimension_and_out_of_plane_confinement,no,"archived in_biaxial.lmp: dimension 2; fix enforce2d","DIRT is a 3-D one-grain-deep sphere slice bounded by y walls."
+LAMMPS 22Jul2025 periodic granular deck,lateral_boundary_and_resultant,no,"archived in_biaxial.lmp: boundary p p p; thermo pxx","DIRT uses moving x walls and their finite reactions."
+LAMMPS 22Jul2025 periodic granular deck,axial_boundary_and_resultant,no,"archived in_biaxial.lmp: fix deform y; thermo pyy","DIRT uses a moving top platen and its reaction."
+LAMMPS 22Jul2025 periodic granular deck,particle_and_wall_contact_law,no,"archived in_biaxial.lmp: 2-D gran/hertz/history; no walls","No one-particle-deep wall-contact counterpart is implemented."
+LAMMPS 22Jul2025 periodic granular deck,preparation,no,"archived in_biaxial.lmp: press/berendsen seating","DIRT starts from random insertion in a finite walled cell."
+LAMMPS 22Jul2025 periodic granular deck,loading_path,no,"archived in_biaxial.lmp: y erate -25","DIRT simultaneously moves the top platen and both x walls."
+LAMMPS 22Jul2025 periodic granular deck,state_coordinate,no,"archived output: step and periodic-box strain only","There is no common finite-wall state registration."
+LAMMPS 22Jul2025 periodic granular deck,stress_or_deviatoric_path,no,"archived output: virial pxx and pyy","It is not the wall-resultant observable."
+LAMMPS 22Jul2025 periodic granular deck,volumetric_strain_or_dilatancy_path,no,"archived output: periodic lx and ly","It is not the finite moving-wall cell volume."
+LAMMPS 22Jul2025 periodic granular deck,contact_or_fabric_evolution,no,"archived output has no contact or fabric columns","No independent contact/fabric trajectory exists."
