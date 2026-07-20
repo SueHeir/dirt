@@ -20,6 +20,9 @@ Checks DIRT's historical removal of the SPH repose case and, when an
 independent dev_soil_sph checkout is supplied, its pinned snapshot for a
 replacement study. --online checks only Crossref bibliographic identity.
 Passing is not a calibration, material comparison, or acceptance-gate pass.
+When --online is used, Crossref DOI lookup, Crossref title search, and OpenAlex
+DOI lookup must independently agree on bibliographic identity. Agreement is
+an incompatibility control, never a scientific target.
 EOF
 }
 
@@ -68,6 +71,8 @@ fi
 if $online; then
     command -v curl >/dev/null
     command -v jq >/dev/null
+    doi='10.1016/s0378-4371(99)00183-1'
+    title='Rolling friction in the dynamic simulation of sandpile formation'
     record=$(curl -LfsS 'https://api.crossref.org/works/10.1016/S0378-4371(99)00183-1' |
         jq -r '[.status, .message.DOI, .message.title[0], .message.type,
                 ([.message.author[] | "\(.given) \(.family)"] | join(";"))] | @tsv')
@@ -76,7 +81,21 @@ if $online; then
         echo "FAIL: unexpected Crossref identity: $record" >&2
         exit 1
     fi
-    echo 'Crossref identity verified; it remains bibliographic metadata only.'
+    search=$(curl -LfsS 'https://api.crossref.org/works?query.title=Rolling%20friction%20in%20the%20dynamic%20simulation%20of%20sandpile%20formation&rows=3' |
+        jq -r --arg doi "$doi" --arg title "$title" '
+            [.message.items[] | select((.DOI | ascii_downcase) == $doi and .title[0] == $title)] | length')
+    if [[ $search -lt 1 ]]; then
+        echo 'FAIL: Crossref title search did not independently recover the DOI/title pair' >&2
+        exit 1
+    fi
+    openalex=$(curl -LfsS 'https://api.openalex.org/works/https://doi.org/10.1016/S0378-4371(99)00183-1' |
+        jq -r '[.doi, .title, .publication_year, .type] | @tsv')
+    expected_openalex=$'https://doi.org/10.1016/s0378-4371(99)00183-1\tRolling friction in the dynamic simulation of sandpile formation\t1999\tarticle'
+    if [[ $openalex != "$expected_openalex" ]]; then
+        echo "FAIL: unexpected OpenAlex identity: $openalex" >&2
+        exit 1
+    fi
+    echo 'Three bibliographic routes agree; metadata remains an incompatibility control only.'
 fi
 
 echo 'PASS: retirement facts verified; no calibration claim has been established.'

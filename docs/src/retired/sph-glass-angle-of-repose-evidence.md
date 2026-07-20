@@ -51,10 +51,17 @@ still bibliographic metadata, not an experimental observation.  Neither check
 is coupled to a DIRT executable, a DIRT acceptance threshold, or a fitted
 parameter, so neither can tautologically make this repository pass.
 
+A third, separately operated bibliographic index, OpenAlex, resolves the DOI
+to the same normalized DOI, title, 1999 year, and article type. This protects
+against a transcription error or a single-service anomaly; it still says
+nothing about glass material, apparatus, formation procedure, measured angle,
+or a rolling-contact law. Three agreeing metadata services are therefore
+stronger evidence of **identity only**, not evidence of comparability.
+
 ## Reproduction and limits
 
-Anyone can independently repeat the two external queries and compare their
-normalized SHA-256 values (metadata can legitimately change over time):
+Anyone can independently repeat the three external queries and compare their
+normalized outputs (metadata can legitimately change over time):
 
 ```bash
 curl -LfsS 'https://api.crossref.org/works/10.1016/S0378-4371(99)00183-1' |
@@ -63,6 +70,8 @@ curl -LfsS 'https://api.crossref.org/works/10.1016/S0378-4371(99)00183-1' |
 curl -LfsS 'https://api.crossref.org/works?query.title=Rolling%20friction%20in%20the%20dynamic%20simulation%20of%20sandpile%20formation&rows=3' |
   jq -c '[.message.items[] | {doi:.DOI,title:.title[0],type:.type}]' |
   sha256sum
+curl -LfsS 'https://api.openalex.org/works/https://doi.org/10.1016/S0378-4371(99)00183-1' |
+  jq -c '{doi,title,publication_year,type}'
 ```
 
 This audit did **not** obtain or read the full paper, inspect a primary glass

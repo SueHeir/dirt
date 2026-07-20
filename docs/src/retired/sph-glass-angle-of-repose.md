@@ -107,8 +107,10 @@ the retired case), confirms that the removal commit remains an ancestor, and
 checks the current path is absent. This is a scope-regression guard, not a
 scientific validation suite: its success cannot certify an angle, a material
 parameter, or the frozen calibration contract. With `--soil-sph` it performs
-the separate pinned-snapshot check above, and `--online` adds the Crossref
-bibliographic identity check only.
+the separate pinned-snapshot check above, and `--online` requires agreement
+between a Crossref DOI lookup, a Crossref title search, and OpenAlex's DOI
+record. Those independent routes reduce bibliographic-identity error only;
+they cannot establish physical comparability, a target angle, or a coefficient.
 
 This retirement note and the decision to withhold a coefficient were prepared
 with AI assistance.  They are a provenance boundary, not experimental work,
