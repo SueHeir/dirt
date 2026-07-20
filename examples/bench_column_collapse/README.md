@@ -207,7 +207,7 @@ reference, material, aspect range, toe metric, or ±0.25 exponent bands.
 `graph` also invokes `independent_observer.py`. This standard-library program
 does **not** import `sweep.py`, use `runout.csv`, or use its gridded toe
 measurement. It independently reads all raw release, sustained still-gated
-preparation-rest, pre-release-rest, final, terminal, and arrest witnesses;
+preparation-rest, final, terminal, and arrest witnesses;
 checks population, release width, and both preparation and sustained-terminal
 Froude rest;
 it separately counts the generated active-column and rough-base source files
@@ -307,7 +307,7 @@ python3 examples/bench_column_collapse/sweep.py graph      # fit exponents + wri
 python3 examples/bench_column_collapse/sweep.py start --jobs 4
 
 # A batch worker may run exactly one declared witness.  This records raw
-# release/pre-release-rest/final/arrest evidence only; it neither fits nor
+# release/preparation-rest/final/arrest evidence only; it neither fits nor
 # claims a result.
 python3 examples/bench_column_collapse/sweep.py start --case 2,0
 

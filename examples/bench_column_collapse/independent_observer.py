@@ -117,13 +117,6 @@ def terminal(path, expected):
     return speed
 
 
-def released_at_rest(path, expected):
-    """Independently admit the last still-gated frame as a settled release."""
-    speed = terminal(path, expected)
-    if speed / math.sqrt(GRAVITY * DIAMETER) > FROUDE_LIMIT:
-        raise ValueError("pre-release kinetic witness exceeds Froude limit")
-
-
 def arrested(path):
     with open(path, newline="") as source:
         rows = list(csv.DictReader(source))
@@ -143,7 +136,7 @@ def arrested(path):
         raise ValueError("terminal arrest window exceeds Froude limit")
 
 
-def prepared_at_rest(path):
+def prepared_at_rest(path, expected):
     with open(path, newline="") as source:
         rows = list(csv.DictReader(source))
     if len(rows) < PREPARATION_SAMPLES:
@@ -151,10 +144,13 @@ def prepared_at_rest(path):
     window = rows[-PREPARATION_SAMPLES:]
     try:
         steps = [int(row["settle_step"]) for row in window]
+        counts = [int(row["particle_count"]) for row in window]
         speeds = [float(row["max_speed_m_s"]) for row in window]
     except (KeyError, ValueError) as exc:
         raise ValueError("invalid preparation-rest record") from exc
-    if any(b - a != PREPARATION_INTERVAL for a, b in zip(steps, steps[1:])):
+    if (steps[-1] != 800_000
+            or any(b - a != PREPARATION_INTERVAL for a, b in zip(steps, steps[1:]))
+            or any(count != expected for count in counts)):
         raise ValueError("preparation samples are not evenly spaced")
     if any(not math.isfinite(v) or v < 0.0 for v in speeds):
         raise ValueError("invalid preparation speed")
@@ -315,7 +311,6 @@ def observe_case(aspect, seed):
         name: os.path.join(directory, filename)
         for name, filename in (
             ("release", "column_collapse_release.csv"),
-            ("release_state", "column_collapse_release_state.csv"),
             ("deposit", "column_collapse_results.csv"),
             ("terminal", "column_collapse_final_state.csv"),
             ("arrest", "column_collapse_arrest.csv"),
@@ -328,8 +323,7 @@ def observe_case(aspect, seed):
     release, deposit = particles(paths["release"]), particles(paths["deposit"])
     if len(release) != len(deposit):
         raise ValueError("release/final population changed")
-    released_at_rest(paths["release_state"], len(release))
-    prepared_at_rest(paths["preparation"])
+    prepared_at_rest(paths["preparation"], len(release))
     terminal(paths["terminal"], len(release))
     arrested(paths["arrest"])
     active, mobile_deposit = split_frozen_support(release, deposit)

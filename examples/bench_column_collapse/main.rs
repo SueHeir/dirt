@@ -109,7 +109,7 @@ fn record_preparation_quiescence(
         let mut f = if tracker.settle_steps == PREPARATION_SAMPLE_INTERVAL {
             let mut created =
                 fs::File::create(&path).unwrap_or_else(|e| panic!("Cannot create {path}: {e}"));
-            writeln!(created, "settle_step,max_speed_m_s").unwrap();
+            writeln!(created, "settle_step,particle_count,max_speed_m_s").unwrap();
             created
         } else {
             fs::OpenOptions::new()
@@ -117,7 +117,11 @@ fn record_preparation_quiescence(
                 .open(&path)
                 .unwrap_or_else(|e| panic!("Cannot append {path}: {e}"))
         };
-        writeln!(f, "{},{:.10e}", tracker.settle_steps, vmax).unwrap();
+        // The last sampled settle frame is the same still-gated state that the
+        // following pre-integration callback releases.  Keep population and
+        // speed in this one time-series witness rather than creating a second,
+        // redundant release-state file at a subtly different callback point.
+        writeln!(f, "{},{},{:.10e}", tracker.settle_steps, atoms.nlocal, vmax).unwrap();
     }
 }
 
@@ -126,8 +130,8 @@ fn record_preparation_quiescence(
 /// Damping and the displacement limiter are strictly source-preparation aids,
 /// while the gate is a retained support.  Removing all three at this common
 /// pre-integration boundary prevents a one-step hybrid state (unlimited,
-/// undamped, but still gated) and makes the release witness the initial state
-/// of the actual collapse dynamics.
+/// undamped, but still gated). The preceding final settle sample is the
+/// still-gated release-rest witness for the actual collapse dynamics.
 fn begin_collapse(
     mut tracker: ResMut<CollapseTracker>,
     mut fixes: ResMut<FixesRegistry>,
@@ -156,7 +160,6 @@ fn begin_collapse(
     let path = format!("{data_dir}/column_collapse_release.csv");
     let mut file = fs::File::create(&path).unwrap_or_else(|e| panic!("Cannot create {path}: {e}"));
     writeln!(file, "x,y,z,radius").unwrap();
-    let mut release_vmax = 0.0f64;
     for i in 0..atoms.nlocal as usize {
         writeln!(
             file,
@@ -164,21 +167,7 @@ fn begin_collapse(
             atoms.pos[i][0], atoms.pos[i][1], atoms.pos[i][2], dem.radius[i]
         )
         .unwrap();
-        let velocity = atoms.vel[i];
-        let speed = ((velocity[0] as f64) * (velocity[0] as f64)
-            + (velocity[1] as f64) * (velocity[1] as f64)
-            + (velocity[2] as f64) * (velocity[2] as f64))
-            .sqrt();
-        release_vmax = release_vmax.max(speed);
     }
-    // The reference experiment releases a settled column. Geometry alone
-    // cannot establish that preparation dynamics have actually settled, so
-    // preserve the maximum speed from this last still-gated frame separately.
-    let release_state_path = format!("{data_dir}/column_collapse_release_state.csv");
-    let mut release_state = fs::File::create(&release_state_path)
-        .unwrap_or_else(|e| panic!("Cannot create {release_state_path}: {e}"));
-    writeln!(release_state, "particle_count,max_speed_m_s").unwrap();
-    writeln!(release_state, "{},{release_vmax:.10e}", atoms.nlocal).unwrap();
     walls.deactivate_by_name(GATE_NAME);
     // A new collapse must never inherit a previous run's arrest witnesses.
     let arrest_path = format!("{data_dir}/column_collapse_arrest.csv");

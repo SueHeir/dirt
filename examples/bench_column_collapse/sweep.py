@@ -245,6 +245,7 @@ def protocol_fingerprint():
         "measurement": [FINE_BINS, GAP_TOL_D, TOE_MIN_HEIGHT_D],
         "validation": [EXP_TOL, LINEAR_TARGET, POWER_TARGET, REGIME_SPLIT,
                        ASPECT_REL_TOL, RELEASE_FROUDE_MAX,
+                       PREPARATION_WINDOW_SAMPLES, PREPARATION_SAMPLE_INTERVAL,
                        REST_FROUDE_MAX, ARREST_WINDOW_SAMPLES,
                        ARREST_SAMPLE_INTERVAL],
     }
@@ -1403,7 +1404,6 @@ def dirt_case_paths(a, seed):
     return {
         "deposit": os.path.join(case_data, "column_collapse_results.csv"),
         "release": os.path.join(case_data, "column_collapse_release.csv"),
-        "release_state": os.path.join(case_data, "column_collapse_release_state.csv"),
         "terminal": os.path.join(case_data, "column_collapse_final_state.csv"),
         "arrest": os.path.join(case_data, "column_collapse_arrest.csv"),
         "preparation": os.path.join(case_data, "column_collapse_preparation.csv"),
@@ -1575,21 +1575,6 @@ def checked_final_state(path, expected_count):
     return vmax
 
 
-def checked_release_state(path, expected_count):
-    """Read the last still-gated kinetic witness before opening the column."""
-    return checked_final_state(path, expected_count)
-
-
-def checked_release_quiescence(vmax):
-    """Require the measured release state to be at rest before gate removal."""
-    if not math.isfinite(vmax) or vmax < 0.0:
-        raise ValueError("invalid pre-release maximum speed")
-    froude = vmax / math.sqrt(9.81 * 2.0 * RADIUS)
-    if froude > RELEASE_FROUDE_MAX:
-        raise ValueError(f"pre-release Fr={froude:.6g} > {RELEASE_FROUDE_MAX}")
-    return froude
-
-
 def checked_arrest_window(path):
     """Return a sustained terminal-speed witness from the executable output.
 
@@ -1615,7 +1600,7 @@ def checked_arrest_window(path):
     return speeds
 
 
-def checked_preparation_window(path):
+def checked_preparation_window(path, expected_count):
     """Require a sustained quiet tail while the gate is still present."""
     with open(path, newline="") as f:
         rows = list(csv.DictReader(f))
@@ -1624,10 +1609,13 @@ def checked_preparation_window(path):
     window = rows[-PREPARATION_WINDOW_SAMPLES:]
     try:
         steps = [int(row["settle_step"]) for row in window]
+        counts = [int(row["particle_count"]) for row in window]
         speeds = [float(row["max_speed_m_s"]) for row in window]
     except (KeyError, TypeError, ValueError) as exc:
         raise ValueError("malformed preparation-rest record") from exc
-    if (any(b - a != PREPARATION_SAMPLE_INTERVAL for a, b in zip(steps, steps[1:]))
+    if (steps[-1] != SETTLE_STEPS
+            or any(b - a != PREPARATION_SAMPLE_INTERVAL for a, b in zip(steps, steps[1:]))
+            or any(count != expected_count for count in counts)
             or not all(math.isfinite(v) and v >= 0.0 for v in speeds)):
         raise ValueError("invalid preparation-rest values")
     froude = max(speeds) / math.sqrt(9.81 * 2.0 * RADIUS)
@@ -1665,18 +1653,16 @@ def derive_dirt_ensemble():
                 with shared_case_lock(a, s, "derive the ensemble"):
                     paths = dirt_case_paths(a, s)
                     deposit, release = paths["deposit"], paths["release"]
-                    release_state = paths["release_state"]
                     terminal, arrest, preparation = paths["terminal"], paths["arrest"], paths["preparation"]
                     expected = total_particles(a)
-                    if not all(os.path.isfile(p) for p in (deposit, release, release_state, terminal, arrest, preparation)):
+                    if not all(os.path.isfile(p) for p in (deposit, release, terminal, arrest, preparation)):
                         raise ValueError("missing release, pre-release, final, terminal, or arrest evidence")
                     checked_case_receipt(a, s)
                     release_n = csv_particle_count(release)
                     deposit_n = csv_particle_count(deposit)
-                    release_vmax = checked_release_state(release_state, expected)
                     vmax = checked_final_state(terminal, expected)
                     arrest_speeds = checked_arrest_window(arrest)
-                    preparation_froude = checked_preparation_window(preparation)
+                    checked_preparation_window(preparation, expected)
                     h, width, _, right = release_geometry(release)
                     actual_aspect = checked_release_dimensions(h, width, a)
                     _, lf = measure_column(deposit)
@@ -1685,11 +1671,6 @@ def derive_dirt_ensemble():
                 continue
             if release_n != expected or deposit_n != expected:
                 failures.append(f"a={a} seed={s}: population is not {expected} at release/final")
-                continue
-            try:
-                checked_release_quiescence(release_vmax)
-            except ValueError as exc:
-                failures.append(f"a={a} seed={s}: {exc}")
                 continue
             froude = vmax / math.sqrt(9.81 * 2.0 * RADIUS)
             if froude > REST_FROUDE_MAX:
@@ -1743,18 +1724,17 @@ def _case_evidence_error(a, seed):
     """
     paths = dirt_case_paths(a, seed)
     deposit, release = paths["deposit"], paths["release"]
-    release_state = paths["release_state"]
-    terminal, arrest = paths["terminal"], paths["arrest"]
-    if not all(os.path.isfile(p) for p in (deposit, release, release_state, terminal, arrest)):
+    terminal, arrest, preparation = paths["terminal"], paths["arrest"], paths["preparation"]
+    if not all(os.path.isfile(p) for p in (deposit, release, terminal, arrest, preparation)):
         return "missing release, pre-release, final, terminal, or arrest evidence"
     expected = total_particles(a)
     try:
         checked_case_receipt(a, seed)
         if csv_particle_count(release) != expected or csv_particle_count(deposit) != expected:
             return f"population is not {expected} at release/final"
-        release_vmax = checked_release_state(release_state, expected)
         vmax = checked_final_state(terminal, expected)
         arrest_speeds = checked_arrest_window(arrest)
+        checked_preparation_window(preparation, expected)
         height, width, _, _ = release_geometry(release)
         checked_release_dimensions(height, width, a)
         _, lf = measure_column(deposit)
@@ -1763,10 +1743,6 @@ def _case_evidence_error(a, seed):
     except (OSError, ValueError, csv.Error) as exc:
         return f"malformed witness ({exc})"
     froude_scale = math.sqrt(9.81 * 2.0 * RADIUS)
-    try:
-        checked_release_quiescence(release_vmax)
-    except ValueError as exc:
-        return str(exc)
     if vmax / froude_scale > REST_FROUDE_MAX:
         return f"terminal Fr={vmax / froude_scale:.6g} > {REST_FROUDE_MAX}"
     if max(arrest_speeds) / froude_scale > REST_FROUDE_MAX:
@@ -1778,8 +1754,8 @@ def _case_evidence_error(a, seed):
 def _clear_case_evidence(a, seed):
     """Remove only an inadmissible case's derived witnesses before rerunning."""
     cdir = case_dir_seed(a, seed)
-    for name in ("column_collapse_results.csv", "column_collapse_release.csv", "column_collapse_release_state.csv",
-                 "column_collapse_final_state.csv", "column_collapse_arrest.csv",
+    for name in ("column_collapse_results.csv", "column_collapse_release.csv",
+                 "column_collapse_final_state.csv", "column_collapse_arrest.csv", "column_collapse_preparation.csv",
                  CASE_RECEIPT_NAME):
         stale = os.path.join(cdir, "data", name)
         if os.path.isfile(stale):
