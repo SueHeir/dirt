@@ -726,7 +726,12 @@ boundary_z = "fixed"
 [neighbor]
 skin_fraction = 1.1
 bin_size = 0.005
-every = 1
+# Full rebuilds at every 1 us step made the 11x3 physical campaign impractical.
+# Keep the 10% skin and use SOIL's hybrid policy instead: it checks displacement
+# every step and rebuilds no later than 100 steps, so a contact cannot be missed
+# merely to reduce rebuild overhead.
+every = 100
+check = true
 
 [gravity]
 gx = 0.0

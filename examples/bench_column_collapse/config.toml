@@ -25,7 +25,10 @@ boundary_z = "fixed"
 [neighbor]
 skin_fraction = 1.1
 bin_size = 0.005
-every = 1
+# Hybrid cadence: SOIL checks displacement every step and rebuilds at most every
+# 100 steps, retaining the 10% neighbor skin's contact-completeness guarantee.
+every = 100
+check = true
 
 [gravity]
 gx = 0.0

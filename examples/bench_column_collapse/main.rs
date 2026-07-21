@@ -107,7 +107,15 @@ fn record_preparation_quiescence(
             .output_dir
             .clone()
             .unwrap_or_else(|| "examples/bench_column_collapse".to_string());
-        let path = format!("{out_dir}/data/column_collapse_preparation.csv");
+        let data_dir = format!("{out_dir}/data");
+        // This is the first persistent witness written by a fresh case.  The
+        // release callback also creates this directory, but it runs only after
+        // the final preparation sample; do not make a valid still-gated
+        // witness depend on a later lifecycle phase.
+        fs::create_dir_all(&data_dir).unwrap_or_else(|e| {
+            panic!("Cannot create preparation-witness directory {data_dir}: {e}")
+        });
+        let path = format!("{data_dir}/column_collapse_preparation.csv");
         let mut f = if tracker.settle_steps == PREPARATION_SAMPLE_INTERVAL {
             let mut created =
                 fs::File::create(&path).unwrap_or_else(|e| panic!("Cannot create {path}: {e}"));
