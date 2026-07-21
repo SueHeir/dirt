@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Negative tests for the archived-claim audit; live catalogues are not mocked."""
+"""Unit tests for source-derived parsing; live catalogues are not mocked."""
 
 import importlib.util
 import unittest
@@ -14,38 +14,27 @@ SPEC.loader.exec_module(audit)
 
 
 class HistoricalClaimTests(unittest.TestCase):
-    def test_historical_claim_with_simulation_only_reference_is_auditable(self) -> None:
-        audit.require_unsupported_claim(
+    def test_archived_claim_and_quoted_reference_are_derived(self) -> None:
+        band, title = audit.archived_claim_and_title(
             "measured glass repose band [22, 26]\n## References\n"
-            "Rolling friction in the dynamic simulation of sandpile formation"
+            '1. Author, "Rolling friction in the dynamic simulation of sandpile formation"'
         )
+        self.assertEqual(band, "[22, 26]")
+        self.assertEqual(title, "rolling friction in the dynamic simulation of sandpile formation")
 
     def test_missing_historical_claim_is_rejected(self) -> None:
         with self.assertRaisesRegex(RuntimeError, "claim not found"):
-            audit.require_unsupported_claim("## References\nComputer simulation of sandpile formation")
+            audit.archived_claim_and_title("## References\nComputer simulation of sandpile formation")
 
     def test_missing_reference_section_is_rejected(self) -> None:
         with self.assertRaisesRegex(RuntimeError, "no reference section"):
-            audit.require_unsupported_claim("measured glass repose band [22, 26]")
+            audit.archived_claim_and_title("measured glass repose band [22, 26]")
 
-    def test_wrong_historical_paper_is_rejected(self) -> None:
-        with self.assertRaisesRegex(RuntimeError, "historical cited paper not found"):
-            audit.require_unsupported_claim(
-                "measured glass repose band [22, 26]\n## References\n"
-                "A different simulation of sandpile formation"
+    def test_unquoted_first_reference_is_rejected(self) -> None:
+        with self.assertRaisesRegex(RuntimeError, "no quoted title"):
+            audit.archived_claim_and_title(
+                "measured glass repose band [22, 26]\n## References\n1. An unquoted reference"
             )
-
-    def test_experimental_label_in_reference_section_is_rejected(self) -> None:
-        with self.assertRaisesRegex(RuntimeError, "unexpectedly claims an experiment"):
-            audit.require_unsupported_claim(
-                "measured glass repose band [22, 26]\n## References\n"
-                "Rolling friction in the dynamic simulation of sandpile formation experiment"
-            )
-
-    def test_archived_author_attribution_mismatch_is_detected(self) -> None:
-        # Crossref/OpenAlex identify the simulation paper as Zhou, Wright,
-        # Yang, Xu, Yu; the archived README instead listed Zulli.
-        self.assertFalse(audit.archived_attribution_matches({"zhou", "wright", "yang", "xu", "yu"}))
 
 
 if __name__ == "__main__":

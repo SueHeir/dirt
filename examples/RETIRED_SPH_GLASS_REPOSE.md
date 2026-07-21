@@ -37,16 +37,14 @@ protocol and evidence prerequisites below.
 
 `audit_retired_sph_claim.py` is a separate adversarial check.  It reads the
 README stored in the Git tree immediately before retirement, rather than a
-present-day paraphrase.  That README described a 22--26 degree interval as
-empirical, while its listed simulation paper was *Rolling friction in the
-dynamic simulation of sandpile formation*.  Crossref and OpenAlex must independently
-resolve the immutable DOI `10.1016/S0378-4371(99)00183-1` and agree that its
-title is the archived title; it does not rely on a ranked bibliographic search.
-The audit also reports
-that the archived author list does not agree with either catalogue.  This
-demonstrates a narrower, important fact: the archived repository claim did not
-cite a primary dry-glass-bead measurement and its simulation citation was not
-reliably transcribed.
+present-day paraphrase. It extracts the first quoted reference title from that
+immutable source and has Crossref discover a unique exact-title DOI. It then
+uses that DOI to obtain direct Crossref and OpenAlex records, which must agree
+with the archived title. The source-derived title describes the work as a
+simulation, so it is not admitted as a primary dry-glass-bead measurement. This
+avoids embedding a favoured DOI, author list, or title as a local passing
+fixture. It demonstrates the narrower, important fact: the archived repository
+claim did not cite a primary dry-glass-bead measurement.
 It does not establish that no such measurement exists anywhere, nor does it
 validate an SPH or DEM result.
 

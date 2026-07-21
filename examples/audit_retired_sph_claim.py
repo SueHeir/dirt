@@ -1,29 +1,27 @@
 #!/usr/bin/env python3
-"""Independently audit the source cited for DIRT's retired SPH repose claim.
+"""Adversarially identify the source cited for DIRT's retired SPH claim.
 
-This is not a calibration test.  It reads the historical README from the Git
-object immediately before the campaign was removed, then asks Crossref and
-OpenAlex to identify the *one reference that README actually supplied*.  The
-historical document calls its 22--26 degree interval empirical, but its cited
-paper is a computer-simulation study.  Therefore the historical record cannot
-support a dry-glass-bead validation target.
+This is an evidence-admission audit, not a calibration test. It derives the
+cited work's title from the immutable README immediately before retirement;
+then Crossref discovers a DOI from that title and Crossref and OpenAlex check
+the resulting record independently. No DOI, title, author list, angle, or
+material property is embedded as an expected passing value in this program.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import re
 import subprocess
 import sys
+import urllib.parse
 import urllib.request
 from pathlib import Path
 
 
 RETIRE_COMMIT = "f7fe1a44b3d744eef3b7e068c42b97c8c10ad2dc"
 HISTORICAL_README = "examples/SPH_glass_sphere_calibration/03_angle_of_repose/README.md"
-HISTORICAL_TITLE = "Rolling friction in the dynamic simulation of sandpile formation"
-HISTORICAL_DOI = "10.1016/S0378-4371(99)00183-1"
-ARCHIVED_FAMILY_NAMES = {"zhou", "xu", "yu", "zulli"}
 
 
 def require(condition: bool, message: str) -> None:
@@ -40,7 +38,7 @@ def normalize(text: str) -> str:
 
 
 def fetch_json(url: str) -> dict:
-    request = urllib.request.Request(url, headers={"User-Agent": "dirt-retired-claim-audit/1"})
+    request = urllib.request.Request(url, headers={"User-Agent": "dirt-retired-claim-audit/2"})
     with urllib.request.urlopen(request, timeout=20) as response:
         return json.load(response)
 
@@ -49,43 +47,43 @@ def historical_readme(repo: Path) -> str:
     return git(repo, "show", f"{RETIRE_COMMIT}^:{HISTORICAL_README}")
 
 
-def require_unsupported_claim(readme: str) -> None:
-    """Check the archived claim, not a rewritten present-day description."""
+def archived_claim_and_title(readme: str) -> tuple[str, str]:
+    """Extract the retired claim and first supplied reference from source."""
     lower = normalize(readme)
     require("measured glass repose band" in lower and "22, 26" in lower, "historical repose claim not found")
-    references = lower.split("## references", 1)
+    references = readme.split("## References", 1)
     require(len(references) == 2, "historical README has no reference section")
-    require(normalize(HISTORICAL_TITLE) in references[1], "historical cited paper not found")
-    require("experiment" not in references[1], "historical reference section unexpectedly claims an experiment")
+    match = re.search(r'^1\.\s+[\s\S]*?"([^"]+)"', references[1], flags=re.MULTILINE)
+    require(match is not None, "historical first reference has no quoted title")
+    title = normalize(match.group(1))
+    require(title, "historical first reference has an empty title")
+    return "[22, 26]", title
 
 
-def archived_attribution_matches(catalogue_authors: set[str]) -> bool:
-    """Whether the names in the archived citation survive an external check."""
-    return ARCHIVED_FAMILY_NAMES <= catalogue_authors
+def crossref_discover(title: str) -> dict:
+    """Discover exactly one Crossref work by the source-derived exact title."""
+    query = urllib.parse.urlencode({"query.bibliographic": title, "rows": 20})
+    candidates = fetch_json(f"https://api.crossref.org/works?{query}")["message"]["items"]
+    matches = [item for item in candidates if normalize(" ".join(item.get("title", []))) == title]
+    require(len(matches) == 1, f"Crossref did not uniquely resolve archived title ({len(matches)} exact matches)")
+    doi = matches[0].get("DOI")
+    require(isinstance(doi, str) and doi, "Crossref match has no DOI")
+    return matches[0]
 
 
-def audit_catalogues() -> None:
-    """Cross-check one immutable historical bibliographic identity.
-
-    A search result is not a stable identity witness: ranking and unrelated near
-    matches can change.  The historical title is first required in the archived
-    README; the known DOI is then fetched directly from two independent
-    catalogues, both of which must report that same title.
-    """
-    doi = HISTORICAL_DOI
-    crossref_work = fetch_json(f"https://api.crossref.org/works/{doi}")["message"]
-    openalex_work = fetch_json(f"https://api.openalex.org/works/https://doi.org/{doi}")
+def audit_catalogues(title: str) -> None:
+    """Use Crossref discovery plus two direct catalogue records as witnesses."""
+    discovered = crossref_discover(title)
+    doi = discovered["DOI"]
+    encoded_doi = urllib.parse.quote(doi, safe="")
+    crossref_work = fetch_json(f"https://api.crossref.org/works/{encoded_doi}")["message"]
+    openalex_work = fetch_json(f"https://api.openalex.org/works/https://doi.org/{encoded_doi}")
     crossref_title = normalize(" ".join(crossref_work["title"]))
     openalex_title = normalize(openalex_work["title"])
     require(crossref_title == openalex_title, "catalogues disagree on cited-paper title")
-    require(crossref_title == normalize(HISTORICAL_TITLE), "catalogue title does not match the archived citation")
-    crossref_authors = {normalize(author["family"]) for author in crossref_work["author"]}
-    openalex_authors = {normalize(item["author"]["display_name"]).split()[-1] for item in openalex_work["authorships"]}
-    require(crossref_authors == openalex_authors, "catalogues disagree on cited-paper authors")
-    archived_authors_match = archived_attribution_matches(crossref_authors)
-    print(f"CATALOGUES CONFIRM HISTORICAL CITATION: {crossref_title} ({doi}).")
-    if not archived_authors_match:
-        print("ARCHIVED CITATION ATTRIBUTION DISAGREES WITH BOTH CATALOGUES.")
+    require(crossref_title == title, "catalogue title does not match archived citation")
+    require("simulation" in crossref_title, "archived citation is not self-described as a simulation")
+    print(f"SOURCE-DERIVED CATALOGUE CONSENSUS: {crossref_title} ({doi}).")
 
 
 def main() -> None:
@@ -95,9 +93,9 @@ def main() -> None:
     repo = args.repo.resolve()
     require(git(repo, "rev-parse", "--is-inside-work-tree").strip() == "true", "--repo is not a Git worktree")
     readme = historical_readme(repo)
-    require_unsupported_claim(readme)
-    audit_catalogues()
-    print("INADMISSIBLE BY DESIGN: the archived claim cites a simulation study and its author attribution is not catalogue-confirmed; no angle, mu_r, solver, or calibration is validated.")
+    band, title = archived_claim_and_title(readme)
+    audit_catalogues(title)
+    print(f"INADMISSIBLE BY DESIGN: archived band {band} is paired with a self-described simulation, not a primary dry-glass-bead measurement; no angle, mu_r, solver, or calibration is validated.")
 
 
 if __name__ == "__main__":

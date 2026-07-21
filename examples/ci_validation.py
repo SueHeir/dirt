@@ -20,10 +20,12 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 Sweep = tuple[str, tuple[str, ...]]
 
 # This PR concerns a retired, non-DEM SPH claim.  It is intentionally not a
-# benchmark sweep: it verifies scope and independently checks citation identity.
+# benchmark sweep: it verifies scope and independently checks citation identity
+# from both the retired surface and the source-derived archived reference.
 # Network loss is inconclusive and therefore fails closed.
 SCOPE_AUDITS: list[Sweep] = [
     ("examples/verify_retired_sph_glass_repose.py", ("--online",)),
+    ("examples/audit_retired_sph_claim.py", ()),
 ]
 
 # Representative gated validation drivers for every PR. This is deliberately a
