@@ -50,14 +50,17 @@ def historical_readme(repo: Path) -> str:
 def archived_claim_and_title(readme: str) -> tuple[str, str]:
     """Extract the retired claim and first supplied reference from source."""
     lower = normalize(readme)
-    require("measured glass repose band" in lower and "22, 26" in lower, "historical repose claim not found")
+    require("measured glass repose band" in lower, "historical repose claim not found")
+    band_match = re.search(r"\[\s*(\d+(?:\.\d+)?)\s*,\s*(\d+(?:\.\d+)?)\s*\]", readme)
+    require(band_match is not None, "historical repose claim has no numeric band")
+    band = f"[{band_match.group(1)}, {band_match.group(2)}]"
     references = readme.split("## References", 1)
     require(len(references) == 2, "historical README has no reference section")
     match = re.search(r'^1\.\s+[\s\S]*?"([^"]+)"', references[1], flags=re.MULTILINE)
     require(match is not None, "historical first reference has no quoted title")
     title = normalize(match.group(1))
     require(title, "historical first reference has an empty title")
-    return "[22, 26]", title
+    return band, title
 
 
 def crossref_discover(title: str) -> dict:

@@ -26,6 +26,18 @@ class HistoricalClaimTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "claim not found"):
             audit.archived_claim_and_title("## References\nComputer simulation of sandpile formation")
 
+    def test_claim_without_a_source_band_is_rejected(self) -> None:
+        with self.assertRaisesRegex(RuntimeError, "no numeric band"):
+            audit.archived_claim_and_title(
+                'measured glass repose band\n## References\n1. Author, "A simulation study"'
+            )
+
+    def test_source_band_is_not_a_local_expected_value(self) -> None:
+        band, _ = audit.archived_claim_and_title(
+            'measured glass repose band [19.5, 27]\n## References\n1. Author, "A simulation study"'
+        )
+        self.assertEqual(band, "[19.5, 27]")
+
     def test_missing_reference_section_is_rejected(self) -> None:
         with self.assertRaisesRegex(RuntimeError, "no reference section"):
             audit.archived_claim_and_title("measured glass repose band [22, 26]")
