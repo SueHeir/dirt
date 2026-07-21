@@ -17,18 +17,23 @@ rolling law, preparation method, and uncertainty needed for such a claim.
 `verify_retired_sph_glass_repose.py --online` makes two deliberately narrow,
 falsifiable checks:
 
-1. Git history confirms that the removal commit deleted the historical README,
-   runner, and model entry point, and that the case is absent from the checked-out
-   HEAD.
+1. Git history derives the complete file manifest of the historical campaign
+   from the predecessor of the removal commit, confirms that the removal commit
+   deleted every one of those files, and confirms none has returned at the
+   checked-out HEAD.  This catches a restored config, pin, plot, or helper as
+   well as a restored README, runner, or model entry point.
 2. Crossref and OpenAlex independently identify two superficially relevant
    citations.  Elekes & Parteli, doi:10.1073/pnas.2107965118, is a cohesive
    granular-material theory; Zhou et al., doi:10.1016/S0378-4371(99)00183-1, is a
    simulation study.  Both are rejected as a dry-glass-bead validation target.
 
 The audit fails closed if either live catalogue is unavailable or disagrees on
-identity.  A passing audit does **not** validate a repose angle, a constitutive
-law, any solver, or any material coefficient.  It only establishes that there
-is no admissible external target behind a restored DIRT claim.
+identity, or if any historical campaign file has been restored.  A passing audit
+does **not** validate a repose angle, a constitutive law, any solver, or any
+material coefficient.  It only establishes that there is no admissible external
+target behind the historical DIRT campaign path.  It cannot prove that a future,
+renamed implementation is scientifically valid; that would require the separate
+protocol and evidence prerequisites below.
 
 ## What would be required to reopen this work
 

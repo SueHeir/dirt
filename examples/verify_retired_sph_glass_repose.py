@@ -21,7 +21,6 @@ from pathlib import Path
 
 RETIRE_COMMIT = "f7fe1a44b3d744eef3b7e068c42b97c8c10ad2dc"
 RETIRED_CASE = "examples/SPH_glass_sphere_calibration/03_angle_of_repose"
-REQUIRED_ENTRY_POINTS = ("README.md", "main.rs", "sweep.py")
 
 # These are intentionally rejected candidates.  The check is bibliographic:
 # metadata cannot establish apparatus, bead distribution, wall friction, or
@@ -61,6 +60,37 @@ def fetch_json(url: str) -> dict:
         return json.load(response)
 
 
+def retired_tree_paths(repo: Path) -> set[str]:
+    """Return the complete historical campaign manifest, not just its runner.
+
+    Checking only a README, binary, and sweep leaves a misleadingly easy path
+    for a partial restoration: an old config, result table, or helper could be
+    brought back under the retired directory and later wired into a new claim.
+    The removal commit itself is the independent witness of what the campaign
+    comprised, so use that complete tree as the negative-scope manifest.
+    """
+    return set(
+        git(repo, "ls-tree", "-r", "--name-only", f"{RETIRE_COMMIT}^", "--", RETIRED_CASE).splitlines()
+    )
+
+
+def require_retired_surface_absent(
+    historical: set[str], deleted_by_retirement: set[str], present_at_head: set[str]
+) -> None:
+    """Fail if removal was partial or if any historical campaign file returns."""
+    require(historical, "retirement predecessor contains no SPH repose campaign files")
+    missing_from_removal = sorted(historical - deleted_by_retirement)
+    require(
+        not missing_from_removal,
+        "retirement commit leaves historical SPH repose files behind: " + ", ".join(missing_from_removal),
+    )
+    restored = sorted(historical & present_at_head)
+    require(
+        not restored,
+        "retired SPH repose files have been restored at HEAD: " + ", ".join(restored),
+    )
+
+
 def audit_retirement(repo: Path) -> None:
     require(git(repo, "rev-parse", "--is-inside-work-tree").strip() == "true", "--repo is not a Git worktree")
     require(
@@ -70,11 +100,12 @@ def audit_retirement(repo: Path) -> None:
     deleted = set(
         git(repo, "diff", "--name-only", "--diff-filter=D", f"{RETIRE_COMMIT}^", RETIRE_COMMIT, "--", RETIRED_CASE).splitlines()
     )
-    expected = {f"{RETIRED_CASE}/{name}" for name in REQUIRED_ENTRY_POINTS}
-    require(expected <= deleted, "retirement commit does not remove all historical entry points")
-    present = git(repo, "ls-tree", "-r", "--name-only", "HEAD", "--", RETIRED_CASE).splitlines()
-    require(not present, "retired SPH angle-of-repose case is present at HEAD")
-    print(f"HISTORY CONFIRMED: {RETIRE_COMMIT[:7]} removed the SPH repose entry points; HEAD has none.")
+    present = set(git(repo, "ls-tree", "-r", "--name-only", "HEAD", "--", RETIRED_CASE).splitlines())
+    historical = retired_tree_paths(repo)
+    require_retired_surface_absent(historical, deleted, present)
+    print(
+        f"HISTORY CONFIRMED: {RETIRE_COMMIT[:7]} removed all {len(historical)} SPH repose campaign files; HEAD has none."
+    )
 
 
 def audit_reference(reference: dict[str, object]) -> None:
