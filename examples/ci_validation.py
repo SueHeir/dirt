@@ -19,6 +19,13 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 
 Sweep = tuple[str, tuple[str, ...]]
 
+# This PR concerns a retired, non-DEM SPH claim.  It is intentionally not a
+# benchmark sweep: it verifies scope and independently checks citation identity.
+# Network loss is inconclusive and therefore fails closed.
+SCOPE_AUDITS: list[Sweep] = [
+    ("examples/verify_retired_sph_glass_repose.py", ("--online",)),
+]
+
 # Representative gated validation drivers for every PR. This is deliberately a
 # bounded smoke suite, not one token benchmark: it covers normal/tangential
 # contact, wall impact, friction/rolling/twisting, Haff cooling, thermal
@@ -182,6 +189,17 @@ def main() -> int:
     python = os.environ.get("BENCH_PYTHON", sys.executable)
     timeout_s = int(os.environ.get("DIRT_CI_BENCH_TIMEOUT", "1800"))
     failures: list[str] = []
+
+    print("DIRT scope audits:")
+    for audit in SCOPE_AUDITS:
+        audit_path, extra_args = audit
+        print(f"  RUN {format_sweep(audit)}")
+        result = subprocess.run([python, audit_path, *extra_args], cwd=REPO_ROOT, check=False)
+        if result.returncode:
+            print(f"  FAIL {format_sweep(audit)} exit={result.returncode}")
+            failures.append(f"{format_sweep(audit)} (exit {result.returncode})")
+        else:
+            print(f"  PASS {format_sweep(audit)}")
 
     print(f"DIRT CI validation sweeps ({args.suite}):")
     for sweep in sweeps:
