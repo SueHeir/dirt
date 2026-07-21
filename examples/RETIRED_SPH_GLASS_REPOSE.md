@@ -35,6 +35,20 @@ target behind the historical DIRT campaign path.  It cannot prove that a future,
 renamed implementation is scientifically valid; that would require the separate
 protocol and evidence prerequisites below.
 
+For a cross-substrate check, run the same audit with a named maintained SPH
+checkout:
+
+```bash
+python3 examples/verify_retired_sph_glass_repose.py --online \
+  --soil-sph ~/projects/dev_soil_sph
+```
+
+It reads the other repository's committed `HEAD` (not uncommitted local files)
+and fails if an obvious repose/calibration surface is present. It intentionally
+does not treat generic friction code as a replacement and a clean result is only
+a bounded source-tree observation, not evidence that no SPH solver or experiment
+exists elsewhere. A candidate is a review trigger, not a calibration pass.
+
 `audit_retired_sph_claim.py` is a separate adversarial check.  It reads the
 README stored in the Git tree immediately before retirement, rather than a
 present-day paraphrase. It extracts the first quoted reference title from that

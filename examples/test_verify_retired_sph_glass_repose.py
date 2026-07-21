@@ -36,6 +36,31 @@ class RetiredSurfaceTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "contains no"):
             audit.require_retired_surface_absent(set(), set(), set())
 
+    def test_replacement_candidate_in_manifest_is_reported(self) -> None:
+        self.assertEqual(
+            audit.replacement_candidates(
+                {"examples/angle_of_repose/main.rs", "src/constitutive.rs"},
+                {"src/constitutive.rs": "generic friction"},
+            ),
+            ["examples/angle_of_repose/main.rs"],
+        )
+
+    def test_generic_friction_is_not_mislabelled_as_replacement(self) -> None:
+        self.assertEqual(
+            audit.replacement_candidates(
+                {"src/constitutive.rs"}, {"src/constitutive.rs": "rolling friction coefficient"}
+            ),
+            [],
+        )
+
+    def test_documentation_mention_is_not_a_runnable_replacement(self) -> None:
+        self.assertEqual(
+            audit.replacement_candidates(
+                {"docs/angle_of_repose.md"}, {"docs/angle_of_repose.md": "angle of repose"}
+            ),
+            [],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -22,6 +22,13 @@ from pathlib import Path
 RETIRE_COMMIT = "f7fe1a44b3d744eef3b7e068c42b97c8c10ad2dc"
 RETIRED_CASE = "examples/SPH_glass_sphere_calibration/03_angle_of_repose"
 
+# A DIRT retirement audit must not silently turn a similarly named file in a
+# neighbouring solver into a "replacement".  These tokens intentionally look
+# only for a runnable repose/calibration surface, not for generic friction code:
+# granular SPH may quite properly have frictional constitutive parameters
+# without implementing this experiment.
+REPLACEMENT_TERMS = ("angle_of_repose", "angle-of-repose", "angle of repose", "repose_calibration")
+
 # These are intentionally rejected candidates.  The check is bibliographic:
 # metadata cannot establish apparatus, bead distribution, wall friction, or
 # uncertainty, so it cannot promote either work into a validation target.
@@ -108,6 +115,55 @@ def audit_retirement(repo: Path) -> None:
     )
 
 
+def replacement_candidates(paths: set[str], texts: dict[str, str]) -> list[str]:
+    """Return candidate runnable surfaces, conservatively, without deciding physics.
+
+    This is a negative-scope guard, not a search for a physical reference.  A
+    hit requires human scientific review; no hit says only that the checked
+    tree has no obvious replacement under the retired experiment's vocabulary.
+    """
+    runnable_suffixes = (".rs", ".py", ".toml")
+    candidates = {
+        path
+        for path in paths
+        if path.endswith(runnable_suffixes) and any(term in path.lower() for term in REPLACEMENT_TERMS)
+    }
+    for path, text in texts.items():
+        lowered = text.lower()
+        if path.endswith(runnable_suffixes) and any(term in lowered for term in REPLACEMENT_TERMS):
+            candidates.add(path)
+    return sorted(candidates)
+
+
+def audit_maintained_sph_boundary(soil_sph: Path) -> None:
+    """Check the named maintained SPH checkout for an obvious runnable replacement.
+
+    We deliberately inspect Git's committed HEAD, not a caller's working tree,
+    so an uncommitted local experiment cannot be mistaken for maintained work.
+    """
+    require(
+        git(soil_sph, "rev-parse", "--is-inside-work-tree").strip() == "true",
+        "--soil-sph is not a Git worktree",
+    )
+    revision = git(soil_sph, "rev-parse", "HEAD").strip()
+    paths = set(git(soil_sph, "ls-tree", "-r", "--name-only", revision).splitlines())
+    tracked_text = {
+        path: git(soil_sph, "show", f"{revision}:{path}")
+        for path in paths
+        if path.endswith((".toml", ".rs", ".py"))
+    }
+    candidates = replacement_candidates(paths, tracked_text)
+    require(
+        not candidates,
+        "maintained SPH checkout has a candidate repose/calibration surface; "
+        "a human must assess it before claiming retirement: " + ", ".join(candidates),
+    )
+    print(
+        f"MAINTAINED-SPH BOUNDARY: {soil_sph} at {revision[:12]} has no obvious committed "
+        "repose/calibration replacement; this is not a solver validation."
+    )
+
+
 def audit_reference(reference: dict[str, object]) -> None:
     doi = str(reference["doi"])
     encoded = urllib.parse.quote(doi, safe="")
@@ -127,11 +183,18 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--repo", type=Path, default=Path(__file__).resolve().parents[1])
     parser.add_argument("--online", action="store_true", help="require Crossref and OpenAlex; fail closed otherwise")
+    parser.add_argument(
+        "--soil-sph",
+        type=Path,
+        help="optional maintained dev_soil_sph checkout to audit at its committed HEAD",
+    )
     args = parser.parse_args()
     require(args.online, "--online is required: local citation text is not independent evidence")
     audit_retirement(args.repo.resolve())
     for reference in REJECTED_REFERENCES:
         audit_reference(reference)
+    if args.soil_sph is not None:
+        audit_maintained_sph_boundary(args.soil_sph.resolve())
     print("INCONCLUSIVE BY DESIGN: this audit validates no angle, mu_r, solver, or calibration.")
 
 
