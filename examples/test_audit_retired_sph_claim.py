@@ -22,6 +22,14 @@ class HistoricalClaimTests(unittest.TestCase):
         self.assertEqual(band, "[22, 26]")
         self.assertEqual(title, "rolling friction in the dynamic simulation of sandpile formation")
 
+    def test_complete_bibliography_is_derived_in_source_order(self) -> None:
+        band, titles = audit.archived_claim_and_references(
+            "measured glass repose band [22, 26]\n## References\n"
+            '1. A, "First source"\n2. B, "Second source"\n3. C, "Third source"'
+        )
+        self.assertEqual(band, "[22, 26]")
+        self.assertEqual(titles, ["first source", "second source", "third source"])
+
     def test_missing_historical_claim_is_rejected(self) -> None:
         with self.assertRaisesRegex(RuntimeError, "claim not found"):
             audit.archived_claim_and_title("## References\nComputer simulation of sandpile formation")
@@ -38,6 +46,12 @@ class HistoricalClaimTests(unittest.TestCase):
         )
         self.assertEqual(band, "[19.5, 27]")
 
+    def test_band_is_taken_from_the_claim_line_not_an_earlier_number(self) -> None:
+        band, _ = audit.archived_claim_and_references(
+            'an unrelated range [1, 2]\nmeasured glass repose band [19.5, 27]\n## References\n1. A, "A source"'
+        )
+        self.assertEqual(band, "[19.5, 27]")
+
     def test_missing_reference_section_is_rejected(self) -> None:
         with self.assertRaisesRegex(RuntimeError, "no reference section"):
             audit.archived_claim_and_title("measured glass repose band [22, 26]")
@@ -46,6 +60,18 @@ class HistoricalClaimTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "no quoted title"):
             audit.archived_claim_and_title(
                 "measured glass repose band [22, 26]\n## References\n1. An unquoted reference"
+            )
+
+    def test_inline_numeric_citation_requires_primary_source_review(self) -> None:
+        with self.assertRaisesRegex(RuntimeError, "inline citation"):
+            audit.archived_claim_and_references(
+                'measured glass repose band [22, 26] [1]\n## References\n1. A, "A source"'
+            )
+
+    def test_missing_bibliography_number_is_rejected(self) -> None:
+        with self.assertRaisesRegex(RuntimeError, "numbering"):
+            audit.archived_claim_and_references(
+                'measured glass repose band [22, 26]\n## References\n1. A, "First"\n3. B, "Third"'
             )
 
 

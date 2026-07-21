@@ -63,17 +63,22 @@ does not treat generic friction code as a replacement and a clean result is only
 a bounded source-tree observation, not evidence that no SPH solver or experiment
 exists elsewhere. A candidate is a review trigger, not a calibration pass.
 
-`audit_retired_sph_claim.py` is a separate adversarial check.  It reads the
-README stored in the Git tree immediately before retirement, rather than a
-present-day paraphrase. It extracts the first quoted reference title from that
-immutable source and has Crossref discover a unique exact-title DOI. It then
-uses that DOI to obtain direct Crossref and OpenAlex records, which must agree
-with the archived title. The source-derived title describes the work as a
-simulation, so it is not admitted as a primary dry-glass-bead measurement. This
-avoids embedding a favoured DOI, author list, or title as a local passing
-fixture. It demonstrates the narrower, important fact: the archived repository
-claim did not cite a primary dry-glass-bead measurement.
-It does not establish that no such measurement exists anywhere, nor does it
+`audit_retired_sph_claim.py` is a separate adversarial check. It reads the README
+stored in the Git tree immediately before retirement, rather than a present-day
+paraphrase. It derives the numerical band and every numbered, quoted bibliography
+title from that immutable source; Crossref discovers each exact-title DOI and
+Crossref and OpenAlex must agree with every archived title. It also establishes a
+strictly narrower source fact: the line that makes the numerical claim has no
+inline numeric, DOI, or URL citation. Thus the bibliography is identity-checked,
+but none of its records is silently promoted to the source of the number.
+
+This deliberately avoids embedding a favoured DOI, author list, title, or
+literature classification as a local passing fixture. Catalogue metadata and
+titles cannot establish dry-bead apparatus, population, wall friction,
+preparation, estimator, or uncertainty; they cannot reject or admit a primary
+measurement. The audit therefore demonstrates only that the archived repository
+did not connect its numerical claim to a directly inspectable source. It does
+not establish that no appropriate measurement exists anywhere, nor does it
 validate an SPH or DEM result.
 
 ## What would be required to reopen this work

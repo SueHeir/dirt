@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
-"""Adversarially identify the source cited for DIRT's retired SPH claim.
+"""Audit the citation trail of DIRT's retired SPH repose claim.
 
-This is an evidence-admission audit, not a calibration test. It derives the
-cited work's title from the immutable README immediately before retirement;
-then Crossref discovers a DOI from that title and Crossref and OpenAlex check
-the resulting record independently. No DOI, title, author list, angle, or
-material property is embedded as an expected passing value in this program.
+This is an evidence-admission audit, not a calibration test.  It derives the
+numerical claim and *every* bibliography title from the immutable README
+immediately before retirement.  Crossref discovers each DOI and Crossref and
+OpenAlex check each resulting record independently.  It also establishes the
+narrow source fact that the numerical claim has no inline citation.  A title or
+catalogue record cannot establish apparatus, material, or protocol, so this
+program deliberately does not classify a paper as a validation target.
 """
 
 from __future__ import annotations
@@ -47,20 +49,34 @@ def historical_readme(repo: Path) -> str:
     return git(repo, "show", f"{RETIRE_COMMIT}^:{HISTORICAL_README}")
 
 
-def archived_claim_and_title(readme: str) -> tuple[str, str]:
-    """Extract the retired claim and first supplied reference from source."""
+def archived_claim_and_references(readme: str) -> tuple[str, list[str]]:
+    """Extract the retired band and the complete numbered bibliography."""
     lower = normalize(readme)
     require("measured glass repose band" in lower, "historical repose claim not found")
-    band_match = re.search(r"\[\s*(\d+(?:\.\d+)?)\s*,\s*(\d+(?:\.\d+)?)\s*\]", readme)
+    claim_line = next(line for line in readme.splitlines() if "measured glass repose band" in line.lower())
+    band_match = re.search(r"\[\s*(\d+(?:\.\d+)?)\s*,\s*(\d+(?:\.\d+)?)\s*\]", claim_line)
     require(band_match is not None, "historical repose claim has no numeric band")
     band = f"[{band_match.group(1)}, {band_match.group(2)}]"
+    without_band = claim_line[: band_match.start()] + claim_line[band_match.end() :]
+    require(
+        not re.search(r"\[\s*\d+\s*\]|doi:|https?://", without_band, re.IGNORECASE),
+        "historical numerical claim has an inline citation; review its primary source directly",
+    )
     references = readme.split("## References", 1)
     require(len(references) == 2, "historical README has no reference section")
-    match = re.search(r'^1\.\s+[\s\S]*?"([^"]+)"', references[1], flags=re.MULTILINE)
-    require(match is not None, "historical first reference has no quoted title")
-    title = normalize(match.group(1))
-    require(title, "historical first reference has an empty title")
-    return band, title
+    entries = re.findall(r'^\s*(\d+)\.\s+[\s\S]*?"([^"]+)"', references[1], flags=re.MULTILINE)
+    require(entries, "historical bibliography has no quoted titles")
+    numbers = [int(number) for number, _ in entries]
+    require(numbers == list(range(1, len(numbers) + 1)), "historical bibliography numbering is incomplete")
+    titles = [normalize(title) for _, title in entries]
+    require(all(titles) and len(set(titles)) == len(titles), "historical bibliography has empty or duplicate titles")
+    return band, titles
+
+
+def archived_claim_and_title(readme: str) -> tuple[str, str]:
+    """Compatibility helper for the first bibliography entry."""
+    band, titles = archived_claim_and_references(readme)
+    return band, titles[0]
 
 
 def crossref_discover(title: str) -> dict:
@@ -74,7 +90,7 @@ def crossref_discover(title: str) -> dict:
     return matches[0]
 
 
-def audit_catalogues(title: str) -> None:
+def audit_catalogue(title: str) -> str:
     """Use Crossref discovery plus two direct catalogue records as witnesses."""
     discovered = crossref_discover(title)
     doi = discovered["DOI"]
@@ -85,8 +101,7 @@ def audit_catalogues(title: str) -> None:
     openalex_title = normalize(openalex_work["title"])
     require(crossref_title == openalex_title, "catalogues disagree on cited-paper title")
     require(crossref_title == title, "catalogue title does not match archived citation")
-    require("simulation" in crossref_title, "archived citation is not self-described as a simulation")
-    print(f"SOURCE-DERIVED CATALOGUE CONSENSUS: {crossref_title} ({doi}).")
+    return f"SOURCE-DERIVED CATALOGUE CONSENSUS: {crossref_title} ({doi})."
 
 
 def main() -> None:
@@ -96,9 +111,14 @@ def main() -> None:
     repo = args.repo.resolve()
     require(git(repo, "rev-parse", "--is-inside-work-tree").strip() == "true", "--repo is not a Git worktree")
     readme = historical_readme(repo)
-    band, title = archived_claim_and_title(readme)
-    audit_catalogues(title)
-    print(f"INADMISSIBLE BY DESIGN: archived band {band} is paired with a self-described simulation, not a primary dry-glass-bead measurement; no angle, mu_r, solver, or calibration is validated.")
+    band, titles = archived_claim_and_references(readme)
+    for title in titles:
+        print(audit_catalogue(title))
+    print(
+        f"SOURCE FACT: archived band {band} has no inline citation; {len(titles)} bibliography records "
+        "were identity-checked but none is thereby admitted as a measurement."
+    )
+    print("INCONCLUSIVE BY DESIGN: no angle, mu_r, solver, or calibration is validated.")
 
 
 if __name__ == "__main__":
