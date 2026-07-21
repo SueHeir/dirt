@@ -14,6 +14,13 @@ plainly where the test is weak — an idealization, an empirical fit, a check th
 really self-consistent (confirming a model returns its own input), or a regime that
 isn't reached.
 
+> **Retired SPH glass-repose request (not a validation result).** The former SPH
+> angle-of-repose campaign was removed from DIRT, so it has no current executable,
+> result ledger, or figure in this DEM validation index. The auditable repository
+> scope boundary and the conditions for any separate future study are recorded in
+> [`RETIRED_SPH_GLASS_REPOSE.md`](RETIRED_SPH_GLASS_REPOSE.md). This link does not
+> establish an angle, rolling-friction value, or calibration pass.
+
 **Evidence tiers** (decreasing strength): *Analytical* — a closed-form reference;
 *Cross-code* — agreement with LAMMPS, which tests implementation consistency under a
 **shared** contact model, not correctness against physical reality; *Empirical /
