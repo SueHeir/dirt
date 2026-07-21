@@ -15,14 +15,14 @@ import argparse
 import json
 import subprocess
 import sys
-import urllib.parse
 import urllib.request
 from pathlib import Path
 
 
 RETIRE_COMMIT = "f7fe1a44b3d744eef3b7e068c42b97c8c10ad2dc"
 HISTORICAL_README = "examples/SPH_glass_sphere_calibration/03_angle_of_repose/README.md"
-TITLE_TERMS = ("rolling", "friction", "dynamic", "simulation", "sandpile")
+HISTORICAL_TITLE = "Rolling friction in the dynamic simulation of sandpile formation"
+HISTORICAL_DOI = "10.1016/S0378-4371(99)00183-1"
 ARCHIVED_FAMILY_NAMES = {"zhou", "xu", "yu", "zulli"}
 
 
@@ -55,7 +55,7 @@ def require_unsupported_claim(readme: str) -> None:
     require("measured glass repose band" in lower and "22, 26" in lower, "historical repose claim not found")
     references = lower.split("## references", 1)
     require(len(references) == 2, "historical README has no reference section")
-    require("simulation of sandpile formation" in references[1], "historical cited paper not found")
+    require(normalize(HISTORICAL_TITLE) in references[1], "historical cited paper not found")
     require("experiment" not in references[1], "historical reference section unexpectedly claims an experiment")
 
 
@@ -64,24 +64,21 @@ def archived_attribution_matches(catalogue_authors: set[str]) -> bool:
     return ARCHIVED_FAMILY_NAMES <= catalogue_authors
 
 
-def select_crossref(work_items: list[dict]) -> dict:
-    for work in work_items:
-        title = normalize(" ".join(work.get("title", [])))
-        if all(term in title for term in TITLE_TERMS):
-            return work
-    raise RuntimeError("Crossref did not return the historical cited paper")
-
-
 def audit_catalogues() -> None:
-    query = urllib.parse.quote("Rolling friction in the dynamic simulation of sandpile formation Zhou Xu Yu Zulli", safe="")
-    crossref = fetch_json(f"https://api.crossref.org/works?query.bibliographic={query}&rows=20")["message"]["items"]
-    crossref_work = select_crossref(crossref)
-    doi = str(crossref_work["DOI"])
-    openalex_work = fetch_json(f"https://api.openalex.org/works/https://doi.org/{urllib.parse.quote(doi, safe='')}")
+    """Cross-check one immutable historical bibliographic identity.
+
+    A search result is not a stable identity witness: ranking and unrelated near
+    matches can change.  The historical title is first required in the archived
+    README; the known DOI is then fetched directly from two independent
+    catalogues, both of which must report that same title.
+    """
+    doi = HISTORICAL_DOI
+    crossref_work = fetch_json(f"https://api.crossref.org/works/{doi}")["message"]
+    openalex_work = fetch_json(f"https://api.openalex.org/works/https://doi.org/{doi}")
     crossref_title = normalize(" ".join(crossref_work["title"]))
     openalex_title = normalize(openalex_work["title"])
     require(crossref_title == openalex_title, "catalogues disagree on cited-paper title")
-    require(all(term in crossref_title for term in TITLE_TERMS), "catalogue title no longer identifies a simulation study")
+    require(crossref_title == normalize(HISTORICAL_TITLE), "catalogue title does not match the archived citation")
     crossref_authors = {normalize(author["family"]) for author in crossref_work["author"]}
     openalex_authors = {normalize(item["author"]["display_name"]).split()[-1] for item in openalex_work["authorships"]}
     require(crossref_authors == openalex_authors, "catalogues disagree on cited-paper authors")
