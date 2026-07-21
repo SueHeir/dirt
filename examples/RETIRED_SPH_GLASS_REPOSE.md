@@ -35,6 +35,19 @@ target behind the historical DIRT campaign path.  It cannot prove that a future,
 renamed implementation is scientifically valid; that would require the separate
 protocol and evidence prerequisites below.
 
+`audit_retired_sph_claim.py` is a separate adversarial check.  It reads the
+README stored in the Git tree immediately before retirement, rather than a
+present-day paraphrase.  That README described a 22--26 degree interval as
+empirical, while its listed simulation paper was *Rolling friction in the
+dynamic simulation of sandpile formation*.  Crossref and OpenAlex must independently
+identify that paper and agree on its title and authors.  The audit also reports
+that the archived author list does not agree with either catalogue.  This
+demonstrates a narrower, important fact: the archived repository claim did not
+cite a primary dry-glass-bead measurement and its simulation citation was not
+reliably transcribed.
+It does not establish that no such measurement exists anywhere, nor does it
+validate an SPH or DEM result.
+
 ## What would be required to reopen this work
 
 A user-owned decision would be needed to select and maintain an SPH solver and
