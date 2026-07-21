@@ -17,6 +17,21 @@ particle--wall friction, deposition protocol, angle estimator, or uncertainty.
 We therefore do not promote the archived number, a generic repose paper, or a
 cross-code comparison to a target after the fact.
 
+### External-reference check
+
+This boundary was also checked against the archived README's first DOI,
+[`10.1016/S0378-4371(99)00183-1`](https://doi.org/10.1016/S0378-4371(99)00183-1),
+using the independent [Crossref record](https://api.crossref.org/works/10.1016/S0378-4371(99)00183-1)
+on 2026-07-21.  Crossref identifies the title as *Rolling friction in the dynamic
+simulation of sandpile formation* and lists Zhou, Wright, Yang, Xu, and Yu.  This
+does not match the archived README's author list (which names Xu and Zulli in
+different positions), and the Crossref record supplies no abstract or experimental
+protocol.  That discrepancy is a bibliographic warning, not a finding about the
+paper or its scientific merit.  In particular, neither record establishes that
+the paper measured dry glass beads, nor does either one justify the 22--26 degree
+band.  The DOI is retained here only so a reviewer can independently reproduce
+this limited provenance check; it is not admitted as a calibration reference.
+
 ## Independent reproduction of this boundary
 
 The following commands inspect committed Git objects, rather than this note or a
