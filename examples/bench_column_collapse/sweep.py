@@ -1369,7 +1369,12 @@ def run_lammps_sweep(lammps):
     rows = []
     failures = []
     for i, a in enumerate(ASPECTS, 1):
-        lfs, hs = [], []
+        # Preserve the actual release geometry per realization.  The external
+        # reference is normalized by the released footprint, not by the gate
+        # coordinate.  ``derive_lammps_ensemble`` independently reconstructs
+        # the overlay this way, so the writer must use the same physical
+        # quantity rather than publish a nominal-L0 surrogate.
+        lfs, hs, widths, rights, aspects = [], [], [], [], []
         for seed in SEEDS:
             cdir = case_dir_seed(a, seed)
             os.makedirs(cdir, exist_ok=True)
@@ -1402,7 +1407,8 @@ def run_lammps_sweep(lammps):
                 # DIRT receipt: establish from LAMMPS's own release dump that
                 # its frozen granular support was neither lost nor moved.
                 checked_lammps_release_support(release_csv)
-                release_geometry(release_csv)
+                h, width, _, right = release_geometry(release_csv)
+                actual_aspect = checked_release_dimensions(h, width, a)
                 preparation_speeds = lammps_preparation_window(preparation)
                 vmax = lammps_max_speed(deposit_dump)
                 arrest_speeds = lammps_arrest_window(arrest)
@@ -1421,12 +1427,19 @@ def run_lammps_sweep(lammps):
             # Record the external executable and the fully rendered input only
             # after every raw witness has passed its physical admission checks.
             write_lammps_case_receipt(a, seed, lammps)
-            hs.append(release_height(release_csv)); _, lf = measure_column(deposit_csv); lfs.append(lf)
+            _, lf = measure_column(deposit_csv)
+            hs.append(h)
+            widths.append(width)
+            rights.append(right)
+            aspects.append(actual_aspect)
+            lfs.append(lf)
         if len(lfs) != len(SEEDS):
             continue
-        rn = [(v - L0) / L0 for v in lfs]
-        rows.append({"nominal_aspect": a, "aspect": sum(hs) / len(hs) / L0,
-                     "L0": L0, "H": sum(hs) / len(hs), "L_f": sum(lfs) / len(lfs),
+        rn = [(value - initial_right) / width
+              for value, initial_right, width in zip(lfs, rights, widths)]
+        rows.append({"nominal_aspect": a, "aspect": sum(aspects) / len(aspects),
+                     "L0": sum(widths) / len(widths), "H": sum(hs) / len(hs),
+                     "L_f": sum(lfs) / len(lfs), "release_front": sum(rights) / len(rights),
                      "runout_norm": sum(rn) / len(rn),
                      "runout_std": (sum((v - sum(rn) / len(rn)) ** 2 for v in rn) / len(rn)) ** 0.5,
                      "n_seeds": len(lfs), "protocol_sha256": protocol_fingerprint()})
