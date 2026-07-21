@@ -35,6 +35,18 @@ target behind the historical DIRT campaign path.  It cannot prove that a future,
 renamed implementation is scientifically valid; that would require the separate
 protocol and evidence prerequisites below.
 
+## Deliberate separation from green validation CI
+
+These evidence-boundary commands are intentionally **not** run by
+`examples/ci_validation.py`.  A green CI validation summary must mean that its
+listed DEM validation sweeps passed; appending a successful retirement audit to
+that summary would create a misleading, self-referential route to an apparent
+calibration pass.  The commands remain runnable as explicit, networked,
+fail-closed provenance checks, and their output must be reported as
+``INCONCLUSIVE BY DESIGN``.  Neither a passing audit nor its absence from CI
+changes the frozen monotonicity, replicate-spread, 22--26 degree, raw-ledger,
+closure, or criterion-visible-graph requirements.
+
 For a cross-substrate check, run the same audit with a named maintained SPH
 checkout:
 
