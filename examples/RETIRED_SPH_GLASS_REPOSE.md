@@ -50,11 +50,36 @@ validate an SPH or DEM result.
 
 ## What would be required to reopen this work
 
-A user-owned decision would be needed to select and maintain an SPH solver and
-to define the product scope.  Only then could a new, separate study preregister a
-single apparatus-matched protocol and independently measured inputs, run
-replicates, and compare uncertainty against a primary experimental source.  No
-parameter may be selected after observing the target angle.
+This is the exact user-owned product/scope decision required before any new work
+can claim to satisfy `dirt-sph-glass-mur-repose-calibration`:
+
+1. Choose whether the calibration is retired, or is moved to a named, maintained
+   SPH solver/repository. It must not be recreated as an SPH feature inside the
+   DEM-only DIRT repository merely to preserve this goal identifier.
+2. If moved, name the owning repository, executable, and material/contact model;
+   select one primary dry-glass-bead experiment whose apparatus, bead population,
+   particle--particle and particle--wall friction, preparation/deposition method,
+   angle estimator, and reported uncertainty can be matched and inspected.
+3. Preregister the resulting campaign before execution: independent replicate
+   count and seed ledger, the complete rolling-friction sweep, and the unchanged
+   frozen decision gates: monotonic $\theta_r(\mu_r)$, the existing per-$\mu_r$
+   spread bound, and at least one result in the 22--26 degree band. The selected
+   $\mu_r$, raw ledger, and a criterion-visible measured-versus-reference plot
+   must be retained in the new study's closure documentation.
+
+Only after that decision could a separate study run replicates and compare their
+uncertainty against the selected primary source. No parameter may be selected
+after observing the target angle. This retirement record makes no choice among
+those alternatives and does not authorize a tolerance, protocol, case-set, or
+target change.
+
+## Validation-ledger status
+
+This note is linked from `examples/VALIDATION.md` solely to make the boundary
+discoverable. It is not a validation-ledger entry and carries no result figure:
+there is no current SPH executable or solver-produced measurement to plot. A
+future result figure is admissible only after the scope decision and evidence
+requirements above are met.
 
 ## Authorship and review
 
