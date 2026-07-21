@@ -7,6 +7,7 @@ is only considered admissible after its raw files and receipt pass the driver's
 normal checks.
 """
 
+import contextlib
 import os
 import sys
 import tempfile
@@ -74,6 +75,22 @@ class StartRerunTest(unittest.TestCase):
             sweep._clear_case_evidence(*case)
 
             self.assertEqual(os.listdir(data), [])
+
+    def test_worker_rejects_a_terminated_but_unqualified_witness(self):
+        """Scheduler success must mean physical admission, not only exit zero."""
+        case = (sweep.ASPECTS[0], sweep.SEEDS[0])
+        with tempfile.TemporaryDirectory() as directory, \
+             mock.patch.object(sweep, "SWEEP_DIR", directory), \
+             mock.patch.object(sweep, "exclusive_case_lock", lambda *args: contextlib.nullcontext()), \
+             mock.patch.object(sweep.subprocess, "run"), \
+             mock.patch.object(sweep, "write_case_receipt"), \
+             mock.patch.object(sweep, "_case_evidence_error", return_value="terminal Fr=0.2 > 0.01"):
+            cdir = sweep.case_dir_seed(*case)
+            os.makedirs(cdir)
+            with open(os.path.join(cdir, "config.toml"), "w"):
+                pass
+            with self.assertRaisesRegex(RuntimeError, "not admitted: terminal Fr"):
+                sweep._run_dirt_case(*case, binary="dirt", env={})
 
 
 if __name__ == "__main__":

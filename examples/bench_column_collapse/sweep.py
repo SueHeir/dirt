@@ -1913,7 +1913,14 @@ def _clear_case_evidence(a, seed):
 
 
 def _run_dirt_case(a, seed, binary, env):
-    """Run one independent witness after invalidating only that case's evidence."""
+    """Run and admit one independent witness after clearing stale evidence.
+
+    A batch worker's exit status is part of the evidence protocol: successful
+    process termination only says that the executable reached its end, not that
+    it released the required source geometry or arrested.  Check the exact same
+    admission predicate used by campaign aggregation before reporting this
+    case to a scheduler as complete.
+    """
     with exclusive_case_lock(a, seed, "written"):
         cdir = case_dir_seed(a, seed)
         config = os.path.join(cdir, "config.toml")
@@ -1926,6 +1933,11 @@ def _run_dirt_case(a, seed, binary, env):
         # Write only after every raw witness exists.  A later graph/reuse operation
         # re-hashes this receipt instead of trusting filenames or the aggregate CSV.
         write_case_receipt(a, seed, binary)
+        reason = _case_evidence_error(a, seed)
+        if reason is not None:
+            raise RuntimeError(
+                f"DIRT witness a={a:g} seed={seed} finished but is not admitted: {reason}"
+            )
     return a, seed
 
 
