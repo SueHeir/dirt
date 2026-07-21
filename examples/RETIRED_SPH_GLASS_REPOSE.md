@@ -19,9 +19,11 @@ falsifiable checks:
 
 1. Git history derives the complete file manifest of the historical campaign
    from the predecessor of the removal commit, confirms that the removal commit
-   deleted every one of those files, and confirms none has returned at the
-   checked-out HEAD.  This catches a restored config, pin, plot, or helper as
-   well as a restored README, runner, or model entry point.
+   deleted every one of those files, and confirms neither a historical path nor
+   a byte-identical historical Git blob has returned at the checked-out HEAD.
+   This catches a restored or relocated config, pin, plot, or helper as well as
+   a README, runner, or model entry point. It does not judge a newly authored
+   implementation under another name.
 2. Crossref and OpenAlex independently identify two superficially relevant
    citations.  Elekes & Parteli, doi:10.1073/pnas.2107965118, is a cohesive
    granular-material theory; Zhou et al., doi:10.1016/S0378-4371(99)00183-1, is a

@@ -81,6 +81,20 @@ def retired_tree_paths(repo: Path) -> set[str]:
     )
 
 
+def tree_blobs(repo: Path, revision: str, pathspec: str | None = None) -> dict[str, str]:
+    """Return regular-file paths and Git blob IDs from an immutable tree."""
+    args = ["ls-tree", "-r", revision]
+    if pathspec is not None:
+        args.extend(("--", pathspec))
+    blobs: dict[str, str] = {}
+    for line in git(repo, *args).splitlines():
+        metadata, path = line.split("\t", 1)
+        mode, kind, blob = metadata.split()
+        if mode in {"100644", "100755"} and kind == "blob":
+            blobs[path] = blob
+    return blobs
+
+
 def require_retired_surface_absent(
     historical: set[str], deleted_by_retirement: set[str], present_at_head: set[str]
 ) -> None:
@@ -98,6 +112,23 @@ def require_retired_surface_absent(
     )
 
 
+def require_no_relocated_historical_blobs(historical: dict[str, str], present_at_head: dict[str, str]) -> None:
+    """Reject a byte-for-byte relocation of the retired campaign.
+
+    A path-only check cannot distinguish deletion from moving an old runner or
+    generated input to a new directory.  This check is deliberately narrower
+    than a semantic source-code search: it rejects only a retained historical
+    Git blob, and does not assert that no independently implemented experiment
+    exists elsewhere.
+    """
+    historical_blob_ids = set(historical.values())
+    relocated = sorted(path for path, blob in present_at_head.items() if blob in historical_blob_ids)
+    require(
+        not relocated,
+        "historical SPH repose campaign blobs were relocated at HEAD: " + ", ".join(relocated),
+    )
+
+
 def audit_retirement(repo: Path) -> None:
     require(git(repo, "rev-parse", "--is-inside-work-tree").strip() == "true", "--repo is not a Git worktree")
     require(
@@ -110,8 +141,12 @@ def audit_retirement(repo: Path) -> None:
     present = set(git(repo, "ls-tree", "-r", "--name-only", "HEAD", "--", RETIRED_CASE).splitlines())
     historical = retired_tree_paths(repo)
     require_retired_surface_absent(historical, deleted, present)
+    historical_blobs = tree_blobs(repo, f"{RETIRE_COMMIT}^", RETIRED_CASE)
+    require(set(historical_blobs) == historical, "historical SPH repose manifest/blob listing disagrees")
+    require_no_relocated_historical_blobs(historical_blobs, tree_blobs(repo, "HEAD"))
     print(
-        f"HISTORY CONFIRMED: {RETIRE_COMMIT[:7]} removed all {len(historical)} SPH repose campaign files; HEAD has none."
+        f"HISTORY CONFIRMED: {RETIRE_COMMIT[:7]} removed all {len(historical)} SPH repose campaign files; "
+        "HEAD has neither those paths nor byte-identical relocated blobs."
     )
 
 
