@@ -726,12 +726,12 @@ boundary_z = "fixed"
 [neighbor]
 skin_fraction = 1.1
 bin_size = 0.005
-# Full rebuilds at every 1 us step made the 11x3 physical campaign impractical.
-# Keep the 10% skin and use SOIL's hybrid policy instead: it checks displacement
-# every step and rebuilds no later than 100 steps, so a contact cannot be missed
-# merely to reduce rebuild overhead.
-every = 100
-check = true
+# Use SOIL's displacement-driven Verlet policy.  `every = 0` retains the same
+# 10% skin and rebuilds as soon as it is consumed, but does not force a complete
+# neighbor rebuild every 100 steps while the settled bed is stationary.  This is
+# a scheduler-cost change only: cutoff, force law, timesteps, and all physical
+# admission/validation gates are unchanged.
+every = 0
 
 [gravity]
 gx = 0.0
