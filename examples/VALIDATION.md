@@ -16,9 +16,8 @@ isn't reached.
 
 > **Retired SPH glass-repose request (not a validation result).** The former SPH
 > angle-of-repose campaign was removed from DIRT, so it has no current executable,
-> result ledger, or figure in this DEM validation index. The independently
-> checkable retirement/evidence boundary and the precise user-owned re-scope
-> decision are recorded in
+> result ledger, or figure in this DEM validation index. The auditable repository
+> scope boundary and the conditions for any separate future study are recorded in
 > [`RETIRED_SPH_GLASS_REPOSE.md`](RETIRED_SPH_GLASS_REPOSE.md). This link does not
 > establish an angle, rolling-friction value, or calibration pass.
 
