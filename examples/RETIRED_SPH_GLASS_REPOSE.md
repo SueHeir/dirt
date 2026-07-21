@@ -19,18 +19,20 @@ cross-code comparison to a target after the fact.
 
 ### External-reference check
 
-This boundary was also checked against the archived README's first DOI,
-[`10.1016/S0378-4371(99)00183-1`](https://doi.org/10.1016/S0378-4371(99)00183-1),
-using the independent [Crossref record](https://api.crossref.org/works/10.1016/S0378-4371(99)00183-1)
-on 2026-07-21.  Crossref identifies the title as *Rolling friction in the dynamic
-simulation of sandpile formation* and lists Zhou, Wright, Yang, Xu, and Yu.  This
-does not match the archived README's author list (which names Xu and Zulli in
-different positions), and the Crossref record supplies no abstract or experimental
-protocol.  That discrepancy is a bibliographic warning, not a finding about the
-paper or its scientific merit.  In particular, neither record establishes that
-the paper measured dry glass beads, nor does either one justify the 22--26 degree
-band.  The DOI is retained here only so a reviewer can independently reproduce
-this limited provenance check; it is not admitted as a calibration reference.
+Run the forensic report with live independent catalogue lookups:
+
+```bash
+python3 examples/retired_sph_glass_repose_evidence.py --online
+```
+
+It reads the README from the Git object immediately before removal, verifies the
+old case path is still absent, and asks both Crossref and OpenAlex to identify the
+archived DOI [`10.1016/S0378-4371(99)00183-1`](https://doi.org/10.1016/S0378-4371(99)00183-1).
+The live check is deliberately limited to bibliographic identity; it reports the
+author discrepancy rather than treating it as a scientific finding.  A network
+or title-identity failure is *inconclusive*, not evidence for a replacement
+target.  A successful report is likewise not a validation pass and is not run by
+the green DEM validation suite.
 
 ## Independent reproduction of this boundary
 
