@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Print reproducible provenance facts for DIRT's retired SPH repose request.
+"""Audit the evidence boundary of DIRT's retired SPH repose request.
 
-This is deliberately a forensic report, not a scientific validator.  It never
-scores an angle, chooses a rolling-friction value, or returns a calibration
-"pass".  With ``--online`` it compares bibliographic identity from two external
-catalogues to the title stored in the pre-removal Git object.  That comparison
-does not establish experimental suitability.
+This is deliberately a forensic report, not a scientific validator. It never
+scores an angle, chooses rolling friction, or returns a calibration "pass".
+With ``--online`` it compares the *archived citation itself* with Crossref and
+OpenAlex. Catalogue identity can expose bad provenance; it cannot establish an
+experimental target or validate a solver.
 """
 
 from __future__ import annotations
@@ -52,6 +52,22 @@ def source_claim(readme: str) -> str:
     raise ValueError("archived README has no [22, 26] claim")
 
 
+def archived_authors(readme: str) -> list[str]:
+    """Extract the first bibliography entry's surnames from the frozen README."""
+    match = re.search(
+        r'^1\.\s+([^\n]+?),\s+"Rolling friction in the dynamic\s+simulation of sandpile formation"',
+        readme,
+        flags=re.MULTILINE,
+    )
+    if not match:
+        raise ValueError("archived README has no parseable first bibliography entry")
+    names = [part.strip() for part in match.group(1).split(",")]
+    surnames = [name.rsplit(" ", 1)[-1] for name in names]
+    if not surnames or any(not surname for surname in surnames):
+        raise ValueError("archived bibliography has no author surnames")
+    return surnames
+
+
 def report_local(readme: str) -> bool:
     source_revision = git("rev-parse", f"{REMOVAL_COMMIT}^").strip()
     removed = git("diff", "--name-only", f"{REMOVAL_COMMIT}^", REMOVAL_COMMIT, "--", ARCHIVED_CASE)
@@ -60,6 +76,7 @@ def report_local(readme: str) -> bool:
     print(f"archived source: {source_revision}:{ARCHIVED_README}")
     print(f"archived source SHA-256: {hashlib.sha256(readme.encode()).hexdigest()}")
     print(f"archived numerical-claim line: {source_claim(readme)}")
+    print(f"archived citation surnames: {', '.join(archived_authors(readme))}")
     print(f"files deleted by {REMOVAL_COMMIT}: {len(removed.splitlines())}")
     print(f"files now present at retired path: {len(live.splitlines())}")
     if not removed.splitlines() or live.splitlines():
@@ -70,22 +87,43 @@ def report_local(readme: str) -> bool:
     return True
 
 
-def report_online() -> bool:
+def catalogue_authors(openalex: dict) -> list[str]:
+    names = []
+    for authorship in openalex.get("authorships", []):
+        name = authorship.get("author", {}).get("display_name", "").strip()
+        if name:
+            names.append(name.rsplit(" ", 1)[-1])
+    return names
+
+
+def report_online(readme: str) -> bool:
     encoded = urllib.parse.quote(DOI, safe="")
     crossref = fetch_json(f"https://api.crossref.org/works/{encoded}")["message"]
     openalex = fetch_json(f"https://api.openalex.org/works/https://doi.org/{encoded}")
     titles = {"Crossref": crossref.get("title", [""])[0], "OpenAlex": openalex.get("title", "")}
+    archived = archived_authors(readme)
     print(f"external DOI queried: {DOI}")
-    ok = True
+    titles_match = True
     for catalogue, title in titles.items():
         matches = normalise(title) == normalise(ARCHIVED_TITLE)
         print(f"{catalogue} title: {title!r} ({'matches archived title' if matches else 'TITLE MISMATCH'})")
-        ok &= matches
-    authors = ", ".join(a.get("family", "?") for a in crossref.get("author", []))
-    print(f"Crossref author surnames: {authors}")
-    print("CATALOGUE IDENTITY CHECK: " + ("consistent" if ok else "inconclusive/inconsistent"))
-    print("LIMIT: catalogue metadata is not evidence of bead material, apparatus, contact laws, preparation, estimator, uncertainty, or an admissible target.")
-    return ok
+        titles_match &= matches
+    external_authors = {
+        "Crossref": [author.get("family", "?") for author in crossref.get("author", [])],
+        "OpenAlex": catalogue_authors(openalex),
+    }
+    author_agreement = {name: authors == archived for name, authors in external_authors.items()}
+    for catalogue, authors in external_authors.items():
+        verdict = "matches archived citation" if author_agreement[catalogue] else "DIFFERS FROM ARCHIVED CITATION"
+        print(f"{catalogue} author surnames: {', '.join(authors)} ({verdict})")
+    if titles_match and not any(author_agreement.values()):
+        print("PROVENANCE OUTCOME: title identity is confirmed, but both catalogues contradict the archived author list.")
+    elif titles_match:
+        print("PROVENANCE OUTCOME: title identity confirmed; author discrepancy not reproduced by both catalogues.")
+    else:
+        print("PROVENANCE OUTCOME: inconclusive/inconsistent catalogue identity.")
+    print("LIMIT: this is bibliographic counterevidence only. It does not identify bead material, apparatus, contact laws, preparation, estimator, uncertainty, or an admissible angle target.")
+    return titles_match
 
 
 def main() -> int:
@@ -95,7 +133,7 @@ def main() -> int:
     try:
         readme = git("show", f"{REMOVAL_COMMIT}^:{ARCHIVED_README}")
         local_ok = report_local(readme)
-        online_ok = report_online() if args.online else True
+        online_ok = report_online(readme) if args.online else True
     except (OSError, ValueError, subprocess.CalledProcessError, json.JSONDecodeError) as exc:
         print(f"EVIDENCE REPORT INCONCLUSIVE: {exc}", file=sys.stderr)
         return 2

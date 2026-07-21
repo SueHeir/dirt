@@ -28,11 +28,15 @@ python3 examples/retired_sph_glass_repose_evidence.py --online
 It reads the README from the Git object immediately before removal, verifies the
 old case path is still absent, and asks both Crossref and OpenAlex to identify the
 archived DOI [`10.1016/S0378-4371(99)00183-1`](https://doi.org/10.1016/S0378-4371(99)00183-1).
-The live check is deliberately limited to bibliographic identity; it reports the
-author discrepancy rather than treating it as a scientific finding.  A network
-or title-identity failure is *inconclusive*, not evidence for a replacement
-target.  A successful report is likewise not a validation pass and is not run by
-the green DEM validation suite.
+Unlike a self-reported title check, it extracts the author surnames from the
+archived bibliography and compares them with each independent catalogue.  This
+reproduces a limited but material provenance warning: the catalogues identify the
+title while disagreeing with the archived author list.  That discrepancy does
+not establish any scientific fact about the paper; it is why the archived 22--26
+degree band is not admitted as a calibration target. A network or title-identity
+failure is *inconclusive*, not evidence for a replacement target. A successful
+report is likewise not a validation pass and is not run by the green DEM
+validation suite.
 
 ## Independent reproduction of this boundary
 
