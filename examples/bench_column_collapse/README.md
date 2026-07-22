@@ -189,9 +189,23 @@ raw witnesses, not as a fabricated quick aggregate. After `generate`, run
 `python3 examples/bench_column_collapse/sweep.py emit-jobs`. It writes the ignored
 `sweep/column_collapse_jobs.tsv`: one scheduler-neutral command per aspect/seed,
 with its expected population, source digest, and the physical-protocol digest.
-Dispatch each row on an appropriate batch worker, then run `graph` only after all
-33 receipts exist. The manifest itself is preparation provenance, not validation
-evidence; it cannot create `runout.csv`, figures, an exponent result, or a PASS.
+On Slurm, submit the checked-in one-case launcher:
+
+```bash
+sbatch --array=1-33 --cpus-per-task=1 --time=08:00:00 \
+  examples/bench_column_collapse/run_slurm_array.sh
+```
+
+It selects a manifest row by its immutable index and executes only that row's
+`start --case`; duplicate, absent, reordered, or malformed selections fail. It
+never aggregates a partial array. Dispatch each row on an appropriate batch
+worker, then run `graph` only after all 33 receipts exist. The manifest itself is
+preparation provenance, not validation evidence; it cannot create `runout.csv`,
+figures, an exponent result, or a PASS.
+
+For scheduler-side preflight without launching a trajectory, set
+`COLUMN_COLLAPSE_ARRAY_DRY_RUN=1`; it prints the one immutable command selected
+by the array index and exits before invoking DIRT.
 
 The initializer is deliberately part of that contract. For every scheduled
 aspect/seed it writes exactly `N` active coordinates in a deterministic,
