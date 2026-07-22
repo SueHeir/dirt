@@ -62,7 +62,7 @@ pub(super) fn insert_single_particle(
     row: DemParticle,
 ) {
     let global_natoms = atom
-        .natoms
+        .natoms()
         .checked_add(1)
         .expect("global particle count overflow during DEM insertion");
     ParticleStore::new(atom, registry)

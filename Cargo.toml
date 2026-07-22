@@ -113,6 +113,10 @@ name = "bench_hertz_rebound"
 path = "examples/bench_hertz_rebound/main.rs"
 
 [[example]]
+name = "bench_tsuji_target_cor"
+path = "examples/bench_tsuji_target_cor/main.rs"
+
+[[example]]
 name = "bench_chung_ooi_impact"
 path = "examples/bench_chung_ooi_impact/main.rs"
 

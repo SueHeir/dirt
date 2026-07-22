@@ -73,7 +73,7 @@ fn track_rebound(
     input: Res<Input>,
     mut tracker: ResMut<ReboundTracker>,
 ) {
-    if tracker.finished || atoms.nlocal == 0 {
+    if tracker.finished || atoms.nlocal() == 0 {
         return;
     }
 

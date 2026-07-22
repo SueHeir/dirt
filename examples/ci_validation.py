@@ -25,6 +25,7 @@ Sweep = tuple[str, tuple[str, ...]]
 # conductivity, restart determinism, damping, and a no-history tangential model.
 SMOKE_SWEEPS: list[Sweep] = [
     ("examples/bench_hertz_rebound/sweep.py", ()),
+    ("examples/bench_tsuji_target_cor/sweep.py", ()),
     ("examples/bench_hooke_rebound/sweep.py", ()),
     ("examples/bench_oblique_impact/sweep.py", ()),
     ("examples/bench_kharaz_oblique/sweep.py", ()),
@@ -54,6 +55,7 @@ FULL_SWEEPS: list[Sweep] = [
     ("examples/bench_fiber_crossover/sweep.py", ()),
     ("examples/bench_granular_conductivity/sweep.py", ()),
     ("examples/bench_hertz_rebound/sweep.py", ()),
+    ("examples/bench_tsuji_target_cor/sweep.py", ()),
     ("examples/bench_hooke_wall_rebound/sweep.py", ()),
     ("examples/bench_hooke_rebound/sweep.py", ()),
     ("examples/bench_hopper_beverloo/sweep.py", ()),

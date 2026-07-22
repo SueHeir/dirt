@@ -926,7 +926,7 @@ pub fn auto_bond_touching(
     }
 
     particles.with(|(dem, mut bond_store)| {
-        let nlocal = atoms.nlocal as usize;
+        let nlocal = atoms.nlocal() as usize;
         while bond_store.bonds.len() < nlocal {
             bond_store.bonds.push(Vec::new());
         }
@@ -1010,7 +1010,7 @@ pub fn load_bonds_from_file(
         }
     };
 
-    let nlocal = atoms.nlocal as usize;
+    let nlocal = atoms.nlocal() as usize;
     let mut tag_to_local: HashMap<u32, usize> = HashMap::with_capacity(nlocal);
     for i in 0..nlocal {
         tag_to_local.insert(atoms.tag[i], i);
@@ -1184,7 +1184,7 @@ pub fn init_bond_history(
         while history.history.len() < bonds.bonds.len() {
             history.history.push(Vec::new());
         }
-        let nlocal = atoms.nlocal as usize;
+        let nlocal = atoms.nlocal() as usize;
         for i in 0..bonds.bonds.len().min(nlocal) {
             let tag_a = atoms.tag[i];
             for bond in &bonds.bonds[i] {
@@ -1248,7 +1248,7 @@ pub fn bond_force(
         let tilt = domain.tilt;
         let triclinic = domain.triclinic;
 
-        let nlocal = atoms.nlocal as usize;
+        let nlocal = atoms.nlocal() as usize;
         if bonds.bonds.len() < nlocal {
             return;
         }

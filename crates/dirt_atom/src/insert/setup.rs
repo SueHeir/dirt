@@ -248,7 +248,7 @@ pub(super) fn validate_file_insert(
     let mut atom = Atom::default();
     let mut registry = AtomDataRegistry::new();
     registry
-        .try_register(DemAtom::default(), 0)
+        .register_for_atoms(DemAtom::default(), &atom)
         .expect("fresh registry accepts DemAtom");
     let mut max_tag = 0;
     insert_from_file(

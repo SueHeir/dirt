@@ -175,8 +175,11 @@ impl ParticleFixture {
             !self.particles.is_empty(),
             "SimulationFixture requires at least one particle"
         );
-        atom.nlocal = self.particles.len() as u32;
-        atom.natoms = self.particles.len() as u64;
+        // This is a core-only fixture: all registered extension rows are
+        // installed immediately below, so the explicit layout is sound.
+        unsafe {
+            atom.set_layout_unchecked(self.particles.len() as u32, 0, self.particles.len() as u64);
+        }
         atom.dt = self.timestep;
 
         let mut neighbor = Neighbor::new();
@@ -194,7 +197,7 @@ impl ParticleFixture {
 
         let mut registry = AtomDataRegistry::new();
         registry
-            .try_register(dem, atom.len())
+            .register_for_atoms(dem, &atom)
             .expect("fixture DEM extension must match Atom length");
         SimulationFixture {
             atom,
@@ -226,7 +229,7 @@ impl SimulationFixture {
     /// Register another atom extension, checking it has exactly one row per fixture particle.
     pub fn register_atom_data<T: AtomData + 'static>(&mut self, data: T) {
         self.registry
-            .try_register(data, self.atom.len())
+            .register_for_atoms(data, &self.atom)
             .expect("fixture atom extension must match Atom length");
     }
 
@@ -280,8 +283,9 @@ pub fn make_atoms(n: usize) -> Atom {
         // `Atom` has no registered extensions in this core-only fixture.
         unsafe { atom.push_test_atom(i as u32, [i as f64, 0.0, 0.0], 0.5, 1.0) };
     }
-    atom.nlocal = n as u32;
-    atom.natoms = n as u64;
+    unsafe {
+        atom.set_layout_unchecked(n as u32, 0, n as u64);
+    }
     atom.dt = 0.001;
     atom
 }

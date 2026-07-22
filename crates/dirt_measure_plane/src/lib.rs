@@ -377,7 +377,7 @@ fn measure_plane_accumulate_elapsed(
 /// recorded when the signed distance transitions from `≤ 0` to `> 0`,
 /// meaning the particle moved through the plane in the positive-normal direction.
 fn measure_plane_detect_crossings(atoms: Res<Atom>, mut planes: ResMut<MeasurePlanes>) {
-    let nlocal = atoms.nlocal as usize;
+    let nlocal = atoms.nlocal() as usize;
 
     for plane in planes.planes.iter_mut() {
         for i in 0..nlocal {

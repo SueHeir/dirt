@@ -97,6 +97,80 @@ fn tsuji_alpha(e: f64) -> f64 {
         + 4.8218 * e.powi(6)
 }
 
+/// Returns the legacy Tsuji/LAMMPS restitution input that realizes a requested
+/// physical, normal coefficient of restitution for an unclamped Hertz contact.
+///
+/// DIRT intentionally keeps [`MaterialConfig::restitution`] as the raw input
+/// accepted by LAMMPS `hertz/material ... damping tsuji`: changing that field's
+/// meaning would silently change existing input decks.  This helper is the
+/// explicit opt-in conversion for callers which instead have a physical rebound
+/// target.  It inverts DIRT's dimensionless Hertz--Tsuji collision equation by
+/// bisection, and returns `None` for a non-finite or out-of-range target.
+///
+/// The conversion is valid for an isolated, frictionless normal contact with
+/// `limit_damping = false`.  The Tsuji scaling removes size, stiffness, density,
+/// and velocity from this one-contact mapping; it is not a calibration for a
+/// mixed-material pair, tangential contact, cohesion, or a tensile-force cutoff.
+pub fn hertz_tsuji_raw_for_target_cor(target_cor: f64) -> Option<f64> {
+    if !target_cor.is_finite() || !(0.0..=1.0).contains(&target_cor) {
+        return None;
+    }
+    if target_cor == 1.0 {
+        return Some(0.9999);
+    }
+
+    // This is deliberately self-contained rather than calling the contact
+    // kernel: the public conversion is defined by the documented ODE, not by a
+    // particular simulation run or material scale.
+    let cor = |raw: f64| {
+        let beta = tsuji_alpha(raw.clamp(1.0e-3, 0.9999)) / 5.0_f64.sqrt();
+        let c = 2.0 * beta * SQRT_5_6 * std::f64::consts::SQRT_2;
+        let acc = |d: f64, v: f64| {
+            if d <= 0.0 {
+                0.0
+            } else {
+                -(4.0 / 3.0) * d.powf(1.5) - c * d.powf(0.25) * v
+            }
+        };
+        let (mut d, mut v) = (0.0, 1.0);
+        const DT: f64 = 1.0e-4;
+        for _ in 0..2_000_000 {
+            let (k1d, k1v) = (v, acc(d, v));
+            let (k2d, k2v) = (
+                v + 0.5 * DT * k1v,
+                acc(d + 0.5 * DT * k1d, v + 0.5 * DT * k1v),
+            );
+            let (k3d, k3v) = (
+                v + 0.5 * DT * k2v,
+                acc(d + 0.5 * DT * k2d, v + 0.5 * DT * k2v),
+            );
+            let (k4d, k4v) = (v + DT * k3v, acc(d + DT * k3d, v + DT * k3v));
+            let dn = d + DT * (k1d + 2.0 * k2d + 2.0 * k3d + k4d) / 6.0;
+            let vn = v + DT * (k1v + 2.0 * k2v + 2.0 * k3v + k4v) / 6.0;
+            if d > 0.0 && dn <= 0.0 {
+                return (v + d / (d - dn) * (vn - v)).abs();
+            }
+            (d, v) = (dn, vn);
+        }
+        // The physically reachable interval always separates; retain a finite
+        // fallback rather than returning an invented successful mapping.
+        f64::NAN
+    };
+    let (mut lo, mut hi) = (1.0e-3, 0.9999);
+    if target_cor < cor(lo) {
+        return None;
+    }
+    for _ in 0..48 {
+        let mid = 0.5 * (lo + hi);
+        if cor(mid) > target_cor {
+            hi = mid;
+        } else {
+            lo = mid;
+        }
+    }
+    Some(0.5 * (lo + hi))
+}
+
 /// COR of a head-on Hertz collision with the damping DIRT applies
 /// (`f_diss = 2β√(5/6)√(Sₙ mᵣ) vₙ`, `Sₙ = 2E*√(R*δ)`), as a function of β.
 ///
@@ -2136,5 +2210,20 @@ surface_energy = 1.0
             liquid_bridge_model_error(&config).is_some(),
             "case-mismatched selectors must not silently disable bridge physics"
         );
+    }
+
+    #[test]
+    fn target_cor_conversion_is_explicit_and_preserves_raw_mapping() {
+        // This does not replace the independent ODE and LAMMPS campaign. It
+        // pins the public API while checking that legacy raw-Tsuji behavior is
+        // deliberately unchanged.
+        let raw = hertz_tsuji_raw_for_target_cor(0.70).expect("target is reachable");
+        assert!(
+            (raw - 0.601_269).abs() < 2.0e-5,
+            "unexpected raw input: {raw}"
+        );
+        assert!((hertz_beta_for_cor(0.5) - tsuji_alpha(0.5) / 5.0_f64.sqrt()).abs() < 1.0e-12);
+        assert!(hertz_tsuji_raw_for_target_cor(-0.1).is_none());
+        assert!(hertz_tsuji_raw_for_target_cor(f64::NAN).is_none());
     }
 }

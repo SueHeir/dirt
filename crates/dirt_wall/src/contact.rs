@@ -274,7 +274,7 @@ pub fn wall_contact_force(
     material_table: Res<MaterialTable>,
 ) {
     particles.with(|mut dem| {
-        let nlocal = atoms.nlocal as usize;
+        let nlocal = atoms.nlocal() as usize;
         let dt = atoms.dt;
 
         // Take the tangential-spring history out so the per-wall-list immutable
