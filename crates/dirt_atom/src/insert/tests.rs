@@ -51,7 +51,9 @@ impl AtomData for BrokenDefaults {
 
 fn test_dem_registry() -> AtomDataRegistry {
     let mut registry = AtomDataRegistry::new();
-    registry.register_for_atoms(DemAtom::new(), &Atom::new()).unwrap();
+    registry
+        .register_for_atoms(DemAtom::new(), &Atom::new())
+        .unwrap();
     registry
 }
 
@@ -387,7 +389,9 @@ fn production_rate_insert_partitions_exact_deterministic_tag_rows_and_cleans_lat
     ParticleStore::new(&mut atom, &registry)
         .append_ghost_records(&packed, 1)
         .unwrap();
-    registry.register_for_atoms(LateProbe::default(), &atom).unwrap();
+    registry
+        .register_for_atoms(LateProbe::default(), &atom)
+        .unwrap();
 
     let (atom, late_rows, inserted, _) =
         run_rate_once(atom, registry, unit_domain(0.0, 1.0), rate_config(20260712));
@@ -504,7 +508,9 @@ fn particle_store_construction_backfills_late_extensions_and_rolls_back() {
             tag: 1,
         },
     );
-    registry.register_for_atoms(LateProbe::default(), &atoms).unwrap();
+    registry
+        .register_for_atoms(LateProbe::default(), &atoms)
+        .unwrap();
     assert_eq!(
         registry.expect::<LateProbe>("late extension").rows,
         vec![0.0]

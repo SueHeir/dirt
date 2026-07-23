@@ -2225,5 +2225,11 @@ surface_energy = 1.0
         assert!((hertz_beta_for_cor(0.5) - tsuji_alpha(0.5) / 5.0_f64.sqrt()).abs() < 1.0e-12);
         assert!(hertz_tsuji_raw_for_target_cor(-0.1).is_none());
         assert!(hertz_tsuji_raw_for_target_cor(f64::NAN).is_none());
+
+        // Keep the public calibration ordered: a more elastic physical target
+        // must never select a more strongly damped legacy material input.
+        let raw_low = hertz_tsuji_raw_for_target_cor(0.50).expect("reachable target");
+        let raw_high = hertz_tsuji_raw_for_target_cor(0.90).expect("reachable target");
+        assert!(raw_low < raw && raw < raw_high);
     }
 }
