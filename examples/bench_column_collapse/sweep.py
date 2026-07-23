@@ -1578,11 +1578,10 @@ def dirt_case_paths(a, seed):
     return {
         "deposit": os.path.join(case_data, "column_collapse_results.csv"),
         "release": os.path.join(case_data, "column_collapse_release.csv"),
-        # The final still-gated kinetic sample is a release-admission witness,
-        # not merely diagnostic output.  Keep it in this canonical artifact
-        # map so a receipt binds it to the same executable run as the release
-        # geometry and final deposit.
-        "release_state": os.path.join(case_data, "column_collapse_release_state.csv"),
+        # The final still-gated kinetic sample lives in the preparation series;
+        # there is intentionally no separate ``release_state`` file.  Keep the
+        # actual preparation witness in the receipt map so a real recorder run
+        # is admitted rather than rejected for a phantom artifact.
         "terminal": os.path.join(case_data, "column_collapse_final_state.csv"),
         "arrest": os.path.join(case_data, "column_collapse_arrest.csv"),
         "preparation": os.path.join(case_data, "column_collapse_preparation.csv"),
@@ -1959,7 +1958,6 @@ def _clear_case_evidence(a, seed):
     """
     cdir = case_dir_seed(a, seed)
     for name in ("column_collapse_results.csv", "column_collapse_release.csv",
-                 "column_collapse_release_state.csv",
                  "column_collapse_final_state.csv", "column_collapse_arrest.csv",
                  "column_collapse_preparation.csv",
                  CASE_RECEIPT_NAME):
