@@ -26,6 +26,12 @@ if [[ ! -f "$manifest" ]]; then
     exit 2
 fi
 
+# Validate the whole declared campaign before trusting this worker's line.  A
+# partial/duplicated TSV is not a harmless scheduler detail: it would make a
+# subset of the 11 x 3 evidence plan look executable.
+cd "$repo_root"
+python3 examples/bench_column_collapse/sweep.py validate-jobs
+
 # The first field is the immutable 1-based case index.  Do not select by line
 # number: a manually edited, duplicate, or re-ordered manifest must fail rather
 # than silently execute the wrong realization under a valid array index.
@@ -39,7 +45,6 @@ if [[ "$index" != "$task_id" || ! "$aspect" =~ ^[0-9]+([.][0-9]+)?$ || ! "$seed"
 fi
 
 echo "column-collapse array task=$task_id aspect=$aspect seed=$seed particles=$active_count protocol=${protocol_sha:0:12}"
-cd "$repo_root"
 if [[ "${COLUMN_COLLAPSE_ARRAY_DRY_RUN:-0}" == "1" ]]; then
     echo "DRY RUN: python3 examples/bench_column_collapse/sweep.py start --case $aspect,$seed"
     exit 0

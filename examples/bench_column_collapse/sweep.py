@@ -949,6 +949,52 @@ def emit_jobs():
     return path
 
 
+def validate_job_manifest():
+    """Fail closed unless the scheduler manifest is the declared 11 x 3 plan.
+
+    Array workers are deliberately independent processes.  Checking only the
+    selected line would allow a truncated or duplicate TSV to execute a
+    superficially plausible subset.  Validate the complete mapping, including
+    the source and protocol identities, before any worker is permitted to run.
+    """
+    path = os.path.join(SWEEP_DIR, JOB_MANIFEST_NAME)
+    if not os.path.isfile(path):
+        raise ValueError("missing scheduler job manifest")
+    with shared_campaign_lock("validate scheduler job manifest"):
+        manifest = checked_protocol_manifest(write=False)
+        by_case = {(float(row["nominal_aspect"]), int(row["seed"])): row
+                   for row in manifest["cases"]}
+        with open(path, newline="") as f:
+            rows = list(csv.DictReader(f, delimiter="\t"))
+    required = {"index", "aspect", "seed", "active_count",
+                "active_source_sha256", "protocol_sha256", "command"}
+    expected_cases = [(float(a), int(s)) for a in ASPECTS for s in SEEDS]
+    if len(rows) != len(expected_cases) or any(set(row) != required for row in rows):
+        raise ValueError("scheduler manifest does not contain exactly the declared rows/schema")
+    seen = set()
+    for index, (row, expected_case) in enumerate(zip(rows, expected_cases), start=1):
+        try:
+            case = (float(row["aspect"]), int(row["seed"]))
+            active_count = int(row["active_count"])
+        except (TypeError, ValueError) as exc:
+            raise ValueError("scheduler manifest has non-numeric row identity") from exc
+        witness = by_case.get(case)
+        expected_command = (
+            "python3 examples/bench_column_collapse/sweep.py "
+            f"start --case {case[0]:g},{case[1]}"
+        )
+        if (row["index"] != str(index) or case != expected_case or case in seen
+                or witness is None or active_count != witness["active_count"]
+                or row["active_source_sha256"] != witness["active_source_sha256"]
+                or row["protocol_sha256"] != manifest["protocol_sha256"]
+                or row["command"] != expected_command):
+            raise ValueError("scheduler manifest disagrees with the declared witness plan")
+        seen.add(case)
+    if seen != set(expected_cases):
+        raise ValueError("scheduler manifest is missing or duplicating declared cases")
+    return len(rows)
+
+
 def campaign_status():
     """Report admission of the declared raw ensemble without fitting it.
 
@@ -2560,6 +2606,15 @@ def main():
             print("ERROR: --case is valid only with start")
             sys.exit(2)
         emit_jobs()
+    elif cmd == "validate-jobs":
+        if selected_cases is not None:
+            print("ERROR: --case is valid only with start")
+            sys.exit(2)
+        try:
+            print(f"Validated {validate_job_manifest()} immutable DIRT witness jobs")
+        except ValueError as exc:
+            print(f"ERROR: {exc}")
+            sys.exit(1)
     elif cmd == "status":
         if selected_cases is not None:
             print("ERROR: --case is valid only with start")
@@ -2586,7 +2641,7 @@ def main():
         sys.exit(0 if graph() else 1)
     else:
         print(f"Unknown command: {cmd!r}")
-        print("Usage: sweep.py [generate|emit-jobs|status|start|graph] [--jobs N] [--rerun]   (no arg = all three)")
+        print("Usage: sweep.py [generate|emit-jobs|validate-jobs|status|start|graph] [--jobs N] [--rerun]   (no arg = all three)")
         sys.exit(2)
 
 
