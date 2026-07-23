@@ -57,19 +57,11 @@ force/stress/strain measures plus an `Unbreakable` default:
   damage envelope `Σ |X_i| / X_{i,c} ≥ 1` over the four channels (LAMMPS
   `bpm/rotational`)
 
-Each threshold is a `ThresholdDistribution` (`kind = …`), one of three:
+Each threshold is a `ThresholdDistribution` (`kind = …`), one of two:
 
 - `constant` — the same `value` for every bond.
 - `weibull` — length-scaled 2-parameter Weibull (`mean`, `m`, `l_calib`,
   optional `l_min`) giving the weakest-link size effect.
-- `crack_band` — deterministic, length-rescaled threshold (Bažant 1976 /
-  Hillerborg–Modéer–Petersson 1976): the part of the threshold above
-  `eps_yield` scales as `l_ref / max(l_bond, l_min)` so the per-bond plastic +
-  brittle energy budget × bond length stays invariant under mesh refinement.
-  Fields: `value_ref`, `l_ref`, optional `eps_yield` (use `0.0` for
-  force/stress criteria, `> 0` for strain criteria), optional `l_min`. This is
-  the correct regularization for the strain criteria (`axial_strain`,
-  `combined_strain`, `interaction_linear_strain`).
 
 Per-bond thresholds are drawn once at creation from the bond's tag pair plus
 `seed`, so the breakage pattern is **MPI-decomposition independent and
@@ -86,13 +78,6 @@ The bending and axial channels are independently optional
   expands at setup to a two-breakpoint `piecewise` and needs
   `[bonds].youngs_modulus`), or `piecewise`
 - axial: `piecewise` (breakpoints in axial strain, slope multipliers)
-
-The `piecewise` variants (and `guo_trilinear`, via its expansion) accept an
-optional `length_calibration` (m): when set, the post-yield strain breakpoints
-rescale at runtime by `length_calibration / l_bond` (the elastic yield
-breakpoint is preserved), the crack-band regularization that keeps per-bond
-plastic dissipation × bond length invariant under mesh refinement. Omit it to
-recover the unregularized envelope.
 
 Plastic anchors and max-strain history are carried per bond in
 `BondHistoryStore` and survive MPI communication and atom reordering.
@@ -135,9 +120,7 @@ seed = 0   # per-bond threshold RNG seed
 kind    = "combined_stress"
 tensile = { kind = "weibull", mean = 5.0e7, m = 8.0, l_calib = 0.020 }
 shear   = { kind = "constant", value = 3.0e7 }
-# Threshold kinds: "constant", "weibull", or "crack_band" (length-rescaled).
-# Crack-band example (deterministic, mesh-invariant; use with a strain criterion):
-# tensile = { kind = "crack_band", value_ref = 0.05, l_ref = 0.020, eps_yield = 0.0, l_min = 0.0 }
+# Threshold kinds: "constant" or "weibull".
 
 [bonds.plasticity.bending]
 kind         = "guo_bending"
@@ -150,7 +133,6 @@ yield_stress = 1.23e8
 kind               = "piecewise"
 breakpoint_strains = [0.01, 0.02, 0.03]
 slope_multipliers  = [0.5, 0.1, 0.0]
-# length_calibration = 0.020   # optional crack-band length regularization (m)
 
 # Load explicit bonds instead of auto-bonding:
 # file = "bonds.lammps"

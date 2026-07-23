@@ -10,6 +10,8 @@ Cargo.lock
 **/vtp/
 *.vtp
 **/data/
+!examples/bench_tsuji_target_cor/data/
+!examples/bench_tsuji_target_cor/data/results.csv
 !examples/bench_guo2018_fiber_shear_cell/data/
 !examples/bench_guo2018_fiber_shear_cell/data/non_equivalent_sensitivity_campaign.json
 **/out/

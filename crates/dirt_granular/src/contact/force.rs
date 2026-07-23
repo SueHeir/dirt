@@ -166,7 +166,7 @@ pub fn contact_force_core_views(
         history.contacts.resize_with(natoms, Vec::new);
     }
 
-    let nlocal = atoms.nlocal as usize;
+    let nlocal = atoms.nlocal() as usize;
     let mut overlap_warnings = 0usize;
 
     // Reset all active flags before pair loop (skipped on the Boundary pass, which
@@ -875,7 +875,7 @@ pub fn hooke_contact_force(
             history.contacts.push(Vec::new());
         }
 
-        let nlocal = atoms.nlocal as usize;
+        let nlocal = atoms.nlocal() as usize;
         let mut overlap_warnings = 0usize;
 
         for i in 0..nlocal {

@@ -462,8 +462,7 @@ def _plot_axial_plastic_breakage(rows, out_dir, eps, stress, eps_p, breakpoints,
     fig.savefig(out, dpi=150, bbox_inches="tight")
     print(f"  plot saved                  : {out}")
 
-    # Also write the committed summary plot beside the other Gitea-rendered
-    # validation figures.
+    # Also write the committed summary plot beside the other validation figures.
     repo_plot_dir = Path(__file__).resolve().parent / "plots"
     repo_plot_dir.mkdir(parents=True, exist_ok=True)
     out2 = repo_plot_dir / "plastic_breakage_coupled_validation.png"

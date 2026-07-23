@@ -1,0 +1,62 @@
+# Physical target-COR Hertz--Tsuji calibration example.
+# `restitution` is the raw Tsuji/LAMMPS input, NOT the physical target COR.
+# Generate calibrated values and run the maintained sweep with:
+#   $BENCH_PYTHON examples/bench_tsuji_target_cor/sweep.py
+
+[comm]
+processors_x = 1
+processors_y = 1
+processors_z = 1
+
+[domain]
+x_low = -0.01
+x_high = 0.01
+y_low = -0.01
+y_high = 0.01
+z_low = 0.0
+z_high = 0.1
+boundary_x = "fixed"
+boundary_y = "fixed"
+boundary_z = "fixed"
+
+[neighbor]
+skin_fraction = 1.1
+bin_size = 0.015
+every = 1
+
+[dem]
+contact_model = "hertz"
+# false is the matched LAMMPS `pair granular ... damping tsuji` convention.
+limit_damping = false
+
+[[dem.materials]]
+name = "glass"
+youngs_mod = 70.0e9
+poisson_ratio = 0.22
+# Raw Tsuji input obtained by the independent ODE inversion for target COR 0.70.
+restitution = 0.601
+friction = 0.0
+
+[[particles.insert]]
+material = "glass"
+count = 1
+radius = 0.005
+density = 2500.0
+velocity_z = -1.0
+region = { type = "block", min = [-0.001, -0.001, 0.007], max = [0.001, 0.001, 0.008] }
+
+[[wall]]
+point_x = 0.0
+point_y = 0.0
+point_z = 0.0
+normal_x = 0.0
+normal_y = 0.0
+normal_z = 1.0
+material = "glass"
+
+[output]
+dir = "examples/bench_tsuji_target_cor"
+
+[run]
+steps = 20000
+thermo = 1000

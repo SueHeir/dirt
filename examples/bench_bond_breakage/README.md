@@ -1,4 +1,4 @@
-# bench_bond_breakage — bond breakage / plasticity sweep benchmark
+# bench_bond_breakage — bond breakage and plasticity benchmark
 
 A regression benchmark (`sweep.py` driver, quantitative PASS/FAIL gate) for the
 `dirt_bond` **breakage** and **plasticity** machinery. It covers deterministic
@@ -23,43 +23,7 @@ python3 examples/bench_bond_breakage/sweep.py graph
 Wall time ≈ 5 s (release build cached). Via the harness:
 `~/projects/automation/bin/run-bench.sh examples/bench_bond_breakage`.
 
-## Group A — crack-band breakage across mesh refinement
-
-A straight fiber (fixed 2 mm length) is pulled axially, quasi-statically and
-symmetrically, with a piecewise (trilinear-shaped) axial plasticity envelope
-(elastic → 0.3·K hardening → perfectly plastic) and an `axial_strain` breakage
-criterion whose threshold is drawn from the **crack-band** length-rescaling law
-(Bažant 1976; Hillerborg-Modéer-Petersson 1976):
-
-```
-eps_break(L_bond) = eps_yield + (value_ref − eps_yield) · l_ref / L_bond
-```
-
-Because a uniform axial pull produces a spatially uniform strain, every bond
-reaches its (identical, deterministic, length-scaled) threshold at the same
-global strain, so the fiber's first-break global strain **equals**
-`eps_break(L_bond)` exactly. Refining the mesh (N = 11, 21, 41 beads →
-`L_bond` = 200, 100, 50 µm, a 4× refinement) moves the predicted break strain
-0.04 → 0.06 → 0.10.
-
-**Gate:** measured first-break global strain matches the crack-band closed form
-for every mesh (rel. tol 8 %, abs. floor ≈ 1.2 recording samples), each bond is
-plastic (`eps_p > 0`) before it breaks, and the break strain is monotone in the
-refinement. This validates that the regularization is applied with the correct
-**per-bond** length scaling inside the running solver, not just in the unit test
-of `ThresholdDistribution::sample`.
-
-| N  | L_bond (µm) | predicted ε_break | measured | rel. err |
-|----|-------------|-------------------|----------|----------|
-| 11 | 200         | 0.0400            | 0.0398   | 0.5 %    |
-| 21 | 100         | 0.0600            | 0.0598   | 0.3 %    |
-| 41 | 50          | 0.1000            | 0.0962   | 3.8 %    |
-
-The finest mesh (stiffest, shortest bonds) needs `dt = 1e-7 s` to stay stable
-through the startup transient; a larger step lets the grip-edge bonds shock past
-failure before the strain field equilibrates.
-
-## Group B — Guo 2018 trilinear bending, fully-plastic moment cap
+## Group A — Guo 2018 trilinear bending, fully-plastic moment cap
 
 A pinned 11-bead fiber is loaded with the built-in three-step transverse tip
 schedule (`fiber_bond/main.rs::apply_three_step_load`, activated by the
@@ -71,8 +35,8 @@ schedule (`fiber_bond/main.rs::apply_three_step_load`, activated by the
 M^p = (4/3) · sigma_0 · r_b^3
 ```
 
-Sweeping `sigma_0` (2.0, 2.5, 3.0 MPa) scales `M^p` linearly
-(2.67, 3.33, 4.00 mN·m). The peak bond moment is reconstructed from the recorded
+Sweeping `sigma_0` (0.5, 1.0, 1.5 MPa) scales `M^p` linearly
+(0.67, 1.33, 2.00 mN·m). The peak bond moment is reconstructed from the recorded
 kinematics as `M = K_bend · (θ_bend − θ_p_bend)`.
 
 **Gate:** peak reconstructed moment plateaus at `M^p` for every `sigma_0`
@@ -80,14 +44,14 @@ kinematics as `M = K_bend · (θ_bend − θ_p_bend)`.
 
 | σ₀ (MPa) | M^p (mN·m) | peak (mN·m) | ratio |
 |----------|------------|-------------|-------|
-| 2.0      | 2.6667     | 2.6667      | 1.000 |
-| 2.5      | 3.3333     | 3.3333      | 1.000 |
-| 3.0      | 4.0000     | 4.0000      | 1.000 |
+| 0.5      | 0.6667     | 0.6667      | 1.000 |
+| 1.0      | 1.3333     | 1.3333      | 1.000 |
+| 1.5      | 2.0000     | 1.9988      | 0.999 |
 
 The `sigma_0` values are chosen so `M^p` stays below the moment the fixed tip
 schedule can drive into the middle bond, so every case reaches its cap.
 
-## Group C — seeded Weibull weakest-link CDF
+## Group B — seeded Weibull weakest-link CDF
 
 Sixty independently seeded axial-stress Weibull breakage realizations run the
 same 10-bond fiber. The per-bond tensile thresholds are sampled by the solver
@@ -115,15 +79,12 @@ against the analytical weakest-link Weibull CDF. Latest run: PASS, KS `D =
 
 ## Outputs
 
-* `data/crackband.csv`, `data/guo_trilinear.csv` — one row per case.
+* `data/guo_trilinear.csv` — one row per Guo case.
 * `data/weibull_cdf.csv` — one row per seeded Weibull realization.
-* `plots/crackband_break_strain.png` — break strain vs 1/L_bond, crack-band line.
 * `plots/guo_trilinear_moment.png` — peak moment vs σ₀, M^p line.
 * `plots/weibull_cdf_qq.png` — empirical CDF and QQ plot vs weakest-link Weibull theory.
 
 ## References
 
-* Bažant, Z. P. (1976); Hillerborg, Modéer & Petersson (1976) — crack-band /
-  fictitious-crack length regularization of softening.
 * Guo, Y. et al. (2018), *Chem. Eng. Sci.* **175**, 118–129 — trilinear bending
   envelope and fully-plastic moment cap `M^p = (4/3)σ_0 r_b³` (Eq. 31).

@@ -161,15 +161,17 @@ fn make_registry(radius: f64) -> AtomDataRegistry {
 
 fn make_material_table(mat: &MaterialCfg) -> MaterialTable {
     let mut mt = MaterialTable::new();
-    mt.add_material(
-        &mat.name,
-        mat.youngs_mod,
-        mat.poisson_ratio,
-        mat.restitution,
-        mat.friction,
-        0.0,
-        0.0,
-    );
+    mt.add(
+        Material::new(
+            &mat.name,
+            Elastic::new(mat.youngs_mod, mat.poisson_ratio, mat.restitution),
+        )
+        .with_friction(Friction {
+            sliding: mat.friction,
+            ..Friction::default()
+        }),
+    )
+    .unwrap();
     mt.build_pair_tables();
     mt
 }

@@ -813,16 +813,11 @@ impl Plugin for DemBondPlugin {
 # tensile = { kind = "constant", value = 5.0e7 }
 # shear   = { kind = "constant", value = 3.0e7 }
 #
-# Each threshold accepts one of three distributions (`kind`):
+# Each threshold accepts one of two distributions (`kind`):
 #   constant   — same value for every bond:
 #     { kind = "constant", value = 5.0e7 }
 #   weibull    — length-scaled 2-parameter Weibull (weakest-link size effect):
 #     { kind = "weibull", mean = 5.0e7, m = 8.0, l_calib = 0.020, l_min = 0.0 }
-#   crack_band — deterministic, length-rescaled (Bazant crack-band) so the
-#                per-bond energy budget is mesh-invariant; the part above
-#                eps_yield scales as l_ref / max(l_bond, l_min). Use eps_yield = 0
-#                for force/stress criteria, eps_yield > 0 for strain criteria:
-#     { kind = "crack_band", value_ref = 0.05, l_ref = 0.020, eps_yield = 0.0, l_min = 0.0 }
 #
 # Plasticity (omit for purely elastic bonds). Both `bending` and `axial`
 # channels are independently optional. Examples:
@@ -836,12 +831,10 @@ impl Plugin for DemBondPlugin {
 # # kind               = "piecewise"
 # # breakpoint_strains = [0.01, 0.02]
 # # slope_multipliers  = [0.5, 0.0]
-# # length_calibration = 0.020       # optional crack-band length regularization (m)
 # [bonds.plasticity.axial]
 # kind                = "piecewise"
 # breakpoint_strains  = [0.01, 0.02, 0.03]
-# slope_multipliers   = [0.5, 0.1, 0.0]
-# length_calibration  = 0.020         # optional crack-band length regularization (m)"#,
+# slope_multipliers   = [0.5, 0.1, 0.0]"#,
         )
     }
 
@@ -933,7 +926,7 @@ pub fn auto_bond_touching(
     }
 
     particles.with(|(dem, mut bond_store)| {
-        let nlocal = atoms.nlocal as usize;
+        let nlocal = atoms.nlocal() as usize;
         while bond_store.bonds.len() < nlocal {
             bond_store.bonds.push(Vec::new());
         }
@@ -1017,7 +1010,7 @@ pub fn load_bonds_from_file(
         }
     };
 
-    let nlocal = atoms.nlocal as usize;
+    let nlocal = atoms.nlocal() as usize;
     let mut tag_to_local: HashMap<u32, usize> = HashMap::with_capacity(nlocal);
     for i in 0..nlocal {
         tag_to_local.insert(atoms.tag[i], i);
@@ -1191,7 +1184,7 @@ pub fn init_bond_history(
         while history.history.len() < bonds.bonds.len() {
             history.history.push(Vec::new());
         }
-        let nlocal = atoms.nlocal as usize;
+        let nlocal = atoms.nlocal() as usize;
         for i in 0..bonds.bonds.len().min(nlocal) {
             let tag_a = atoms.tag[i];
             for bond in &bonds.bonds[i] {
@@ -1255,7 +1248,7 @@ pub fn bond_force(
         let tilt = domain.tilt;
         let triclinic = domain.triclinic;
 
-        let nlocal = atoms.nlocal as usize;
+        let nlocal = atoms.nlocal() as usize;
         if bonds.bonds.len() < nlocal {
             return;
         }

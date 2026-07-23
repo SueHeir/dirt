@@ -30,7 +30,7 @@
 //!     --features precision-double -- examples/bench_nohistory_tangential/config.toml
 //! ```
 
-use dirt_core::dirt_atom::{DemAtom, MaterialTable};
+use dirt_core::dirt_atom::{DemAtom, Elastic, Friction, Material, MaterialTable};
 use dirt_core::dirt_granular::contact::{contact_force_core, ForcePass};
 use dirt_core::dirt_granular::tangential::{ContactHistoryStore, CONTACT_HISTORY_LEN};
 use dirt_core::soil_core::{Atom, AtomDataRegistry, Neighbor};
@@ -75,15 +75,17 @@ fn build_system(
     mt.contact_model = "hertz".to_string();
     mt.tangential_model = tangential_model.to_string();
     // rolling/twisting friction = 0 ⇒ tangential force is the only in-plane force.
-    mt.add_material(
-        &mat.name,
-        mat.youngs_mod,
-        mat.poisson_ratio,
-        mat.restitution,
-        mat.friction,
-        0.0, // rolling friction
-        0.0, // cohesion energy
-    );
+    mt.add(
+        Material::new(
+            &mat.name,
+            Elastic::new(mat.youngs_mod, mat.poisson_ratio, mat.restitution),
+        )
+        .with_friction(Friction {
+            sliding: mat.friction,
+            ..Friction::default()
+        }),
+    )
+    .unwrap();
     mt.build_pair_tables();
 
     let r = sc.radius;

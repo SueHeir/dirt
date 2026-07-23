@@ -94,19 +94,17 @@ bench is bit-exact on continuity. See the companion soil PR on branch
 
 ### Second finding — the stale-lock reproducibility hole
 
-Long after the soil fix merged to `main`, the automated harness began reporting
+Long after the soil fix merged, the automated harness began reporting
 checks 4–5 as **FAIL** again (positions rel `2.97e-3`, velocities rel `2.49e-1`)
 — the exact "against unfixed soil" signature above, even though the fix was live
 on soil `main`. Cause: dirt's `Cargo.lock` is **gitignored** (not committed), and
 the shared harness checkout carried a stale lock pinning a *pre-fix* soil rev
-(`ec1cbbd`, the "repoint to Gitea" commit, which predates the fix merge). Cargo
+(`ec1cbbd`, which predates the fix merge). Cargo
 does not re-resolve a git dependency while a lock exists, so every build silently
 linked the old, broken soil and the restart dropped tangential/rotational state.
 
 A determinism/restart guard must never build against an *arbitrary* soil
-revision. The driver now re-pins the soil crates to current `main`
-(`cargo update -p soil_core -p soil_print`) before building, so a stale lock can
-no longer masquerade as a physics regression. Against fixed soil the bench is
-**bit-exact** (continuity rel `0.000e+00`). If the refresh cannot reach Gitea the
-driver builds against the existing lock and lets checks 4–5 fail loudly rather
-than pass silently.
+revision. DIRT now pins every SOIL crate to one exact GitHub commit, so a stale
+or moving dependency can no longer masquerade as a physics regression. Against
+the pinned fixed SOIL revision the bench is **bit-exact** (continuity rel
+`0.000e+00`).

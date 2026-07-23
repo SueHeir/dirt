@@ -200,36 +200,6 @@ pub enum ThresholdDistribution {
         #[serde(default)]
         l_min: f64,
     },
-    /// Crack-band-style length-rescaled deterministic threshold (Bažant 1976,
-    /// Hillerborg-Modéer-Petersson 1976). The threshold's post-yield extent
-    /// rescales inversely with bond length so the per-bond plastic + brittle
-    /// energy budget × bond length is invariant:
-    ///
-    /// ```text
-    ///     threshold(L_bond) = eps_yield + (value_ref - eps_yield) · L_ref / L_bond
-    /// ```
-    ///
-    /// For breakage criteria that operate on total strain (`axial_strain`,
-    /// `combined_strain`, `interaction_linear_strain`), this is the correct
-    /// regularization that flattens the apparent strength-vs-mesh-refinement
-    /// curve. For non-strain criteria (force, stress) set `eps_yield = 0`
-    /// to scale the entire threshold value.
-    CrackBand {
-        /// Threshold value at the calibration bond length `l_ref`.
-        value_ref: f64,
-        /// Reference bond length (m) at which `value_ref` was calibrated.
-        l_ref: f64,
-        /// Elastic yield strain (or other "elastic anchor"). The portion of
-        /// the threshold **below** `eps_yield` is treated as a true material
-        /// constant; only the part **above** rescales with bond length. For
-        /// non-strain criteria, set this to `0.0`. Default: `0.0`.
-        #[serde(default)]
-        eps_yield: f64,
-        /// Lower bound on the bond length used in the rescaling (m). Avoids
-        /// unphysical strengthening of very short bonds. Default: `0.0`.
-        #[serde(default)]
-        l_min: f64,
-    },
 }
 
 impl ThresholdDistribution {
@@ -248,15 +218,6 @@ impl ThresholdDistribution {
                 let u_clamped = u.clamp(1e-15, 1.0 - 1e-15);
                 let scale = mean / gamma_lanczos(1.0 + 1.0 / m);
                 scale * size_factor * (-((1.0 - u_clamped).ln())).powf(1.0 / m)
-            }
-            Self::CrackBand {
-                value_ref,
-                l_ref,
-                eps_yield,
-                l_min,
-            } => {
-                let l_eff = l_bond.max(l_min).max(f64::MIN_POSITIVE);
-                eps_yield + (value_ref - eps_yield) * (l_ref / l_eff)
             }
         }
     }
@@ -1010,52 +971,6 @@ mod tests {
         let v = d.sample(2.0e-3, u);
         let expected = 5.0e7 / gamma_lanczos(1.0 + 1.0 / 5.0);
         assert!((v - expected).abs() / expected < 1e-12);
-    }
-
-    #[test]
-    fn crack_band_threshold_rescales_with_bond_length() {
-        // value_ref = 0.06 at l_ref = 2 mm with eps_yield = 0.02.
-        // At l_bond = l_ref/2 = 1 mm: ε_break = 0.02 + 0.04·2  = 0.10.
-        // At l_bond = l_ref   = 2 mm: ε_break = 0.02 + 0.04·1  = 0.06.
-        // At l_bond = 2·l_ref = 4 mm: ε_break = 0.02 + 0.04·0.5 = 0.04.
-        let d = ThresholdDistribution::CrackBand {
-            value_ref: 0.06,
-            l_ref: 2.0e-3,
-            eps_yield: 0.02,
-            l_min: 0.0,
-        };
-        let u = 0.5; // unused for deterministic CrackBand
-        assert!((d.sample(1.0e-3, u) - 0.10).abs() < 1e-12);
-        assert!((d.sample(2.0e-3, u) - 0.06).abs() < 1e-12);
-        assert!((d.sample(4.0e-3, u) - 0.04).abs() < 1e-12);
-    }
-
-    #[test]
-    fn crack_band_threshold_eps_yield_zero_scales_full_value() {
-        // With eps_yield = 0 the whole threshold scales as l_ref / l_bond,
-        // useful for force / stress criteria where there's no elastic anchor.
-        let d = ThresholdDistribution::CrackBand {
-            value_ref: 1.0e8,
-            l_ref: 1.0e-3,
-            eps_yield: 0.0,
-            l_min: 0.0,
-        };
-        let u = 0.5;
-        assert!((d.sample(0.5e-3, u) - 2.0e8).abs() / 2.0e8 < 1e-12);
-        assert!((d.sample(2.0e-3, u) - 5.0e7).abs() / 5.0e7 < 1e-12);
-    }
-
-    #[test]
-    fn crack_band_threshold_l_min_floor() {
-        let d = ThresholdDistribution::CrackBand {
-            value_ref: 0.06,
-            l_ref: 2.0e-3,
-            eps_yield: 0.02,
-            l_min: 1.0e-3,
-        };
-        let u = 0.5;
-        // Below the floor, the threshold is clamped to the at-floor value.
-        assert!((d.sample(1.0e-9, u) - d.sample(1.0e-3, u)).abs() < 1e-12);
     }
 
     #[test]

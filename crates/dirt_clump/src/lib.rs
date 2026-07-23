@@ -576,7 +576,7 @@ fn snap_subspheres_to_body_com(
     particles: ParticlesWith<'_, Read<ClumpAtom>>,
 ) {
     particles.with(|clump| {
-        let nlocal = atoms.nlocal as usize;
+        let nlocal = atoms.nlocal() as usize;
         for i in 0..nlocal {
             if i >= clump.body_id.len() {
                 break;
@@ -604,7 +604,7 @@ fn restore_subsphere_positions(
 ) {
     bodies.generate_map();
     particles.with(|(clump, mut dem)| {
-        let nlocal = atoms.nlocal as usize;
+        let nlocal = atoms.nlocal() as usize;
         for i in 0..nlocal {
             if i >= clump.body_id.len() {
                 break;
@@ -881,7 +881,7 @@ pub fn aggregate_clump_forces(
             body.zero_accumulators();
         }
 
-        let nlocal = atoms.nlocal as usize;
+        let nlocal = atoms.nlocal() as usize;
 
         // Collect contributions to avoid borrow conflicts
         struct Contrib {
@@ -968,7 +968,7 @@ pub fn update_clump_positions(
             None => return,
         };
 
-        let nlocal = atoms.nlocal as usize;
+        let nlocal = atoms.nlocal() as usize;
 
         struct SubUpdate {
             idx: usize,
@@ -1044,7 +1044,7 @@ fn check_lost_clump_atoms(
             return;
         };
 
-        let nlocal = atoms.nlocal as usize;
+        let nlocal = atoms.nlocal() as usize;
         let mut counts: HashMap<u32, usize> = HashMap::new();
 
         for i in 0..nlocal {
@@ -1408,8 +1408,8 @@ fn try_insert_clump_with_cutoff_padding(
     // after every ParticleStore row has accepted its default: an extension
     // rejection must not leave an orphan body or a partially materialized
     // clump.  Roll back already accepted rows through the facade as well.
-    let original_natoms = atoms.natoms;
-    let original_nlocal = atoms.nlocal;
+    let original_natoms = atoms.natoms();
+    let original_nlocal = atoms.nlocal();
     for (si, sphere) in def.spheres.iter().enumerate() {
         let sub_tag = base_tag + si as u32;
         let sub_pos = [
@@ -1420,15 +1420,15 @@ fn try_insert_clump_with_cutoff_padding(
 
         let sub_mass = density * (4.0 / 3.0) * PI * sphere.radius.powi(3);
 
-        let global_natoms = atoms.natoms + 1;
+        let global_natoms = atoms.natoms() + 1;
         if let Err(error) = ParticleStore::new(atoms, registry).push_default_local(global_natoms) {
-            while atoms.nlocal > original_nlocal {
-                let last = atoms.nlocal as usize - 1;
+            while atoms.nlocal() > original_nlocal {
+                let last = atoms.nlocal() as usize - 1;
                 ParticleStore::new(atoms, registry)
                     .swap_remove(last)
                     .expect("previously accepted clump rows must remain removable");
             }
-            atoms.natoms = original_natoms;
+            atoms.set_global_natoms(original_natoms);
             return Err(error);
         }
         let i = atoms.len() - 1;
@@ -1495,7 +1495,7 @@ pub fn is_body_atom(clump_data: &ClumpAtom, i: usize) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dirt_atom::{DemAtom, DemAtomPlugin};
+    use dirt_atom::{DemAtom, DemAtomPlugin, Elastic, Friction, Material};
     use dirt_test_utils::{ParticleFixture, ParticleSpec};
     use soil_core::{Atom, AtomData, AtomDataRegistry, ParticleStoreError, SingleProcessComm};
 
@@ -1693,7 +1693,14 @@ region = { type = "block", min = [1.0, 1.0, 1.0], max = [1.0, 2.0, 2.0] }
         };
 
         let mut materials = dirt_atom::MaterialTable::new();
-        materials.add_material("glass", 8.7e9, 0.3, 0.9, 0.5, 0.0, 0.0);
+        materials
+            .add(
+                Material::new("glass", Elastic::new(8.7e9, 0.3, 0.9)).with_friction(Friction {
+                    sliding: 0.5,
+                    ..Friction::default()
+                }),
+            )
+            .unwrap();
         materials.build_pair_tables();
 
         app.add_resource(Atom::new());

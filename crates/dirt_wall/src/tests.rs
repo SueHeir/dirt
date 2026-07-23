@@ -1,7 +1,7 @@
 use super::*;
 use crate::config::curved_or_region_wall_surface_energy_warning;
 use crate::contact::wall_normal_force;
-use dirt_atom::{DemAtom, MaterialTable};
+use dirt_atom::{Adhesion, DemAtom, Elastic, Friction, Material, MaterialTable, Rolling};
 use dirt_test_utils::{make_material_table, push_dem_test_atom, ParticleFixture, ParticleSpec};
 use grass_app::prelude::*;
 use soil_core::region::Region;
@@ -89,15 +89,44 @@ fn wall_def(wall_type: &str, material: &str) -> WallDef {
 
 fn material_table_with_surface_energy() -> MaterialTable {
     let mut mt = MaterialTable::new();
-    mt.add_material_full("dry", 8.7e9, 0.3, 0.95, 0.4, 0.0, 0.0, 0.0);
-    mt.add_material_full("sticky", 8.7e9, 0.3, 0.95, 0.4, 0.0, 0.0, 0.25);
-    mt.add_material("sjkr", 8.7e9, 0.3, 0.95, 0.4, 0.0, 1.0);
+    mt.add(
+        Material::new("dry", Elastic::new(8.7e9, 0.3, 0.95)).with_friction(Friction {
+            sliding: 0.4,
+            ..Friction::default()
+        }),
+    )
+    .unwrap();
+    mt.add(
+        Material::new("sticky", Elastic::new(8.7e9, 0.3, 0.95))
+            .with_friction(Friction {
+                sliding: 0.4,
+                ..Friction::default()
+            })
+            .with_adhesion(Adhesion::SurfaceEnergy { energy: 0.25 }),
+    )
+    .unwrap();
+    mt.add(
+        Material::new("sjkr", Elastic::new(8.7e9, 0.3, 0.95))
+            .with_friction(Friction {
+                sliding: 0.4,
+                ..Friction::default()
+            })
+            .with_adhesion(Adhesion::Sjkr { energy: 1.0 }),
+    )
+    .unwrap();
     mt
 }
 
 fn material_table_with_twisting() -> MaterialTable {
     let mut mt = MaterialTable::new();
-    mt.add_material_extended("glass", 8.7e9, 0.3, 1.0, 0.0, 0.0, 0.0, 0.0, 0.25, 0.0, 0.0);
+    mt.add(
+        Material::new("glass", Elastic::new(8.7e9, 0.3, 1.0)).with_friction(Friction {
+            sliding: 0.0,
+            rolling: 0.0,
+            twisting: 0.25,
+        }),
+    )
+    .unwrap();
     mt.build_pair_tables();
     mt
 }
@@ -216,9 +245,18 @@ fn hooke_wall_normal_uses_kn_and_beta_tables() {
     let mut mt = MaterialTable::new();
     mt.contact_model = "hooke".to_string();
     mt.limit_damping = false;
-    mt.add_material_extended(
-        "grain", 8.7e9, 0.3, 0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0e5, 0.0,
-    );
+    mt.add(
+        Material::new(
+            "grain",
+            Elastic::new(8.7e9, 0.3, 0.5).with_hooke_stiffness(1.0e5, 0.0),
+        )
+        .with_friction(Friction {
+            sliding: 0.0,
+            rolling: 0.0,
+            twisting: 0.0,
+        }),
+    )
+    .unwrap();
     mt.build_pair_tables();
 
     let delta = 2.5e-5;
@@ -464,7 +502,15 @@ fn wall_cohesion_attractive_for_small_overlap() {
     let walls = make_walls(vec![make_wall_plane(0.0, 0.0, 0.0, 0.0, 0.0, 1.0)]);
 
     let mut mt = dirt_atom::MaterialTable::new();
-    mt.add_material("glass", 8.7e9, 0.3, 0.95, 0.4, 0.0, 1e9);
+    mt.add(
+        Material::new("glass", Elastic::new(8.7e9, 0.3, 0.95))
+            .with_friction(Friction {
+                sliding: 0.4,
+                ..Friction::default()
+            })
+            .with_adhesion(Adhesion::Sjkr { energy: 1e9 }),
+    )
+    .unwrap();
     mt.build_pair_tables();
 
     let mut app = App::new();
@@ -655,9 +701,20 @@ fn wall_history_initializes_without_particle_contact_plugin() {
 
     let mut material_table = dirt_atom::MaterialTable::new();
     material_table.rolling_model = "sds".to_string();
-    material_table.add_material_with_sds(
-        "glass", 8.7e9, 0.3, 0.95, 0.5, 0.2, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0e-7, 0.0, 0.0, 0.0,
-    );
+    material_table
+        .add(
+            Material::new("glass", Elastic::new(8.7e9, 0.3, 0.95))
+                .with_friction(Friction {
+                    sliding: 0.5,
+                    rolling: 0.2,
+                    twisting: 0.0,
+                })
+                .with_rolling(Rolling::Sds {
+                    stiffness: 1.0e-7,
+                    damping: 0.0,
+                }),
+        )
+        .unwrap();
     material_table.build_pair_tables();
 
     let walls = make_walls(vec![make_wall_plane(0.0, 0.0, 0.0, 0.0, 0.0, 1.0)]);

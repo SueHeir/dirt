@@ -18,32 +18,18 @@
 
 use dirt_core::prelude::*;
 
-#[derive(Clone, Debug, PartialEq, Default, StageEnum)]
-enum Phase {
-    #[default]
-    #[stage("compress")]
-    Compress,
-    #[stage("relax")]
-    Relax,
-}
+const COMPRESS_STAGE: &str = "compress";
 
 fn main() {
     let mut app = App::new();
     app.add_plugins(CorePlugins)
         .add_plugins(GranularDefaultPlugins)
         .add_plugins(GravityPlugin)
-        .add_plugins(WallPlugin)
-        .add_plugins(StatesPlugin::new(
-            Phase::Compress,
-            ParticleSimScheduleSet::PostFinalIntegration,
-        ))
-        .add_plugins(StageAdvancePlugin::<Phase>::new(
-            ParticleSimScheduleSet::PostFinalIntegration,
-        ));
+        .add_plugins(WallPlugin);
 
     // After enough steps under the servo lid, release the lid and relax.
     app.add_update_system(
-        release_lid.run_if(in_state(Phase::Compress)),
+        release_lid.run_if(in_stage(COMPRESS_STAGE)),
         ParticleSimScheduleSet::PostFinalIntegration,
     );
 
@@ -56,15 +42,30 @@ fn release_lid(
     run_state: Res<RunState>,
     comm: Res<CommResource>,
     mut walls: ResMut<Walls>,
-    mut next_state: ResMut<NextState<Phase>>,
+    mut run_control: ResMut<SchedulerManager>,
 ) {
     let step = run_state.total_cycle;
     if step < 60_000 {
         return;
     }
     walls.deactivate_by_name("lid");
-    next_state.set(Phase::Relax);
+    run_control.advance_requested = true;
     if comm.rank() == 0 {
         println!("Step {step}: servo lid released, bed relaxing");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn referenced_stage_exists_in_default_config() {
+        let config = Config::from_str(include_str!("config.toml"));
+        let stages = RunConfig::from_config(&config);
+        assert!(stages
+            .stages
+            .iter()
+            .any(|stage| stage.name.as_deref() == Some(COMPRESS_STAGE)));
     }
 }

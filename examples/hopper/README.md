@@ -19,42 +19,20 @@ Cross-section (x-z plane, periodic in y):
 
 **Filling stage:** 200 particles are inserted in the upper region and settle under gravity onto the angled funnel walls and blocker.
 
-**Flowing stage:** Once the total kinetic energy drops below 1e-5 J (particles nearly stationary), the blocker wall is automatically removed and particles flow through the funnel exit to the floor. The state transition also triggers `StageAdvancePlugin` to advance the `[[run]]` stage, so the flowing stage gets its own step count and thermo interval.
+**Flowing stage:** Once the total kinetic energy drops below 1e-5 J (particles nearly stationary), the blocker wall is automatically removed, the run advances to the next `[[run]]` stage, and particles flow through the funnel exit to the floor. The flowing stage has its own step count and thermo interval.
 
 This example demonstrates DIRT's Tier 2 (Rust API) by adding a custom system alongside the standard TOML-configured plugins.
 
 ### How `main.rs` works
 
 ```rust
-#[derive(Clone, PartialEq, Default, StageEnum)]
-enum Phase {
-    #[default]
-    #[stage("filling")]
-    Filling,
-    #[stage("flowing")]
-    Flowing,
-}
-```
-
-A `Phase` enum defines two simulation stages. `#[derive(StageEnum)]` generates the `StageName` trait implementation, mapping each variant to its `[[run]]` stage name via `#[stage("...")]` attributes. The `#[default]` attribute sets the initial state to `Filling`.
-
-```rust
-app.add_plugins(StatesPlugin {
-    initial: Phase::Filling,
-})
-.add_plugins(StageAdvancePlugin::<Phase>::new());
-```
-
-`StatesPlugin` registers the state machine. `StageAdvancePlugin` watches for state transitions and automatically advances the `[[run]]` stage to match — when `Phase::Filling` transitions to `Phase::Flowing`, the scheduler moves from the `"filling"` run stage to the `"flowing"` run stage.
-
-```rust
 app.add_update_system(
-    check_settled.run_if(in_state(Phase::Filling)),
+    check_settled.run_if(in_stage("filling")),
     ParticleSimScheduleSet::PostFinalIntegration,
 );
 ```
 
-The `check_settled` system is registered with a **run condition**: it only executes while the simulation is in `Phase::Filling`. Once the state transitions to `Flowing`, the system is skipped entirely. `ParticleSimScheduleSet::PostFinalIntegration` places it after the Velocity Verlet update each timestep.
+The `check_settled` system is registered with a **run condition**: it only executes while the named `"filling"` stage is active. Once the run advances to `"flowing"`, the system is skipped. `ParticleSimScheduleSet::PostFinalIntegration` places it after the Velocity Verlet update each timestep.
 
 The `check_settled` function itself is a regular system that declares its dependencies as function arguments — the scheduler injects them automatically:
 
@@ -62,9 +40,9 @@ The `check_settled` function itself is a regular system that declares its depend
 - `Res<RunState>` — current timestep
 - `Res<CommResource>` — MPI communicator for global reductions
 - `ResMut<Walls>` — mutable access to wall definitions
-- `ResMut<NextState<Phase>>` — mutable access to trigger state transitions
+- `ResMut<SchedulerManager>` — mutable access to request the next run stage
 
-Every 100 steps (after an initial 1000-step warmup), it computes the total kinetic energy across all MPI ranks via `comm.all_reduce_sum_f64()`. When KE drops below the threshold, it deactivates the named `"blocker"` wall and transitions to `Phase::Flowing` — all in 6 lines of physics logic.
+Every 100 steps (after an initial 1000-step warmup), it computes the total kinetic energy across all MPI ranks via `comm.all_reduce_sum_f64()`. When KE drops below the threshold, it deactivates the named `"blocker"` wall and requests the next configured run stage.
 
 This pattern — TOML config for standard physics, custom Rust systems for runtime logic — is the core design of DIRT.
 
@@ -82,7 +60,7 @@ steps = 1000000
 thermo = 2000
 ```
 
-Each `[[run]]` stage has a `name` that must match the `#[stage("...")]` attributes on the `Phase` enum. `StageAdvancePlugin` validates this at startup. Each stage can have its own step count, thermo interval, and output settings.
+Each `[[run]]` stage has a name that code can reference with `in_stage("...")`. Each stage can have its own step count, thermo interval, and output settings.
 
 ## Run
 

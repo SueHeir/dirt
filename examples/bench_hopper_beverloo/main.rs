@@ -21,6 +21,8 @@ use std::collections::HashSet;
 use std::fs;
 use std::io::Write as IoWrite;
 
+const FLOWING_STAGE: &str = "flowing";
+
 /// `[hopper_beverloo]` recorder parameters from the config.
 #[derive(Deserialize, Clone)]
 #[serde(default)]
@@ -39,15 +41,6 @@ impl Default for HopperBeverlooConfig {
             sample_interval: 2000,
         }
     }
-}
-
-#[derive(Clone, Debug, PartialEq, Default, StageEnum)]
-enum Phase {
-    #[default]
-    #[stage("filling")]
-    Filling,
-    #[stage("flowing")]
-    Flowing,
 }
 
 /// Records cumulative discharge (count + mass) of particles crossing the orifice
@@ -83,27 +76,19 @@ fn main() {
     app.add_plugins(CorePlugins)
         .add_plugins(GranularDefaultPlugins)
         .add_plugins(GravityPlugin)
-        .add_plugins(WallPlugin)
-        .add_plugins(StatesPlugin::new(
-            Phase::Filling,
-            ParticleSimScheduleSet::PostFinalIntegration,
-        ))
-        .add_plugins(StageAdvancePlugin::<Phase>::new(
-            ParticleSimScheduleSet::PostFinalIntegration,
-        ));
+        .add_plugins(WallPlugin);
 
     let (orifice_z, sample_interval) = read_tracker_params(&mut app);
     app.add_resource(DischargeTracker::new(orifice_z, sample_interval));
 
-    // The two `[[run]]` stages are named "filling" and "flowing"; the stack auto-
-    // advances Phase at each stage boundary. On entering "flowing" we pull the
-    // blocker wall and arm the discharge recorder. During "flowing" we record.
+    // On entering the named "flowing" stage, pull the blocker wall and arm the
+    // discharge recorder. During that stage, record the discharge curve.
     app.add_update_system(
-        open_orifice.run_if(on_enter_stage("flowing")),
+        open_orifice.run_if(on_enter_stage(FLOWING_STAGE)),
         ParticleSimScheduleSet::PostFinalIntegration,
     );
     app.add_update_system(
-        record_discharge.run_if(in_stage("flowing")),
+        record_discharge.run_if(in_stage(FLOWING_STAGE)),
         ParticleSimScheduleSet::PostFinalIntegration,
     );
 
@@ -188,6 +173,21 @@ fn record_discharge(
     // Rewrite the CSV on every sample so the latest cumulative curve is always
     // on disk, whether the run ends by draining or by exhausting its step budget.
     write_csv(&tracker, &input, comm.rank());
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn referenced_stage_exists_in_default_config() {
+        let config = Config::from_str(include_str!("config.toml"));
+        let stages = RunConfig::from_config(&config);
+        assert!(stages
+            .stages
+            .iter()
+            .any(|stage| stage.name.as_deref() == Some(FLOWING_STAGE)));
+    }
 }
 
 fn write_csv(tracker: &DischargeTracker, input: &Input, rank: i32) {

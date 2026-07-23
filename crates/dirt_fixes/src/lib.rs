@@ -644,7 +644,7 @@ fn apply_move_linear_pre(
     registry: Res<FixesRegistry>,
     groups: Res<GroupRegistry>,
 ) {
-    let nlocal = atoms.nlocal as usize;
+    let nlocal = atoms.nlocal() as usize;
     for def in &registry.move_linears {
         let group = groups.expect(&def.group);
         for i in 0..nlocal {
@@ -664,7 +664,7 @@ fn apply_add_force(
     registry: Res<FixesRegistry>,
     groups: Res<GroupRegistry>,
 ) {
-    let nlocal = atoms.nlocal as usize;
+    let nlocal = atoms.nlocal() as usize;
     for def in &registry.add_forces {
         let group = groups.expect(&def.group);
         for i in 0..nlocal {
@@ -684,7 +684,7 @@ fn apply_set_force(
     registry: Res<FixesRegistry>,
     groups: Res<GroupRegistry>,
 ) {
-    let nlocal = atoms.nlocal as usize;
+    let nlocal = atoms.nlocal() as usize;
     for def in &registry.set_forces {
         let group = groups.expect(&def.group);
         for i in 0..nlocal {
@@ -709,7 +709,7 @@ fn apply_freeze(
     registry: Res<FixesRegistry>,
     groups: Res<GroupRegistry>,
 ) {
-    let nlocal = atoms.nlocal as usize;
+    let nlocal = atoms.nlocal() as usize;
     particles.with(|mut dem_opt| {
         for def in &registry.freezes {
             let group = groups.expect(&def.group);
@@ -741,7 +741,7 @@ fn apply_move_linear_post(
     registry: Res<FixesRegistry>,
     groups: Res<GroupRegistry>,
 ) {
-    let nlocal = atoms.nlocal as usize;
+    let nlocal = atoms.nlocal() as usize;
     for def in &registry.move_linears {
         let group = groups.expect(&def.group);
         for i in 0..nlocal {
@@ -761,7 +761,7 @@ fn apply_viscous(
     registry: Res<FixesRegistry>,
     groups: Res<GroupRegistry>,
 ) {
-    let nlocal = atoms.nlocal as usize;
+    let nlocal = atoms.nlocal() as usize;
     for def in &registry.viscous {
         let group = groups.expect(&def.group);
         let gamma = def.gamma;
@@ -796,7 +796,7 @@ fn apply_cundall(
     registry: Res<FixesRegistry>,
     groups: Res<GroupRegistry>,
 ) {
-    let nlocal = atoms.nlocal as usize;
+    let nlocal = atoms.nlocal() as usize;
     particles.with(|mut dem_opt| {
         for def in &registry.cundall {
             let group = groups.expect(&def.group);
@@ -837,7 +837,7 @@ fn apply_nve_limit(
     groups: Res<GroupRegistry>,
     mut thermo: Option<ResMut<Thermo>>,
 ) {
-    let nlocal = atoms.nlocal as usize;
+    let nlocal = atoms.nlocal() as usize;
     let dt = atoms.dt;
     let mut n_limited: usize = 0;
     for def in &registry.nve_limit {
@@ -941,7 +941,7 @@ gz = -9.81"#,
 ///
 /// Ghost atoms (index ≥ `nlocal`) are not affected.
 pub fn apply_gravity(mut atoms: ResMut<Atom>, gravity: Res<GravityConfig>) {
-    for i in 0..atoms.nlocal as usize {
+    for i in 0..atoms.nlocal() as usize {
         atoms.force[i][0] += (atoms.mass[i] as f64 * gravity.gx) as Accum;
         atoms.force[i][1] += (atoms.mass[i] as f64 * gravity.gy) as Accum;
         atoms.force[i][2] += (atoms.mass[i] as f64 * gravity.gz) as Accum;

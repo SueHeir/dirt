@@ -180,6 +180,32 @@ difference is 0.0015. This validates the implementation, not the naming of the
 input: a configured value of 0.5 realizes about 0.614. Anyone requiring a target
 physical COR must calibrate or replace that Tsuji mapping rather than assume 1:1.
 
+## `bench_tsuji_target_cor` — physical target-COR calibration
+
+This companion benchmark leaves the legacy `restitution` field untouched: it is
+still the raw Tsuji/LAMMPS input. For a requested physical normal COR, the driver
+invokes DIRT's `hertz_tsuji_raw_for_target_cor` conversion before writing DIRT and
+LAMMPS cases with that same mapped value; a separately implemented dimensionless
+Hertz--Tsuji ODE checks the conversion rather than supplying it.
+The mapping is `beta = alpha(e_raw)/sqrt(5)`; for example, physical target 0.70
+maps to raw input 0.601269 (and beta 0.112809). The ODE residual gate is 0.0005.
+
+![Physical target vs realized COR](bench_tsuji_target_cor/plots/target_cor.png)
+
+*DIRT (filled) and LAMMPS (open squares) realized COR against the declared physical
+target. The green region is the DIRT ±0.015 gate. PASS: all 48 cases lie in band.*
+
+![Physical target-COR error](bench_tsuji_target_cor/plots/calibration_error.png)
+
+*Realized-minus-target COR through targets 0.50/0.70/0.90, velocities 0.25/1.0 m/s,
+radii 2.5/5 mm, densities 1000/2500 kg/m³, and Rayleigh fractions 0.05/0.15. Dashed
+lines are the ±0.015 gate. PASS: DIRT and LAMMPS stay within the plotted limits.*
+
+**Honest read:** **PASS for the documented no-tensile-cutoff Hertz--Tsuji
+convention.** The 48-case campaign passed target, ODE-inversion, and same-parameter
+DIRT--LAMMPS parity gates. This is a contact-level calibration; mixed-material
+contacts require calibration after DIRT's geometric per-pair raw-input mixing.
+
 ## `fiber_bond_breakage` — coupled axial plasticity and breakage
 
 The `axial_plastic_stress_constant` scenario pulls a bonded-particle fiber
@@ -997,6 +1023,7 @@ will need a benchmark when re-added.)
 | Example | Reference | Tier | Status / main gap |
 |---|---|---|---|
 | hertz_rebound | Hertz–Tsuji contact ODE + LAMMPS | analytical + cross-code | PASS for implemented equation; max DIRT–ODE errors 0.57% COR / 1.51% duration / 0.79% overlap and max DIRT–LAMMPS ΔCOR 0.0015; Tsuji input is not realized COR at low values |
+| tsuji_target_cor | independently inverted Hertz--Tsuji ODE + LAMMPS | analytical + cross-code | PASS; 48 COR/velocity/size/density/timestep cases, DIRT target and DIRT--LAMMPS gates ±0.015, ODE inversion residual ≤0.0005 |
 | hooke_rebound | linear damped-oscillator collision (COR=e, t_c=π/ω_d, δ_max) | analytical (strong, exact) | PASS; exact closed form (not just elastic), COR/t_c/overlap ≤0.05%; velocity-independence confirmed |
 | oblique_impact | Maw 1976 + LAMMPS | analytical + cross-code (strong) | PASS; full S-curve; vs theory not raw experiment |
 | mindlin_rescale_tangential | LAMMPS documented unloading recurrence | documented law | PASS at equation level; no independently executed LAMMPS trajectory |
@@ -1021,10 +1048,6 @@ will need a benchmark when re-added.)
 
 ## What is not validated
 
-- **Physical target COR from the Tsuji input.** The implemented equation is now
-  checked against its ODE and LAMMPS, but the configured Tsuji input is not the
-  realized COR at low values (0.5 gives about 0.614). Physical calibration remains
-  a separate task.
 - **Multisphere dynamics.** Clump and rod cooling show a start-up energy injection;
   clump/rod Haff and rod-shear claims are withheld pending an energy audit.
 - **Bond cantilever equilibrium.** The trace remains oscillatory, so sampling a

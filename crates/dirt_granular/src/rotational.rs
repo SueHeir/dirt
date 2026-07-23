@@ -70,7 +70,7 @@ pub fn initial_rotation(
 ) {
     particles.with(|mut dem| {
         let dt = atoms.dt;
-        let nlocal = atoms.nlocal as usize;
+        let nlocal = atoms.nlocal() as usize;
         let track_orientation = material_table.track_orientation;
 
         for i in 0..nlocal {
@@ -104,7 +104,7 @@ pub fn initial_rotation(
 pub fn final_rotation(atoms: Res<Atom>, particles: ParticlesWith<'_, Write<DemAtom>>) {
     particles.with(|mut dem| {
         let dt = atoms.dt;
-        let nlocal = atoms.nlocal as usize;
+        let nlocal = atoms.nlocal() as usize;
 
         for i in 0..nlocal {
             let inv_inertia = dem.inv_inertia[i];
