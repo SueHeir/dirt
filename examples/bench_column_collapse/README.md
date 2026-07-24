@@ -212,6 +212,25 @@ worker, then run `graph` only after all 33 receipts exist. The manifest itself i
 preparation provenance, not validation evidence; it cannot create `runout.csv`,
 figures, an exponent result, or a PASS.
 
+### Local execution (no scheduler)
+
+A batch scheduler is not required for the scientific protocol. On a machine
+with enough wall time and memory, the checked-in launcher executes the same 33
+immutable witnesses locally, with a deliberately bounded number of concurrent
+workers:
+
+```bash
+examples/bench_column_collapse/run_local_campaign.sh 2
+```
+
+The optional argument is a positive worker count (use `1` when memory is
+limited). The launcher sources the same explicit build environment as the Slurm
+array, regenerates and validates the immutable manifest, and then delegates
+every run, receipt check, ensemble aggregation, and graph gate to `sweep.py`.
+It does not synthesize summaries or treat a partial local run as a validation;
+if any witness is absent or inadmissible, `graph` exits non-zero and withholds a
+PASS and figures.
+
 For scheduler-side preflight without launching a trajectory, set
 `COLUMN_COLLAPSE_ARRAY_DRY_RUN=1`; it prints the one immutable command selected
 by the array index and exits before invoking DIRT.
