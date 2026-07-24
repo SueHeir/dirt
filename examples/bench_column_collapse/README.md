@@ -198,6 +198,13 @@ sbatch --array=1-33 --cpus-per-task=1 --time=08:00:00 \
   examples/bench_column_collapse/run_slurm_array.sh
 ```
 
+The launcher sources `~/projects/.build-env` before compiling the
+precision-double recorder, because a Slurm non-login shell does not inherit the
+interactive build configuration. On another installation, submit with
+`--export=ALL,DIRT_BUILD_ENV=/absolute/path/to/build-env` pointing to the
+equivalent batch-worker environment; a missing environment fails before any
+witness is written.
+
 It selects a manifest row by its immutable index and executes only that row's
 `start --case`; duplicate, absent, reordered, or malformed selections fail. It
 never aggregates a partial array. Dispatch each row on an appropriate batch

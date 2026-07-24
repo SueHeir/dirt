@@ -17,6 +17,21 @@ repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 manifest="$repo_root/examples/bench_column_collapse/sweep/column_collapse_jobs.tsv"
 task_id=${SLURM_ARRAY_TASK_ID:?SLURM_ARRAY_TASK_ID is required (submit with sbatch --array=1-33)}
 
+# ``start`` builds the precision-double DIRT executable before it writes a raw
+# witness.  An interactive login commonly has the stack's bindgen/MPI setup
+# already sourced, whereas a Slurm non-login shell does not.  Refuse to launch
+# a trajectory without that declared build environment: a worker that happens
+# to compile against a different toolchain is not a reproducible member of the
+# campaign.  Sites with a different installation can set DIRT_BUILD_ENV to
+# their equivalent read-only environment file at submission time.
+build_env=${DIRT_BUILD_ENV:-"$HOME/projects/.build-env"}
+if [[ ! -r "$build_env" ]]; then
+    echo "ERROR: missing DIRT build environment $build_env; set DIRT_BUILD_ENV to the batch-worker build environment" >&2
+    exit 2
+fi
+# shellcheck source=/dev/null
+source "$build_env"
+
 if ! [[ "$task_id" =~ ^[1-9][0-9]*$ ]]; then
     echo "ERROR: SLURM_ARRAY_TASK_ID must be a positive integer, got '$task_id'" >&2
     exit 2
