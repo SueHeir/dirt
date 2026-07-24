@@ -317,6 +317,15 @@ pub fn wall_contact_force(
             // Signed distance from atom to wall plane (positive = on normal side)
             let distance = dx * wall.normal_x + dy * wall.normal_y + dz * wall.normal_z;
 
+            // Plane contacts are one-sided: a particle that crosses the
+            // mathematical plane is outside this wall's admissible contact
+            // half-space.  A finite-step containment/recovery policy needs a
+            // separately validated boundary formulation; it must not silently
+            // alter all wall-contact physics for one benchmark.
+            if distance <= 0.0 {
+                continue;
+            }
+
             let radius = dem.radius[i];
             let mat_i = atoms.atom_type[i] as usize;
 
@@ -337,15 +346,6 @@ pub fn wall_contact_force(
                 0.0
             };
 
-            // A plane wall is a one-sided *containment* boundary.  Its normal
-            // points into the admissible half-space.  Once a finite-step
-            // integration has carried a centre past the mathematical plane,
-            // ``distance`` is negative; dropping the contact at that point
-            // turns the wall into a one-step detector rather than a barrier
-            // and lets a compressed bed tunnel through a gate.  Keep the
-            // capped overlap force active on either side so it restores the
-            // particle along the declared inward normal.  The cap is retained
-            // to bound the force for a deeply penetrated restart frame.
             let delta = (radius - distance).min(0.5 * radius);
 
             // Skip if no contact and no JKR adhesion range

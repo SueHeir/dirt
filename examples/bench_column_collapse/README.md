@@ -388,20 +388,14 @@ and, after the run, dumps every particle's `(x, y, z, radius)` at rest to
 `<output_dir>/data/column_collapse_results.csv`. All runout extraction, regime
 fitting, and plotting live in `sweep.py`.
 
-## Expected Plots
+## Result artifacts
 
-### Runout scaling
-![Runout scaling](plots/runout_scaling.png)
-
-Normalized runout `(L_f − L0)/L0` vs aspect ratio `a` on log–log axes, with the
-two experimental scaling lines (`1.2 a` and `1.6 a^(2/3)`) overlaid. DIRT is shown
-as filled circles; if LAMMPS was available, its runout is overlaid as open squares.
-
-### Deposit profile
-![Deposit profile](plots/deposit_profile.png)
-
-A side-view (x–z) snapshot of the settled deposit for the representative `a = 2`
-case, with the initial column width `L0` marked.
+No current-protocol result figures are committed. The 11 × 3 dynamics campaign
+has not yet produced the admitted raw witnesses needed to fit the exponents.
+`graph` will generate `plots/runout_scaling.png` and `plots/deposit_profile.png`
+only after it independently admits all 33 cases. Earlier plots were from a
+different 8d × 3d/mixed-boundary protocol and are not displayed as evidence for
+this one.
 
 ## LAMMPS cross-check
 
