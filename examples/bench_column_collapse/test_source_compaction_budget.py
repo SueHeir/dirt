@@ -13,6 +13,16 @@ SPEC.loader.exec_module(SWEEP)
 
 
 class SourceCompactionBudgetTests(unittest.TestCase):
+
+    def test_preparation_packing_is_the_declared_packing(self):
+        """Preparation density is derived, not a rounded hidden parameter."""
+        self.assertEqual(SWEEP.SOURCE_JITTER, 0.0)
+        self.assertAlmostEqual(
+            SWEEP.INSERT_PACKING / SWEEP.SOURCE_DILATION ** 3,
+            SWEEP.PACKING,
+            places=14,
+        )
+
     def test_generated_config_uses_type_tracked_rough_base(self):
         """The rough support must not lose freeze membership after sorting."""
         self.assertIn('material = "rough_glass"', SWEEP.TOML_TEMPLATE)

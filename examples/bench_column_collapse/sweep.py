@@ -141,16 +141,17 @@ PACKING = 0.60             # settled solid fraction used to size the particle co
 # Its packing fraction is fixed by fcc geometry; PACKING remains the requested
 # released-column fraction used to translate aspect ratio to particle count.
 INSERT_PACKING = math.pi / (3.0 * math.sqrt(2.0))
-# A perfect close packing has a mechanically special contact network.  It is a
-# useful non-overlap construction, but it is not an independently prepared
-# granular fabric: merely changing ABC registries leaves every grain exactly at
-# contact.  Start each realization just above close packing and apply a small,
-# deterministic in-plane perturbation.  The 8% dilation gives this prepared
-# source its intended roughly-0.60 solid fraction.  Its scheduled source height
-# is compensated below, because its measured *released* height is the physical
-# control variable and the release witness remains the acceptance test.
-SOURCE_DILATION = 1.08
-SOURCE_JITTER = 0.005      # fraction of a diameter, per horizontal coordinate
+# A perfect close packing has a mechanically special contact network.  The
+# seed-specific stacking sequence below still supplies distinct, reproducible
+# fabric realizations, but do not add independent in-plane jitter: at the old
+# 8% rounded dilation it changed the source packing fraction from the declared
+# 0.60 to 0.5876 and made the preparation density a hidden parameter.  Uniform
+# dilation transforms fcc packing as phi/dilation**3, so derive the unique
+# non-overlapping source spacing that realizes the declared packing exactly.
+# The released geometry is still measured and independently admitted after
+# settling; this is an initialization-fidelity repair, not a fit adjustment.
+SOURCE_DILATION = (INSERT_PACKING / PACKING) ** (1.0 / 3.0)
+SOURCE_JITTER = 0.0        # stacking disorder, not random coordinate noise
 BASE_Z = 2.0 * RADIUS
 BASE_SELECT_Z = 2.5 * RADIUS
 # The removable gate starts at the *top surface* of the frozen rough base.  A

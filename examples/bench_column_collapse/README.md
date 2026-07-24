@@ -66,8 +66,10 @@ those target exponents.
   fabrics** and the runout is averaged. `generate` writes one exact-count,
   non-overlapping, slightly dilated close-packed source column per seed. After a
   common supported first layer, each seed selects a reproducible sequence of
-  non-repeating ABC registries and bounded in-plane perturbations. Thus the
-  realizations are neither translated copies nor perfect all-contact crystals.
+  non-repeating ABC registries. The uniform source dilation is derived as
+  `(π/(3√2)/0.60)^(1/3)`, so it realizes the declared 0.60 preparation packing
+  without a rounded density or coordinate jitter. Thus the realizations are
+  neither translated copies nor perfect all-contact crystals.
   These controlled realizations do not substitute for a measured
   packing-preparation sensitivity study; a completed dynamic campaign is still
   required before reporting
