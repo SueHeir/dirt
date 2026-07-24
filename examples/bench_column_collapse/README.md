@@ -137,10 +137,13 @@ those target exponents.
   The base uses a separate but physically identical material type solely so its
   dynamic group membership follows atom sorting; a static spatial group can
   otherwise freeze whichever particles later occupy its original slots.
-- The removable gate is bounded below at the top of that rough-base layer. This
-  keeps its containment contact off the frozen downstream support, which must
-  already exist beyond the gate to provide the same rough basal condition after
-  release. It does not shorten the mobile-column barrier.
+- The removable gate is a finite solid block whose upstream face is at `L0` and
+  whose lower face begins at the top of the rough-base layer. A grain that has
+  numerically crossed that face is therefore still outside a physical solid and
+  receives the closest-surface restoring force; ordinary plane-wall semantics
+  are unchanged. The block stays clear of the frozen downstream support, which
+  must already exist beyond the gate to provide the same rough basal condition
+  after release.
 
 ## Validation Criteria
 

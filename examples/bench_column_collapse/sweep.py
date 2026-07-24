@@ -154,12 +154,11 @@ SOURCE_DILATION = (INSERT_PACKING / PACKING) ** (1.0 / 3.0)
 SOURCE_JITTER = 0.0        # stacking disorder, not random coordinate noise
 BASE_Z = 2.0 * RADIUS
 BASE_SELECT_Z = 2.5 * RADIUS
-# The removable gate starts at the *top surface* of the frozen rough base.  A
-# plane wall is otherwise infinite, so after the containment-side repair it
-# would also push on the downstream base beads that deliberately extend beyond
-# the gate.  Those beads are support, not retained-column particles.  Bounding
-# the gate above the base makes the two boundary conditions disjoint while
-# retaining a full-height barrier for every mobile grain.
+# The removable gate starts at the *top surface* of the frozen rough base.  It
+# is rendered as a finite solid block: this gives a centre which has crossed
+# the upstream face an outward closest-surface normal, rather than dropping a
+# one-sided plane contact.  Its lower face stays clear of the frozen downstream
+# support, so the two boundary conditions remain disjoint.
 GATE_Z_LOW = 2.0 * RADIUS
 
 # Aspect ratios to sweep. Spans both regimes (linear a<~2-3, power-law a>~3) so a
@@ -833,14 +832,13 @@ material = "glass"
 name = "side_hi"
 
 [[wall]]
-type = "plane"
-point_x = {l0}
-normal_x = -1.0
+type = "region"
+inside = false
+region = {{ type = "block", min = [{l0}, -0.0060, {gate_z_low}], max = [{gate_x_high}, {gate_y_high}, {z_high}] }}
 material = "glass"
 name = "gate"
-# This finite gate begins at the rough-base surface.  It must not contact the
-# frozen downstream support, which intentionally spans beyond x=L0.
-bound_z_low = {gate_z_low}
+# Finite solid gate: its upstream face is x=L0, and it begins above the
+# frozen support which intentionally spans downstream of that face.
 
 [output]
 dir = "{output_dir}"
@@ -893,6 +891,8 @@ def generate():
                     rough_base=os.path.relpath(rough_base, REPO_ROOT), active_z_low=f"{BASE_Z + RADIUS:.4f}",
                     base_select_z=f"{BASE_SELECT_Z:.4f}",
                     gate_z_low=f"{GATE_Z_LOW:.4f}",
+                    gate_x_high=f"{L0 + 5.0 * RADIUS:.4f}",
+                    gate_y_high=f"{W + 0.0060:.4f}",
                     insert_top=f"{insert_top:.4f}", z_high=f"{z_high:.4f}",
                     active_column=os.path.relpath(active_column, REPO_ROOT),
                     output_dir=os.path.relpath(cdir, REPO_ROOT),

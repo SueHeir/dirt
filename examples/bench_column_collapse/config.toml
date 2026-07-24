@@ -122,14 +122,13 @@ material = "glass"
 name = "side_hi"
 
 [[wall]]
-type = "plane"
-point_x = 0.0960
-normal_x = -1.0
+type = "region"
+inside = false
+region = { type = "block", min = [0.0960, -0.0060, 0.0030], max = [0.1110, 0.0360, 0.2480] }
 material = "glass"
 name = "gate"
-# Start at the top of the rough-base beads so this gate does not load the
-# frozen support that extends downstream of x=0.096 m.
-bound_z_low = 0.0030
+# The gate is a finite solid, not an infinite one-sided plane.  Its upstream
+# face remains at L0; its lower face starts above the frozen rough support.
 
 [output]
 dir = "examples/bench_column_collapse/sweep/a2"

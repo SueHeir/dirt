@@ -1486,6 +1486,50 @@ fn region_block_inside_repels() {
 }
 
 #[test]
+fn finite_solid_gate_restores_particle_after_upstream_face_crossing() {
+    // A collapse gate is a finite solid from x=0.096 to x=0.111 m.  A particle
+    // already inside that volume has crossed the upstream face; the exterior
+    // region-wall formulation must still push it back toward the retained
+    // column (-x), rather than silently losing a one-sided plane contact.
+    let mut atom = Atom::new();
+    let mut dem = DemAtom::new();
+    let radius = 0.0015;
+    push_dem_test_atom(&mut atom, &mut dem, 0, [0.0965, 0.015, 0.010], radius);
+    atom.nlocal = 1;
+    atom.natoms = 1;
+
+    let mut registry = AtomDataRegistry::new();
+    registry.try_register(dem, atom.len()).unwrap();
+    let walls = make_walls_with_region(WallRegion {
+        region: Region::Block {
+            min: [0.096, -0.006, 0.003],
+            max: [0.111, 0.036, 0.248],
+        },
+        inside: false,
+        material_index: 0,
+        name: Some("gate".to_string()),
+        force_accumulator: 0.0,
+        temperature: None,
+    });
+
+    let mut app = App::new();
+    app.add_resource(atom);
+    app.add_resource(registry);
+    app.add_resource(make_material_table());
+    app.add_resource(walls);
+    app.add_update_system(wall_contact_force, ParticleSimScheduleSet::Force);
+    app.organize_systems();
+    app.run();
+
+    let atom = app.get_resource_ref::<Atom>().unwrap();
+    assert!(
+        atom.force[0][0] < 0.0,
+        "finite gate must restore through its upstream face, got fx={}",
+        atom.force[0][0]
+    );
+}
+
+#[test]
 fn region_cone_inside_repels() {
     use soil_core::region::Axis;
     let mut atom = Atom::new();
