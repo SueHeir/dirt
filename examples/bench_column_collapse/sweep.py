@@ -2504,7 +2504,13 @@ def load_verified_dirt():
         print("DIRT summary cache absent; using the complete raw-witness reconstruction.")
         return witnessed
 
-    by_aspect = {float(row.get("nominal_aspect", "nan")): row for row in cached}
+    # Do not let a duplicate aspect disappear through a dictionary overwrite:
+    # an aggregate with a repeated row and a missing row is not the full
+    # 11-point evidence, even when its distinct-key count happens to be 11.
+    cached_aspects = [float(row.get("nominal_aspect", "nan")) for row in cached]
+    if len(cached) != len(ASPECTS) or len(set(cached_aspects)) != len(ASPECTS):
+        raise ValueError("DIRT summary cache has duplicate or incomplete aspects")
+    by_aspect = dict(zip(cached_aspects, cached))
     numeric = ("aspect", "L0", "H", "L_f", "release_front", "runout_norm", "runout_std")
     if len(by_aspect) != len(ASPECTS):
         raise ValueError("DIRT summary cache has an incomplete aspect set")

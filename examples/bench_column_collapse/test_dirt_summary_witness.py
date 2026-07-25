@@ -52,6 +52,20 @@ class DirtSummaryWitnessTests(unittest.TestCase):
              mock.patch.object(sweep, "derive_dirt_ensemble", return_value=rows):
             self.assertEqual(sweep.load_verified_dirt(), rows)
 
+    def test_graph_refuses_duplicate_aspect_rows(self):
+        rows = witnessed_rows()
+        with tempfile.TemporaryDirectory() as directory:
+            cache = os.path.join(directory, "runout.csv")
+            # Replace a row with a duplicate rather than merely deleting it:
+            # the old dict-based loader could collapse this malformed cache.
+            duplicate = [dict(row) for row in rows]
+            duplicate[-1] = dict(duplicate[0])
+            sweep._write_runout(cache, duplicate)
+            with mock.patch.object(sweep, "RUNOUT_CSV", cache), \
+                 mock.patch.object(sweep, "derive_dirt_ensemble", return_value=rows):
+                with self.assertRaisesRegex(ValueError, "duplicate or incomplete"):
+                    sweep.load_verified_dirt()
+
 
 if __name__ == "__main__":
     unittest.main()
