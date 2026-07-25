@@ -2488,6 +2488,43 @@ def load_optional(path):
         return list(csv.DictReader(f))
 
 
+def load_verified_dirt():
+    """Reconstruct the DIRT result from raw witnesses before any conclusion.
+
+    ``runout.csv`` is deliberately a convenience cache written by ``start``.
+    It is not an input to the scientific verdict: a stale, partial, or edited
+    aggregate must not be able to select a set of exponents for ``graph``.
+    When the cache exists, require it to agree byte-for-number with the
+    independently re-derived 11 x 3 witness ensemble; when it is absent, the
+    complete raw ensemble remains sufficient evidence.
+    """
+    witnessed = derive_dirt_ensemble()
+    cached = load_optional(RUNOUT_CSV)
+    if not cached:
+        print("DIRT summary cache absent; using the complete raw-witness reconstruction.")
+        return witnessed
+
+    by_aspect = {float(row.get("nominal_aspect", "nan")): row for row in cached}
+    numeric = ("aspect", "L0", "H", "L_f", "release_front", "runout_norm", "runout_std")
+    if len(by_aspect) != len(ASPECTS):
+        raise ValueError("DIRT summary cache has an incomplete aspect set")
+    for row in witnessed:
+        cached_row = by_aspect.get(float(row["nominal_aspect"]))
+        if cached_row is None:
+            raise ValueError("DIRT summary cache omits a witnessed aspect")
+        try:
+            same = (int(cached_row["n_seeds"]) == row["n_seeds"]
+                    and cached_row["protocol_sha256"] == row["protocol_sha256"]
+                    and all(math.isclose(float(cached_row[key]), row[key],
+                                         rel_tol=0.0, abs_tol=1.0e-12)
+                            for key in numeric))
+        except (KeyError, TypeError, ValueError):
+            same = False
+        if not same:
+            raise ValueError("DIRT summary cache disagrees with raw witnesses")
+    return witnessed
+
+
 def derive_lammps_ensemble():
     """Reconstruct the optional cross-code overlay from raw LAMMPS witnesses.
 
@@ -2596,7 +2633,11 @@ def load_verified_lammps():
 
 
 def graph():
-    rows = load_runout()
+    try:
+        rows = load_verified_dirt()
+    except ValueError as exc:
+        print(f"DIRT validation withheld: {exc}")
+        return False
     lammps_rows = load_verified_lammps()
     ok = validate(rows)            # DIRT-vs-theory only; LAMMPS never gates PASS.
     # Re-measure the raw witnesses in a separate program.  It neither imports

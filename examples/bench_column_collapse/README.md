@@ -190,6 +190,10 @@ coordinates, aspects/seeds, toe estimator, Froude arrest limit, references, and
 the unchanged exponent band. `graph` refuses any CSV whose fingerprint differs.
 This makes it impossible to graph a smooth-base, partial, or prior-material
 campaign as evidence for the rough-base protocol merely by retaining its CSV.
+More fundamentally, `graph` derives its fit inputs from the raw 11 × 3 DIRT
+witnesses on every invocation; `runout.csv` is accepted only when it agrees
+numerically with that reconstruction. Deleting the cache does not create a
+passing result, and editing it cannot select different exponents.
 
 ### Distributed execution
 
