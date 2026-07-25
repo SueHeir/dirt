@@ -8,13 +8,13 @@ it settles, then the gate is removed at runtime (`Walls::deactivate_by_name`) an
 the column collapses and spreads. The floor is a frictional `dirt_wall` plane,
 which is what arrests the spreading deposit and sets the runout.
 
-If a LAMMPS binary is on `PATH`, the same sweep is **also** run in LAMMPS with the
-equivalent granular model and overlaid on the runout-vs-aspect-ratio plot as a
-code-to-code cross-check (see *LAMMPS cross-check* below). Both solvers receive the
-same generated active-grain coordinates for every seed, so this isolates solver
-behavior rather than conflating it with different random packings. LAMMPS is
-optional — the example runs and validates against the experimental laws with no
-LAMMPS present.
+LAMMPS can run the same sweep with the equivalent granular model and overlay it on
+the runout-vs-aspect-ratio plot as a code-to-code cross-check (see *LAMMPS
+cross-check* below). Both solvers then receive the same generated active-grain
+coordinates for every seed, so this isolates solver behavior rather than
+conflating it with different random packings. It is explicitly requested with
+`--with-lammps`; merely finding `lmp` on `PATH` does not append a second 33-case
+dynamics campaign to the required DIRT ensemble.
 
 ## Physics
 
@@ -345,7 +345,9 @@ python3 examples/bench_column_collapse/sweep.py
 
 # Or one stage at a time:
 python3 examples/bench_column_collapse/sweep.py generate   # write sweep/<case>/config.toml
-python3 examples/bench_column_collapse/sweep.py start      # build + run DIRT (+ LAMMPS if on PATH) -> data/*.csv
+python3 examples/bench_column_collapse/sweep.py start      # build + run required DIRT witnesses -> data/*.csv
+# Optional, separate external-code overlay; it never gates the DIRT result:
+python3 examples/bench_column_collapse/sweep.py start --with-lammps
 python3 examples/bench_column_collapse/sweep.py graph      # fit exponents + write plots/
 
 # Independent aspect/seed witnesses can run concurrently. This changes only

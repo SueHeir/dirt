@@ -33,11 +33,50 @@ class StartRerunTest(unittest.TestCase):
              mock.patch.object(sweep, "checked_protocol_manifest", return_value={}), \
              mock.patch.object(sweep.subprocess, "run"), \
              mock.patch.object(sweep.os.path, "isfile", return_value=True), \
+             mock.patch.object(sweep.os, "remove"), \
              mock.patch.object(sweep, "_case_evidence_error", return_value=None), \
              mock.patch.object(sweep, "_run_dirt_case", side_effect=record_run):
             sweep.start(jobs=1, rerun=True, selected_cases=[case])
 
         self.assertEqual(calls, [case])
+
+    def test_lammps_is_not_implicitly_launched_after_a_dirt_campaign(self):
+        """An installed external binary must not make an optional overlay mandatory."""
+        rows = [{"nominal_aspect": aspect} for aspect in sweep.ASPECTS]
+        cases = [(aspect, seed) for aspect in sweep.ASPECTS for seed in sweep.SEEDS]
+        with tempfile.TemporaryDirectory() as directory, \
+             mock.patch.object(sweep, "DATA_DIR", directory), \
+             mock.patch.object(sweep, "checked_protocol_manifest", return_value={}), \
+             mock.patch.object(sweep.subprocess, "run"), \
+             mock.patch.object(sweep.os.path, "isfile", return_value=True), \
+             mock.patch.object(sweep, "_case_evidence_error", return_value=None), \
+             mock.patch.object(sweep, "derive_dirt_ensemble", return_value=rows), \
+             mock.patch.object(sweep, "_write_runout"), \
+             mock.patch.object(sweep, "find_lammps", return_value="lmp") as find_lammps, \
+             mock.patch.object(sweep, "run_lammps_sweep") as run_lammps:
+            sweep._start(jobs=1, selected_cases=cases)
+
+        find_lammps.assert_not_called()
+        run_lammps.assert_not_called()
+
+    def test_lammps_overlay_requires_explicit_opt_in(self):
+        """The external dynamics leg remains available when deliberately requested."""
+        rows = [{"nominal_aspect": aspect} for aspect in sweep.ASPECTS]
+        cases = [(aspect, seed) for aspect in sweep.ASPECTS for seed in sweep.SEEDS]
+        with tempfile.TemporaryDirectory() as directory, \
+             mock.patch.object(sweep, "DATA_DIR", directory), \
+             mock.patch.object(sweep, "checked_protocol_manifest", return_value={}), \
+             mock.patch.object(sweep.subprocess, "run"), \
+             mock.patch.object(sweep.os.path, "isfile", return_value=True), \
+             mock.patch.object(sweep.os, "remove"), \
+             mock.patch.object(sweep, "_case_evidence_error", return_value=None), \
+             mock.patch.object(sweep, "derive_dirt_ensemble", return_value=rows), \
+             mock.patch.object(sweep, "_write_runout"), \
+             mock.patch.object(sweep, "find_lammps", return_value="lmp"), \
+             mock.patch.object(sweep, "run_lammps_sweep", return_value=rows) as run_lammps:
+            sweep._start(jobs=1, selected_cases=cases, with_lammps=True)
+
+        run_lammps.assert_called_once_with("lmp")
 
     def test_case_lock_rejects_a_duplicate_writer_but_not_another_case(self):
         """Only duplicate witnesses conflict; independent scheduler work proceeds."""

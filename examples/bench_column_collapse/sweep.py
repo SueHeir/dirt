@@ -1999,7 +1999,7 @@ def _run_dirt_case(a, seed, binary, env):
     return a, seed
 
 
-def _start(jobs=1, rerun=False, selected_cases=None):
+def _start(jobs=1, rerun=False, selected_cases=None, with_lammps=False):
     """Launch either the full campaign or an explicit subset of its witnesses.
 
     A full-scale 11 x 3 collapse campaign is deliberately expensive.  The
@@ -2085,29 +2085,37 @@ def _start(jobs=1, rerun=False, selected_cases=None):
     print(f"\nDIRT:   wrote {len(rows)} seed-averaged runout rows "
           f"({len(SEEDS)} seeds/aspect; protocol {protocol_fingerprint()[:12]}) -> {RUNOUT_CSV}")
 
-    # LAMMPS leg — optional cross-code overlay. Skipped entirely with no binary.
+    # The external-code overlay corroborates a completed DIRT result, but is
+    # neither an acceptance input nor a prerequisite for the experimental
+    # comparison. An installed lmp must not silently double a 33-case DIRT
+    # campaign with a second long dynamics campaign.
+    if not with_lammps:
+        print("LAMMPS: not requested — DIRT campaign complete; overlay remains optional.")
+        return
+
     lammps = find_lammps()
-    if lammps:
-        print(f"LAMMPS: {lammps} — running cross-code overlay.")
-        if os.path.isfile(LAMMPS_CSV):
-            os.remove(LAMMPS_CSV)
-        lrows = run_lammps_sweep(lammps)
-        if len(lrows) == len(ASPECTS):
-            _write_runout(LAMMPS_CSV, lrows)
-            print(f"LAMMPS: wrote {len(lrows)} runout rows -> {LAMMPS_CSV}")
-        else:
-            print("LAMMPS: incomplete independent campaign — refusing overlay.")
+    if not lammps:
+        print("LAMMPS: requested but not found on PATH — retaining DIRT-only result.")
+        return
+    print(f"LAMMPS: {lammps} — running explicitly requested cross-code overlay.")
+    if os.path.isfile(LAMMPS_CSV):
+        os.remove(LAMMPS_CSV)
+    lrows = run_lammps_sweep(lammps)
+    if len(lrows) == len(ASPECTS):
+        _write_runout(LAMMPS_CSV, lrows)
+        print(f"LAMMPS: wrote {len(lrows)} runout rows -> {LAMMPS_CSV}")
     else:
-        print("LAMMPS: not found on PATH — running DIRT only.")
+        print("LAMMPS: incomplete independent campaign — refusing overlay.")
 
 
-def start(jobs=1, rerun=False, selected_cases=None):
+def start(jobs=1, rerun=False, selected_cases=None, with_lammps=False):
     """Run independent witnesses; duplicate case launches fail closed."""
     # Shared source admission lets multiple non-overlapping cases proceed while
     # preventing ``generate`` from replacing active/base coordinates underneath
     # an executable.  It is compatible with other shared campaign readers.
     with shared_campaign_lock("start"):
-        return _start(jobs=jobs, rerun=rerun, selected_cases=selected_cases)
+        return _start(jobs=jobs, rerun=rerun, selected_cases=selected_cases,
+                      with_lammps=with_lammps)
 
 
 def _write_runout(path, rows):
@@ -2624,7 +2632,8 @@ def main():
         print_campaign_status()
     elif cmd == "start":
         try:
-            start(jobs, rerun="--rerun" in args, selected_cases=selected_cases)
+            start(jobs, rerun="--rerun" in args, selected_cases=selected_cases,
+                  with_lammps="--with-lammps" in args)
         except ValueError as exc:
             print(f"ERROR: {exc}")
             sys.exit(2)
@@ -2635,12 +2644,12 @@ def main():
         sys.exit(0 if graph() else 1)
     elif cmd == "all":
         generate()
-        start(jobs, rerun="--rerun" in args)
+        start(jobs, rerun="--rerun" in args, with_lammps="--with-lammps" in args)
         print()
         sys.exit(0 if graph() else 1)
     else:
         print(f"Unknown command: {cmd!r}")
-        print("Usage: sweep.py [generate|emit-jobs|validate-jobs|status|start|graph] [--jobs N] [--rerun]   (no arg = all three)")
+        print("Usage: sweep.py [generate|emit-jobs|validate-jobs|status|start|graph] [--jobs N] [--rerun] [--with-lammps]   (no arg = all three)")
         sys.exit(2)
 
 
