@@ -174,6 +174,10 @@ external-code release/deposit/arrest witness to the rendered LAMMPS input and
 the SHA-256 identity of the executable that produced it. Graphing withholds an
 overlay if either changes. This records solver provenance; it does not make a
 LAMMPS result an experimental target or replace the required complete campaign.
+Before an explicitly requested overlay begins, the selected executable must
+also initialize a rendered source through both stage boundaries with zero
+integration steps. This fail-fast preflight is an input-compatibility check,
+not a dynamics result or a substitute for any of the 33 external witnesses.
 The scheduled aspect proves coverage; the fit itself uses the executable's measured
 pre-release `H_i/L_i` and `(L_f-L_i)/L_i`, so settling cannot silently substitute
 the gate location for the physical initial footprint. A LAMMPS overlay is emitted only for a complete, exact-population

@@ -22,6 +22,7 @@ class LammpsSummaryGeometryTests(unittest.TestCase):
              mock.patch.object(sweep, "n_particles", return_value=1), \
              mock.patch.object(sweep, "total_particles", return_value=1), \
              mock.patch.object(sweep, "write_lammps_input"), \
+             mock.patch.object(sweep, "lammps_preflight", return_value=True), \
              mock.patch.object(sweep, "lammps_dump_to_csv", return_value=True), \
              mock.patch.object(sweep, "csv_particle_count", return_value=1), \
              mock.patch.object(sweep, "checked_lammps_release_support"), \

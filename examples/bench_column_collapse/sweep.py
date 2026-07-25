@@ -1263,7 +1263,8 @@ def active_column_from_file(path, expected_count):
     return points
 
 
-def write_lammps_input(path, aspect, seed):
+def write_lammps_input(path, aspect, seed, settle_steps=SETTLE_STEPS,
+                       collapse_steps=COLLAPSE_STEPS, output_dir=None):
     """Write a LAMMPS case from the exact DIRT active-column source.
 
     Both solvers receive the identical active grains and frozen rough base.  A
@@ -1285,6 +1286,11 @@ def write_lammps_input(path, aspect, seed):
         f"create_atoms    1 single {x:.10e} {y:.10e} {z:.10e} units box"
         for x, y, z in rough_base_positions()
     )
+    # A zero-step rendering in an isolated directory is used by the optional
+    # solver preflight below.  It exercises LAMMPS's actual parser, granular
+    # fixes, and both stage transitions without writing a release/deposit into
+    # a real witness directory or claiming any dynamics evidence.
+    output_dir = output_dir or case_dir_seed(aspect, seed)
     with open(path, "w") as f:
         f.write(LMP_TEMPLATE.format(
             aspect=aspect, count=n,
@@ -1297,12 +1303,12 @@ def write_lammps_input(path, aspect, seed):
             W=W, L0=L0, settle_dt=f"{SETTLE_DT:.3e}",
             collapse_dt=f"{COLLAPSE_DT:.3e}", thermo=40000,
             preparation_max_displacement=f"{PREPARATION_MAX_DISPLACEMENT:.3e}",
-            settle_steps=SETTLE_STEPS, collapse_steps=COLLAPSE_STEPS,
-            release_dump=lammps_dump_path(aspect, seed, "release"),
-            dump=lammps_dump_path(aspect, seed, "deposit"),
-            preparation_file=os.path.join(case_dir_seed(aspect, seed), "lammps_preparation.txt"),
+            settle_steps=settle_steps, collapse_steps=collapse_steps,
+            release_dump=os.path.join(output_dir, "lammps_release.txt"),
+            dump=os.path.join(output_dir, "lammps_deposit.txt"),
+            preparation_file=os.path.join(output_dir, "lammps_preparation.txt"),
             preparation_interval=PREPARATION_SAMPLE_INTERVAL,
-            arrest_file=os.path.join(case_dir_seed(aspect, seed), "lammps_arrest.txt"),
+            arrest_file=os.path.join(output_dir, "lammps_arrest.txt"),
             arrest_interval=ARREST_SAMPLE_INTERVAL,
         ))
 
@@ -1406,6 +1412,35 @@ def lammps_preparation_window(path):
     return [speed for _, speed in window]
 
 
+def lammps_preflight(lammps):
+    """Prove the selected LAMMPS accepts the rendered two-stage protocol.
+
+    This is deliberately an execution check, rather than a string assertion:
+    LAMMPS initializes the granular pair and wall fixes, performs both ``run
+    0`` stage transitions, and exits successfully.  It is not a simulation and
+    supplies no physical witness, so it cannot make an overlay admissible.
+    """
+    aspect, seed = ASPECTS[0], SEEDS[0]
+    with tempfile.TemporaryDirectory(prefix="column-collapse-lammps-preflight-") as directory:
+        input_path = os.path.join(directory, "in.lammps")
+        try:
+            write_lammps_input(input_path, aspect, seed, settle_steps=0,
+                               collapse_steps=0, output_dir=directory)
+            proc = subprocess.run(
+                [lammps, "-in", input_path, "-log", "none"], cwd=REPO_ROOT,
+                stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT,
+            )
+        except (OSError, ValueError) as exc:
+            print(f"LAMMPS: preflight could not render or execute: {exc}")
+            return False
+    if proc.returncode:
+        print("LAMMPS: preflight rejected the rendered two-stage granular input; "
+              "not starting the 33-case overlay.")
+        return False
+    print("LAMMPS: zero-step two-stage input preflight passed; starting overlay.")
+    return True
+
+
 def run_lammps_sweep(lammps):
     """Run the same aspect×seed campaign in LAMMPS or return no overlay.
 
@@ -1413,6 +1448,9 @@ def run_lammps_sweep(lammps):
     three-seed arrested ensemble.  This deliberately fails closed unless every
     realization has exact release/final populations and the same Froude gate.
     """
+    if not lammps_preflight(lammps):
+        return []
+
     rows = []
     failures = []
     for i, a in enumerate(ASPECTS, 1):
