@@ -196,6 +196,11 @@ fn capsule_contact_force(
             if !i_cap && !j_cap {
                 continue; // pure sphere pair — not ours
             }
+            // Bonded strand members (same molecule) do not surface-contact — the
+            // bond carries their interaction, mirroring the sphere path.
+            if dirt_atom::same_molecule(&dem, i, j) {
+                continue;
+            }
 
             let pos_i = [
                 atoms.pos[i][0] as f64,
