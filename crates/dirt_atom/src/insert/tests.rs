@@ -51,7 +51,9 @@ impl AtomData for BrokenDefaults {
 
 fn test_dem_registry() -> AtomDataRegistry {
     let mut registry = AtomDataRegistry::new();
-    registry.try_register(DemAtom::new(), 0).unwrap();
+    registry
+        .register_for_atoms(DemAtom::new(), &Atom::default())
+        .unwrap();
     registry
 }
 
@@ -388,13 +390,13 @@ fn production_rate_insert_partitions_exact_deterministic_tag_rows_and_cleans_lat
         .append_ghost_records(&packed, 1)
         .unwrap();
     registry
-        .try_register(LateProbe::default(), atom.len())
+        .register_for_atoms(LateProbe::default(), &atom)
         .unwrap();
 
     let (atom, late_rows, inserted, _) =
         run_rate_once(atom, registry, unit_domain(0.0, 1.0), rate_config(20260712));
     assert_eq!(inserted, 8);
-    assert_eq!((atom.nlocal, atom.nghost, atom.len()), (9, 0, 9));
+    assert_eq!((atom.nlocal(), atom.nghost(), atom.len()), (9, 0, 9));
     assert_eq!(atom.tag[0], 41, "the local prefix survives ghost removal");
     assert_eq!(late_rows, atom.len());
 
@@ -479,7 +481,7 @@ fn particle_store_construction_covers_immediate_and_rate_rows() {
     }
 
     let dem = registry.expect::<DemAtom>("particle-store construction test");
-    assert_eq!((atoms.nlocal, atoms.nghost, atoms.natoms), (2, 0, 2));
+    assert_eq!((atoms.nlocal(), atoms.nghost(), atoms.natoms()), (2, 0, 2));
     assert_eq!(atoms.tag, vec![7, 8]);
     assert_eq!(atoms.atom_type, vec![3, 4]);
     assert_eq!(atoms.cutoff_radius, vec![0.002 + 0.0004, 0.003 + 0.0004]);
@@ -507,7 +509,7 @@ fn particle_store_construction_backfills_late_extensions_and_rolls_back() {
         },
     );
     registry
-        .try_register(LateProbe::default(), atoms.len())
+        .register_for_atoms(LateProbe::default(), &atoms)
         .unwrap();
     assert_eq!(
         registry.expect::<LateProbe>("late extension").rows,
@@ -535,13 +537,15 @@ fn particle_store_construction_backfills_late_extensions_and_rolls_back() {
 
     let mut rollback_atoms = Atom::new();
     let mut rollback_registry = AtomDataRegistry::new();
-    rollback_registry.try_register(BrokenDefaults, 0).unwrap();
+    rollback_registry
+        .register_for_atoms(BrokenDefaults, &rollback_atoms)
+        .unwrap();
     assert_eq!(
         ParticleStore::new(&mut rollback_atoms, &rollback_registry).push_default_local(1),
         Err(ParticleStoreError::MalformedExtensionRecord)
     );
     assert!(rollback_atoms.is_empty());
-    assert_eq!((rollback_atoms.nlocal, rollback_atoms.natoms), (0, 0));
+    assert_eq!((rollback_atoms.nlocal(), rollback_atoms.natoms()), (0, 0));
     assert!(rollback_registry.validate_rows(0));
 }
 
@@ -572,7 +576,13 @@ fn particle_store_restart_rejection_preserves_dem_construction() {
     // mismatched ownership count is the same malformed-restart class and must
     // leave the synchronized core and extension stores untouched.
     let mut malformed = atoms.clone();
-    malformed.nlocal += 1;
+    unsafe {
+        malformed.set_layout_unchecked(
+            malformed.nlocal() + 1,
+            malformed.nghost(),
+            malformed.natoms(),
+        );
+    }
     assert_eq!(
         ParticleStore::new(&mut atoms, &registry).replace_from_restart(malformed, &[]),
         Err(ParticleStoreError::InvalidStructuralOperation)
@@ -629,7 +639,7 @@ fn rate_insertion_ghost_cleanup_keeps_dem_rows_synchronized() {
     ParticleStore::new(&mut atoms, &registry)
         .append_ghost_records(&packed, 1)
         .unwrap();
-    assert_eq!((atoms.nlocal, atoms.nghost), (1, 1));
+    assert_eq!((atoms.nlocal(), atoms.nghost()), (1, 1));
     assert_eq!(
         registry.expect::<DemAtom>("ghost setup").radius,
         vec![0.001, 0.003]
@@ -638,7 +648,7 @@ fn rate_insertion_ghost_cleanup_keeps_dem_rows_synchronized() {
     ParticleStore::new(&mut atoms, &registry)
         .discard_ghosts()
         .unwrap();
-    assert_eq!((atoms.nlocal, atoms.nghost, atoms.len()), (1, 0, 1));
+    assert_eq!((atoms.nlocal(), atoms.nghost(), atoms.len()), (1, 0, 1));
     assert_eq!(
         registry.expect::<DemAtom>("ghost cleanup").radius,
         vec![0.001]

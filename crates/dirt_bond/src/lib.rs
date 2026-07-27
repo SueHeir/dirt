@@ -926,7 +926,7 @@ pub fn auto_bond_touching(
     }
 
     particles.with(|(dem, mut bond_store)| {
-        let nlocal = atoms.nlocal as usize;
+        let nlocal = atoms.nlocal() as usize;
         while bond_store.bonds.len() < nlocal {
             bond_store.bonds.push(Vec::new());
         }
@@ -1010,7 +1010,7 @@ pub fn load_bonds_from_file(
         }
     };
 
-    let nlocal = atoms.nlocal as usize;
+    let nlocal = atoms.nlocal() as usize;
     let mut tag_to_local: HashMap<u32, usize> = HashMap::with_capacity(nlocal);
     for i in 0..nlocal {
         tag_to_local.insert(atoms.tag[i], i);
@@ -1184,7 +1184,7 @@ pub fn init_bond_history(
         while history.history.len() < bonds.bonds.len() {
             history.history.push(Vec::new());
         }
-        let nlocal = atoms.nlocal as usize;
+        let nlocal = atoms.nlocal() as usize;
         for i in 0..bonds.bonds.len().min(nlocal) {
             let tag_a = atoms.tag[i];
             for bond in &bonds.bonds[i] {
@@ -1248,7 +1248,7 @@ pub fn bond_force(
         let tilt = domain.tilt;
         let triclinic = domain.triclinic;
 
-        let nlocal = atoms.nlocal as usize;
+        let nlocal = atoms.nlocal() as usize;
         if bonds.bonds.len() < nlocal {
             return;
         }
@@ -2017,14 +2017,13 @@ Bonds
         let radius = 0.001;
         push_dem_test_atom(&mut atom, &mut dem, 1, [0.0, 0.0, 0.0], radius);
         push_dem_test_atom(&mut atom, &mut dem, 2, [0.002, 0.0, 0.0], radius);
-        atom.nlocal = 2;
-        atom.natoms = 2;
+        unsafe { atom.set_layout_unchecked(2, atom.nghost(), 2); }
 
         let mut registry = AtomDataRegistry::new();
-        registry.try_register(dem, atom.len()).unwrap();
-        registry.try_register(BondStore::new(), atom.len()).unwrap();
+        registry.register_for_atoms(dem, &atom).unwrap();
+        registry.register_for_atoms(BondStore::new(), &atom).unwrap();
         registry
-            .try_register(BondHistoryStore::new(), atom.len())
+            .register_for_atoms(BondHistoryStore::new(), &atom)
             .unwrap();
 
         let mut domain = soil_core::Domain::new();
@@ -2059,14 +2058,13 @@ Bonds
         let radius = 0.001;
         push_dem_test_atom(&mut atom, &mut dem, 1, [0.0, 0.0, 0.0], radius);
         push_dem_test_atom(&mut atom, &mut dem, 2, [0.01, 0.0, 0.0], radius);
-        atom.nlocal = 2;
-        atom.natoms = 2;
+        unsafe { atom.set_layout_unchecked(2, atom.nghost(), 2); }
 
         let mut registry = AtomDataRegistry::new();
-        registry.try_register(dem, atom.len()).unwrap();
-        registry.try_register(BondStore::new(), atom.len()).unwrap();
+        registry.register_for_atoms(dem, &atom).unwrap();
+        registry.register_for_atoms(BondStore::new(), &atom).unwrap();
         registry
-            .try_register(BondHistoryStore::new(), atom.len())
+            .register_for_atoms(BondHistoryStore::new(), &atom)
             .unwrap();
 
         let mut domain = soil_core::Domain::new();
@@ -2423,7 +2421,13 @@ format = "lammps_data"
 
         let mut registry = AtomDataRegistry::new();
         let atom_count = bond_store.len();
-        registry.try_register(bond_store, atom_count).unwrap();
+        let mut sizing_atom = Atom::new();
+        for k in 0..atom_count {
+            unsafe { sizing_atom.push_test_atom((k + 1) as u32, [0.0; 3], 1.0, 1.0) };
+        }
+        registry
+            .register_for_atoms(bond_store, &sizing_atom)
+            .unwrap();
 
         let mut domain = soil_core::Domain::new();
         domain.ghost_cutoff = 0.001; // deliberately too small
@@ -2461,7 +2465,13 @@ format = "lammps_data"
 
         let mut registry = AtomDataRegistry::new();
         let atom_count = bond_store.len();
-        registry.try_register(bond_store, atom_count).unwrap();
+        let mut sizing_atom = Atom::new();
+        for k in 0..atom_count {
+            unsafe { sizing_atom.push_test_atom((k + 1) as u32, [0.0; 3], 1.0, 1.0) };
+        }
+        registry
+            .register_for_atoms(bond_store, &sizing_atom)
+            .unwrap();
 
         let mut domain = soil_core::Domain::new();
         domain.ghost_cutoff = 0.001;
@@ -2494,7 +2504,13 @@ format = "lammps_data"
 
         let mut registry = AtomDataRegistry::new();
         let atom_count = bond_store.len();
-        registry.try_register(bond_store, atom_count).unwrap();
+        let mut sizing_atom = Atom::new();
+        for k in 0..atom_count {
+            unsafe { sizing_atom.push_test_atom((k + 1) as u32, [0.0; 3], 1.0, 1.0) };
+        }
+        registry
+            .register_for_atoms(bond_store, &sizing_atom)
+            .unwrap();
 
         let mut domain = soil_core::Domain::new();
         domain.ghost_cutoff = 0.05; // already larger than 0.002 × 2.5 = 0.005

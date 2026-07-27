@@ -63,7 +63,7 @@ pub fn print_granular_temperature(
     if !run_state.total_cycle.is_multiple_of(thermo_interval) {
         return;
     }
-    let nlocal = atoms.nlocal as usize;
+    let nlocal = atoms.nlocal() as usize;
     let mut local_mv_x = 0.0;
     let mut local_mv_y = 0.0;
     let mut local_mv_z = 0.0;

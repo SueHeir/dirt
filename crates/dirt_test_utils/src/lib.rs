@@ -13,7 +13,7 @@
 //! let atom = make_atoms(3); // 3 atoms at (0,0,0), (1,0,0), (2,0,0)
 //! let groups = make_group_registry("all", vec![true, true, true]);
 //! let _comm = make_single_comm();
-//! assert_eq!(atom.nlocal, 3);
+//! assert_eq!(atom.nlocal(), 3);
 //! assert_eq!(groups.groups[0].count, 3);
 //! ```
 //!
@@ -23,7 +23,7 @@
 //! use dirt_test_utils::ParticleFixture;
 //!
 //! let fixture = ParticleFixture::new().build();
-//! assert_eq!(fixture.atom.nlocal, 2);
+//! assert_eq!(fixture.atom.nlocal(), 2);
 //! assert_eq!(fixture.neighbor.neighbor_indices, vec![1]);
 //! ```
 //!
@@ -175,8 +175,13 @@ impl ParticleFixture {
             !self.particles.is_empty(),
             "SimulationFixture requires at least one particle"
         );
-        atom.nlocal = self.particles.len() as u32;
-        atom.natoms = self.particles.len() as u64;
+        unsafe {
+            atom.set_layout_unchecked(
+                self.particles.len() as u32,
+                atom.nghost(),
+                self.particles.len() as u64,
+            );
+        }
         atom.dt = self.timestep;
 
         let mut neighbor = Neighbor::new();
@@ -194,7 +199,7 @@ impl ParticleFixture {
 
         let mut registry = AtomDataRegistry::new();
         registry
-            .try_register(dem, atom.len())
+            .register_for_atoms(dem, &atom)
             .expect("fixture DEM extension must match Atom length");
         SimulationFixture {
             atom,
@@ -226,7 +231,7 @@ impl SimulationFixture {
     /// Register another atom extension, checking it has exactly one row per fixture particle.
     pub fn register_atom_data<T: AtomData + 'static>(&mut self, data: T) {
         self.registry
-            .try_register(data, self.atom.len())
+            .register_for_atoms(data, &self.atom)
             .expect("fixture atom extension must match Atom length");
     }
 
@@ -270,8 +275,8 @@ impl SimulationFixture {
 /// use dirt_test_utils::make_atoms;
 ///
 /// let atom = make_atoms(5);
-/// assert_eq!(atom.nlocal, 5);
-/// assert_eq!(atom.natoms, 5);
+/// assert_eq!(atom.nlocal(), 5);
+/// assert_eq!(atom.natoms(), 5);
 /// assert_eq!(atom.pos[2], [2.0, 0.0, 0.0]);
 /// ```
 pub fn make_atoms(n: usize) -> Atom {
@@ -280,8 +285,7 @@ pub fn make_atoms(n: usize) -> Atom {
         // `Atom` has no registered extensions in this core-only fixture.
         unsafe { atom.push_test_atom(i as u32, [i as f64, 0.0, 0.0], 0.5, 1.0) };
     }
-    atom.nlocal = n as u32;
-    atom.natoms = n as u64;
+    unsafe { atom.set_layout_unchecked(n as u32, atom.nghost(), n as u64); }
     atom.dt = 0.001;
     atom
 }
@@ -353,8 +357,7 @@ pub fn make_single_comm() -> CommResource {
 /// assert_eq!(dem.radius[0], 0.5);
 /// assert_eq!(dem.density[0], 2500.0);
 /// // push_dem_test_atom does NOT set nlocal/natoms — the caller must:
-/// atom.nlocal = 1;
-/// atom.natoms = 1;
+/// unsafe { atom.set_layout_unchecked(1, atom.nghost(), 1); }
 /// ```
 pub fn push_dem_test_atom(
     atom: &mut Atom,
@@ -425,8 +428,8 @@ mod fixture_tests {
     #[test]
     fn default_fixture_is_nonempty_and_synchronized() {
         let fixture = ParticleFixture::default().build();
-        assert_eq!(fixture.atom.nlocal, 2);
-        assert_eq!(fixture.atom.natoms, 2);
+        assert_eq!(fixture.atom.nlocal(), 2);
+        assert_eq!(fixture.atom.natoms(), 2);
         assert_eq!(fixture.atom.len(), 2);
         assert_eq!(
             fixture

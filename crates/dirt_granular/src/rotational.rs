@@ -70,7 +70,7 @@ pub fn initial_rotation(
 ) {
     particles.with(|mut dem| {
         let dt = atoms.dt;
-        let nlocal = atoms.nlocal as usize;
+        let nlocal = atoms.nlocal() as usize;
         let track_orientation = material_table.track_orientation;
 
         for i in 0..nlocal {
@@ -104,7 +104,7 @@ pub fn initial_rotation(
 pub fn final_rotation(atoms: Res<Atom>, particles: ParticlesWith<'_, Write<DemAtom>>) {
     particles.with(|mut dem| {
         let dt = atoms.dt;
-        let nlocal = atoms.nlocal as usize;
+        let nlocal = atoms.nlocal() as usize;
 
         for i in 0..nlocal {
             let inv_inertia = dem.inv_inertia[i];
@@ -141,11 +141,10 @@ mod tests {
 
         // Apply torque around z-axis
         dem.torque[0][2] = 1.0;
-        atom.nlocal = 1;
-        atom.natoms = 1;
+        unsafe { atom.set_layout_unchecked(1, atom.nghost(), 1); }
 
         let mut registry = AtomDataRegistry::new();
-        registry.try_register(dem, atom.len()).unwrap();
+        registry.register_for_atoms(dem, &atom).unwrap();
 
         app.add_resource(atom);
         app.add_resource(registry);
@@ -175,11 +174,10 @@ mod tests {
 
         push_dem_test_atom(&mut atom, &mut dem, 0, [0.0; 3], radius);
         dem.omega[0][2] = 100.0;
-        atom.nlocal = 1;
-        atom.natoms = 1;
+        unsafe { atom.set_layout_unchecked(1, atom.nghost(), 1); }
 
         let mut registry = AtomDataRegistry::new();
-        registry.try_register(dem, atom.len()).unwrap();
+        registry.register_for_atoms(dem, &atom).unwrap();
 
         app.add_resource(atom);
         app.add_resource(registry);

@@ -135,8 +135,7 @@ fn make_atom(radius: f64, overlap: f64, dt: f64) -> Atom {
     atom.dt = dt;
     // No extension registry exists in this one-particle benchmark fixture.
     unsafe { atom.push_test_atom(1, [0.0, 0.0, radius - overlap], radius, mass) };
-    atom.nlocal = 1;
-    atom.natoms = 1;
+    unsafe { atom.set_layout_unchecked(1, atom.nghost(), 1); }
     atom
 }
 
@@ -155,7 +154,9 @@ fn make_registry(radius: f64) -> AtomDataRegistry {
     dem.body_id.push(0.0);
 
     let mut registry = AtomDataRegistry::new();
-    registry.try_register(dem, 1).unwrap();
+    let mut sizing_atom = Atom::new();
+    unsafe { sizing_atom.push_test_atom(1, [0.0; 3], 1.0, 1.0) };
+    registry.register_for_atoms(dem, &sizing_atom).unwrap();
     registry
 }
 

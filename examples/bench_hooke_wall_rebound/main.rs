@@ -66,7 +66,7 @@ fn track_rebound(
     input: Res<Input>,
     mut tracker: ResMut<WallReboundTracker>,
 ) {
-    if tracker.finished || atoms.nlocal == 0 {
+    if tracker.finished || atoms.nlocal() == 0 {
         return;
     }
 

@@ -90,8 +90,7 @@ fn build_system(
         dem.body_id.push(0.0);
         hist.contacts.push(Vec::new());
     }
-    atom.nlocal = 2;
-    atom.natoms = 2;
+    unsafe { atom.set_layout_unchecked(2, atom.nghost(), 2); }
 
     let mut nb = Neighbor::new();
     nb.newton = true;
@@ -99,8 +98,8 @@ fn build_system(
     nb.neighbor_indices = vec![1];
 
     let mut reg = AtomDataRegistry::new();
-    reg.try_register(dem, atom.len()).unwrap();
-    reg.try_register(hist, atom.len()).unwrap();
+    reg.register_for_atoms(dem, &atom).unwrap();
+    reg.register_for_atoms(hist, &atom).unwrap();
     (atom, nb, reg, mt)
 }
 

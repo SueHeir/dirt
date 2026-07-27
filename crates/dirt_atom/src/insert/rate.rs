@@ -60,7 +60,7 @@ pub fn dem_rate_insert(
     // Strip ghost atoms before inserting new local atoms.
     // New atoms are appended at atom.len(), which must equal nlocal so that
     // the subsequent borders() truncate_to_nlocal() doesn't discard them.
-    if atom.nghost > 0 {
+    if atom.nghost() > 0 {
         // Keep the core ghost suffix and every DIRT extension in one
         // transaction.  In particular, a plugin registered after setup has a
         // row here too; truncating Atom and AtomDataRegistry separately would

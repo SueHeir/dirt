@@ -576,7 +576,7 @@ fn snap_subspheres_to_body_com(
     particles: ParticlesWith<'_, Read<ClumpAtom>>,
 ) {
     particles.with(|clump| {
-        let nlocal = atoms.nlocal as usize;
+        let nlocal = atoms.nlocal() as usize;
         for i in 0..nlocal {
             if i >= clump.body_id.len() {
                 break;
@@ -604,7 +604,7 @@ fn restore_subsphere_positions(
 ) {
     bodies.generate_map();
     particles.with(|(clump, mut dem)| {
-        let nlocal = atoms.nlocal as usize;
+        let nlocal = atoms.nlocal() as usize;
         for i in 0..nlocal {
             if i >= clump.body_id.len() {
                 break;
@@ -881,7 +881,7 @@ pub fn aggregate_clump_forces(
             body.zero_accumulators();
         }
 
-        let nlocal = atoms.nlocal as usize;
+        let nlocal = atoms.nlocal() as usize;
 
         // Collect contributions to avoid borrow conflicts
         struct Contrib {
@@ -968,7 +968,7 @@ pub fn update_clump_positions(
             None => return,
         };
 
-        let nlocal = atoms.nlocal as usize;
+        let nlocal = atoms.nlocal() as usize;
 
         struct SubUpdate {
             idx: usize,
@@ -1044,7 +1044,7 @@ fn check_lost_clump_atoms(
             return;
         };
 
-        let nlocal = atoms.nlocal as usize;
+        let nlocal = atoms.nlocal() as usize;
         let mut counts: HashMap<u32, usize> = HashMap::new();
 
         for i in 0..nlocal {
@@ -1408,8 +1408,8 @@ fn try_insert_clump_with_cutoff_padding(
     // after every ParticleStore row has accepted its default: an extension
     // rejection must not leave an orphan body or a partially materialized
     // clump.  Roll back already accepted rows through the facade as well.
-    let original_natoms = atoms.natoms;
-    let original_nlocal = atoms.nlocal;
+    let original_natoms = atoms.natoms();
+    let original_nlocal = atoms.nlocal();
     for (si, sphere) in def.spheres.iter().enumerate() {
         let sub_tag = base_tag + si as u32;
         let sub_pos = [
@@ -1420,15 +1420,15 @@ fn try_insert_clump_with_cutoff_padding(
 
         let sub_mass = density * (4.0 / 3.0) * PI * sphere.radius.powi(3);
 
-        let global_natoms = atoms.natoms + 1;
+        let global_natoms = atoms.natoms() + 1;
         if let Err(error) = ParticleStore::new(atoms, registry).push_default_local(global_natoms) {
-            while atoms.nlocal > original_nlocal {
-                let last = atoms.nlocal as usize - 1;
+            while atoms.nlocal() > original_nlocal {
+                let last = atoms.nlocal() as usize - 1;
                 ParticleStore::new(atoms, registry)
                     .swap_remove(last)
                     .expect("previously accepted clump rows must remain removable");
             }
-            atoms.natoms = original_natoms;
+            atoms.set_global_natoms(original_natoms);
             return Err(error);
         }
         let i = atoms.len() - 1;
@@ -1546,8 +1546,9 @@ mod tests {
 
     fn setup_clump_test() -> (Atom, AtomDataRegistry, MultisphereBodyStore) {
         let mut registry = AtomDataRegistry::new();
-        registry.try_register(DemAtom::new(), 0).unwrap();
-        registry.try_register(ClumpAtom::new(), 0).unwrap();
+        let empty_atom = Atom::new();
+        registry.register_for_atoms(DemAtom::new(), &empty_atom).unwrap();
+        registry.register_for_atoms(ClumpAtom::new(), &empty_atom).unwrap();
         (Atom::new(), registry, MultisphereBodyStore::new())
     }
 
@@ -1663,8 +1664,9 @@ region = { type = "block", min = [1.0, 1.0, 1.0], max = [1.0, 2.0, 2.0] }
     fn config_insert_snapshot(seed: Option<u64>) -> Vec<u64> {
         let mut app = App::new();
         let mut registry = AtomDataRegistry::new();
-        registry.try_register(DemAtom::new(), 0).unwrap();
-        registry.try_register(ClumpAtom::new(), 0).unwrap();
+        let empty_atom = Atom::new();
+        registry.register_for_atoms(DemAtom::new(), &empty_atom).unwrap();
+        registry.register_for_atoms(ClumpAtom::new(), &empty_atom).unwrap();
 
         let mut domain = Domain::new();
         domain.boundaries_low = [-0.03; 3];
@@ -1788,8 +1790,8 @@ region = { type = "block", min = [1.0, 1.0, 1.0], max = [1.0, 2.0, 2.0] }
         );
 
         assert_eq!(count, 2, "Should insert 2 sub-spheres (no parent atom)");
-        assert_eq!(atoms.nlocal, 2);
-        assert_eq!(atoms.natoms, 2);
+        assert_eq!(atoms.nlocal(), 2);
+        assert_eq!(atoms.natoms(), 2);
         assert_eq!(bodies.bodies.len(), 1);
 
         // Both atoms are sub-spheres with real radii
@@ -1822,9 +1824,10 @@ region = { type = "block", min = [1.0, 1.0, 1.0], max = [1.0, 2.0, 2.0] }
     #[test]
     fn clump_row_rejection_rolls_back_atoms_before_body_commit() {
         let mut registry = AtomDataRegistry::new();
-        registry.try_register(DemAtom::new(), 0).unwrap();
-        registry.try_register(ClumpAtom::new(), 0).unwrap();
-        registry.try_register(RejectDefaultRow, 0).unwrap();
+        let empty_atom = Atom::new();
+        registry.register_for_atoms(DemAtom::new(), &empty_atom).unwrap();
+        registry.register_for_atoms(ClumpAtom::new(), &empty_atom).unwrap();
+        registry.register_for_atoms(RejectDefaultRow, &empty_atom).unwrap();
         let mut atoms = Atom::new();
         let mut bodies = MultisphereBodyStore::new();
         let error = try_insert_clump_with_cutoff_padding(
@@ -1842,7 +1845,7 @@ region = { type = "block", min = [1.0, 1.0, 1.0], max = [1.0, 2.0, 2.0] }
         .unwrap_err();
         assert_eq!(error, ParticleStoreError::MalformedExtensionRecord);
         assert!(atoms.is_empty());
-        assert_eq!((atoms.nlocal, atoms.nghost, atoms.natoms), (0, 0, 0));
+        assert_eq!((atoms.nlocal(), atoms.nghost(), atoms.natoms()), (0, 0, 0));
         assert!(registry.validate_rows(0));
         assert!(bodies.bodies.is_empty());
         assert_eq!(bodies.find_by_id(7), None);

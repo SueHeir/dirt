@@ -84,7 +84,7 @@ fn main() {
 }
 
 fn index_of_tag(atoms: &Atom, tag: u32) -> Option<usize> {
-    (0..atoms.nlocal as usize).find(|&i| atoms.tag[i] == tag)
+    (0..atoms.nlocal() as usize).find(|&i| atoms.tag[i] == tag)
 }
 
 fn track_oblique(
@@ -94,7 +94,7 @@ fn track_oblique(
     input: Res<Input>,
     mut tracker: ResMut<ObliqueTracker>,
 ) {
-    if tracker.finished || atoms.nlocal < 2 {
+    if tracker.finished || atoms.nlocal() < 2 {
         return;
     }
     let dem = registry.expect::<DemAtom>("track_oblique");
@@ -103,7 +103,7 @@ fn track_oblique(
     // Identify the projectile once: the moving sphere (target is frozen).
     if tracker.projectile_tag.is_none() {
         let mut best = (0usize, 0.0f64);
-        for i in 0..atoms.nlocal as usize {
+        for i in 0..atoms.nlocal() as usize {
             let vi = [
                 atoms.vel[i][0] as f64,
                 atoms.vel[i][1] as f64,
@@ -120,7 +120,7 @@ fn track_oblique(
         Some(i) => i,
         None => return,
     };
-    let t = (0..atoms.nlocal as usize).find(|&i| i != p).unwrap();
+    let t = (0..atoms.nlocal() as usize).find(|&i| i != p).unwrap();
 
     let vel = [
         atoms.vel[p][0] as f64,
