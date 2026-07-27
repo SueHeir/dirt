@@ -574,10 +574,14 @@ pub(super) fn read_lammps_data_particles(
                 };
                 let atype: u32 = parse_field(next(), "atom type", i + 1, file_path)?;
                 let diameter: f64 = parse_field(next(), "diameter", i + 1, file_path)?;
-                let density: f64 = parse_field(next(), "density", i + 1, file_path)?;
+                let file_density: f64 = parse_field(next(), "density", i + 1, file_path)?;
                 let x: f64 = parse_field(next(), "x coordinate", i + 1, file_path)?;
                 let y: f64 = parse_field(next(), "y coordinate", i + 1, file_path)?;
                 let z: f64 = parse_field(next(), "z coordinate", i + 1, file_path)?;
+                // A config `density` overrides the file column, mirroring a LAMMPS
+                // `set atom * density …` after read_data (the coarse-yarn file
+                // stores a placeholder density of 1).
+                let density = default_density.unwrap_or(file_density);
                 parsed_atoms.push(ParsedAtom {
                     id,
                     atom_type: atype,
@@ -638,13 +642,18 @@ pub(super) fn read_lammps_data_particles(
                     cutoff_padding,
                     density: pa.density,
                     mat_idx: row_mat_idx,
-                    tag: *max_tag,
+                    // Preserve the file's atom ID as the tag: the Bonds section
+                    // references atom IDs, so tags must equal file IDs (they are
+                    // not guaranteed to be listed in ID order) for bonds to match
+                    // the correct atoms. Falls back to the running counter only
+                    // for an id-less file (id 0).
+                    tag: if pa.id > 0 { pa.id } else { *max_tag },
                     molecule: pa.molecule,
                 },
             );
             count += 1;
         }
-        *max_tag += 1;
+        *max_tag = (*max_tag).max(pa.id) + 1;
     }
 
     println!(
