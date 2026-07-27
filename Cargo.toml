@@ -37,6 +37,7 @@ soil_verlet = { git = "https://github.com/SueHeir/soil.git", rev = "aa89792d020c
 # DIRT workspace members
 dirt_atom = { path = "crates/dirt_atom", version = "0.1.4" }
 dirt_bond = { path = "crates/dirt_bond", version = "0.1.4" }
+dirt_capsule = { path = "crates/dirt_capsule", version = "0.1.4" }
 dirt_clump = { path = "crates/dirt_clump", version = "0.1.4" }
 dirt_contact_analysis = { path = "crates/dirt_contact_analysis", version = "0.1.4" }
 dirt_core = { path = "crates/dirt_core", version = "0.1.4", default-features = false }
