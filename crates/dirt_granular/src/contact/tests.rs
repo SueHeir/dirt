@@ -2010,3 +2010,265 @@ fn willett_liquid_bridge_force_matches_closed_form_and_ruptures() {
         0.0
     );
 }
+
+/// Persistent-contact energy conservation: a sphere held in *sustained* marginal
+/// contact between two fixed neighbours (the local motif of a packed granular
+/// bundle) must conserve energy under elastic (restitution = 1) contact. This
+/// isolates the yarn-pull energy injection away from bonds, walls, MPI, and the
+/// pull driver. If DIRT's normal-contact + velocity-Verlet update injects energy
+/// for a persistent oscillating Hertz contact, the total energy grows.
+#[test]
+fn persistent_marginal_contact_conserves_energy() {
+    use soil_core::Real;
+    let r = 0.5_f64;
+    let e_mod = 1.0e7_f64;
+    let nu = 0.3_f64;
+
+    // Frictionless, perfectly elastic material (restitution = 1 → zero damping),
+    // so the only energy sink/source is the normal-contact integration itself.
+    let mut mt = dirt_atom::MaterialTable::new();
+    mt.add(
+        Material::new("elastic", Elastic::new(e_mod, nu, 1.0)).with_friction(Friction {
+            sliding: 0.0,
+            ..Default::default()
+        }),
+    )
+    .unwrap();
+    mt.build_pair_tables();
+
+    let e_eff = e_mod / (2.0 * (1.0 - nu * nu));
+    let r_eff = r / 2.0;
+    // Elastic Hertz potential energy of one contact at centre distance `dist`.
+    let pe = |dist: f64| -> f64 {
+        let d = (2.0 * r - dist).max(0.0);
+        (8.0 / 15.0) * e_eff * r_eff.sqrt() * d.powf(2.5)
+    };
+
+    for &delta in &[0.02_f64, 0.005, 0.001] {
+        let d = 2.0 * r - delta; // A–B and B–C centre spacing (B overlaps each by δ)
+        let mut atom = Atom::new();
+        let mut dem = DemAtom::new();
+        let mut hist = ContactHistoryStore::new();
+        atom.dt = 1.0e-3;
+        push_test_atom_with_history(&mut atom, &mut dem, &mut hist, 0, [0.0, 0.0, 0.0], r);
+        push_test_atom_with_history(&mut atom, &mut dem, &mut hist, 1, [d, 0.0, 0.0], r);
+        push_test_atom_with_history(&mut atom, &mut dem, &mut hist, 2, [2.0 * d, 0.0, 0.0], r);
+        unsafe { atom.set_layout_unchecked(3, 0, 3) };
+        let mut nb = Neighbor::new();
+        nb.neighbor_offsets = vec![0, 1, 2, 2]; // 0→{1}, 1→{2}, 2→{}
+        nb.neighbor_indices = vec![1, 2];
+        let mut reg = AtomDataRegistry::new();
+        reg.register_for_atoms(dem, &atom).unwrap();
+        reg.register_for_atoms(hist, &atom).unwrap();
+
+        let m = atom.mass[1] as f64;
+        let dt = atom.dt as f64;
+        // Perturb the middle sphere along the chain axis.
+        atom.vel[1] = [0.03 as Real, 0.0, 0.0];
+
+        let energy = |atom: &Atom| -> f64 {
+            let v = atom.vel[1];
+            let ke = 0.5 * m * ((v[0] * v[0] + v[1] * v[1] + v[2] * v[2]) as f64);
+            let d1 = (atom.pos[1][0] - atom.pos[0][0]) as f64;
+            let d2 = (atom.pos[2][0] - atom.pos[1][0]) as f64;
+            ke + pe(d1.abs()) + pe(d2.abs())
+        };
+
+        // Initial force.
+        for i in 0..3 {
+            atom.force[i] = [0.0; 3];
+        }
+        contact_force_core(&mut atom, &nb, &reg, &mt, None, ForcePass::All);
+        let e0 = energy(&atom);
+        let mut e_max = e0;
+
+        // Velocity-Verlet on the middle sphere only (ends are fixed walls).
+        for _ in 0..300_000 {
+            let f = atom.force[1][0] as f64;
+            atom.vel[1][0] += (0.5 * dt * f / m) as Real;
+            atom.pos[1][0] += (dt * atom.vel[1][0] as f64) as Real;
+            for i in 0..3 {
+                atom.force[i] = [0.0; 3];
+            }
+            contact_force_core(&mut atom, &nb, &reg, &mt, None, ForcePass::All);
+            let f = atom.force[1][0] as f64;
+            atom.vel[1][0] += (0.5 * dt * f / m) as Real;
+            e_max = e_max.max(energy(&atom));
+        }
+        let growth = (e_max - e0) / e0;
+        println!("δ={delta}: E0={e0:.6e}  E_max/E0-1 = {growth:.4e}");
+        assert!(
+            growth < 0.05,
+            "persistent contact injected energy at δ={delta}: growth {growth:.3e}"
+        );
+    }
+}
+
+/// Same persistent-contact motif, but the middle sphere is perturbed
+/// *perpendicular* to the chain so the two contacts are **oblique** (normals not
+/// along a single axis) — the 3-D geometry a packed bundle actually has. Still
+/// elastic (restitution = 1), so energy must be conserved. Isolates whether the
+/// off-axis normal-contact update conserves energy.
+#[test]
+fn oblique_persistent_contact_conserves_energy() {
+    use soil_core::Real;
+    let r = 0.5_f64;
+    let e_mod = 1.0e7_f64;
+    let nu = 0.3_f64;
+    let mut mt = dirt_atom::MaterialTable::new();
+    mt.add(
+        Material::new("elastic", Elastic::new(e_mod, nu, 1.0)).with_friction(Friction {
+            sliding: 0.0,
+            ..Default::default()
+        }),
+    )
+    .unwrap();
+    mt.build_pair_tables();
+    let e_eff = e_mod / (2.0 * (1.0 - nu * nu));
+    let r_eff = r / 2.0;
+    let pe = |dist: f64| -> f64 {
+        let d = (2.0 * r - dist).max(0.0);
+        (8.0 / 15.0) * e_eff * r_eff.sqrt() * d.powf(2.5)
+    };
+    let dist = |a: [Real; 3], b: [Real; 3]| -> f64 {
+        (((a[0] - b[0]).powi(2) + (a[1] - b[1]).powi(2) + (a[2] - b[2]).powi(2)) as f64).sqrt()
+    };
+
+    let delta = 0.02_f64;
+    let d = 2.0 * r - delta;
+    let mut atom = Atom::new();
+    let mut dem = DemAtom::new();
+    let mut hist = ContactHistoryStore::new();
+    atom.dt = 5.0e-4;
+    push_test_atom_with_history(&mut atom, &mut dem, &mut hist, 0, [0.0, 0.0, 0.0], r);
+    push_test_atom_with_history(&mut atom, &mut dem, &mut hist, 1, [d, 0.0, 0.0], r);
+    push_test_atom_with_history(&mut atom, &mut dem, &mut hist, 2, [2.0 * d, 0.0, 0.0], r);
+    unsafe { atom.set_layout_unchecked(3, 0, 3) };
+    let mut nb = Neighbor::new();
+    nb.neighbor_offsets = vec![0, 1, 2, 2];
+    nb.neighbor_indices = vec![1, 2];
+    let mut reg = AtomDataRegistry::new();
+    reg.register_for_atoms(dem, &atom).unwrap();
+    reg.register_for_atoms(hist, &atom).unwrap();
+
+    let m = atom.mass[1] as f64;
+    let dt = atom.dt as f64;
+    atom.vel[1] = [0.0, 0.05 as Real, 0.0]; // perpendicular perturbation
+
+    let energy = |atom: &Atom| -> f64 {
+        let v = atom.vel[1];
+        let ke = 0.5 * m * ((v[0] * v[0] + v[1] * v[1] + v[2] * v[2]) as f64);
+        ke + pe(dist(atom.pos[1], atom.pos[0])) + pe(dist(atom.pos[2], atom.pos[1]))
+    };
+    for i in 0..3 {
+        atom.force[i] = [0.0; 3];
+    }
+    contact_force_core(&mut atom, &nb, &reg, &mt, None, ForcePass::All);
+    let e0 = energy(&atom);
+    let mut e_max = e0;
+    for _ in 0..400_000 {
+        for k in 0..3 {
+            atom.vel[1][k] += (0.5 * dt * atom.force[1][k] as f64 / m) as Real;
+            atom.pos[1][k] += (dt * atom.vel[1][k] as f64) as Real;
+        }
+        for i in 0..3 {
+            atom.force[i] = [0.0; 3];
+        }
+        contact_force_core(&mut atom, &nb, &reg, &mt, None, ForcePass::All);
+        for k in 0..3 {
+            atom.vel[1][k] += (0.5 * dt * atom.force[1][k] as f64 / m) as Real;
+        }
+        e_max = e_max.max(energy(&atom));
+    }
+    let growth = (e_max - e0) / e0;
+    println!("oblique: E0={e0:.6e}  E_max/E0-1 = {growth:.4e}");
+    assert!(growth < 0.05, "oblique persistent contact injected energy: {growth:.3e}");
+}
+
+/// A free sphere **confined by six fixed neighbours** (octahedral shell) at
+/// marginal overlap — the many-simultaneous-contact motif of a bead buried in a
+/// packed bundle. Elastic (restitution = 1) ⇒ energy must be conserved. If the
+/// confined multi-contact update injects energy, the total energy grows.
+#[test]
+fn confined_multicontact_conserves_energy() {
+    use soil_core::Real;
+    let r = 0.5_f64;
+    let (e_mod, nu) = (1.0e7_f64, 0.3_f64);
+    let mut mt = dirt_atom::MaterialTable::new();
+    mt.add(Material::new("elastic", Elastic::new(e_mod, nu, 1.0)).with_friction(Friction {
+        sliding: 0.0,
+        ..Default::default()
+    }))
+    .unwrap();
+    mt.build_pair_tables();
+    let e_eff = e_mod / (2.0 * (1.0 - nu * nu));
+    let r_eff = r / 2.0;
+    let pe = |dist: f64| -> f64 {
+        let d = (2.0 * r - dist).max(0.0);
+        (8.0 / 15.0) * e_eff * r_eff.sqrt() * d.powf(2.5)
+    };
+    let dist = |a: [Real; 3], b: [Real; 3]| -> f64 {
+        (((a[0] - b[0]).powi(2) + (a[1] - b[1]).powi(2) + (a[2] - b[2]).powi(2)) as f64).sqrt()
+    };
+
+    let delta = 0.02_f64;
+    let d = (2.0 * r - delta) as Real;
+    let mut atom = Atom::new();
+    let mut dem = DemAtom::new();
+    let mut hist = ContactHistoryStore::new();
+    atom.dt = 3.0e-4;
+    // 0 = free centre; 1..6 = fixed octahedral neighbours.
+    push_test_atom_with_history(&mut atom, &mut dem, &mut hist, 0, [0.0, 0.0, 0.0], r);
+    let nbrs = [
+        [d, 0.0, 0.0], [-d, 0.0, 0.0], [0.0, d, 0.0],
+        [0.0, -d, 0.0], [0.0, 0.0, d], [0.0, 0.0, -d],
+    ];
+    for (k, p) in nbrs.iter().enumerate() {
+        push_test_atom_with_history(&mut atom, &mut dem, &mut hist, (k + 1) as u32, *p, r);
+    }
+    unsafe { atom.set_layout_unchecked(7, 0, 7) };
+    let mut nb = Neighbor::new();
+    // centre (0) neighbours all six; others none.
+    nb.neighbor_offsets = vec![0, 6, 6, 6, 6, 6, 6, 6];
+    nb.neighbor_indices = vec![1, 2, 3, 4, 5, 6];
+    let mut reg = AtomDataRegistry::new();
+    reg.register_for_atoms(dem, &atom).unwrap();
+    reg.register_for_atoms(hist, &atom).unwrap();
+
+    let m = atom.mass[0] as f64;
+    let dt = atom.dt as f64;
+    atom.vel[0] = [0.04 as Real, 0.03 as Real, 0.02 as Real]; // generic perturbation
+
+    let energy = |atom: &Atom| -> f64 {
+        let v = atom.vel[0];
+        let ke = 0.5 * m * ((v[0] * v[0] + v[1] * v[1] + v[2] * v[2]) as f64);
+        let mut u = 0.0;
+        for k in 1..7 {
+            u += pe(dist(atom.pos[0], atom.pos[k]));
+        }
+        ke + u
+    };
+    for i in 0..7 {
+        atom.force[i] = [0.0; 3];
+    }
+    contact_force_core(&mut atom, &nb, &reg, &mt, None, ForcePass::All);
+    let e0 = energy(&atom);
+    let mut e_max = e0;
+    for _ in 0..400_000 {
+        for k in 0..3 {
+            atom.vel[0][k] += (0.5 * dt * atom.force[0][k] as f64 / m) as Real;
+            atom.pos[0][k] += (dt * atom.vel[0][k] as f64) as Real;
+        }
+        for i in 0..7 {
+            atom.force[i] = [0.0; 3];
+        }
+        contact_force_core(&mut atom, &nb, &reg, &mt, None, ForcePass::All);
+        for k in 0..3 {
+            atom.vel[0][k] += (0.5 * dt * atom.force[0][k] as f64 / m) as Real;
+        }
+        e_max = e_max.max(energy(&atom));
+    }
+    let growth = (e_max - e0) / e0;
+    println!("confined 6-contact: E0={e0:.6e}  E_max/E0-1 = {growth:.4e}");
+    assert!(growth < 0.05, "confined multi-contact injected energy: {growth:.3e}");
+}
