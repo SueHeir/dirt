@@ -201,6 +201,19 @@ use plasticity::{BondPlasticityModel, PlasticityConfig};
 
 /// Deserialized TOML `[bonds]` configuration section.
 ///
+/// A per-bond-type breakage override (`[[bonds.breakage_by_type]]`).
+///
+/// `breakage = None` (omit the field) makes bonds of this type **unbreakable**.
+#[derive(Deserialize, Clone)]
+#[serde(deny_unknown_fields)]
+pub struct BondTypeBreakage {
+    /// Bond type this override applies to (matches the data-file bond-type column).
+    pub bond_type: u32,
+    /// Criterion for this type; omit to make the type unbreakable.
+    #[serde(default)]
+    pub breakage: Option<BreakageConfig>,
+}
+
 /// See the [module-level docs](crate) for the full parameter reference.
 #[derive(Deserialize, Clone)]
 #[serde(deny_unknown_fields)]
@@ -230,6 +243,16 @@ pub struct BondConfig {
     /// Shear modulus *G* (Pa). If set, shear & twist stiffness derive from `G`.
     #[serde(default)]
     pub shear_modulus: Option<f64>,
+    /// Bending modulus (Pa) for `k_bend = E_bend · I / L`. Defaults to
+    /// `youngs_modulus` when unset. Set it separately to match a bond model whose
+    /// bending stiffness differs from its axial stiffness (e.g. LAMMPS `bpm/guo`
+    /// with `MNstiff ≠ Nstiff`).
+    #[serde(default)]
+    pub bending_modulus: Option<f64>,
+    /// Twist modulus (Pa) for `k_tor = G_tor · J / L`. Defaults to `shear_modulus`
+    /// when unset.
+    #[serde(default)]
+    pub twist_modulus: Option<f64>,
 
     // ── Direct stiffness overrides ──────────────────────────────────────────
     /// Direct normal stiffness (N/m). Used when `youngs_modulus` is not set.
@@ -274,10 +297,16 @@ pub struct BondConfig {
     pub bending_damping: Option<f64>,
 
     // ── Breakage ────────────────────────────────────────────────────────────
-    /// Breakage criterion configuration. See [`breakage::BreakageConfig`] for
-    /// the variant menu and TOML syntax. Default: `None` (bonds never break).
+    /// Breakage criterion configuration for all bond types without a specific
+    /// override. See [`breakage::BreakageConfig`]. Default: `None` (never breaks).
     #[serde(default)]
     pub breakage: Option<BreakageConfig>,
+    /// Per-bond-type breakage overrides. A bond whose `bond_type` matches an
+    /// entry uses that entry's criterion instead of the base `breakage`; a `None`
+    /// criterion makes that type unbreakable (e.g. LAMMPS grip bonds of type 2
+    /// that carry no `break_model`). Types without an entry use `breakage`.
+    #[serde(default)]
+    pub breakage_by_type: Vec<BondTypeBreakage>,
     /// Seed for the per-bond Weibull threshold RNG. Sampling is deterministic
     /// given the seed and the bond-creation order. Defaults to `0`.
     #[serde(default)]
@@ -513,6 +542,8 @@ impl Default for BondConfig {
             ghost_cutoff_multiplier: 2.5,
             youngs_modulus: None,
             shear_modulus: None,
+            bending_modulus: None,
+            twist_modulus: None,
             normal_stiffness: 0.0,
             shear_stiffness: 0.0,
             twist_stiffness: 0.0,
@@ -526,6 +557,7 @@ impl Default for BondConfig {
             twist_damping: None,
             bending_damping: None,
             breakage: None,
+            breakage_by_type: Vec::new(),
             seed: 0,
             plasticity: None,
             file: None,
@@ -697,19 +729,35 @@ impl AtomData for BondHistoryStore {
 /// — independent of which rank owns the bond, in which order bonds are
 /// visited, and how the simulation is decomposed across MPI processes.
 pub struct BondBreakage {
-    /// Run-time criterion trait object. `Unbreakable` when no `[bonds.breakage]`
-    /// section is present.
+    /// Base run-time criterion for bond types without an override. `Unbreakable`
+    /// when no `[bonds.breakage]` section is present.
     pub criterion: Box<dyn BreakageCriterion>,
+    /// Per-bond-type criterion overrides (from `[[bonds.breakage_by_type]]`).
+    /// A type present here uses its own criterion instead of `criterion`.
+    pub by_type: HashMap<u32, Box<dyn BreakageCriterion>>,
     /// Global seed for the per-bond threshold sampler. Two simulations with
     /// the same seed and the same bond topology produce identical per-bond
     /// thresholds even when run with different MPI decompositions.
     pub seed: u64,
 }
 
+impl BondBreakage {
+    /// The criterion governing bonds of `bond_type` — the per-type override if
+    /// one exists, otherwise the base criterion.
+    #[inline]
+    pub fn resolve(&self, bond_type: u32) -> &dyn BreakageCriterion {
+        match self.by_type.get(&bond_type) {
+            Some(c) => c.as_ref(),
+            None => self.criterion.as_ref(),
+        }
+    }
+}
+
 impl Default for BondBreakage {
     fn default() -> Self {
         BondBreakage {
             criterion: Box::new(Unbreakable),
+            by_type: HashMap::new(),
             seed: 0,
         }
     }
@@ -723,6 +771,14 @@ pub fn init_breakage(bond_config: Res<BondConfig>, mut breakage: ResMut<BondBrea
         Some(cfg) => cfg.build(),
         None => Box::new(Unbreakable),
     };
+    breakage.by_type.clear();
+    for entry in &bond_config.breakage_by_type {
+        let crit: Box<dyn BreakageCriterion> = match &entry.breakage {
+            Some(cfg) => cfg.build(),
+            None => Box::new(Unbreakable),
+        };
+        breakage.by_type.insert(entry.bond_type, crit);
+    }
     breakage.seed = bond_config.seed;
 }
 
@@ -1192,15 +1248,16 @@ pub fn init_bond_history(
                     .iter()
                     .any(|h| h.partner_tag == bond.partner_tag);
                 if !has {
+                    let crit = breakage.resolve(bond.bond_type);
                     // MPI-stable: same (tag pair, seed) → same `u` on every rank.
                     // A GuoStrainWeibull criterion instead uses LAMMPS's exact hash
                     // so breakage reproduces a reference LAMMPS run bond-for-bond.
-                    let u = if breakage.criterion.uses_guo_hash() {
+                    let u = if crit.uses_guo_hash() {
                         [breakage::guo_weibull_u(tag_a, bond.partner_tag, breakage.seed); 4]
                     } else {
                         breakage::per_bond_uniform_samples(tag_a, bond.partner_tag, breakage.seed)
                     };
-                    let thr = breakage.criterion.sample(bond.r0, u);
+                    let thr = crit.sample(bond.r0, u);
                     history.history[i].push(BondHistoryEntry {
                         partner_tag: bond.partner_tag,
                         delta_t: [0.0; 3],
@@ -1266,6 +1323,10 @@ pub fn bond_force(
         // Material-mode (E, G) or direct stiffness fallback.
         let e_mod = bond_config.youngs_modulus;
         let g_mod = bond_config.shear_modulus;
+        // Bending / twist moduli default to the axial / shear moduli so existing
+        // single-modulus configs are unchanged; set them to decouple k_bend / k_tor.
+        let e_bend_mod = bond_config.bending_modulus.or(e_mod);
+        let g_tor_mod = bond_config.twist_modulus.or(g_mod);
         let k_n_direct = bond_config.normal_stiffness;
         let k_t_direct = bond_config.shear_stiffness;
         let k_tor_direct = bond_config.twist_stiffness;
@@ -1380,11 +1441,11 @@ pub fn bond_force(
                     Some(g) => g * area / len,
                     None => k_t_direct,
                 };
-                let k_tor = match g_mod {
+                let k_tor = match g_tor_mod {
                     Some(g) => g * jpol / len,
                     None => k_tor_direct,
                 };
-                let k_bend = match e_mod {
+                let k_bend = match e_bend_mod {
                     Some(e) => e * iben / len,
                     None => k_bend_direct,
                 };
@@ -1645,7 +1706,7 @@ pub fn bond_force(
                     t: hist.history[i][h_idx].thresholds,
                 };
                 if breakage
-                    .criterion
+                    .resolve(bond.bond_type)
                     .check(&geom, &loads, &kin, &thr)
                     .is_some()
                 {
@@ -1770,6 +1831,41 @@ mod tests {
     use soil_core::{
         toml, Atom, AtomDataRegistry, BondEntry, BondStore, CommResource, SingleProcessComm,
     };
+
+    #[test]
+    fn per_type_breakage_resolves_base_and_override() {
+        // Base = guo_strain_weibull for all types; type 2 overridden to unbreakable
+        // (a `[[breakage_by_type]]` entry with no `breakage` = LAMMPS grip bonds).
+        let cfg: BondConfig = toml::from_str(
+            "youngs_modulus = 60.783840\n\
+             shear_modulus = 11.743428\n\
+             bending_modulus = 116.892\n\
+             seed = 1337\n\
+             [breakage]\n\
+             kind = \"guo_strain_weibull\"\n\
+             sigma0 = 0.0135\n\
+             m = 18.0\n\
+             l_calib = 10000.0\n\
+             [[breakage_by_type]]\n\
+             bond_type = 2\n",
+        )
+        .expect("config parses");
+        assert_eq!(cfg.bending_modulus, Some(116.892));
+
+        let mut br = BondBreakage::default();
+        br.criterion = cfg.breakage.as_ref().unwrap().build();
+        for e in &cfg.breakage_by_type {
+            let c: Box<dyn BreakageCriterion> = match &e.breakage {
+                Some(x) => x.build(),
+                None => Box::new(Unbreakable),
+            };
+            br.by_type.insert(e.bond_type, c);
+        }
+        // Type 1 (no override) → the guo criterion (uses the LAMMPS hash).
+        assert!(br.resolve(1).uses_guo_hash());
+        // Type 2 (overridden, no break_model) → unbreakable (0 thresholds).
+        assert_eq!(br.resolve(2).num_thresholds(), 0);
+    }
 
     fn make_bond_config() -> BondConfig {
         BondConfig {
