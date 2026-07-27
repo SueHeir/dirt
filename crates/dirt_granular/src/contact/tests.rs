@@ -2272,3 +2272,36 @@ fn confined_multicontact_conserves_energy() {
     println!("confined 6-contact: E0={e0:.6e}  E_max/E0-1 = {growth:.4e}");
     assert!(growth < 0.05, "confined multi-contact injected energy: {growth:.3e}");
 }
+
+#[test]
+fn confined_multicontact_damps_to_rest() {
+    use soil_core::Real;
+    let r = 0.5_f64; let (e_mod, nu) = (1.0e7_f64, 0.3_f64);
+    let mut mt = dirt_atom::MaterialTable::new();
+    mt.add(Material::new("d", Elastic::new(e_mod, nu, 0.6)).with_friction(Friction{sliding:0.0,..Default::default()})).unwrap();
+    mt.build_pair_tables();
+    let delta = 0.02_f64; let d = (2.0*r-delta) as Real;
+    let mut atom=Atom::new(); let mut dem=DemAtom::new(); let mut hist=ContactHistoryStore::new();
+    atom.dt=3.0e-4;
+    push_test_atom_with_history(&mut atom,&mut dem,&mut hist,0,[0.0,0.0,0.0],r);
+    let nbrs=[[d,0.0,0.0],[-d,0.0,0.0],[0.0,d,0.0],[0.0,-d,0.0],[0.0,0.0,d],[0.0,0.0,-d]];
+    for (k,p) in nbrs.iter().enumerate(){push_test_atom_with_history(&mut atom,&mut dem,&mut hist,(k+1) as u32,*p,r);}
+    unsafe{atom.set_layout_unchecked(7,0,7)};
+    let mut nb=Neighbor::new(); nb.neighbor_offsets=vec![0,6,6,6,6,6,6,6]; nb.neighbor_indices=vec![1,2,3,4,5,6];
+    let mut reg=AtomDataRegistry::new(); reg.register_for_atoms(dem,&atom).unwrap(); reg.register_for_atoms(hist,&atom).unwrap();
+    let m=atom.mass[0] as f64; let dt=atom.dt as f64;
+    atom.vel[0]=[0.04 as Real,0.03 as Real,0.02 as Real];
+    let ke=|atom:&Atom|{let v=atom.vel[0]; 0.5*m*((v[0]*v[0]+v[1]*v[1]+v[2]*v[2]) as f64)};
+    for i in 0..7{atom.force[i]=[0.0;3];}
+    contact_force_core(&mut atom,&nb,&reg,&mt,None,ForcePass::All);
+    let ke0=ke(&atom);
+    for _ in 0..400_000 {
+        for k in 0..3{atom.vel[0][k]+=(0.5*dt*atom.force[0][k] as f64/m) as Real; atom.pos[0][k]+=(dt*atom.vel[0][k] as f64) as Real;}
+        for i in 0..7{atom.force[i]=[0.0;3];}
+        contact_force_core(&mut atom,&nb,&reg,&mt,None,ForcePass::All);
+        for k in 0..3{atom.vel[0][k]+=(0.5*dt*atom.force[0][k] as f64/m) as Real;}
+    }
+    let ke1=ke(&atom);
+    println!("damped confined: KE0={ke0:.4e} KE_final={ke1:.4e} ratio={:.3e}", ke1/ke0);
+    assert!(ke1 < ke0*0.5, "damped persistent contact did not dissipate: KE {ke0}->{ke1}");
+}
