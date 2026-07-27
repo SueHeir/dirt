@@ -100,6 +100,50 @@ fn splitmix64(mut x: u64) -> u64 {
     x ^ (x >> 31)
 }
 
+/// Draw the single uniform sample `u ∈ (0, 1)` for a bond **exactly as LAMMPS's
+/// `bond_style bpm/guo` does** — the MurmurHash3 `fmix64` finalizer over
+/// `tag_min · 0x9E3779B97F4A7C15 + tag_max + seed`, then `u = (h & 0x7FFFFFFF) /
+/// 0x7FFFFFFF`.
+///
+/// Use this (rather than [`per_bond_uniform_samples`]) when the goal is a
+/// **bond-for-bond identical** breakage pattern to a reference LAMMPS run: every
+/// bond gets byte-for-byte the same `u`, hence the same Weibull threshold, hence
+/// the same break order (given a matching force law). Mirrors
+/// `BondBPMGuo::init_weibull_bonds` in `bond_bpm_guo.cpp`.
+pub fn guo_weibull_u(tag_a: u32, tag_b: u32, seed: u64) -> f64 {
+    let (lo, hi) = if tag_a <= tag_b {
+        (tag_a as u64, tag_b as u64)
+    } else {
+        (tag_b as u64, tag_a as u64)
+    };
+    let mut h = lo
+        .wrapping_mul(0x9E37_79B9_7F4A_7C15)
+        .wrapping_add(hi)
+        .wrapping_add(seed);
+    h ^= h >> 33;
+    h = h.wrapping_mul(0xff51_afd7_ed55_8ccd);
+    h ^= h >> 33;
+    h = h.wrapping_mul(0xc4ce_b9fe_1a85_ec53);
+    h ^= h >> 33;
+    let u = (h & 0x7FFF_FFFF) as f64 / 0x7FFF_FFFF_u64 as f64;
+    u.clamp(1e-15, 1.0 - 1e-15)
+}
+
+/// The LAMMPS `bpm/guo` `strain_weibull` per-bond threshold, using `sigma0` as
+/// the **characteristic** strain directly (no `Γ(1 + 1/m)` conversion):
+///
+/// ```text
+///     ε_c = σ₀ · (L_calib / r0)^{1/m} · (−ln(1 − u))^{1/m}
+/// ```
+///
+/// `r0` is the bond rest length. Pair with [`guo_weibull_u`] for a bond-for-bond
+/// match to LAMMPS. Mirrors the threshold line in `bond_bpm_guo.cpp`.
+pub fn guo_strain_weibull_threshold(sigma0: f64, l_calib: f64, r0: f64, m: f64, u: f64) -> f64 {
+    let sigma0_bond = sigma0 * (l_calib / r0).powf(1.0 / m);
+    let u_clamped = u.clamp(1e-15, 1.0 - 1e-15);
+    sigma0_bond * (-((1.0 - u_clamped).ln())).powf(1.0 / m)
+}
+
 // ── Geometry / loads / kinematics passed to every criterion ─────────────────
 
 /// Snapshot of bond geometry needed by any criterion.
@@ -811,6 +855,42 @@ mod tests {
             kappa_bend: 0.0,
             kappa_tor: 0.0,
         }
+    }
+
+    // ── LAMMPS bpm/guo exact hash + threshold parity ────────────────────
+
+    #[test]
+    fn guo_weibull_matches_lammps_reference() {
+        // Ground truth from a C replica of bond_bpm_guo.cpp init_weibull_bonds
+        // (fmix64 + u=(h&0x7FFFFFFF)/0x7FFFFFFF), seed=1337, coarse19 params
+        // sigma0=0.0135, L_calib=10000, m=18, r0=35.5433.
+        let (sigma0, l_calib, m, r0) = (0.0135_f64, 10000.0_f64, 18.0_f64, 35.5433_f64);
+        let seed = 1337;
+        // (tag_a, tag_b, expected_u, expected_eps_c)
+        let cases = [
+            (1u32, 2u32, 0.44993855452627807, 0.017946766254122726),
+            (2, 3, 0.81867603250717558, 0.019024413930511599),
+            (10, 11, 0.0093870414464674156, 0.014252110414735258),
+            (100, 101, 0.19364996542858423, 0.016956751303681048),
+            (5329, 5330, 0.33580684211841172, 0.017572866318502134),
+        ];
+        for (ta, tb, want_u, want_eps) in cases {
+            let u = guo_weibull_u(ta, tb, seed);
+            assert!(
+                (u - want_u).abs() < 1e-12,
+                "u({ta},{tb}): got {u}, want {want_u}"
+            );
+            let eps = guo_strain_weibull_threshold(sigma0, l_calib, r0, m, u);
+            assert!(
+                (eps - want_eps).abs() < 1e-12,
+                "eps_c({ta},{tb}): got {eps}, want {want_eps}"
+            );
+        }
+    }
+
+    #[test]
+    fn guo_weibull_u_is_order_independent_in_tag_pair() {
+        assert_eq!(guo_weibull_u(7, 91, 1337), guo_weibull_u(91, 7, 1337));
     }
 
     // ── MPI-stable per-bond uniform sampler ─────────────────────────────
