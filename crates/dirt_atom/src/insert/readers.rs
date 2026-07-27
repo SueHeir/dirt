@@ -131,6 +131,7 @@ pub(super) fn read_csv_particles(
                     density,
                     mat_idx: row_mat_idx,
                     tag: *max_tag,
+                    molecule: 0,
                 },
             );
             count += 1;
@@ -319,6 +320,7 @@ pub(super) fn read_lammps_dump_particles(
                         density,
                         mat_idx: row_mat_idx,
                         tag: *max_tag,
+                        molecule: 0,
                     },
                 );
                 count += 1;
@@ -445,6 +447,7 @@ pub(super) fn read_lammps_data_particles(
         pos: [f64; 3],
         radius: f64,
         density: f64,
+        molecule: u32,
     }
 
     let section_headers = [
@@ -512,9 +515,10 @@ pub(super) fn read_lammps_data_particles(
                     pos: [x, y, z],
                     radius,
                     density,
+                    molecule: 0,
                 });
             }
-            "sphere" | "bpm/sphere" => {
+            "sphere" => {
                 // id type diameter density x y z
                 if fields.len() < 7 {
                     return Err(InsertFileError::RowTooShort {
@@ -538,6 +542,49 @@ pub(super) fn read_lammps_data_particles(
                     pos: [x, y, z],
                     radius: diameter / 2.0,
                     density,
+                    molecule: 0,
+                });
+            }
+            "bpm/sphere" => {
+                // LAMMPS bpm/sphere is a molecular style:
+                //   id molecule type diameter density x y z  (8+ cols, real files)
+                // Tolerate a molecule-less 7-column row (molecule = 0) as well.
+                let has_molecule = fields.len() >= 8;
+                let need = if has_molecule { 8 } else { 7 };
+                if fields.len() < need {
+                    return Err(InsertFileError::RowTooShort {
+                        path: file_path.to_string(),
+                        line: i + 1,
+                        style: atom_style.clone(),
+                        expected: need,
+                        found: fields.len(),
+                    });
+                }
+                let mut c = 0;
+                let mut next = || {
+                    let f = fields[c];
+                    c += 1;
+                    f
+                };
+                let id: u32 = parse_field(next(), "atom id", i + 1, file_path)?;
+                let molecule: u32 = if has_molecule {
+                    parse_field(next(), "molecule id", i + 1, file_path)?
+                } else {
+                    0
+                };
+                let atype: u32 = parse_field(next(), "atom type", i + 1, file_path)?;
+                let diameter: f64 = parse_field(next(), "diameter", i + 1, file_path)?;
+                let density: f64 = parse_field(next(), "density", i + 1, file_path)?;
+                let x: f64 = parse_field(next(), "x coordinate", i + 1, file_path)?;
+                let y: f64 = parse_field(next(), "y coordinate", i + 1, file_path)?;
+                let z: f64 = parse_field(next(), "z coordinate", i + 1, file_path)?;
+                parsed_atoms.push(ParsedAtom {
+                    id,
+                    atom_type: atype,
+                    pos: [x, y, z],
+                    radius: diameter / 2.0,
+                    density,
+                    molecule,
                 });
             }
             other => {
@@ -592,6 +639,7 @@ pub(super) fn read_lammps_data_particles(
                     density: pa.density,
                     mat_idx: row_mat_idx,
                     tag: *max_tag,
+                    molecule: pa.molecule,
                 },
             );
             count += 1;

@@ -152,6 +152,7 @@ impl InsertCandidate {
             density: prepared.density,
             mat_idx: prepared.mat_idx,
             tag,
+            molecule: 0,
         }
     }
 }

@@ -130,6 +130,7 @@ fn make_registry(sc: &ScenarioCfg) -> AtomDataRegistry {
     dem.ang_mom.push([0.0; 3]);
     dem.torque.push([0.0; 3]);
     dem.body_id.push(0.0);
+    dem.molecule_id.push(0.0);
     let mut registry = AtomDataRegistry::new();
     let mut sizing_atom = Atom::new();
     unsafe { sizing_atom.push_test_atom(1, [0.0; 3], 1.0, 1.0) };

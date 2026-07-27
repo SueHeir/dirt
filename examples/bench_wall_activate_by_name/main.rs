@@ -152,6 +152,7 @@ fn make_registry(radius: f64) -> AtomDataRegistry {
     dem.ang_mom.push([0.0; 3]);
     dem.torque.push([0.0; 3]);
     dem.body_id.push(0.0);
+    dem.molecule_id.push(0.0);
 
     let mut registry = AtomDataRegistry::new();
     let mut sizing_atom = Atom::new();

@@ -365,6 +365,7 @@ fn production_rate_insert_partitions_exact_deterministic_tag_rows_and_cleans_lat
             density: 2500.0,
             mat_idx: 0,
             tag: 41,
+            molecule: 0,
         },
     );
     let mut ghost = Atom::new();
@@ -380,6 +381,7 @@ fn production_rate_insert_partitions_exact_deterministic_tag_rows_and_cleans_lat
             density: 2500.0,
             mat_idx: 0,
             tag: 42,
+            molecule: 0,
         },
     );
     let mut packed = Vec::new();
@@ -476,6 +478,7 @@ fn particle_store_construction_covers_immediate_and_rate_rows() {
                 density: 2500.0,
                 mat_idx: material,
                 tag,
+                molecule: 0,
             },
         );
     }
@@ -506,6 +509,7 @@ fn particle_store_construction_backfills_late_extensions_and_rolls_back() {
             density: 2500.0,
             mat_idx: 0,
             tag: 1,
+            molecule: 0,
         },
     );
     registry
@@ -527,6 +531,7 @@ fn particle_store_construction_backfills_late_extensions_and_rolls_back() {
             density: 2500.0,
             mat_idx: 0,
             tag: 2,
+            molecule: 0,
         },
     );
     assert_eq!(
@@ -564,6 +569,7 @@ fn particle_store_restart_rejection_preserves_dem_construction() {
             density: 2500.0,
             mat_idx: 0,
             tag: 17,
+            molecule: 0,
         },
     );
     let before_tags = atoms.tag.clone();
@@ -614,6 +620,7 @@ fn rate_insertion_ghost_cleanup_keeps_dem_rows_synchronized() {
             density: 2500.0,
             mat_idx: 2,
             tag: 22,
+            molecule: 0,
         },
     );
     let mut packed = Vec::new();
@@ -634,6 +641,7 @@ fn rate_insertion_ghost_cleanup_keeps_dem_rows_synchronized() {
             density: 1000.0,
             mat_idx: 1,
             tag: 11,
+            molecule: 0,
         },
     );
     ParticleStore::new(&mut atoms, &registry)

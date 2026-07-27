@@ -194,7 +194,8 @@ pub fn contact_force_core_views(
         }
 
         // Skip same-body pairs (sub-spheres of the same rigid body don't interact)
-        if dirt_atom::same_body(&dem, i, j) {
+        // and same-molecule pairs (bonded strand beads — LAMMPS molecule/intra).
+        if dirt_atom::same_body(&dem, i, j) || dirt_atom::same_molecule(&dem, i, j) {
             continue;
         }
 
@@ -892,7 +893,8 @@ pub fn hooke_contact_force(
             }
 
             // Skip same-body pairs (sub-spheres of the same rigid body don't interact)
-            if dirt_atom::same_body(&dem, i, j) {
+            // and same-molecule pairs (bonded strand beads — LAMMPS molecule/intra).
+            if dirt_atom::same_body(&dem, i, j) || dirt_atom::same_molecule(&dem, i, j) {
                 continue;
             }
 

@@ -1423,6 +1423,15 @@ pub struct DemAtom {
     /// Positive values indicate sub-spheres of the same rigid body (same value = same body).
     #[forward]
     pub body_id: Vec<f64>,
+
+    /// Molecule ID for intra-molecule contact exclusion. 0.0 = no molecule.
+    /// Two atoms with the same non-zero `molecule_id` do not exert contact forces
+    /// on each other (bonded fibers of one strand), mirroring LAMMPS
+    /// `neigh_modify exclude molecule/intra`. Unlike `body_id` this does **not**
+    /// make the atoms a rigid body — they still move under their own dynamics.
+    /// Communicated to ghosts each step so boundary pairs are excluded correctly.
+    #[forward]
+    pub molecule_id: Vec<f64>,
 }
 
 impl Default for DemAtom {
@@ -1443,6 +1452,7 @@ impl DemAtom {
             ang_mom: Vec::new(),
             torque: Vec::new(),
             body_id: Vec::new(),
+            molecule_id: Vec::new(),
         }
     }
 }
@@ -1453,6 +1463,21 @@ pub fn same_body(dem: &DemAtom, i: usize, j: usize) -> bool {
     let bi = dem.body_id[i];
     let bj = dem.body_id[j];
     bi > 0.0 && bj > 0.0 && (bi - bj).abs() < 0.5
+}
+
+/// Whether atoms `i` and `j` belong to the same molecule and so should not
+/// exert contact forces on each other. Returns `true` only when both carry the
+/// same non-zero `molecule_id` (mirrors LAMMPS `neigh_modify exclude
+/// molecule/intra`). Bonded strands set a shared `molecule_id` so a fibre's own
+/// overlapping (non-adjacent) beads do not self-repel.
+#[inline]
+pub fn same_molecule(dem: &DemAtom, i: usize, j: usize) -> bool {
+    if i >= dem.molecule_id.len() || j >= dem.molecule_id.len() {
+        return false;
+    }
+    let mi = dem.molecule_id[i];
+    let mj = dem.molecule_id[j];
+    mi > 0.0 && mj > 0.0 && (mi - mj).abs() < 0.5
 }
 
 // ── Plugin ───────────────────────────────────────────────────────────────────
@@ -1565,6 +1590,17 @@ fn set_dem_ntypes(mut atoms: ResMut<Atom>, material_table: Res<MaterialTable>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn same_molecule_only_within_a_shared_nonzero_id() {
+        let mut dem = DemAtom::new();
+        dem.molecule_id = vec![1.0, 1.0, 2.0, 0.0, 0.0];
+        assert!(same_molecule(&dem, 0, 1)); // same molecule 1
+        assert!(!same_molecule(&dem, 0, 2)); // different molecules
+        assert!(!same_molecule(&dem, 3, 4)); // both molecule 0 (unassigned)
+        assert!(!same_molecule(&dem, 0, 3)); // one assigned, one not
+        assert!(!same_molecule(&dem, 0, 99)); // out of range → false, no panic
+    }
 
     #[test]
     fn single_material_beta_and_friction() {

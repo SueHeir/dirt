@@ -41,6 +41,7 @@ fn push_sphere(atom: &mut Atom, dem: &mut DemAtom, tag: u32, x: f64, radius: f64
     dem.ang_mom.push([0.0; 3]);
     dem.torque.push([0.0; 3]);
     dem.body_id.push(0.0);
+    dem.molecule_id.push(0.0);
 }
 
 fn main() {
