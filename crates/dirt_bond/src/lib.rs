@@ -1193,8 +1193,13 @@ pub fn init_bond_history(
                     .any(|h| h.partner_tag == bond.partner_tag);
                 if !has {
                     // MPI-stable: same (tag pair, seed) → same `u` on every rank.
-                    let u =
-                        breakage::per_bond_uniform_samples(tag_a, bond.partner_tag, breakage.seed);
+                    // A GuoStrainWeibull criterion instead uses LAMMPS's exact hash
+                    // so breakage reproduces a reference LAMMPS run bond-for-bond.
+                    let u = if breakage.criterion.uses_guo_hash() {
+                        [breakage::guo_weibull_u(tag_a, bond.partner_tag, breakage.seed); 4]
+                    } else {
+                        breakage::per_bond_uniform_samples(tag_a, bond.partner_tag, breakage.seed)
+                    };
                     let thr = breakage.criterion.sample(bond.r0, u);
                     history.history[i].push(BondHistoryEntry {
                         partner_tag: bond.partner_tag,

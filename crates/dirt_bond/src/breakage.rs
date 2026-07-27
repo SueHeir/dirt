@@ -287,6 +287,14 @@ pub trait BreakageCriterion: Send + Sync + std::fmt::Debug {
         kin: &BondKinematics,
         thr: &BondThresholds,
     ) -> Option<BreakMode>;
+
+    /// When `true`, the per-bond uniform sample `u` fed to [`sample`](Self::sample)
+    /// must come from [`guo_weibull_u`] (LAMMPS `bpm/guo`'s exact hash) rather than
+    /// [`per_bond_uniform_samples`], so breakage reproduces a reference LAMMPS run
+    /// bond-for-bond. Default `false` (DIRT's own MPI-stable sampler).
+    fn uses_guo_hash(&self) -> bool {
+        false
+    }
 }
 
 /// A bond that never breaks. Useful as a default and for purely-elastic tests.
@@ -463,6 +471,65 @@ impl_two_branch!(
     |g: &BondGeom, _l: &BondLoads, k: &BondKinematics| k.eps_axial.max(0.0) + g.r_b * k.kappa_bend,
     |g: &BondGeom, _l: &BondLoads, k: &BondKinematics| k.gamma_shear + g.r_b * k.kappa_tor
 );
+
+/// Exact port of LAMMPS `bond_style bpm/guo`'s `break_model strain_weibull`.
+///
+/// Per bond, a single Weibull strain limit is sampled from the **LAMMPS hash**
+/// (see [`uses_guo_hash`](BreakageCriterion::uses_guo_hash)):
+///
+/// ```text
+///     ε_c = σ₀ · (L_calib / r0)^{1/m} · (−ln(1 − u))^{1/m},   γ_c = ε_c · ρ_shear
+/// ```
+///
+/// with `σ₀` the *characteristic* strain (used directly — no `Γ(1+1/m)`), and
+/// the combined strains checked as in `check_break_strain_weibull`:
+/// `ε = ε_axial + r_b·κ_bend` and `γ = γ_shear + r_b·κ_tor` (axial strain **not**
+/// clamped, matching LAMMPS). Reproduces a reference LAMMPS run bond-for-bond.
+#[derive(Clone, Debug)]
+pub struct GuoStrainWeibull {
+    /// Characteristic strain `σ₀` (dimensionless).
+    pub sigma0: f64,
+    /// Weibull modulus `m`.
+    pub m: f64,
+    /// Calibration gauge length `L_calib` (same length units as bond `r0`).
+    pub l_calib: f64,
+    /// Shear-to-normal strain-limit ratio `ρ_shear` (`γ_c = ρ_shear · ε_c`).
+    pub rho_shear: f64,
+}
+
+impl BreakageCriterion for GuoStrainWeibull {
+    fn num_thresholds(&self) -> usize {
+        // Two derived limits (ε_c, γ_c) from a single sampled `u`.
+        1
+    }
+    fn uses_guo_hash(&self) -> bool {
+        true
+    }
+    fn sample(&self, l_bond: f64, u: [f64; 4]) -> BondThresholds {
+        let eps_c = guo_strain_weibull_threshold(self.sigma0, self.l_calib, l_bond, self.m, u[0]);
+        BondThresholds {
+            t: [eps_c, eps_c * self.rho_shear, 0.0, 0.0],
+        }
+    }
+    fn check(
+        &self,
+        geom: &BondGeom,
+        _loads: &BondLoads,
+        kin: &BondKinematics,
+        thr: &BondThresholds,
+    ) -> Option<BreakMode> {
+        // ε = ε_axial + ε_bend (ε_axial NOT clamped, matching LAMMPS).
+        let epsilon = kin.eps_axial + geom.r_b * kin.kappa_bend;
+        if epsilon > thr.t[0] {
+            return Some(BreakMode::Tensile);
+        }
+        let gamma = kin.gamma_shear + geom.r_b * kin.kappa_tor;
+        if gamma > thr.t[1] {
+            return Some(BreakMode::Shear);
+        }
+        None
+    }
+}
 
 // ── InteractionLinear family ────────────────────────────────────────────────
 
@@ -684,6 +751,18 @@ pub enum BreakageConfig {
         #[serde(default)]
         shear: Option<ThresholdDistribution>,
     },
+    /// See [`GuoStrainWeibull`] — exact LAMMPS `bpm/guo strain_weibull`.
+    GuoStrainWeibull {
+        /// Characteristic strain `σ₀` (dimensionless), used directly.
+        sigma0: f64,
+        /// Weibull modulus `m`.
+        m: f64,
+        /// Calibration gauge length `L_calib` (bond-length units).
+        l_calib: f64,
+        /// Shear-to-normal strain-limit ratio `ρ_shear` (default 1.0).
+        #[serde(default = "default_rho_shear")]
+        rho_shear: f64,
+    },
     /// See [`InteractionLinearForce`].
     InteractionLinearForce {
         /// Optional axial (normal) force failure threshold.
@@ -731,6 +810,10 @@ pub enum BreakageConfig {
     },
 }
 
+fn default_rho_shear() -> f64 {
+    1.0
+}
+
 impl BreakageConfig {
     /// Construct the run-time criterion trait object.
     pub fn build(&self) -> Box<dyn BreakageCriterion> {
@@ -751,6 +834,17 @@ impl BreakageConfig {
             Self::CombinedStress { tensile, shear } => Box::new(CombinedStress {
                 tensile: tensile.clone(),
                 shear: shear.clone(),
+            }),
+            Self::GuoStrainWeibull {
+                sigma0,
+                m,
+                l_calib,
+                rho_shear,
+            } => Box::new(GuoStrainWeibull {
+                sigma0: *sigma0,
+                m: *m,
+                l_calib: *l_calib,
+                rho_shear: *rho_shear,
             }),
             Self::CombinedStrain { tensile, shear } => Box::new(CombinedStrain {
                 tensile: tensile.clone(),
@@ -855,6 +949,45 @@ mod tests {
             kappa_bend: 0.0,
             kappa_tor: 0.0,
         }
+    }
+
+    #[test]
+    fn guo_strain_weibull_criterion_breaks_at_lammps_threshold() {
+        // Full criterion path: config → build → sample (via LAMMPS hash) → check.
+        // For tag pair (1,2), seed 1337, coarse19 params, r0=35.5433 the expected
+        // ε_c is 0.017946766254122726 (C replica). A bond strained just past that
+        // must break in the Tensile branch; just below must not.
+        let cfg = BreakageConfig::GuoStrainWeibull {
+            sigma0: 0.0135,
+            m: 18.0,
+            l_calib: 10000.0,
+            rho_shear: 1.0,
+        };
+        let crit = cfg.build();
+        assert!(crit.uses_guo_hash());
+        let r0 = 35.5433;
+        let u = guo_weibull_u(1, 2, 1337);
+        let thr = crit.sample(r0, [u; 4]);
+        let eps_c = thr.t[0];
+        assert!((eps_c - 0.017946766254122726).abs() < 1e-12);
+        assert!((thr.t[1] - eps_c).abs() < 1e-12); // rho_shear defaults to 1.0
+
+        // Pure axial strain just above / below ε_c.
+        let mut g = geom();
+        g.l0 = r0;
+        let kin_break = BondKinematics {
+            eps_axial: eps_c + 1e-6,
+            ..zero_kin()
+        };
+        let kin_hold = BondKinematics {
+            eps_axial: eps_c - 1e-6,
+            ..zero_kin()
+        };
+        assert_eq!(
+            crit.check(&g, &zero_loads(), &kin_break, &thr),
+            Some(BreakMode::Tensile)
+        );
+        assert_eq!(crit.check(&g, &zero_loads(), &kin_hold, &thr), None);
     }
 
     // ── LAMMPS bpm/guo exact hash + threshold parity ────────────────────
