@@ -91,24 +91,12 @@ name = "right_grip"
 region = { type = "block", min = [-400.0, -400.0, 9500.0], max = [400.0, 400.0, 10025.0] }
 dynamic = false
 
-[[move_linear]]
-group = "left_grip"
-vx = 0.0
-vy = 0.0
-vz = -0.057197935013997156
-
-[[move_linear]]
-group = "right_grip"
-vx = 0.0
-vy = 0.0
-vz = 0.057197935013997156
-
 [output]
 dir = "examples/bench_yarn_pull_coarse19"
 
 [run]
 # Strain rate = 0.000216 / 9000 per step ≈ 2.4e-8/step. ~700k steps → ~1.7% strain,
 # past the ~1.2–1.5% Weibull mean failure strain, so the yarn breaks within the run.
-steps = 700000
+steps = 775000
 thermo = 20000
 dt = 0.001888180053590586
