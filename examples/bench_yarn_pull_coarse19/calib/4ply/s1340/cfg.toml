@@ -1,0 +1,106 @@
+# Coarse-19 yarn tensile pull — DIRT reproduction of the LAMMPS bpm/guo run
+# ==========================================================================
+# Reproduces fiber_config/3mdcp_coarse_grain/pull_..._1ply_..._gl10000.0_seed1337.
+# 1-ply coarse-19 yarn (5330 spheres, 5311 bonds, 2 bond types) pulled to failure
+# by moving the two z-end grips apart at constant velocity. All parameters trace
+# to the LAMMPS input + generator (see README). Units are LAMMPS-`lj` (consistent).
+#
+#   cargo run --release --example bench_yarn_pull_coarse19 --no-default-features \
+#       --features precision-double -- examples/bench_yarn_pull_coarse19/config.toml
+
+[comm]
+processors_x = 1
+processors_y = 1
+processors_z = 1
+
+[domain]
+# Matches the data-file box; boundaries are fixed (LAMMPS `boundary f f f`).
+x_low = -500.0
+x_high = 500.0
+y_low = -500.0
+y_high = 500.0
+z_low = -1500.0
+z_high = 11500.0
+boundary_x = "fixed"
+boundary_y = "fixed"
+boundary_z = "fixed"
+
+[neighbor]
+skin_fraction = 1.2
+bin_size = 90.0            # ~1.2 × bead diameter (74)
+every = 100               # match LAMMPS `neigh_modify delay 100 every 100 check yes`
+
+# ── Particle–particle contact (LAMMPS pair_style granular hertz/material) ──────
+[dem]
+contact_model = "hertz"
+tangential_model = "linear_nohistory"
+
+[[dem.materials]]
+name = "composite"
+youngs_mod = 60.783840000000005   # hertz/material E
+poisson_ratio = 0.4868            # hertz/material ν
+# LAMMPS's `damping coeff_restitution` realizes the input COR (0.6) exactly. DIRT's
+# Tsuji-inverse damping overshoots at these params (radius 37, ν 0.4868): input 0.6
+# realizes ~0.70. To realize the SAME 0.60 as LAMMPS, input 0.48 (measured:
+# 0.48 → realized 0.599 via the `realized_cor_at_yarn_params` test).
+restitution = 0.48                # input chosen so realized CoR = LAMMPS's 0.60
+friction = 0.4                    # tangential linear_nohistory μ
+
+# ── Atoms: the coarse-19 yarn geometry (bpm/sphere; molecule = fibre index) ────
+[[particles.insert]]
+source = "file"
+file = "examples/bench_yarn_pull_coarse19/data/yarn_gl10000_4ply.data"
+format = "lammps_data"
+atom_style = "bpm/sphere"
+material = "composite"
+density = 9.93245e-07             # LAMMPS `set atom * density` (file column is a placeholder 1)
+
+# ── Bonds: Guo BPM beam (LAMMPS bond_style bpm/guo) ───────────────────────────
+[bonds]
+auto_bond = false
+file = "examples/bench_yarn_pull_coarse19/data/yarn_gl10000_4ply.data"
+format = "lammps_data"
+bond_radius_ratio = 1.0           # bond radius = bead radius (LAMMPS ave_radius)
+youngs_modulus  = 68.211625   # Nstiff
+shear_modulus  = 13.178475   # Tstiff (also the twist modulus, MTstiff)
+bending_modulus  = 131.176202   # MNstiff (decoupled from Nstiff)
+twist_modulus  = 13.178475   # MTstiff
+beta_normal  = 0.141
+beta_shear   = 0.141
+beta_twist   = 0.141
+beta_bending = 0.141
+seed = 1340
+
+# Breakable interior bonds (type 1): exact LAMMPS strain_weibull.
+[bonds.breakage]
+kind = "guo_strain_weibull"
+sigma0 = 0.0165
+m = 18.0
+l_calib = 10000.0
+rho_shear = 1.0
+
+# Grip-end bonds (type 2): no break_model → unbreakable.
+[[bonds.breakage_by_type]]
+bond_type = 2
+
+# ── Grips: two z-end groups moved apart at constant velocity ──────────────────
+# Static membership so each grip keeps its atoms as it moves.
+[[group]]
+name = "left_grip"
+region = { type = "block", min = [-490.0, -490.0, -1.0], max = [490.0, 490.0, 500.0] }
+dynamic = false
+
+[[group]]
+name = "right_grip"
+region = { type = "block", min = [-490.0, -490.0, 9500.0], max = [490.0, 490.0, 10025.0] }
+dynamic = false
+
+[output]
+dir = "examples/bench_yarn_pull_coarse19/calib/4ply/s1340"
+
+[run]
+# Strain rate = 0.000216 / 9000 per step ≈ 2.4e-8/step. ~700k steps → ~1.7% strain,
+# past the ~1.2–1.5% Weibull mean failure strain, so the yarn breaks within the run.
+steps = 875000
+thermo = 20000
+dt = 0.001888180053590586
