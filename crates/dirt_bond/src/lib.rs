@@ -1294,6 +1294,13 @@ pub fn bond_force(
     mut virial: Option<ResMut<VirialStress>>,
     domain: Res<soil_core::Domain>,
 ) {
+    // Diagnostic step counter (bond_force runs once per step). Used only by the
+    // YARN_BREAK_LOG breakage trace below.
+    let dbg_step = {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static STEP: AtomicU64 = AtomicU64::new(0);
+        STEP.fetch_add(1, Ordering::Relaxed)
+    };
     particles.with(|(mut dem, mut hist, bonds)| {
         let mut bonds = match bonds {
             Some(b) => b,
@@ -1755,6 +1762,22 @@ pub fn bond_force(
         }
 
         if !bonds_to_break.is_empty() {
+            if std::env::var("YARN_BREAK_LOG").is_ok() {
+                for (ta, tb) in &bonds_to_break {
+                    let (mut za, mut zb) = (f64::NAN, f64::NAN);
+                    for idx in 0..atoms.len() {
+                        if atoms.tag[idx] == *ta {
+                            za = atoms.pos[idx][2] as f64;
+                        } else if atoms.tag[idx] == *tb {
+                            zb = atoms.pos[idx][2] as f64;
+                        }
+                    }
+                    eprintln!(
+                        "[break] step={dbg_step} a={ta} b={tb} zmid={:.1}",
+                        0.5 * (za + zb)
+                    );
+                }
+            }
             for (tag_a, tag_b) in &bonds_to_break {
                 for idx in 0..atoms.len() {
                     if atoms.tag[idx] == *tag_a || atoms.tag[idx] == *tag_b {

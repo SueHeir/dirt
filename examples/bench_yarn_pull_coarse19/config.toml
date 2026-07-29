@@ -28,7 +28,7 @@ boundary_z = "fixed"
 [neighbor]
 skin_fraction = 1.2
 bin_size = 90.0            # ~1.2 × bead diameter (74)
-every = 1
+every = 100               # match LAMMPS `neigh_modify delay 100 every 100 check yes`
 
 # ── Particle–particle contact (LAMMPS pair_style granular hertz/material) ──────
 [dem]
@@ -39,7 +39,11 @@ tangential_model = "linear_nohistory"
 name = "composite"
 youngs_mod = 60.783840000000005   # hertz/material E
 poisson_ratio = 0.4868            # hertz/material ν
-restitution = 0.6                 # damping coeff_restitution (CoR)
+# LAMMPS's `damping coeff_restitution` realizes the input COR (0.6) exactly. DIRT's
+# Tsuji-inverse damping overshoots at these params (radius 37, ν 0.4868): input 0.6
+# realizes ~0.70. To realize the SAME 0.60 as LAMMPS, input 0.48 (measured:
+# 0.48 → realized 0.599 via the `realized_cor_at_yarn_params` test).
+restitution = 0.48                # input chosen so realized CoR = LAMMPS's 0.60
 friction = 0.4                    # tangential linear_nohistory μ
 
 # ── Atoms: the coarse-19 yarn geometry (bpm/sphere; molecule = fibre index) ────

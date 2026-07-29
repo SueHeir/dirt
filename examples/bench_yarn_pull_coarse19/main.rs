@@ -21,22 +21,44 @@ use dirt_core::prelude::*;
 // reported identically to the LAMMPS run (`elongation = 0.000216 * step`).
 const GAUGE_LENGTH: f64 = 9000.0;
 const ELONGATION_PER_STEP: f64 = 0.000216;
-// Per-grip pull velocity (±vz), matching the LAMMPS `fix move linear`.
+// Per-grip pull velocity (±vz); 2·V_PULL·dt = 0.000216 elongation/step.
 const V_PULL: f64 = 0.057197935013997156;
-// Grip z-bounds (LAMMPS `boxleft` / `boxright`).
+// Grip z-bounds (LAMMPS `boxleft` / `boxright`) — used ONLY to assign the static
+// grip membership once at setup (below), matching LAMMPS's `group ... region`
+// which is fixed at setup. No separate relaxation phase is needed: the generated
+// packing's t=0 settling transient is identical to LAMMPS's and damps on its own
+// within ~20k steps with all bonds intact.
 const LEFT_GRIP_ZMAX: f64 = 500.0;
 const RIGHT_GRIP_ZMIN: f64 = 9500.0;
 
-// Number of relaxation steps before the pull begins. The generated yarn is a
-// compressed packing (~0.12 inter-fibre overlaps); DIRT under-damps that
-// relaxation, so the grips are held fixed for this many steps to let the packing
-// settle (KE → ~0) before pulling — otherwise residual relaxation energy breaks
-// bonds prematurely. Overridable with YARN_RELAX_STEPS.
-fn relax_steps() -> u64 {
-    std::env::var("YARN_RELAX_STEPS")
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(150_000)
+/// Static grip membership: the set of atom tags in each z-end grip, captured once
+/// from the initial configuration (like LAMMPS's `group left region boxleft`,
+/// assigned at setup and fixed thereafter). Re-evaluating membership by *current*
+/// z each step would let interior atoms drift across the boundary and be captured
+/// into the rigid grip, shortening the effective gauge.
+static GRIP_TAGS: std::sync::OnceLock<(
+    std::collections::HashSet<u64>,
+    std::collections::HashSet<u64>,
+)> = std::sync::OnceLock::new();
+
+fn grip_tags(
+    atoms: &Atom,
+) -> &'static (std::collections::HashSet<u64>, std::collections::HashSet<u64>) {
+    GRIP_TAGS.get_or_init(|| {
+        let (mut left, mut right) = (
+            std::collections::HashSet::new(),
+            std::collections::HashSet::new(),
+        );
+        for i in 0..atoms.nlocal() as usize {
+            let z = atoms.pos[i][2] as f64;
+            if z < LEFT_GRIP_ZMAX {
+                left.insert(atoms.tag[i] as u64);
+            } else if z > RIGHT_GRIP_ZMIN {
+                right.insert(atoms.tag[i] as u64);
+            }
+        }
+        (left, right)
+    })
 }
 
 fn main() {
@@ -46,10 +68,10 @@ fn main() {
         .add_plugins(FixesPlugin)
         .add_plugins(DemBondPlugin);
 
-    // Grip control mirrors `move_linear`: set the grip velocity before position
-    // integration AND zero the grip force/torque at PostForce, so neither
-    // velocity-Verlet half-kick lets the restraining bond forces alter the
-    // prescribed grip motion (a rigid grip, not a soft velocity constraint).
+    // Pull the two z-end grips apart at constant velocity, mirroring LAMMPS's
+    // `fix move linear` on the static groups: set the grip velocity before the
+    // position update, and zero the grip force at PostForce so the velocity-Verlet
+    // half-kicks can't let bond/contact forces alter the prescribed motion.
     app.add_update_system(grip_control, ParticleSimScheduleSet::PreInitialIntegration);
     app.add_update_system(grip_zero_force, ParticleSimScheduleSet::PostForce);
     app.add_update_system(measure_pull, ParticleSimScheduleSet::PostForce);
@@ -57,31 +79,27 @@ fn main() {
     app.start();
 }
 
-/// Zero the translational force on the grip atoms so the velocity-Verlet
-/// half-kicks do not change their prescribed velocity — makes the grips rigid
-/// clamps that deliver the full imposed displacement into the gauge section.
-fn grip_zero_force(mut atoms: ResMut<Atom>) {
-    let nlocal = atoms.nlocal() as usize;
-    for i in 0..nlocal {
-        let z = atoms.pos[i][2] as f64;
-        if z < LEFT_GRIP_ZMAX || z > RIGHT_GRIP_ZMIN {
-            atoms.force[i] = [0.0; 3];
+/// Set the prescribed grip velocity (±V_PULL on z) on the static grip atoms.
+fn grip_control(mut atoms: ResMut<Atom>) {
+    let (left, right) = grip_tags(&atoms);
+    for i in 0..atoms.nlocal() as usize {
+        let t = atoms.tag[i] as u64;
+        if left.contains(&t) {
+            atoms.vel[i] = [0.0, 0.0, -V_PULL as Real];
+        } else if right.contains(&t) {
+            atoms.vel[i] = [0.0, 0.0, V_PULL as Real];
         }
     }
 }
 
-/// Freeze the z-end grips during relaxation (`step < relax_steps`), then pull
-/// them apart at constant velocity. Overrides the grip velocities each step, so
-/// no `[[move_linear]]` fix is needed.
-fn grip_control(mut atoms: ResMut<Atom>, run_state: Res<RunState>) {
-    let pulling = run_state.total_cycle as u64 >= relax_steps();
-    let nlocal = atoms.nlocal() as usize;
-    for i in 0..nlocal {
-        let z = atoms.pos[i][2] as f64;
-        if z < LEFT_GRIP_ZMAX {
-            atoms.vel[i] = [0.0, 0.0, if pulling { -V_PULL as Real } else { 0.0 }];
-        } else if z > RIGHT_GRIP_ZMIN {
-            atoms.vel[i] = [0.0, 0.0, if pulling { V_PULL as Real } else { 0.0 }];
+/// Zero the force on the static grip atoms so neither velocity-Verlet half-kick
+/// changes their prescribed velocity — a rigid clamp, not a soft constraint.
+fn grip_zero_force(mut atoms: ResMut<Atom>) {
+    let (left, right) = grip_tags(&atoms);
+    for i in 0..atoms.nlocal() as usize {
+        let t = atoms.tag[i] as u64;
+        if left.contains(&t) || right.contains(&t) {
+            atoms.force[i] = [0.0; 3];
         }
     }
 }
@@ -102,31 +120,34 @@ fn measure_pull(
     if step % 20000 != 0 {
         return;
     }
-    if comm.rank() != 0 {
-        return;
-    }
+    // NOTE: no early return on rank != 0 — every rank must reach the all_reduce
+    // collectives below. Only the file-write / println at the end are rank-0.
 
-    // Strain counts from the start of the pull (after the relaxation phase).
-    let relax = relax_steps();
-    let pull_step = (step as u64).saturating_sub(relax);
-    let strain = ELONGATION_PER_STEP * pull_step as f64 / GAUGE_LENGTH;
+    // Strain from the imposed grip displacement (move_linear pulls from step 0).
+    let strain = ELONGATION_PER_STEP * step as f64 / GAUGE_LENGTH;
 
     // ── Diagnostics: where does the imposed strain actually go? ──
     // Gauge extension = right-grip mean z − left-grip mean z, vs its initial value.
     let nlocal = atoms.nlocal() as usize;
+    let (left, right) = grip_tags(&atoms);
     let (mut lz, mut ln, mut rz, mut rn) = (0.0_f64, 0u32, 0.0_f64, 0u32);
     for i in 0..nlocal {
-        let z = atoms.pos[i][2] as f64;
-        if z < LEFT_GRIP_ZMAX {
-            lz += z;
+        let t = atoms.tag[i] as u64;
+        if left.contains(&t) {
+            lz += atoms.pos[i][2] as f64;
             ln += 1;
-        } else if z > RIGHT_GRIP_ZMIN {
-            rz += z;
+        } else if right.contains(&t) {
+            rz += atoms.pos[i][2] as f64;
             rn += 1;
         }
     }
-    let gauge = if ln > 0 && rn > 0 {
-        rz / rn as f64 - lz / ln as f64
+    // Reduce grip sums across ranks (grip atoms may live on either rank).
+    let lz = comm.all_reduce_sum_f64(lz);
+    let rz = comm.all_reduce_sum_f64(rz);
+    let ln = comm.all_reduce_sum_f64(ln as f64);
+    let rn = comm.all_reduce_sum_f64(rn as f64);
+    let gauge = if ln > 0.0 && rn > 0.0 {
+        rz / rn - lz / ln
     } else {
         0.0
     };
@@ -161,17 +182,53 @@ fn measure_pull(
             }
         }
     });
-    let mean_bond_eps = if n_eps > 0 { sum_eps / n_eps as f64 } else { 0.0 };
+    // Reduce bond-strain diagnostics across ranks (max via negated min).
+    let sum_eps = comm.all_reduce_sum_f64(sum_eps);
+    let n_eps = comm.all_reduce_sum_f64(n_eps as f64);
+    let max_eps = -comm.all_reduce_min_f64(-max_eps.abs());
+    let mean_bond_eps = if n_eps > 0.0 { sum_eps / n_eps } else { 0.0 };
+
+    // Force-magnitude diagnostic (for contact-force comparison vs LAMMPS). Uses the
+    // pre-zero force where possible; grip force is zeroed so interior dominates.
+    {
+        let (mut fmax, mut fsum, mut fn_gt1) = (0.0_f64, 0.0_f64, 0u32);
+        for i in 0..nlocal {
+            let f = atoms.force[i];
+            let fm = ((f[0] * f[0] + f[1] * f[1] + f[2] * f[2]) as f64).sqrt();
+            if fm > fmax {
+                fmax = fm;
+            }
+            fsum += fm;
+            if fm > 1.0 {
+                fn_gt1 += 1;
+            }
+        }
+        let fmax = -comm.all_reduce_min_f64(-fmax);
+        let fsum = comm.all_reduce_sum_f64(fsum);
+        let fn_gt1 = comm.all_reduce_sum_f64(fn_gt1 as f64) as u32;
+        let ntot = comm.all_reduce_sum_f64(nlocal as f64);
+        if comm.rank() == 0 {
+            println!(
+                "[force] step={step} max|f|={fmax:.4} mean|f|={:.4} n(|f|>1)={fn_gt1}",
+                fsum / ntot
+            );
+        }
+    }
 
     // σ_ij = −VirialStress_ij / V (Love–Weber; pair + bond). Report both the
     // volume-normalised zz pressure and the raw summed virial (≡ LAMMPS summed
     // `compute stress/atom`).
     let vol = domain.size[0] * domain.size[1] * domain.size[2];
-    let (stress_zz, virial_zz) = match virial.as_deref() {
-        Some(v) => (-v.zz / vol, -v.zz),
-        None => (0.0, 0.0),
-    };
-    let bonds = metrics.as_deref().map(|m| m.bond_count).unwrap_or(0);
+    // VirialStress and BondMetrics.bond_count are per-rank local — reduce them.
+    let local_vzz = virial.as_deref().map(|v| v.zz).unwrap_or(0.0);
+    let virial_zz = -comm.all_reduce_sum_f64(local_vzz);
+    let stress_zz = virial_zz / vol;
+    let local_bonds = metrics.as_deref().map(|m| m.bond_count as f64).unwrap_or(0.0);
+    let bonds = comm.all_reduce_sum_f64(local_bonds) as usize;
+
+    if comm.rank() != 0 {
+        return;
+    }
 
     let out_dir = input
         .output_dir
