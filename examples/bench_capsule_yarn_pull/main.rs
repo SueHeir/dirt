@@ -296,12 +296,15 @@ fn relax_damping_system(
     });
 }
 
-/// Append an OVITO/LAMMPS-dump trajectory frame (capsules as oriented ellipsoids).
+/// Append an OVITO/LAMMPS-dump trajectory frame (true sphero-cylinders).
 ///
-/// In OVITO, import the .lammpstrj and map the extra columns: `qx qy qz qw` ->
-/// **Orientation** (X,Y,Z,W) and `shpx shpy shpz` -> **Aspherical Shape** (X,Y,Z).
-/// The capsule of radius r, half-length L renders as a prolate ellipsoid with
-/// semi-axes (r, r, L+r).
+/// In OVITO: import the .lammpstrj, map `qx qy qz qw` -> **Orientation** (X,Y,Z,W)
+/// and `shpx shpy shpz` -> **Aspherical Shape** (X,Y,Z), then set the Particles
+/// visual element's shape to **Spherocylinder**. shp = (r, r, L) — radius r and
+/// cylinder half-length L; the hemispherical caps (radius r) are added by the
+/// spherocylinder shape, so consecutive capsules' caps overlap and the fibre is
+/// continuous. (Rendering as an ellipsoid instead makes the tips pointed, which
+/// looks pinched/gapped at the joints — a display artifact, not the geometry.)
 fn dump_traj(
     atoms: Res<Atom>,
     particles: ParticlesWith<'_, (Read<DemAtom>, Read<CapsuleAtom>)>,
@@ -337,9 +340,10 @@ fn dump_traj(
             let q = dem.quaternion[i]; // [w, x, y, z]
             let r = dem.radius[i];
             let hl = caps.half_length[i];
+            // shp = (r, r, L): radius + cylinder half-length for OVITO Spherocylinder.
             s.push_str(&format!(
                 "{} 1 {:.4} {:.4} {:.4} {:.5} {:.5} {:.5} {:.5} {:.3} {:.3} {:.3}\n",
-                atoms.tag[i], p[0], p[1], p[2], q[1], q[2], q[3], q[0], r, r, hl + r
+                atoms.tag[i], p[0], p[1], p[2], q[1], q[2], q[3], q[0], r, r, hl
             ));
         }
     });
