@@ -64,6 +64,14 @@ fn relax_damping() -> f64 {
         .unwrap_or(30.0)
 }
 
+/// Write an OVITO-viewable trajectory frame every N steps (env DUMP_EVERY; 0 = off).
+fn dump_every() -> u64 {
+    std::env::var("DUMP_EVERY")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(0)
+}
+
 fn main() {
     let mut app = App::new();
     app.add_plugins(CorePlugins)
@@ -83,6 +91,7 @@ fn main() {
     app.add_update_system(relax_damping_system, ParticleSimScheduleSet::PostForce);
     app.add_update_system(grip_zero_force, ParticleSimScheduleSet::PostForce);
     app.add_update_system(measure_pull, ParticleSimScheduleSet::PostForce);
+    app.add_update_system(dump_traj, ParticleSimScheduleSet::PostFinalIntegration);
 
     app.start();
 }
@@ -285,6 +294,57 @@ fn relax_damping_system(
             dem.torque[i][2] -= g * w[2];
         }
     });
+}
+
+/// Append an OVITO/LAMMPS-dump trajectory frame (capsules as oriented ellipsoids).
+///
+/// In OVITO, import the .lammpstrj and map the extra columns: `qx qy qz qw` ->
+/// **Orientation** (X,Y,Z,W) and `shpx shpy shpz` -> **Aspherical Shape** (X,Y,Z).
+/// The capsule of radius r, half-length L renders as a prolate ellipsoid with
+/// semi-axes (r, r, L+r).
+fn dump_traj(
+    atoms: Res<Atom>,
+    particles: ParticlesWith<'_, (Read<DemAtom>, Read<CapsuleAtom>)>,
+    run_state: Res<RunState>,
+    input: Res<Input>,
+    comm: Res<CommResource>,
+) {
+    let every = dump_every();
+    if every == 0 || (run_state.total_cycle as u64) % every != 0 || comm.rank() != 0 {
+        return;
+    }
+    let step = run_state.total_cycle;
+    let nlocal = atoms.nlocal() as usize;
+    let out_dir = input
+        .output_dir
+        .as_deref()
+        .unwrap_or("examples/bench_capsule_yarn_pull")
+        .to_string();
+    let path = format!("{}/data/traj.lammpstrj", out_dir);
+    static INIT: OnceLock<()> = OnceLock::new();
+    let _ = INIT.get_or_init(|| {
+        fs::create_dir_all(format!("{}/data", out_dir)).ok();
+        fs::File::create(&path).ok(); // truncate at the first frame
+    });
+    let mut s = String::with_capacity(nlocal * 90);
+    s.push_str(&format!("ITEM: TIMESTEP\n{step}\n"));
+    s.push_str(&format!("ITEM: NUMBER OF ATOMS\n{nlocal}\n"));
+    s.push_str("ITEM: BOX BOUNDS ff ff ff\n-360 360\n-360 360\n-1500 11500\n");
+    s.push_str("ITEM: ATOMS id type x y z qx qy qz qw shpx shpy shpz\n");
+    particles.with(|(dem, caps)| {
+        for i in 0..nlocal {
+            let p = atoms.pos[i];
+            let q = dem.quaternion[i]; // [w, x, y, z]
+            let r = dem.radius[i];
+            let hl = caps.half_length[i];
+            s.push_str(&format!(
+                "{} 1 {:.4} {:.4} {:.4} {:.5} {:.5} {:.5} {:.5} {:.3} {:.3} {:.3}\n",
+                atoms.tag[i], p[0], p[1], p[2], q[1], q[2], q[3], q[0], r, r, hl + r
+            ));
+        }
+    });
+    let mut f = fs::OpenOptions::new().append(true).open(&path).unwrap();
+    f.write_all(s.as_bytes()).unwrap();
 }
 
 /// Record strain, axial stress (virial), and surviving-bond count every `thermo`.
