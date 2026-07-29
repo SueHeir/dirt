@@ -36,3 +36,13 @@ examples/run/hopper_discharge/
 
 # local knowledge-graph tooling output
 graphify-out/
+
+# yarn-pull large regenerable artifacts (trajectories + run logs); CSVs/configs/plots are kept
+examples/bench_yarn_pull_coarse19/calib/**/*.lammpstrj
+examples/bench_yarn_pull_coarse19/calib/**/*.log
+examples/bench_capsule_yarn_pull/calib/**/*.lammpstrj
+examples/bench_capsule_yarn_pull/calib/**/*.log
+examples/bench_capsule_yarn_pull/straighten/**/*.lammpstrj
+examples/bench_capsule_yarn_pull/straighten/**/*.log
+examples/bench_capsule_yarn_pull/ovito/*.lammpstrj
+examples/bench_yarn_pull_coarse19/ovito/*.lammpstrj
