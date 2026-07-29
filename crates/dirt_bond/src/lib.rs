@@ -1405,6 +1405,19 @@ pub fn bond_force(
         static STEP: AtomicU64 = AtomicU64::new(0);
         STEP.fetch_add(1, Ordering::Relaxed)
     };
+    // Breakage suppressed until this step so a relaxation/settling phase (e.g. the
+    // capsule yarn's initial-overlap relief) can't damage bonds before loading
+    // begins. `BOND_BREAK_MIN_STEP` = the relax length; unset ⇒ 0 (break from step 0).
+    let break_min_step: u64 = {
+        static MIN: std::sync::OnceLock<u64> = std::sync::OnceLock::new();
+        *MIN.get_or_init(|| {
+            std::env::var("BOND_BREAK_MIN_STEP")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(0)
+        })
+    };
+    let breakage_active = dbg_step >= break_min_step;
     particles.with(|(mut dem, mut hist, bonds)| {
         let mut bonds = match bonds {
             Some(b) => b,
@@ -1816,10 +1829,11 @@ pub fn bond_force(
                 let thr = breakage::BondThresholds {
                     t: hist.history[i][h_idx].thresholds,
                 };
-                if breakage
-                    .resolve(bond.bond_type)
-                    .check(&geom, &loads, &kin, &thr)
-                    .is_some()
+                if breakage_active
+                    && breakage
+                        .resolve(bond.bond_type)
+                        .check(&geom, &loads, &kin, &thr)
+                        .is_some()
                 {
                     bonds_to_break.push((atoms.tag[i], bond.partner_tag));
                     continue;
