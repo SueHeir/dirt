@@ -15,9 +15,11 @@ N0 = 5311                                   # initial bonds
 STEP2STRAIN = 0.000216 / 9000 * 100.0       # step -> strain %
 VBOX = 720 * 720 * 13000                    # LAMMPS box volume (stress normalisation)
 
-# Wall-clock, native builds, 560k steps (see README):
-TIMING = [("DIRT\nevery=1", 883.0), ("DIRT\nevery=100", 473.0),
-          ("LAMMPS\nserial", 368.0), ("LAMMPS\n2-rank", 198.0)]
+# Wall-clock (s), native builds, 560k steps, DIRT best case (neighbour every=100 +
+# molecule/intra exclusion). Full runs; DIRT via /usr/bin/time, LAMMPS loop time.
+#            serial  2-rank
+TIMING_DIRT   = [392.0, 190.0]
+TIMING_LAMMPS = [368.0, 198.0]
 
 # ── DIRT stress-strain + bond_count metric ────────────────────────────────────
 dx, ds, dmetric = [], [], []
@@ -67,24 +69,26 @@ ax[1].text(0.02, 75, "*metric drop after fracture = intact bonds whose partner\n
                      "scattered past the ghost cutoff, not breakage",
            fontsize=7, color="#888888")
 
-# Panel 3 — wall-clock timing (neighbor rebuild cadence + rank comparison)
-labels = [t[0] for t in TIMING]; vals = [t[1] for t in TIMING]
-cols = ["#d62728", "#2ca02c", "#1f77b4", "#7fbfff"]
-bars = ax[2].bar(labels, vals, color=cols, width=0.66)
-for b, v in zip(bars, vals):
-    ax[2].text(b.get_x() + b.get_width() / 2, v + 10, f"{v:.0f}s", ha="center", fontsize=9)
-ax[2].annotate("", xy=(1, vals[1] + 10), xytext=(0, vals[0] + 10),
-               arrowprops=dict(arrowstyle="->", color="#d62728", lw=1.5))
-ax[2].text(0.5, 690, "%.1f× faster\n(match LAMMPS\nevery=100)" % (vals[0] / vals[1]),
-           color="#d62728", fontsize=8, ha="center")
-ax[2].text(2.5, 300, "matched serial:\nDIRT/LAMMPS=%.2f×" % (vals[1] / vals[2]),
-           fontsize=8, ha="center")
+# Panel 3 — wall-clock: DIRT vs LAMMPS at serial and 2-rank (grouped)
+import numpy as np
+x = np.arange(2); w = 0.38
+bd = ax[2].bar(x - w / 2, TIMING_DIRT, w, color="#2ca02c", label="DIRT")
+bl = ax[2].bar(x + w / 2, TIMING_LAMMPS, w, color="#1f77b4", label="LAMMPS")
+for bars in (bd, bl):
+    for b in bars:
+        ax[2].text(b.get_x() + b.get_width() / 2, b.get_height() + 8,
+                   f"{b.get_height():.0f}s", ha="center", fontsize=9)
+for k in range(2):
+    ax[2].text(k, 40, "DIRT/LAMMPS\n%.2f×" % (TIMING_DIRT[k] / TIMING_LAMMPS[k]),
+               ha="center", fontsize=8, color="#333333")
+ax[2].set_xticks(x); ax[2].set_xticklabels(["serial (1 rank)", "MPI (2 ranks)"])
 ax[2].set_ylabel("wall-clock (s), 560k steps")
-ax[2].set_title("Run time (native) — neighbor rebuild every 1→100")
-ax[2].grid(alpha=0.3, axis="y"); ax[2].set_ylim(0, 1000)
+ax[2].set_title("Run time (native, best case)")
+ax[2].legend(loc="upper right"); ax[2].grid(alpha=0.3, axis="y")
+ax[2].set_ylim(0, 470)
 
 fig.suptitle("DIRT vs LAMMPS — coarse-19 1-ply yarn pull "
-             "(matched dt / strain rate / CoR / static grips / neighbor cadence)", fontsize=12)
+             "(matched physics; DIRT at parity on run time, serial and 2-rank)", fontsize=12)
 fig.tight_layout(rect=[0, 0, 1, 0.93])
 out = f"{EX}/plots/stress_strain_comparison.png"
 fig.savefig(out, dpi=140)
