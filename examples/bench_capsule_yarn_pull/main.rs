@@ -12,6 +12,7 @@
 
 use std::fs;
 use std::io::Write as _; // trait methods (writeln!) without shadowing the ECS `Write<T>`
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::OnceLock;
 
 use dirt_core::dirt_atom::DemAtom;
@@ -87,6 +88,7 @@ fn main() {
     app.add_setup_system(build_capsule_yarn, ScheduleSetupSet::Setup);
 
     // Rigid z-end grips + stress-strain measurement (same as the sphere yarn).
+    app.add_update_system(seed_straight_rest, ParticleSimScheduleSet::PreInitialIntegration);
     app.add_update_system(grip_control, ParticleSimScheduleSet::PreInitialIntegration);
     app.add_update_system(relax_damping_system, ParticleSimScheduleSet::PostForce);
     app.add_update_system(grip_zero_force, ParticleSimScheduleSet::PostForce);
@@ -296,6 +298,75 @@ fn relax_damping_system(
     });
 }
 
+/// Straight-rest bond test (env `STRAIGHT_REST=1`). By default every bond is
+/// created stress-free in the as-spun HELICAL shape (`delta_theta = 0`), so an
+/// isolated fibre sits motionless in its helix. Here we instead seed each bond's
+/// accumulated bending rotation with the as-built inter-capsule rotation, so the
+/// bond treats the STRAIGHT (aligned) configuration as its zero-force rest and
+/// exerts a moment that undoes the helix. A free fibre should then straighten.
+fn straight_rest_enabled() -> bool {
+    std::env::var("STRAIGHT_REST").ok().as_deref() == Some("1")
+}
+fn quat_conj(q: [f64; 4]) -> [f64; 4] {
+    [q[0], -q[1], -q[2], -q[3]]
+}
+fn quat_mul(a: [f64; 4], b: [f64; 4]) -> [f64; 4] {
+    [
+        a[0] * b[0] - a[1] * b[1] - a[2] * b[2] - a[3] * b[3],
+        a[0] * b[1] + a[1] * b[0] + a[2] * b[3] - a[3] * b[2],
+        a[0] * b[2] - a[1] * b[3] + a[2] * b[0] + a[3] * b[1],
+        a[0] * b[3] + a[1] * b[2] - a[2] * b[1] + a[3] * b[0],
+    ]
+}
+/// Rotation vector (axis·angle) of a unit quaternion `[w, x, y, z]`.
+fn quat_to_rotvec(q: [f64; 4]) -> [f64; 3] {
+    let vn = (q[1] * q[1] + q[2] * q[2] + q[3] * q[3]).sqrt();
+    if vn < 1e-12 {
+        return [0.0; 3];
+    }
+    let angle = 2.0 * vn.atan2(q[0]); // signed; handles either hemisphere
+    let s = angle / vn;
+    [q[1] * s, q[2] * s, q[3] * s]
+}
+fn seed_straight_rest(
+    atoms: Res<Atom>,
+    particles: ParticlesWith<
+        '_,
+        (
+            Read<DemAtom>,
+            Write<dirt_core::dirt_bond::BondHistoryStore>,
+        ),
+    >,
+) {
+    if !straight_rest_enabled() {
+        return;
+    }
+    static DONE: AtomicBool = AtomicBool::new(false);
+    if DONE.swap(true, Ordering::Relaxed) {
+        return;
+    }
+    let nlocal = atoms.nlocal() as usize;
+    let mut idx = std::collections::HashMap::with_capacity(nlocal);
+    for i in 0..nlocal {
+        idx.insert(atoms.tag[i], i);
+    }
+    let mut seeded = 0usize;
+    particles.with(|(dem, mut hist)| {
+        for i in 0..nlocal.min(hist.history.len()) {
+            let qi = dem.quaternion[i];
+            for e in hist.history[i].iter_mut() {
+                if let Some(&j) = idx.get(&e.partner_tag) {
+                    // relative rotation taking capsule i's frame to capsule j's
+                    let q_rel = quat_mul(dem.quaternion[j], quat_conj(qi));
+                    e.delta_theta = quat_to_rotvec(q_rel);
+                    seeded += 1;
+                }
+            }
+        }
+    });
+    println!("[straight_rest] seeded delta_theta on {seeded} bond history entries");
+}
+
 /// Append an OVITO/LAMMPS-dump trajectory frame (true sphero-cylinders).
 ///
 /// In OVITO: import the .lammpstrj, map `qx qy qz qw` -> **Orientation** (X,Y,Z,W)
@@ -364,7 +435,25 @@ fn measure_pull(
     domain: Res<Domain>,
 ) {
     let step = run_state.total_cycle;
-    if step % 20000 != 0 || comm.rank() != 0 {
+    if comm.rank() != 0 {
+        return;
+    }
+    // Output cadence: coarse (every 20k) until the first bond breaks, then fine
+    // (every 1k) to resolve the failure. Latch the initial bond count on first sight.
+    let bonds = metrics.as_deref().map(|m| m.bond_count).unwrap_or(0);
+    static INIT_BONDS: AtomicU64 = AtomicU64::new(u64::MAX);
+    if bonds > 0 {
+        let _ = INIT_BONDS.compare_exchange(
+            u64::MAX,
+            bonds as u64,
+            Ordering::Relaxed,
+            Ordering::Relaxed,
+        );
+    }
+    let init = INIT_BONDS.load(Ordering::Relaxed);
+    let broken = init != u64::MAX && (bonds as u64) < init;
+    let cadence = if broken { 1000 } else { 20000 };
+    if step % cadence != 0 {
         return;
     }
     // Strain counts from the end of the relaxation phase.
@@ -405,8 +494,6 @@ fn measure_pull(
         Some(v) => -v.zz / vol,
         None => 0.0,
     };
-    let bonds = metrics.as_deref().map(|m| m.bond_count).unwrap_or(0);
-
     let out_dir = input
         .output_dir
         .as_deref()

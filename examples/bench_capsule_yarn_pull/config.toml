@@ -58,12 +58,14 @@ beta_twist   = 0.141
 beta_bending = 0.141
 seed = 1337
 
+# Deterministic Guo strain breakage (LAMMPS `break_model strain`): a single fixed
+# critical strain for every bond — no Weibull scatter, no (L_calib/r0) length scaling.
+# Identical limit for the sphere and capsule yarns, so any strength difference is
+# mechanics (rigid-segment bending / load path), not weakest-link statistics.
 [bonds.breakage]
-kind = "guo_strain_weibull"
-sigma0 = 0.0135
-m = 18.0
-l_calib = 10000.0
-rho_shear = 1.0
+kind = "combined_strain"
+tensile = { kind = "constant", value = 0.0135 }   # eps_c = eps_axial + r_b*kappa_bend limit
+shear   = { kind = "constant", value = 0.0135 }   # gamma_c = gamma_shear + r_b*kappa_tor limit
 
 [output]
 dir = "examples/bench_capsule_yarn_pull"
