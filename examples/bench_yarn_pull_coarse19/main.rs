@@ -13,8 +13,10 @@
 
 use std::fs;
 use std::io::Write;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::OnceLock;
 
+use dirt_core::dirt_atom::DemAtom;
 use dirt_core::prelude::*;
 
 // Gauge length (LAMMPS `boxmiddle` z-span) and per-step elongation, so strain is
@@ -30,6 +32,32 @@ const V_PULL: f64 = 0.057197935013997156;
 // within ~20k steps with all bonds intact.
 const LEFT_GRIP_ZMAX: f64 = 500.0;
 const RIGHT_GRIP_ZMIN: f64 = 9500.0;
+
+/// Optional relaxation phase (env `YARN_RELAX_STEPS`): grips are freed and the
+/// whole system is viscously damped so an un-relaxed packing (e.g. the assembled
+/// 4-ply, whose inter-ply contacts overlap) settles before the pull. 0 = none
+/// (the pre-relaxed 1-ply needs no relax). Pair with `BOND_BREAK_MIN_STEP` = the
+/// same value so the settling transient can't break bonds.
+fn relax_steps() -> u64 {
+    std::env::var("YARN_RELAX_STEPS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0)
+}
+fn relax_damping() -> f64 {
+    std::env::var("YARN_RELAX_DAMPING")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(30.0)
+}
+/// OVITO-dump cadence (env `DUMP_EVERY`; 0 = off). Under MPI each rank writes its
+/// OWNED atoms to `traj_r{rank}.lammpstrj`; merge_traj.py stitches them per frame.
+fn dump_every() -> u64 {
+    std::env::var("DUMP_EVERY")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0)
+}
 
 /// Static grip membership: the set of atom tags in each z-end grip, captured once
 /// from the initial configuration (like LAMMPS's `group left region boxleft`,
@@ -73,14 +101,20 @@ fn main() {
     // position update, and zero the grip force at PostForce so the velocity-Verlet
     // half-kicks can't let bond/contact forces alter the prescribed motion.
     app.add_update_system(grip_control, ParticleSimScheduleSet::PreInitialIntegration);
+    app.add_update_system(relax_damping_system, ParticleSimScheduleSet::PostForce);
     app.add_update_system(grip_zero_force, ParticleSimScheduleSet::PostForce);
     app.add_update_system(measure_pull, ParticleSimScheduleSet::PostForce);
+    app.add_update_system(dump_traj, ParticleSimScheduleSet::PostFinalIntegration);
 
     app.start();
 }
 
 /// Set the prescribed grip velocity (±V_PULL on z) on the static grip atoms.
-fn grip_control(mut atoms: ResMut<Atom>) {
+/// During the relax phase the grips are freed (they settle with the rest).
+fn grip_control(mut atoms: ResMut<Atom>, run_state: Res<RunState>) {
+    if (run_state.total_cycle as u64) < relax_steps() {
+        return;
+    }
     let (left, right) = grip_tags(&atoms);
     for i in 0..atoms.nlocal() as usize {
         let t = atoms.tag[i] as u64;
@@ -94,7 +128,11 @@ fn grip_control(mut atoms: ResMut<Atom>) {
 
 /// Zero the force on the static grip atoms so neither velocity-Verlet half-kick
 /// changes their prescribed velocity — a rigid clamp, not a soft constraint.
-fn grip_zero_force(mut atoms: ResMut<Atom>) {
+/// Skipped during relax (grips are free then).
+fn grip_zero_force(mut atoms: ResMut<Atom>, run_state: Res<RunState>) {
+    if (run_state.total_cycle as u64) < relax_steps() {
+        return;
+    }
     let (left, right) = grip_tags(&atoms);
     for i in 0..atoms.nlocal() as usize {
         let t = atoms.tag[i] as u64;
@@ -102,6 +140,68 @@ fn grip_zero_force(mut atoms: ResMut<Atom>) {
             atoms.force[i] = [0.0; 3];
         }
     }
+}
+
+/// Global viscous damping applied to every atom DURING the relax phase only, so
+/// an un-relaxed packing settles to equilibrium (critically-damped) before the
+/// pull begins. `force -= gamma * v`.
+fn relax_damping_system(mut atoms: ResMut<Atom>, run_state: Res<RunState>) {
+    if (run_state.total_cycle as u64) >= relax_steps() {
+        return;
+    }
+    let g = relax_damping() as Real;
+    for i in 0..atoms.nlocal() as usize {
+        atoms.force[i][0] -= g * atoms.vel[i][0];
+        atoms.force[i][1] -= g * atoms.vel[i][1];
+        atoms.force[i][2] -= g * atoms.vel[i][2];
+    }
+}
+
+/// Per-rank OVITO/LAMMPS-dump: each rank writes its OWNED atoms (id mol type x y z
+/// radius) to `traj_r{rank}.lammpstrj` every `DUMP_EVERY` steps. Column `mol` is
+/// the fibre id (mol // 19 = ply) so OVITO can colour by fibre or ply.
+/// `merge_traj.py` stitches the per-rank files into one frame-consistent file.
+fn dump_traj(
+    atoms: Res<Atom>,
+    particles: ParticlesWith<'_, Read<DemAtom>>,
+    run_state: Res<RunState>,
+    input: Res<Input>,
+    comm: Res<CommResource>,
+) {
+    let every = dump_every();
+    if every == 0 || (run_state.total_cycle as u64) % every != 0 {
+        return;
+    }
+    let step = run_state.total_cycle;
+    let nlocal = atoms.nlocal() as usize;
+    let out_dir = input
+        .output_dir
+        .as_deref()
+        .unwrap_or("examples/bench_yarn_pull_coarse19")
+        .to_string();
+    let path = format!("{}/data/traj_r{}.lammpstrj", out_dir, comm.rank());
+    static INIT: OnceLock<()> = OnceLock::new();
+    let _ = INIT.get_or_init(|| {
+        fs::create_dir_all(format!("{}/data", out_dir)).ok();
+        fs::File::create(&path).ok(); // truncate at first frame (per rank/process)
+    });
+    let mut s = String::with_capacity(nlocal * 60);
+    s.push_str(&format!("ITEM: TIMESTEP\n{step}\n"));
+    s.push_str(&format!("ITEM: NUMBER OF ATOMS\n{nlocal}\n"));
+    s.push_str("ITEM: BOX BOUNDS ff ff ff\n-500 500\n-500 500\n-1500 11500\n");
+    s.push_str("ITEM: ATOMS id mol type x y z radius\n");
+    particles.with(|dem| {
+        for i in 0..nlocal {
+            let p = atoms.pos[i];
+            let mol = dem.molecule_id[i] as i64;
+            s.push_str(&format!(
+                "{} {} 1 {:.3} {:.3} {:.3} {:.2}\n",
+                atoms.tag[i], mol, p[0], p[1], p[2], dem.radius[i]
+            ));
+        }
+    });
+    let mut f = fs::OpenOptions::new().append(true).open(&path).unwrap();
+    f.write_all(s.as_bytes()).unwrap();
 }
 
 /// Record strain, axial stress (Love–Weber contact+bond virial), and the number
@@ -117,14 +217,34 @@ fn measure_pull(
     particles: ParticlesWith<'_, Read<dirt_core::soil_core::BondStore>>,
 ) {
     let step = run_state.total_cycle;
-    if step % 20000 != 0 {
+    // Output cadence: coarse (every 20k) until the first bond breaks, then fine
+    // (every 1k) to resolve the failure. Reduce the global bond count on EVERY step
+    // (collective-safe, no-op in serial) so all ranks agree on the cadence.
+    let local_bonds_now = metrics.as_deref().map(|m| m.bond_count as f64).unwrap_or(0.0);
+    let bonds_now = comm.all_reduce_sum_f64(local_bonds_now) as u64;
+    static INIT_BONDS: AtomicU64 = AtomicU64::new(u64::MAX);
+    if bonds_now > 0 {
+        let _ =
+            INIT_BONDS.compare_exchange(u64::MAX, bonds_now, Ordering::Relaxed, Ordering::Relaxed);
+    }
+    let init = INIT_BONDS.load(Ordering::Relaxed);
+    let broken = init != u64::MAX && bonds_now < init;
+    // Fine enough to render smooth stress-strain even in the elastic ramp; tighten
+    // further once bonds start breaking. (Overridable via YARN_THERMO.)
+    let coarse = std::env::var("YARN_THERMO")
+        .ok()
+        .and_then(|v| v.parse::<usize>().ok())
+        .unwrap_or(2000);
+    let cadence = if broken { coarse.min(1000) } else { coarse };
+    if step % cadence != 0 {
         return;
     }
     // NOTE: no early return on rank != 0 — every rank must reach the all_reduce
     // collectives below. Only the file-write / println at the end are rank-0.
 
-    // Strain from the imposed grip displacement (move_linear pulls from step 0).
-    let strain = ELONGATION_PER_STEP * step as f64 / GAUGE_LENGTH;
+    // Strain from the imposed grip displacement; counts from the end of relax.
+    let pull_step = (step as u64).saturating_sub(relax_steps());
+    let strain = ELONGATION_PER_STEP * pull_step as f64 / GAUGE_LENGTH;
 
     // ── Diagnostics: where does the imposed strain actually go? ──
     // Gauge extension = right-grip mean z − left-grip mean z, vs its initial value.
@@ -223,8 +343,7 @@ fn measure_pull(
     let local_vzz = virial.as_deref().map(|v| v.zz).unwrap_or(0.0);
     let virial_zz = -comm.all_reduce_sum_f64(local_vzz);
     let stress_zz = virial_zz / vol;
-    let local_bonds = metrics.as_deref().map(|m| m.bond_count as f64).unwrap_or(0.0);
-    let bonds = comm.all_reduce_sum_f64(local_bonds) as usize;
+    let bonds = bonds_now as usize; // already reduced above
 
     if comm.rank() != 0 {
         return;

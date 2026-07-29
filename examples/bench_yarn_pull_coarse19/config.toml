@@ -71,13 +71,15 @@ beta_twist   = 0.141
 beta_bending = 0.141
 seed = 1337
 
-# Breakable interior bonds (type 1): exact LAMMPS strain_weibull.
+# Breakable interior bonds (type 1): deterministic Guo strain (LAMMPS `break_model
+# strain`) — one fixed critical strain for every bond, no Weibull scatter, no length
+# scaling. Matches the capsule-yarn config so the two are directly comparable.
+# (Phase-1 LAMMPS-validated strain_weibull run is preserved in git history / the
+# committed data/stress_strain.csv.)
 [bonds.breakage]
-kind = "guo_strain_weibull"
-sigma0 = 0.0135
-m = 18.0
-l_calib = 10000.0
-rho_shear = 1.0
+kind = "combined_strain"
+tensile = { kind = "constant", value = 0.0135 }
+shear   = { kind = "constant", value = 0.0135 }
 
 # Grip-end bonds (type 2): no break_model → unbreakable.
 [[bonds.breakage_by_type]]
