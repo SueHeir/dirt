@@ -11,10 +11,11 @@
 //! ```
 
 use std::fs;
-use std::io::Write;
+use std::io::Write as _; // trait methods (writeln!) without shadowing the ECS `Write<T>`
 use std::sync::OnceLock;
 
 use dirt_core::dirt_atom::DemAtom;
+use dirt_core::dirt_capsule::CapsuleAtom;
 use dirt_core::prelude::*;
 use dirt_core::soil_core::{BondEntry, BondStore};
 
@@ -41,6 +42,28 @@ fn fibre_limit() -> u32 {
         .unwrap_or(u32::MAX)
 }
 
+/// Relaxation steps before the pull begins: grips are held fixed so the coarse
+/// capsule packing can settle out its initial inter-fibre overlaps (the capsules
+/// are longer than the beads and start more overlapped, which otherwise offsets
+/// the stress-strain curve above the sphere yarn). Strain is counted from the end
+/// of relaxation. Overridable with CAPSULE_RELAX_STEPS.
+fn relax_steps() -> u64 {
+    std::env::var("CAPSULE_RELAX_STEPS")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(100_000)
+}
+
+/// Global viscous damping coefficient applied to every atom DURING relaxation only
+/// (F -= γv, τ -= γω), so the whole system bleeds the overlap energy and settles to
+/// a low-stress state instead of ringing. Overridable with CAPSULE_RELAX_DAMPING.
+fn relax_damping() -> f64 {
+    std::env::var("CAPSULE_RELAX_DAMPING")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(30.0)
+}
+
 fn main() {
     let mut app = App::new();
     app.add_plugins(CorePlugins)
@@ -57,6 +80,7 @@ fn main() {
 
     // Rigid z-end grips + stress-strain measurement (same as the sphere yarn).
     app.add_update_system(grip_control, ParticleSimScheduleSet::PreInitialIntegration);
+    app.add_update_system(relax_damping_system, ParticleSimScheduleSet::PostForce);
     app.add_update_system(grip_zero_force, ParticleSimScheduleSet::PostForce);
     app.add_update_system(measure_pull, ParticleSimScheduleSet::PostForce);
 
@@ -203,8 +227,14 @@ fn grip_tags(
     })
 }
 
-fn grip_control(mut atoms: ResMut<Atom>) {
+fn grip_control(mut atoms: ResMut<Atom>, run_state: Res<RunState>) {
+    // Capture initial grip membership (by initial z) even during relax.
     let (left, right) = grip_tags(&atoms);
+    // Grips are FREE during relaxation so the yarn can move to relieve overlaps;
+    // only engage the constant-velocity pull afterwards.
+    if (run_state.total_cycle as u64) < relax_steps() {
+        return;
+    }
     for i in 0..atoms.nlocal() as usize {
         let t = atoms.tag[i] as u64;
         if left.contains(&t) {
@@ -215,7 +245,10 @@ fn grip_control(mut atoms: ResMut<Atom>) {
     }
 }
 
-fn grip_zero_force(mut atoms: ResMut<Atom>) {
+fn grip_zero_force(mut atoms: ResMut<Atom>, run_state: Res<RunState>) {
+    if (run_state.total_cycle as u64) < relax_steps() {
+        return; // grips free during relaxation
+    }
     let (left, right) = grip_tags(&atoms);
     for i in 0..atoms.nlocal() as usize {
         let t = atoms.tag[i] as u64;
@@ -223,6 +256,35 @@ fn grip_zero_force(mut atoms: ResMut<Atom>) {
             atoms.force[i] = [0.0; 3];
         }
     }
+}
+
+/// Global viscous damping on every atom during the relaxation phase only:
+/// F -= γv (translational) and τ -= γω (rotational), so the overlap energy is
+/// dissipated and the packing settles to a low-stress equilibrium.
+fn relax_damping_system(
+    mut atoms: ResMut<Atom>,
+    particles: ParticlesWith<'_, Write<DemAtom>>,
+    run_state: Res<RunState>,
+) {
+    if (run_state.total_cycle as u64) >= relax_steps() {
+        return;
+    }
+    let g = relax_damping();
+    let nlocal = atoms.nlocal() as usize;
+    for i in 0..nlocal {
+        let v = atoms.vel[i];
+        atoms.force[i][0] -= (g * v[0] as f64) as Accum;
+        atoms.force[i][1] -= (g * v[1] as f64) as Accum;
+        atoms.force[i][2] -= (g * v[2] as f64) as Accum;
+    }
+    particles.with(|mut dem| {
+        for i in 0..nlocal {
+            let w = dem.omega[i];
+            dem.torque[i][0] -= g * w[0];
+            dem.torque[i][1] -= g * w[1];
+            dem.torque[i][2] -= g * w[2];
+        }
+    });
 }
 
 /// Record strain, axial stress (virial), and surviving-bond count every `thermo`.
@@ -239,7 +301,9 @@ fn measure_pull(
     if step % 20000 != 0 || comm.rank() != 0 {
         return;
     }
-    let strain = ELONGATION_PER_STEP * step as f64 / GAUGE_LENGTH;
+    // Strain counts from the end of the relaxation phase.
+    let pull_step = (step as u64).saturating_sub(relax_steps());
+    let strain = ELONGATION_PER_STEP * pull_step as f64 / GAUGE_LENGTH;
 
     let nlocal = atoms.nlocal() as usize;
     let (left, right) = grip_tags(&atoms);

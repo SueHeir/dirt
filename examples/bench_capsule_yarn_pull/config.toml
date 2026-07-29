@@ -68,7 +68,10 @@ rho_shear = 1.0
 [output]
 dir = "examples/bench_capsule_yarn_pull"
 
+# steps = 100000 relax (free grips + global damping, CAPSULE_RELAX_STEPS)
+# + 560000 pull. Relaxation settles the initial capsule overlaps so the curve
+# sits on the sphere yarn instead of a locked-in stiffness offset.
 [run]
-steps = 560000
+steps = 660000
 thermo = 20000
 dt = 0.001888180053590586
