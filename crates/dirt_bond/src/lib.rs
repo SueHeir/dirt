@@ -948,6 +948,9 @@ impl Plugin for DemBondPlugin {
             ScheduleSetupSet::PostSetup,
         );
         app.add_update_system(zero_bond_metrics, ParticleSimScheduleSet::PreForce);
+        // Resolve deferred r0 for bonds spanning a rank boundary once the ghost
+        // halo exists (first force step); no-op afterward and in serial.
+        app.add_update_system(resolve_deferred_bond_r0, ParticleSimScheduleSet::PreForce);
         app.add_update_system(bond_force.label(BOND_FORCE), ParticleSimScheduleSet::Force);
         app.add_update_system(output_bond_metrics, ParticleSimScheduleSet::PostForce);
     }
@@ -1079,45 +1082,58 @@ pub fn load_bonds_from_file(
 
         let mut bond_count = 0u64;
 
+        let pflags = domain.periodic_flags();
+        let box_size = domain.size;
         for RawBond {
             bond_type,
             tag1,
             tag2,
         } in raw_bonds
         {
-            let idx1 = match tag_to_local.get(&tag1) {
-                Some(&i) => i,
-                None => continue,
-            };
-            let idx2 = match tag_to_local.get(&tag2) {
-                Some(&i) => i,
-                None => continue,
-            };
-
-            let mut d = [
-                atoms.pos[idx2][0] as f64 - atoms.pos[idx1][0] as f64,
-                atoms.pos[idx2][1] as f64 - atoms.pos[idx1][1] as f64,
-                atoms.pos[idx2][2] as f64 - atoms.pos[idx1][2] as f64,
-            ];
-            let pflags = domain.periodic_flags();
-            let box_size = domain.size;
-            for k in 0..3 {
-                if pflags[k] {
-                    d[k] -= box_size[k] * (d[k] / box_size[k]).round();
-                }
+            let local1 = tag_to_local.get(&tag1).copied();
+            let local2 = tag_to_local.get(&tag2).copied();
+            // Load the bond on whichever endpoint(s) are local. A bond spanning a
+            // rank boundary is owned by both ranks (each stores it on its local
+            // atom); previously it was dropped by both because it required *both*
+            // atoms local, silently severing the structure across the boundary.
+            if local1.is_none() && local2.is_none() {
+                continue;
             }
-            let r0 = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt();
-
-            bond_store.bonds[idx1].push(BondEntry {
-                partner_tag: tag2,
-                bond_type,
-                r0,
-            });
-            bond_store.bonds[idx2].push(BondEntry {
-                partner_tag: tag1,
-                bond_type,
-                r0,
-            });
+            // Reference length: when both endpoints are local, from their loaded
+            // positions. When the partner is on another rank it isn't present yet
+            // (ghosts aren't built at setup), so defer r0 (0.0 sentinel) — resolved
+            // at the first force step by `resolve_deferred_bond_r0`, which also
+            // seeds the (skipped) breakage threshold.
+            let r0 = match (local1, local2) {
+                (Some(i1), Some(i2)) => {
+                    let mut d = [
+                        atoms.pos[i2][0] as f64 - atoms.pos[i1][0] as f64,
+                        atoms.pos[i2][1] as f64 - atoms.pos[i1][1] as f64,
+                        atoms.pos[i2][2] as f64 - atoms.pos[i1][2] as f64,
+                    ];
+                    for k in 0..3 {
+                        if pflags[k] {
+                            d[k] -= box_size[k] * (d[k] / box_size[k]).round();
+                        }
+                    }
+                    (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt()
+                }
+                _ => 0.0, // deferred
+            };
+            if let Some(i1) = local1 {
+                bond_store.bonds[i1].push(BondEntry {
+                    partner_tag: tag2,
+                    bond_type,
+                    r0,
+                });
+            }
+            if let Some(i2) = local2 {
+                bond_store.bonds[i2].push(BondEntry {
+                    partner_tag: tag1,
+                    bond_type,
+                    r0,
+                });
+            }
             bond_count += 1;
         }
 
@@ -1244,6 +1260,11 @@ pub fn init_bond_history(
         for i in 0..bonds.bonds.len().min(nlocal) {
             let tag_a = atoms.tag[i];
             for bond in &bonds.bonds[i] {
+                // Skip deferred boundary bonds (r0 not yet known at setup, no
+                // ghosts); `resolve_deferred_bond_r0` seeds them at the first step.
+                if bond.r0 <= 0.0 {
+                    continue;
+                }
                 let has = history.history[i]
                     .iter()
                     .any(|h| h.partner_tag == bond.partner_tag);
@@ -1260,6 +1281,89 @@ pub fn init_bond_history(
                     let thr = crit.sample(bond.r0, u);
                     history.history[i].push(BondHistoryEntry {
                         partner_tag: bond.partner_tag,
+                        delta_t: [0.0; 3],
+                        delta_theta: [0.0; 3],
+                        thresholds: thr.t,
+                        theta_p_bend: [0.0; 3],
+                        eps_p_axial: 0.0,
+                        theta_max_bend: 0.0,
+                        eps_max_axial: 0.0,
+                    });
+                }
+            }
+        }
+    });
+}
+
+/// Resolve deferred reference lengths for bonds that span an MPI rank boundary.
+///
+/// A boundary bond is loaded with `r0 = 0.0` because its partner is not present at
+/// setup (ghosts are not built yet). This runs at the first force step — once the
+/// ghost halo exists the partner is resolvable — computes `r0` from the reference
+/// positions, and seeds the breakage threshold that `init_bond_history` skipped.
+/// Self-terminates once no deferred bonds remain (a cheap per-step scan until
+/// then; a no-op afterward and in serial, where there are no boundary bonds).
+pub fn resolve_deferred_bond_r0(
+    atoms: Res<Atom>,
+    particles: ParticlesWith<'_, (Write<BondStore>, Write<BondHistoryStore>)>,
+    breakage: Res<BondBreakage>,
+    domain: Res<soil_core::Domain>,
+) {
+    particles.with(|(mut bonds, mut history)| {
+        let nlocal = atoms.nlocal() as usize;
+        let n = nlocal.min(bonds.bonds.len());
+        if !(0..n).any(|i| bonds.bonds[i].iter().any(|b| b.r0 <= 0.0)) {
+            return; // nothing deferred (serial, or already resolved)
+        }
+        while history.history.len() < bonds.bonds.len() {
+            history.history.push(Vec::new());
+        }
+        let mut tag_to_index: HashMap<u32, usize> = HashMap::with_capacity(atoms.len());
+        for idx in 0..atoms.len() {
+            tag_to_index.insert(atoms.tag[idx], idx);
+        }
+        let pflags = domain.periodic_flags();
+        let box_size = domain.size;
+        for i in 0..n {
+            let tag_a = atoms.tag[i];
+            for b_idx in 0..bonds.bonds[i].len() {
+                if bonds.bonds[i][b_idx].r0 > 0.0 {
+                    continue;
+                }
+                let partner_tag = bonds.bonds[i][b_idx].partner_tag;
+                let j = match tag_to_index.get(&partner_tag) {
+                    Some(&j) => j,
+                    None => continue, // partner still not a ghost (cutoff too small)
+                };
+                let mut d = [
+                    atoms.pos[j][0] as f64 - atoms.pos[i][0] as f64,
+                    atoms.pos[j][1] as f64 - atoms.pos[i][1] as f64,
+                    atoms.pos[j][2] as f64 - atoms.pos[i][2] as f64,
+                ];
+                for k in 0..3 {
+                    if pflags[k] {
+                        d[k] -= box_size[k] * (d[k] / box_size[k]).round();
+                    }
+                }
+                let r0 = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt();
+                if r0 <= 0.0 {
+                    continue;
+                }
+                let bond_type = bonds.bonds[i][b_idx].bond_type;
+                bonds.bonds[i][b_idx].r0 = r0;
+                if !history.history[i]
+                    .iter()
+                    .any(|h| h.partner_tag == partner_tag)
+                {
+                    let crit = breakage.resolve(bond_type);
+                    let u = if crit.uses_guo_hash() {
+                        [breakage::guo_weibull_u(tag_a, partner_tag, breakage.seed); 4]
+                    } else {
+                        breakage::per_bond_uniform_samples(tag_a, partner_tag, breakage.seed)
+                    };
+                    let thr = crit.sample(r0, u);
+                    history.history[i].push(BondHistoryEntry {
+                        partner_tag,
                         delta_t: [0.0; 3],
                         delta_theta: [0.0; 3],
                         thresholds: thr.t,
