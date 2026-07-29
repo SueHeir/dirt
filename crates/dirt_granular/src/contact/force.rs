@@ -25,8 +25,55 @@ pub fn hertz_mindlin_contact_force(
             &material_table,
             virial.as_deref_mut(),
             ForcePass::All,
+            true, // list pre-filtered by exclude_bonded_neighbors (PreForce)
         );
     });
+}
+
+/// Drop same-body / same-molecule / bonded pairs from the neighbour CSR once per
+/// rebuild, so the per-step contact loop never iterates them (mirrors LAMMPS
+/// `neigh_modify exclude molecule/intra all`). For a densely-bonded strand ~30% of
+/// candidate pairs are intra-molecule; carrying them inflates the list every step.
+/// Gated on a fresh build (`steps_since_build == 0`); idempotent (a no-op scan) if
+/// it ever runs on an already-filtered list.
+pub fn exclude_bonded_neighbors(
+    mut neighbor: ResMut<Neighbor>,
+    atoms: Res<Atom>,
+    particles: ParticlesWith<'_, (Read<DemAtom>, Optional<Read<BondStore>>)>,
+) {
+    if neighbor.steps_since_build != 0 {
+        return;
+    }
+    let nlocal = atoms.nlocal() as usize;
+    if neighbor.neighbor_offsets.len() <= nlocal {
+        return;
+    }
+    let offsets = std::mem::take(&mut neighbor.neighbor_offsets);
+    let indices = std::mem::take(&mut neighbor.neighbor_indices);
+    let (new_offsets, new_indices) = particles.with(|(dem, bonds)| {
+        let mut new_indices: Vec<u32> = Vec::with_capacity(indices.len());
+        let mut new_offsets: Vec<u32> = Vec::with_capacity(offsets.len());
+        new_offsets.push(0);
+        for i in 0..nlocal {
+            let (start, end) = (offsets[i] as usize, offsets[i + 1] as usize);
+            for &jw in &indices[start..end] {
+                let j = jw as usize;
+                let excluded = dirt_atom::same_body(&dem, i, j)
+                    || dirt_atom::same_molecule(&dem, i, j)
+                    || bonds
+                        .as_ref()
+                        .map(|b| b.are_excluded(i, j, &atoms.tag))
+                        .unwrap_or(false);
+                if !excluded {
+                    new_indices.push(jw);
+                }
+            }
+            new_offsets.push(new_indices.len() as u32);
+        }
+        (new_offsets, new_indices)
+    });
+    neighbor.neighbor_offsets = new_offsets;
+    neighbor.neighbor_indices = new_indices;
 }
 
 /// Overlapped Hertz-Mindlin force (roadmap step 4): compute the interior pairs
@@ -65,6 +112,7 @@ pub fn overlapped_contact_force(
                 &material_table,
                 None,
                 ForcePass::Interior,
+                true,
             );
         };
         forward_comm_overlap(
@@ -85,6 +133,7 @@ pub fn overlapped_contact_force(
         &material_table,
         virial.as_deref_mut(),
         ForcePass::Boundary,
+        true,
     );
 }
 
@@ -111,6 +160,7 @@ pub fn contact_force_core(
         material_table,
         virial,
         pass,
+        false, // direct kernel callers (tests) are not pre-filtered
     );
 }
 
@@ -131,6 +181,7 @@ fn contact_force_core_particles(
     material_table: &MaterialTable,
     virial: Option<&mut VirialStress>,
     pass: ForcePass,
+    pre_filtered: bool,
 ) {
     particles.with(|(mut dem, mut history, bonds)| {
         contact_force_core_views(
@@ -142,6 +193,7 @@ fn contact_force_core_particles(
             material_table,
             virial,
             pass,
+            pre_filtered,
         );
     });
 }
@@ -157,6 +209,11 @@ pub fn contact_force_core_views(
     material_table: &MaterialTable,
     mut virial: Option<&mut VirialStress>,
     pass: ForcePass,
+    // When true the neighbour list has already had same-body / same-molecule /
+    // bonded pairs removed (by `exclude_bonded_neighbors` at PreForce), so the
+    // per-pair exclusion checks below are skipped. Direct kernel callers (tests)
+    // pass false and keep the checks.
+    pre_filtered: bool,
 ) {
     let newton = neighbor.newton;
     let dt = atoms.dt;
@@ -187,16 +244,18 @@ pub fn contact_force_core_views(
             ForcePass::Boundary if !is_boundary_pair => continue,
             _ => {}
         }
-        if let Some(ref bonds) = bond_store {
-            if bonds.are_excluded(i, j, &atoms.tag) {
+        // Same-body / same-molecule / bonded exclusions (skipped when the list was
+        // pre-filtered by exclude_bonded_neighbors). same_* are O(1); are_excluded
+        // (bond scan) runs only for pairs not already excluded by molecule.
+        if !pre_filtered {
+            if dirt_atom::same_body(&dem, i, j) || dirt_atom::same_molecule(&dem, i, j) {
                 continue;
             }
-        }
-
-        // Skip same-body pairs (sub-spheres of the same rigid body don't interact)
-        // and same-molecule pairs (bonded strand beads — LAMMPS molecule/intra).
-        if dirt_atom::same_body(&dem, i, j) || dirt_atom::same_molecule(&dem, i, j) {
-            continue;
+            if let Some(ref bonds) = bond_store {
+                if bonds.are_excluded(i, j, &atoms.tag) {
+                    continue;
+                }
+            }
         }
 
         let r1 = dem.radius[i];

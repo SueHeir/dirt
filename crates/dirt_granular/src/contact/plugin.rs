@@ -23,6 +23,10 @@ impl Plugin for HertzMindlinContactPlugin {
         // Register ContactHistoryStore
         register_atom_data!(app, ContactHistoryStore::new());
 
+        // Filter same-body/same-molecule/bonded pairs out of the neighbour list
+        // once per rebuild (LAMMPS `exclude molecule/intra all`).
+        app.add_update_system(exclude_bonded_neighbors, ParticleSimScheduleSet::PreForce);
+
         let contact_model = {
             let mt = app
                 .get_resource_ref::<MaterialTable>()
