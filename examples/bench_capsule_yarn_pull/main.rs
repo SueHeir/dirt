@@ -340,10 +340,12 @@ fn dump_traj(
             let q = dem.quaternion[i]; // [w, x, y, z]
             let r = dem.radius[i];
             let hl = caps.half_length[i];
-            // shp = (r, r, L): radius + cylinder half-length for OVITO Spherocylinder.
+            // shp = (r, r, L+r): OVITO's Spherocylinder reads shpz as the tip half-
+            // extent (COM->tip), so it must include the cap radius; L alone leaves a
+            // ~one-bead gap between consecutive capsules (2L < COM spacing).
             s.push_str(&format!(
                 "{} 1 {:.4} {:.4} {:.4} {:.5} {:.5} {:.5} {:.5} {:.3} {:.3} {:.3}\n",
-                atoms.tag[i], p[0], p[1], p[2], q[1], q[2], q[3], q[0], r, r, hl
+                atoms.tag[i], p[0], p[1], p[2], q[1], q[2], q[3], q[0], r, r, hl + r
             ));
         }
     });
