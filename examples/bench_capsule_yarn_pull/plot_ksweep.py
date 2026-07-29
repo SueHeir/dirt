@@ -21,9 +21,9 @@ def curve(path, scol=2):
 # (label, path, colour, time_s, particles)
 RUNS = [
     ("sphere (5330)", SPHERE, "#000000", 392.0, 5330),
-    ("k=2 (2674)", f"{SWEEP}/k2/data/stress_strain.csv", "#1f77b4", 434.1, 2674),
-    ("k=4 (1340)", f"{SWEEP}/k4/data/stress_strain.csv", "#2ca02c", 303.6, 1340),
-    ("k=8 (676)",  f"{SWEEP}/k8/data/stress_strain.csv", "#d62728", 183.3, 676),
+    ("k=2 (2674)", f"{SWEEP}/k2/data/stress_strain.csv", "#1f77b4", 364.2, 2674),
+    ("k=4 (1340)", f"{SWEEP}/k4/data/stress_strain.csv", "#2ca02c", 255.0, 1340),
+    ("k=8 (676)",  f"{SWEEP}/k8/data/stress_strain.csv", "#d62728", 159.2, 676),
 ]
 
 fig, ax = plt.subplots(1, 2, figsize=(13, 4.9))
@@ -50,7 +50,7 @@ bars = ax[1].bar(xpos, times, color=cols, width=0.6)
 for b, t, p in zip(bars, times, parts):
     ax[1].text(b.get_x() + b.get_width() / 2, t + 5, f"{t:.0f}s", ha="center", fontsize=9)
 ax[1].set_xticks(xpos); ax[1].set_xticklabels(labels)
-ax[1].set_ylabel("wall-clock (s), 660k steps (100k relax + pull)")
+ax[1].set_ylabel("wall-clock (s), 560k-step pull (relax excluded)")
 ax[1].set_title("Performance — run time; particle count on right axis")
 ax[1].grid(alpha=0.3, axis="y"); ax[1].set_ylim(0, 440)
 # particle count overlay
@@ -61,7 +61,7 @@ for xx, p in zip(xpos, parts):
 ax2.set_ylabel("particle count", color="#555555")
 ax2.set_ylim(0, 6200); ax2.tick_params(axis="y", colors="#555555")
 
-fig.suptitle("Sphero-cylinder yarn k-sweep vs sphere yarn — coarse-19 1-ply pull to failure (free-grip damped relax)", fontsize=12)
+fig.suptitle("Sphero-cylinder yarn k-sweep vs sphere yarn — coarse-19 1-ply pull to failure (relaxed; timing = 560k-step pull)", fontsize=12)
 fig.tight_layout(rect=[0, 0, 1, 0.95])
 out = "examples/bench_capsule_yarn_pull/plots/ksweep.png"
 import os; os.makedirs(os.path.dirname(out), exist_ok=True)
