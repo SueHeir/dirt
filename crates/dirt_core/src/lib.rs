@@ -267,7 +267,7 @@ pub mod prelude {
         RotationalDynamicsPlugin,
     };
     pub use dirt_measure_plane::{MeasurePlaneDef, MeasurePlanePlugin, MeasurePlanes};
-    pub use dirt_wall::{WallDef, WallMotion, WallPlane, WallPlugin, Walls};
+    pub use dirt_wall::{WallDef, WallMotion, WallPlane, WallPlugin, WallSpring, WallSpringStore, Walls};
 
     // Shared infrastructure plugins
     pub use dirt_fixes::{

@@ -174,6 +174,15 @@ pub struct WallRegion {
 /// Stored as a resource in the [`App`]. Individual walls can be disabled or
 /// enabled at runtime via [`deactivate_by_name`](Self::deactivate_by_name) and
 /// [`activate_by_name`](Self::activate_by_name).
+///
+/// # No spring history here
+///
+/// The tangential and rolling friction spring histories deliberately do **not**
+/// live on this struct. A resource is rank-local, so a history stored here does
+/// not travel with a migrating atom; it lives in
+/// [`WallSpringStore`](crate::springs::WallSpringStore), a per-atom
+/// `soil_core::AtomData`, for the reasons and the measurement in
+/// [`crate::springs`].
 pub struct Walls {
     /// Plane walls.
     pub planes: Vec<WallPlane>,
@@ -193,15 +202,6 @@ pub struct Walls {
     pub region_active: Vec<bool>,
     /// Elapsed simulation time (seconds), used for oscillation phase tracking.
     pub time: f64,
-    /// Per-contact Mindlin tangential-spring history for wall friction, keyed by
-    /// `(wall_kind, wall_index, particle_tag)` where wall_kind is
-    /// 0=plane, 1=cylinder, 2=sphere, 3=region. Rebuilt each step so contacts
-    /// that end are pruned automatically.
-    pub tangential_springs: std::collections::HashMap<(u8, usize, u32), [f64; 3]>,
-    /// Per-contact rolling-displacement history for the SDS rolling-resistance
-    /// model (same key scheme as `tangential_springs`). Empty under the default
-    /// `constant` rolling model, which is stateless.
-    pub rolling_springs: std::collections::HashMap<(u8, usize, u32), [f64; 3]>,
 }
 
 impl Walls {

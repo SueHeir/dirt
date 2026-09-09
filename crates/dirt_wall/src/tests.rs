@@ -51,8 +51,6 @@ fn make_walls(planes: Vec<WallPlane>) -> Walls {
         regions: Vec::new(),
         region_active: Vec::new(),
         time: 0.0,
-        tangential_springs: std::collections::HashMap::new(),
-        rolling_springs: std::collections::HashMap::new(),
     }
 }
 
@@ -735,16 +733,15 @@ fn wall_history_initializes_without_particle_contact_plugin() {
         atom.force[0][0]
     );
 
-    let walls = app.get_resource_ref::<Walls>().unwrap();
-    let key = (0u8, 0usize, 0u32);
-    let tangential = walls
-        .tangential_springs
-        .get(&key)
-        .expect("dirt_wall must initialize plane tangential history itself");
-    let rolling = walls
-        .rolling_springs
-        .get(&key)
-        .expect("dirt_wall must initialize plane SDS rolling history itself");
+    let registry = app.get_resource_ref::<AtomDataRegistry>().unwrap();
+    let springs = registry.expect::<WallSpringStore>("wall springs");
+    let entry = springs
+        .row(0)
+        .iter()
+        .find(|e| e.kind == 0 && e.index == 0)
+        .expect("dirt_wall must initialize plane wall spring history itself");
+    let tangential = entry.tangential;
+    let rolling = entry.rolling;
 
     let tangential_mag = (tangential[0] * tangential[0]
         + tangential[1] * tangential[1]
@@ -775,8 +772,6 @@ fn make_walls_with_cylinder(cyl: WallCylinder) -> Walls {
         regions: Vec::new(),
         region_active: Vec::new(),
         time: 0.0,
-        tangential_springs: std::collections::HashMap::new(),
-        rolling_springs: std::collections::HashMap::new(),
     }
 }
 
@@ -791,8 +786,6 @@ fn make_walls_with_sphere(sph: WallSphere) -> Walls {
         regions: Vec::new(),
         region_active: Vec::new(),
         time: 0.0,
-        tangential_springs: std::collections::HashMap::new(),
-        rolling_springs: std::collections::HashMap::new(),
     }
 }
 
@@ -807,8 +800,6 @@ fn make_walls_with_region(reg: WallRegion) -> Walls {
         regions: vec![reg],
         region_active: vec![true],
         time: 0.0,
-        tangential_springs: std::collections::HashMap::new(),
-        rolling_springs: std::collections::HashMap::new(),
     }
 }
 
@@ -855,8 +846,6 @@ fn make_named_wall_set(name: &str) -> Walls {
         }],
         region_active: vec![true],
         time: 0.0,
-        tangential_springs: std::collections::HashMap::new(),
-        rolling_springs: std::collections::HashMap::new(),
     }
 }
 
