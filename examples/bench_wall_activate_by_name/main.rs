@@ -209,8 +209,6 @@ fn make_walls(sc: &ScenarioCfg) -> Walls {
         regions: Vec::new(),
         region_active: Vec::new(),
         time: 0.0,
-        tangential_springs: std::collections::HashMap::new(),
-        rolling_springs: std::collections::HashMap::new(),
     }
 }
 

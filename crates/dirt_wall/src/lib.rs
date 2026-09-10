@@ -24,8 +24,13 @@
 //!   local contact normal. Supported by **all** wall types.
 //!
 //! Frictionless walls (`friction = 0`) are byte-for-byte unchanged from a
-//! pure-normal contact. Tangential and rolling spring histories are stored on
-//! the [`Walls`] resource (`tangential_springs`, `rolling_springs`).
+//! pure-normal contact. Tangential and rolling spring histories are stored in
+//! [`WallSpringStore`], a per-atom [`soil_core::AtomData`] registered by
+//! [`WallPlugin`], so that a particle in sustained wall contact keeps its
+//! friction springs when it migrates to another MPI rank. They used to be two
+//! `HashMap`s on the rank-local [`Walls`] resource, which meant a crossing
+//! discharged the whole tangential spring — see [`springs`] for the
+//! measurement and the reasoning.
 //!
 //! ## Adhesion-model asymmetry
 //!
@@ -162,12 +167,14 @@ mod contact;
 mod geometry;
 mod motion;
 mod plugin;
+pub mod springs;
 
 pub use config::{OscillateDef, ServoDef, WallDef};
 pub use contact::wall_contact_force;
 pub use geometry::{WallCylinder, WallPlane, WallRegion, WallSphere, Walls};
 pub use motion::{wall_move, wall_zero_force_accumulators, WallMotion};
 pub use plugin::WallPlugin;
+pub use springs::{WallSpring, WallSpringStore, WALL_SPRING_LEN};
 
 #[cfg(test)]
 mod tests;

@@ -1,6 +1,7 @@
 //! Wall contact-force kernel.
 
 use crate::geometry::Walls;
+use crate::springs::WallSpringStore;
 use dirt_atom::{DemAtom, MaterialTable, SQRT_5_6};
 use grass_scheduler::prelude::*;
 use soil_core::{Accum, Atom, ParticlesWith, Write};
@@ -263,29 +264,28 @@ fn wall_twisting_torque(
 ///
 /// For each local atom in contact with a wall it evaluates the Hertzian normal
 /// force with viscous damping, the tangential/rolling/twisting friction springs
-/// (whose per-contact history is carried in [`Walls`]), and any adhesion model,
-/// accumulating the result into the atom's force and torque. Tangential and
-/// rolling spring histories are rebuilt each step so that contacts which ended
-/// are pruned automatically.
+/// (whose per-contact history is carried per atom in
+/// [`WallSpringStore`](crate::springs::WallSpringStore)), and any adhesion
+/// model, accumulating the result into the atom's force and torque. Tangential
+/// and rolling spring histories are marked untouched at the start of the pass
+/// and pruned at the end, so that contacts which ended lose their spring.
 pub fn wall_contact_force(
     mut atoms: ResMut<Atom>,
     mut walls: ResMut<Walls>,
-    particles: ParticlesWith<'_, Write<DemAtom>>,
+    particles: ParticlesWith<'_, (Write<DemAtom>, Write<WallSpringStore>)>,
     material_table: Res<MaterialTable>,
 ) {
-    particles.with(|mut dem| {
+    particles.with(|(mut dem, mut springs)| {
         let nlocal = atoms.nlocal() as usize;
         let dt = atoms.dt;
 
-        // Take the tangential-spring history out so the per-wall-list immutable
-        // borrows below don't conflict with mutating it; rebuild it fresh this step
-        // (contacts that ended are pruned by not being re-inserted).
-        let old_springs = std::mem::take(&mut walls.tangential_springs);
-        let mut new_springs: std::collections::HashMap<(u8, usize, u32), [f64; 3]> =
-            std::collections::HashMap::new();
-        let old_rolling = std::mem::take(&mut walls.rolling_springs);
-        let mut new_rolling: std::collections::HashMap<(u8, usize, u32), [f64; 3]> =
-            std::collections::HashMap::new();
+        // The spring history is a per-atom row in `springs`, so a lookup is by
+        // local atom index and needs no borrow of `walls` at all. Every entry
+        // is marked untouched here and the untouched ones are pruned after the
+        // loop, which is what makes a contact that ended lose its spring —
+        // exactly what rebuilding the old rank-local maps from scratch did.
+        springs.ensure_rows(atoms.len());
+        springs.begin_step(nlocal);
 
         // Collect per-wall forces to accumulate after the loop
         let nwalls = walls.planes.len();
@@ -408,8 +408,7 @@ pub fn wall_contact_force(
                     let g_eff = material_table.g_eff_ij[mat_i][wall_mat];
                     let n = [wall.normal_x, wall.normal_y, wall.normal_z];
                     let v_rel = [v_rel_x, v_rel_y, v_rel_z];
-                    let key = (0u8, wall_idx, atoms.tag[i]);
-                    let old = old_springs.get(&key).copied().unwrap_or([0.0; 3]);
+                    let old = springs.tangential(i, 0, wall_idx as u32);
                     let (ft, tau, ns) = wall_tangential_force(
                         n,
                         v_rel,
@@ -430,7 +429,7 @@ pub fn wall_contact_force(
                     dem.torque[i][0] += tau[0];
                     dem.torque[i][1] += tau[1];
                     dem.torque[i][2] += tau[2];
-                    new_springs.insert(key, ns);
+                    springs.set_tangential(i, 0, wall_idx as u32, ns);
                 }
 
                 // Rolling-resistance torque.
@@ -439,8 +438,7 @@ pub fn wall_contact_force(
                     let sds = material_table.rolling_model == "sds";
                     let k_roll = material_table.rolling_stiffness_ij[mat_i][wall_mat];
                     let gamma_roll = material_table.rolling_damping_ij[mat_i][wall_mat];
-                    let key = (0u8, wall_idx, atoms.tag[i]);
-                    let old_rd = old_rolling.get(&key).copied().unwrap_or([0.0; 3]);
+                    let old_rd = springs.rolling(i, 0, wall_idx as u32);
                     let (tr, new_rd) = wall_rolling_torque(
                         [wall.normal_x, wall.normal_y, wall.normal_z],
                         dem.omega[i],
@@ -457,7 +455,7 @@ pub fn wall_contact_force(
                     dem.torque[i][1] += tr[1];
                     dem.torque[i][2] += tr[2];
                     if sds {
-                        new_rolling.insert(key, new_rd);
+                        springs.set_rolling(i, 0, wall_idx as u32, new_rd);
                     }
                 }
 
@@ -576,8 +574,7 @@ pub fn wall_contact_force(
                 if mu > 0.0 {
                     let beta = material_table.beta_ij[mat_i][wall_mat];
                     let g_eff = material_table.g_eff_ij[mat_i][wall_mat];
-                    let key = (1u8, cyl_idx, atoms.tag[i]);
-                    let old = old_springs.get(&key).copied().unwrap_or([0.0; 3]);
+                    let old = springs.tangential(i, 1, cyl_idx as u32);
                     let (ft, tau, ns) = wall_tangential_force(
                         [nx, ny, nz],
                         [
@@ -602,7 +599,7 @@ pub fn wall_contact_force(
                     dem.torque[i][0] += tau[0];
                     dem.torque[i][1] += tau[1];
                     dem.torque[i][2] += tau[2];
-                    new_springs.insert(key, ns);
+                    springs.set_tangential(i, 1, cyl_idx as u32, ns);
                 }
 
                 // Rolling-resistance torque (cylinder wall is static).
@@ -611,8 +608,7 @@ pub fn wall_contact_force(
                     let sds = material_table.rolling_model == "sds";
                     let k_roll = material_table.rolling_stiffness_ij[mat_i][wall_mat];
                     let gamma_roll = material_table.rolling_damping_ij[mat_i][wall_mat];
-                    let key = (1u8, cyl_idx, atoms.tag[i]);
-                    let old_rd = old_rolling.get(&key).copied().unwrap_or([0.0; 3]);
+                    let old_rd = springs.rolling(i, 1, cyl_idx as u32);
                     let (tr, new_rd) = wall_rolling_torque(
                         [nx, ny, nz],
                         dem.omega[i],
@@ -629,7 +625,7 @@ pub fn wall_contact_force(
                     dem.torque[i][1] += tr[1];
                     dem.torque[i][2] += tr[2];
                     if sds {
-                        new_rolling.insert(key, new_rd);
+                        springs.set_rolling(i, 1, cyl_idx as u32, new_rd);
                     }
                 }
 
@@ -716,8 +712,7 @@ pub fn wall_contact_force(
                 if mu > 0.0 {
                     let beta = material_table.beta_ij[mat_i][wall_mat];
                     let g_eff = material_table.g_eff_ij[mat_i][wall_mat];
-                    let key = (2u8, sph_idx, atoms.tag[i]);
-                    let old = old_springs.get(&key).copied().unwrap_or([0.0; 3]);
+                    let old = springs.tangential(i, 2, sph_idx as u32);
                     let (ft, tau, ns) = wall_tangential_force(
                         [nx, ny, nz],
                         [
@@ -742,7 +737,7 @@ pub fn wall_contact_force(
                     dem.torque[i][0] += tau[0];
                     dem.torque[i][1] += tau[1];
                     dem.torque[i][2] += tau[2];
-                    new_springs.insert(key, ns);
+                    springs.set_tangential(i, 2, sph_idx as u32, ns);
                 }
 
                 // Rolling-resistance torque (sphere wall is static).
@@ -751,8 +746,7 @@ pub fn wall_contact_force(
                     let sds = material_table.rolling_model == "sds";
                     let k_roll = material_table.rolling_stiffness_ij[mat_i][wall_mat];
                     let gamma_roll = material_table.rolling_damping_ij[mat_i][wall_mat];
-                    let key = (2u8, sph_idx, atoms.tag[i]);
-                    let old_rd = old_rolling.get(&key).copied().unwrap_or([0.0; 3]);
+                    let old_rd = springs.rolling(i, 2, sph_idx as u32);
                     let (tr, new_rd) = wall_rolling_torque(
                         [nx, ny, nz],
                         dem.omega[i],
@@ -769,7 +763,7 @@ pub fn wall_contact_force(
                     dem.torque[i][1] += tr[1];
                     dem.torque[i][2] += tr[2];
                     if sds {
-                        new_rolling.insert(key, new_rd);
+                        springs.set_rolling(i, 2, sph_idx as u32, new_rd);
                     }
                 }
 
@@ -861,8 +855,7 @@ pub fn wall_contact_force(
                 if mu > 0.0 {
                     let beta = material_table.beta_ij[mat_i][wall_mat];
                     let g_eff = material_table.g_eff_ij[mat_i][wall_mat];
-                    let key = (3u8, reg_idx, atoms.tag[i]);
-                    let old = old_springs.get(&key).copied().unwrap_or([0.0; 3]);
+                    let old = springs.tangential(i, 3, reg_idx as u32);
                     let (ft, tau, ns) = wall_tangential_force(
                         [nx, ny, nz],
                         [
@@ -887,7 +880,7 @@ pub fn wall_contact_force(
                     dem.torque[i][0] += tau[0];
                     dem.torque[i][1] += tau[1];
                     dem.torque[i][2] += tau[2];
-                    new_springs.insert(key, ns);
+                    springs.set_tangential(i, 3, reg_idx as u32, ns);
                 }
 
                 // Rolling-resistance torque (region wall is static).
@@ -896,8 +889,7 @@ pub fn wall_contact_force(
                     let sds = material_table.rolling_model == "sds";
                     let k_roll = material_table.rolling_stiffness_ij[mat_i][wall_mat];
                     let gamma_roll = material_table.rolling_damping_ij[mat_i][wall_mat];
-                    let key = (3u8, reg_idx, atoms.tag[i]);
-                    let old_rd = old_rolling.get(&key).copied().unwrap_or([0.0; 3]);
+                    let old_rd = springs.rolling(i, 3, reg_idx as u32);
                     let (tr, new_rd) = wall_rolling_torque(
                         [nx, ny, nz],
                         dem.omega[i],
@@ -914,7 +906,7 @@ pub fn wall_contact_force(
                     dem.torque[i][1] += tr[1];
                     dem.torque[i][2] += tr[2];
                     if sds {
-                        new_rolling.insert(key, new_rd);
+                        springs.set_rolling(i, 3, reg_idx as u32, new_rd);
                     }
                 }
 
@@ -925,8 +917,8 @@ pub fn wall_contact_force(
             walls.regions[idx].force_accumulator += f;
         }
 
-        // Persist the rebuilt tangential- and rolling-spring history for next step.
-        walls.tangential_springs = new_springs;
-        walls.rolling_springs = new_rolling;
+        // Drop the entries nothing touched this step: those are the contacts
+        // that have ended.
+        springs.prune(nlocal);
     });
 }

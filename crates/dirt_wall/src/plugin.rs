@@ -8,14 +8,18 @@ use dirt_atom::MaterialTable;
 use dirt_schedule::WALL_CONTACT;
 use grass_app::prelude::*;
 use grass_scheduler::prelude::*;
-use soil_core::{Config, ParticleSimScheduleSet};
+use crate::springs::WallSpringStore;
+use soil_core::{register_atom_data, Config, ParticleSimScheduleSet};
 
 // ── Plugin ──────────────────────────────────────────────────────────────────
 
 /// Plugin that registers wall contact force systems from `[[wall]]` TOML config.
 ///
 /// Parses all `[[wall]]` entries, resolves material indices, and creates the
-/// [`Walls`] resource. Registers three systems:
+/// [`Walls`] resource. It also registers
+/// [`WallSpringStore`](crate::springs::WallSpringStore) in the
+/// `AtomDataRegistry`, which is what carries wall friction springs across a
+/// rank boundary. Registers three systems:
 ///
 /// - [`wall_move`] — updates wall positions (oscillation, servo, constant velocity)
 /// - [`wall_zero_force_accumulators`] — zeros per-wall force accumulators before force pass
@@ -289,12 +293,15 @@ impl Plugin for WallPlugin {
                 regions,
                 region_active: vec![true; nr],
                 time: 0.0,
-                tangential_springs: std::collections::HashMap::new(),
-                rolling_springs: std::collections::HashMap::new(),
             }
         };
 
         app.add_resource(walls);
+        // The friction spring history is a per-atom row, not a field on the
+        // rank-local `Walls` resource, so that a particle in sustained wall
+        // contact keeps its tangential spring when it migrates. See
+        // `crate::springs`.
+        register_atom_data!(app, WallSpringStore::new());
         app.add_update_system(wall_move, ParticleSimScheduleSet::PreInitialIntegration);
         app.add_update_system(
             wall_zero_force_accumulators,
