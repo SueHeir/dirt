@@ -9,7 +9,13 @@ description = "Per-atom DEM data (radius, density) with pack/unpack and Material
 keywords = ["dem", "atom", "material", "simulation"]
 categories = ["simulation", "science"]
 
+[package.metadata.docs.rs]
+no-default-features = true
+features = ["precision-double"]
+targets = ["x86_64-unknown-linux-gnu"]
+
 [features]
+default = ["precision-double"]
 precision-double = ["soil_core/precision-double"]
 precision-mixed = ["soil_core/precision-mixed"]
 precision-single = ["soil_core/precision-single"]

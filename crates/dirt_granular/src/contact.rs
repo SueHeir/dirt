@@ -33,7 +33,8 @@ use shared::{is_mindlin_force_history, is_mindlin_rescale, zero_contact_history}
 
 pub use adhesion::willett2000_liquid_bridge_force;
 pub use force::{
-    contact_force_core, exclude_bonded_neighbors, hertz_mindlin_contact_force, hooke_contact_force, overlapped_contact_force,
+    contact_force_core, exclude_bonded_neighbors, hertz_mindlin_contact_force, hooke_contact_force,
+    overlapped_contact_force,
 };
 pub use plugin::HertzMindlinContactPlugin;
 pub use shared::ForcePass;

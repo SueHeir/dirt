@@ -29,7 +29,10 @@
 
 #![deny(missing_docs)]
 
+use std::collections::HashMap;
 use std::f64::consts::TAU;
+use std::fs::File;
+use std::io::{BufRead, BufReader};
 
 use grass_app::prelude::*;
 use grass_scheduler::prelude::*;
@@ -40,20 +43,23 @@ use soil_derive::AtomData;
 use soil_core::{
     register_atom_data, Atom, AtomData, AtomDataRegistry, CommResource, Config, Domain,
     ParticleSimScheduleSet, ParticleStore, ParticlesWith, Read, Real, Region, ScheduleSetupSet,
-    Write,
+    Write, NEIGHBOR_SETUP,
 };
 
 use dirt_atom::{DemAtom, MaterialTable};
+use dirt_schedule::LOAD_BONDS;
 
 pub mod contact;
 pub mod geometry;
 pub mod inertia;
+pub mod output;
 pub mod rigid;
 
 pub use contact::{CapsuleContactHistory, CapsuleContactPlugin};
 pub use geometry::{capsule_overlap, closest_segment_point, closest_segment_segment};
 pub use inertia::capsule_mass_and_moments;
-pub use rigid::{angmom_to_omega, richardson, quat_rotate, RigidRotState};
+pub use output::write_ovito_spherocylinder;
+pub use rigid::{angmom_to_omega, quat_rotate, richardson, RigidRotState};
 
 // ── Per-atom capsule data ────────────────────────────────────────────────────
 
@@ -172,6 +178,10 @@ pub struct CapsuleTopConfig {
     /// Capsule insertion commands.
     #[serde(default)]
     pub insert: Option<Vec<CapsuleInsertConfig>>,
+    /// Extended LAMMPS-data file containing a `Capsules` section. The same file
+    /// should normally be loaded by `[[particles.insert]]` and `[bonds]`.
+    #[serde(default)]
+    pub file: Option<String>,
 }
 
 /// Runtime store of capsule definitions, looked up during insertion.
@@ -204,13 +214,22 @@ impl Plugin for CapsulePlugin {
 
     fn build(&self, app: &mut App) {
         register_atom_data!(app, CapsuleAtom::new());
+        output::register_capsule_ovito_output(app);
 
         let mut registry = CapsuleRegistry::new();
         let config = Config::load::<CapsuleTopConfig>(app, "capsule");
         if let Some(defs) = config.definitions.clone() {
             for def in defs {
-                assert!(def.radius > 0.0, "capsule '{}' radius must be > 0", def.name);
-                assert!(def.length >= 0.0, "capsule '{}' length must be >= 0", def.name);
+                assert!(
+                    def.radius > 0.0,
+                    "capsule '{}' radius must be > 0",
+                    def.name
+                );
+                assert!(
+                    def.length >= 0.0,
+                    "capsule '{}' length must be >= 0",
+                    def.name
+                );
                 registry.defs.push(def);
             }
         }
@@ -219,6 +238,12 @@ impl Plugin for CapsulePlugin {
 
         app.add_setup_system(capsule_insert_atoms, ScheduleSetupSet::Setup);
         app.add_setup_system(extend_ghost_cutoff_for_capsules, ScheduleSetupSet::Setup);
+        app.add_setup_system(
+            load_capsules_from_file
+                .before(LOAD_BONDS)
+                .before(NEIGHBOR_SETUP),
+            ScheduleSetupSet::PostSetup,
+        );
 
         // Advance orientation (full-tensor) alongside the translational integrator.
         app.add_update_system(
@@ -240,10 +265,7 @@ impl Plugin for CapsulePlugin {
 
 /// Extend `Domain::ghost_cutoff` so a capsule near a subdomain/periodic boundary
 /// is visible along its whole length. Mirrors the clump ghost-cutoff extension.
-fn extend_ghost_cutoff_for_capsules(
-    registry: Res<CapsuleRegistry>,
-    mut domain: ResMut<Domain>,
-) {
+fn extend_ghost_cutoff_for_capsules(registry: Res<CapsuleRegistry>, mut domain: ResMut<Domain>) {
     let mut max_reach = 0.0_f64;
     for def in &registry.defs {
         max_reach = max_reach.max(0.5 * def.length + def.radius);
@@ -330,6 +352,186 @@ fn refresh_capsule_axis(
             caps.axis[i] = quat_rotate(dem.quaternion[i], [0.0, 0.0, 1.0]);
         }
     });
+}
+
+/// One row from an extended LAMMPS-data `Capsules` section.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct RawCapsule {
+    /// Atom tag referenced by the corresponding `Atoms` row.
+    pub tag: u32,
+    /// Half of the cylindrical centerline length.
+    pub half_length: f64,
+    /// World-frame unit centerline direction.
+    pub axis: [f64; 3],
+}
+
+/// Parses the optional `Capsules` section from extended LAMMPS-data lines.
+pub fn parse_capsules_section(lines: &[String]) -> Result<Option<Vec<RawCapsule>>, String> {
+    const SECTION_HEADERS: [&str; 9] = [
+        "Atoms",
+        "Capsules",
+        "Velocities",
+        "Bonds",
+        "Angles",
+        "Dihedrals",
+        "Impropers",
+        "Masses",
+        "Pair Coeffs",
+    ];
+    let mut start = None;
+    for (index, line) in lines.iter().enumerate() {
+        if line.trim() == "Capsules" {
+            start = Some(index + 1);
+        }
+    }
+    let Some(start) = start else {
+        return Ok(None);
+    };
+    let mut capsules = Vec::new();
+    for (index, line) in lines.iter().enumerate().skip(start) {
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+        if SECTION_HEADERS
+            .iter()
+            .any(|header| trimmed.starts_with(header))
+        {
+            break;
+        }
+        let fields = trimmed.split_whitespace().collect::<Vec<_>>();
+        if fields.len() < 5 {
+            return Err(format!(
+                "Capsules section, line {}: expected 5 columns, found {}",
+                index + 1,
+                fields.len()
+            ));
+        }
+        let parse = |column: usize, name: &str| -> Result<f64, String> {
+            fields[column].parse::<f64>().map_err(|_| {
+                format!(
+                    "Capsules section, line {}: field '{}' = {:?} is not numeric",
+                    index + 1,
+                    name,
+                    fields[column]
+                )
+            })
+        };
+        let tag = fields[0].parse::<u32>().map_err(|_| {
+            format!(
+                "Capsules section, line {}: atom tag {:?} is not an integer",
+                index + 1,
+                fields[0]
+            )
+        })?;
+        let half_length = parse(1, "half_length")?;
+        if !half_length.is_finite() || half_length <= 0.0 {
+            return Err(format!(
+                "Capsules section, line {}: half_length must be positive",
+                index + 1
+            ));
+        }
+        let mut axis = [
+            parse(2, "axis_x")?,
+            parse(3, "axis_y")?,
+            parse(4, "axis_z")?,
+        ];
+        let norm = (axis[0] * axis[0] + axis[1] * axis[1] + axis[2] * axis[2]).sqrt();
+        if !norm.is_finite() || norm <= 1.0e-14 {
+            return Err(format!(
+                "Capsules section, line {}: axis must be finite and nonzero",
+                index + 1
+            ));
+        }
+        for component in &mut axis {
+            *component /= norm;
+        }
+        capsules.push(RawCapsule {
+            tag,
+            half_length,
+            axis,
+        });
+    }
+    Ok(Some(capsules))
+}
+
+fn load_capsules_from_file(
+    comm: Res<CommResource>,
+    mut atoms: ResMut<Atom>,
+    registry: Res<AtomDataRegistry>,
+    config: Res<CapsuleTopConfig>,
+    mut domain: ResMut<Domain>,
+    scheduler_manager: Res<SchedulerManager>,
+) {
+    if scheduler_manager.index != 0 {
+        return;
+    }
+    let Some(path) = config.file.as_deref() else {
+        return;
+    };
+    let file = File::open(path)
+        .unwrap_or_else(|error| panic!("CapsulePlugin could not open '{path}': {error}"));
+    let lines = BufReader::new(file)
+        .lines()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap_or_else(|error| panic!("CapsulePlugin could not read '{path}': {error}"));
+    let rows = parse_capsules_section(&lines)
+        .unwrap_or_else(|error| panic!("CapsulePlugin could not parse '{path}': {error}"))
+        .unwrap_or_else(|| panic!("CapsulePlugin found no Capsules section in '{path}'"));
+    let tag_to_row = rows
+        .into_iter()
+        .map(|row| (row.tag, row))
+        .collect::<HashMap<_, _>>();
+    let nlocal = atoms.nlocal() as usize;
+    let mut loaded = 0usize;
+    let mut max_reach = 0.0_f64;
+    {
+        let mut dem = registry.expect_mut::<DemAtom>("load_capsules_from_file");
+        let mut caps = registry.expect_mut::<CapsuleAtom>("load_capsules_from_file");
+        for i in 0..nlocal {
+            let Some(row) = tag_to_row.get(&atoms.tag[i]) else {
+                continue;
+            };
+            let radius = dem.radius[i];
+            let density = dem.density[i];
+            let length = 2.0 * row.half_length;
+            let (mass, moments) = capsule_mass_and_moments(radius, length, density);
+            atoms.mass[i] = mass as Real;
+            atoms.inv_mass[i] = if mass > 0.0 {
+                (1.0 / mass) as Real
+            } else {
+                0.0
+            };
+            atoms.cutoff_radius[i] = (row.half_length + radius) as Real;
+            dem.inv_inertia[i] = 0.0;
+            dem.quaternion[i] = quaternion_from_z_axis(row.axis);
+            dem.omega[i] = [0.0; 3];
+            dem.ang_mom[i] = [0.0; 3];
+            dem.torque[i] = [0.0; 3];
+            caps.is_capsule[i] = 1.0;
+            caps.half_length[i] = row.half_length;
+            caps.axis[i] = row.axis;
+            caps.principal_moments[i] = moments;
+            caps.principal_axes[i] = [1.0, 0.0, 0.0, 0.0];
+            max_reach = max_reach.max(row.half_length + radius);
+            loaded += 1;
+        }
+    }
+    if max_reach > 0.0 {
+        domain.ghost_cutoff += 2.0 * max_reach;
+    }
+    if comm.rank() == 0 {
+        println!("CapsulePlugin: loaded {loaded} local capsules from '{path}'");
+    }
+}
+
+fn quaternion_from_z_axis(axis: [f64; 3]) -> [f64; 4] {
+    if axis[2] < -1.0 + 1.0e-12 {
+        return [0.0, 1.0, 0.0, 0.0];
+    }
+    let q = [1.0 + axis[2], -axis[1], axis[0], 0.0];
+    let norm = (q[0] * q[0] + q[1] * q[1] + q[2] * q[2]).sqrt();
+    [q[0] / norm, q[1] / norm, q[2] / norm, 0.0]
 }
 
 // ── Insertion ────────────────────────────────────────────────────────────────
@@ -457,7 +659,14 @@ fn insert_capsules<R: Rng>(
             None => [0.0; 3],
         };
         insert_capsule(
-            atoms, registry, def, pos, vel, quat, insert.density, mat_idx,
+            atoms,
+            registry,
+            def,
+            pos,
+            vel,
+            quat,
+            insert.density,
+            mat_idx,
         );
         centers.push(pos);
         inserted += 1;
@@ -504,7 +713,11 @@ pub fn insert_capsule(
     atoms.vel[i] = [com_vel[0] as Real, com_vel[1] as Real, com_vel[2] as Real];
     atoms.force[i] = [0.0; 3];
     atoms.mass[i] = mass as Real;
-    atoms.inv_mass[i] = if mass > 0.0 { (1.0 / mass) as Real } else { 0.0 };
+    atoms.inv_mass[i] = if mass > 0.0 {
+        (1.0 / mass) as Real
+    } else {
+        0.0
+    };
     // Neighbor reach must cover the capsule's whole length plus its radius.
     atoms.cutoff_radius[i] = (0.5 * def.length + def.radius) as Real;
     atoms.image[i] = [0, 0, 0];
@@ -530,5 +743,46 @@ pub fn insert_capsule(
         caps.axis[i] = axis;
         caps.principal_moments[i] = moments;
         caps.principal_axes[i] = [1.0, 0.0, 0.0, 0.0];
+    }
+}
+
+#[cfg(test)]
+mod file_tests {
+    use super::*;
+
+    #[test]
+    fn parses_tangle_capsule_section_and_normalizes_axes() {
+        let lines = r#"TANGLE export
+
+Atoms # bpm/sphere
+
+1 1 1 0.1 1000 0 0 0
+
+Capsules
+
+# atom-id half-length axis-x axis-y axis-z
+1 0.25 2 0 0
+
+Bonds
+
+"#
+        .lines()
+        .map(str::to_string)
+        .collect::<Vec<_>>();
+        let rows = parse_capsules_section(&lines).unwrap().unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].tag, 1);
+        assert_eq!(rows[0].half_length, 0.25);
+        assert_eq!(rows[0].axis, [1.0, 0.0, 0.0]);
+    }
+
+    #[test]
+    fn z_axis_quaternion_round_trips_exported_direction() {
+        for axis in [[1.0, 0.0, 0.0], [0.0, -1.0, 0.0], [0.0, 0.0, -1.0]] {
+            let rotated = quat_rotate(quaternion_from_z_axis(axis), [0.0, 0.0, 1.0]);
+            for component in 0..3 {
+                assert!((rotated[component] - axis[component]).abs() < 1.0e-12);
+            }
+        }
     }
 }

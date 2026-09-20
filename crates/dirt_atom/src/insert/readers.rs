@@ -452,6 +452,7 @@ pub(super) fn read_lammps_data_particles(
 
     let section_headers = [
         "Atoms",
+        "Capsules",
         "Velocities",
         "Bonds",
         "Angles",

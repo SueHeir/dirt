@@ -95,9 +95,21 @@ pub fn angmom_to_omega(
     let lpx = ex[0] * angmom[0] + ex[1] * angmom[1] + ex[2] * angmom[2];
     let lpy = ey[0] * angmom[0] + ey[1] * angmom[1] + ey[2] * angmom[2];
     let lpz = ez[0] * angmom[0] + ez[1] * angmom[1] + ez[2] * angmom[2];
-    let wpx = if moments[0] > 1e-30 { lpx / moments[0] } else { 0.0 };
-    let wpy = if moments[1] > 1e-30 { lpy / moments[1] } else { 0.0 };
-    let wpz = if moments[2] > 1e-30 { lpz / moments[2] } else { 0.0 };
+    let wpx = if moments[0] > 1e-30 {
+        lpx / moments[0]
+    } else {
+        0.0
+    };
+    let wpy = if moments[1] > 1e-30 {
+        lpy / moments[1]
+    } else {
+        0.0
+    };
+    let wpz = if moments[2] > 1e-30 {
+        lpz / moments[2]
+    } else {
+        0.0
+    };
     [
         ex[0] * wpx + ey[0] * wpy + ez[0] * wpz,
         ex[1] * wpx + ey[1] * wpy + ez[1] * wpz,
@@ -220,7 +232,7 @@ mod tests {
         let moments = [1.0, 1.5, 2.0]; // anisotropic (like an elongated capsule)
         let mut q = [1.0, 0.0, 0.0, 0.0];
         let mut omega = [0.7, 1.3, 0.9]; // tumbling about all axes
-        // L = I ω in the principal (= body, identity axes) frame, rotated to space.
+                                         // L = I ω in the principal (= body, identity axes) frame, rotated to space.
         let mut angmom = [
             moments[0] * omega[0],
             moments[1] * omega[1],
@@ -253,7 +265,8 @@ mod tests {
         assert!(rel < 1e-2, "rot KE drift {rel} (ke0={ke0}, ke1={ke1})");
 
         // Angular momentum magnitude (space frame) is exactly conserved (torque-free).
-        let l0 = (1.0f64 * 0.7 * 1.0f64 * 0.7 + 1.5 * 1.3 * 1.5 * 1.3 + 2.0 * 0.9 * 2.0 * 0.9).sqrt();
+        let l0 =
+            (1.0f64 * 0.7 * 1.0f64 * 0.7 + 1.5 * 1.3 * 1.5 * 1.3 + 2.0 * 0.9 * 2.0 * 0.9).sqrt();
         let l1 = (angmom[0] * angmom[0] + angmom[1] * angmom[1] + angmom[2] * angmom[2]).sqrt();
         assert!((l1 - l0).abs() / l0 < 1e-10, "|L| drift: {l0} -> {l1}");
     }

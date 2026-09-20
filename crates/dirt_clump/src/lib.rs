@@ -1547,8 +1547,12 @@ mod tests {
     fn setup_clump_test() -> (Atom, AtomDataRegistry, MultisphereBodyStore) {
         let mut registry = AtomDataRegistry::new();
         let empty_atom = Atom::new();
-        registry.register_for_atoms(DemAtom::new(), &empty_atom).unwrap();
-        registry.register_for_atoms(ClumpAtom::new(), &empty_atom).unwrap();
+        registry
+            .register_for_atoms(DemAtom::new(), &empty_atom)
+            .unwrap();
+        registry
+            .register_for_atoms(ClumpAtom::new(), &empty_atom)
+            .unwrap();
         (Atom::new(), registry, MultisphereBodyStore::new())
     }
 
@@ -1665,8 +1669,12 @@ region = { type = "block", min = [1.0, 1.0, 1.0], max = [1.0, 2.0, 2.0] }
         let mut app = App::new();
         let mut registry = AtomDataRegistry::new();
         let empty_atom = Atom::new();
-        registry.register_for_atoms(DemAtom::new(), &empty_atom).unwrap();
-        registry.register_for_atoms(ClumpAtom::new(), &empty_atom).unwrap();
+        registry
+            .register_for_atoms(DemAtom::new(), &empty_atom)
+            .unwrap();
+        registry
+            .register_for_atoms(ClumpAtom::new(), &empty_atom)
+            .unwrap();
 
         let mut domain = Domain::new();
         domain.boundaries_low = [-0.03; 3];
@@ -1825,9 +1833,15 @@ region = { type = "block", min = [1.0, 1.0, 1.0], max = [1.0, 2.0, 2.0] }
     fn clump_row_rejection_rolls_back_atoms_before_body_commit() {
         let mut registry = AtomDataRegistry::new();
         let empty_atom = Atom::new();
-        registry.register_for_atoms(DemAtom::new(), &empty_atom).unwrap();
-        registry.register_for_atoms(ClumpAtom::new(), &empty_atom).unwrap();
-        registry.register_for_atoms(RejectDefaultRow, &empty_atom).unwrap();
+        registry
+            .register_for_atoms(DemAtom::new(), &empty_atom)
+            .unwrap();
+        registry
+            .register_for_atoms(ClumpAtom::new(), &empty_atom)
+            .unwrap();
+        registry
+            .register_for_atoms(RejectDefaultRow, &empty_atom)
+            .unwrap();
         let mut atoms = Atom::new();
         let mut bodies = MultisphereBodyStore::new();
         let error = try_insert_clump_with_cutoff_padding(

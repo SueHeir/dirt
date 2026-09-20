@@ -141,7 +141,9 @@ mod tests {
 
         // Apply torque around z-axis
         dem.torque[0][2] = 1.0;
-        unsafe { atom.set_layout_unchecked(1, atom.nghost(), 1); }
+        unsafe {
+            atom.set_layout_unchecked(1, atom.nghost(), 1);
+        }
 
         let mut registry = AtomDataRegistry::new();
         registry.register_for_atoms(dem, &atom).unwrap();
@@ -174,7 +176,9 @@ mod tests {
 
         push_dem_test_atom(&mut atom, &mut dem, 0, [0.0; 3], radius);
         dem.omega[0][2] = 100.0;
-        unsafe { atom.set_layout_unchecked(1, atom.nghost(), 1); }
+        unsafe {
+            atom.set_layout_unchecked(1, atom.nghost(), 1);
+        }
 
         let mut registry = AtomDataRegistry::new();
         registry.register_for_atoms(dem, &atom).unwrap();

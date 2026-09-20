@@ -456,8 +456,9 @@ pub struct RawBond {
 /// This is the panic-free replacement for the previous `.expect()`-based
 /// inline parse, and is what the config-robustness tests exercise directly.
 pub fn parse_bonds_section(lines: &[String]) -> Result<Option<Vec<RawBond>>, BondConfigError> {
-    const SECTION_HEADERS: [&str; 8] = [
+    const SECTION_HEADERS: [&str; 9] = [
         "Atoms",
+        "Capsules",
         "Velocities",
         "Bonds",
         "Angles",
@@ -2259,11 +2260,15 @@ Bonds
         let radius = 0.001;
         push_dem_test_atom(&mut atom, &mut dem, 1, [0.0, 0.0, 0.0], radius);
         push_dem_test_atom(&mut atom, &mut dem, 2, [0.002, 0.0, 0.0], radius);
-        unsafe { atom.set_layout_unchecked(2, atom.nghost(), 2); }
+        unsafe {
+            atom.set_layout_unchecked(2, atom.nghost(), 2);
+        }
 
         let mut registry = AtomDataRegistry::new();
         registry.register_for_atoms(dem, &atom).unwrap();
-        registry.register_for_atoms(BondStore::new(), &atom).unwrap();
+        registry
+            .register_for_atoms(BondStore::new(), &atom)
+            .unwrap();
         registry
             .register_for_atoms(BondHistoryStore::new(), &atom)
             .unwrap();
@@ -2300,11 +2305,15 @@ Bonds
         let radius = 0.001;
         push_dem_test_atom(&mut atom, &mut dem, 1, [0.0, 0.0, 0.0], radius);
         push_dem_test_atom(&mut atom, &mut dem, 2, [0.01, 0.0, 0.0], radius);
-        unsafe { atom.set_layout_unchecked(2, atom.nghost(), 2); }
+        unsafe {
+            atom.set_layout_unchecked(2, atom.nghost(), 2);
+        }
 
         let mut registry = AtomDataRegistry::new();
         registry.register_for_atoms(dem, &atom).unwrap();
-        registry.register_for_atoms(BondStore::new(), &atom).unwrap();
+        registry
+            .register_for_atoms(BondStore::new(), &atom)
+            .unwrap();
         registry
             .register_for_atoms(BondHistoryStore::new(), &atom)
             .unwrap();

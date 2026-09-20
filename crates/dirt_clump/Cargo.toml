@@ -17,8 +17,13 @@ serde.workspace = true
 toml.workspace = true
 rand.workspace = true
 
+[package.metadata.docs.rs]
+no-default-features = true
+features = ["precision-double"]
+targets = ["x86_64-unknown-linux-gnu"]
+
 [features]
-default = []
+default = ["precision-double"]
 mpi_backend = ["soil_core/mpi_backend"]
 precision-double = ["soil_core/precision-double"]
 precision-mixed = ["soil_core/precision-mixed"]

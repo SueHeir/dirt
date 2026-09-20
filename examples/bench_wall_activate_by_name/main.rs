@@ -135,7 +135,9 @@ fn make_atom(radius: f64, overlap: f64, dt: f64) -> Atom {
     atom.dt = dt;
     // No extension registry exists in this one-particle benchmark fixture.
     unsafe { atom.push_test_atom(1, [0.0, 0.0, radius - overlap], radius, mass) };
-    unsafe { atom.set_layout_unchecked(1, atom.nghost(), 1); }
+    unsafe {
+        atom.set_layout_unchecked(1, atom.nghost(), 1);
+    }
     atom
 }
 

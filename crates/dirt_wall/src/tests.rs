@@ -328,7 +328,9 @@ fn wall_repulsive_for_overlap() {
     let radius = 0.001;
 
     push_dem_test_atom(&mut atom, &mut dem, 0, [0.01, 0.01, 0.0005], radius);
-    unsafe { atom.set_layout_unchecked(1, atom.nghost(), 1); }
+    unsafe {
+        atom.set_layout_unchecked(1, atom.nghost(), 1);
+    }
 
     let mut registry = AtomDataRegistry::new();
     registry.register_for_atoms(dem, &atom).unwrap();
@@ -361,7 +363,9 @@ fn wall_zero_for_no_overlap() {
     let radius = 0.001;
 
     push_dem_test_atom(&mut atom, &mut dem, 0, [0.01, 0.01, 0.002], radius);
-    unsafe { atom.set_layout_unchecked(1, atom.nghost(), 1); }
+    unsafe {
+        atom.set_layout_unchecked(1, atom.nghost(), 1);
+    }
 
     let mut registry = AtomDataRegistry::new();
     registry.register_for_atoms(dem, &atom).unwrap();
@@ -388,7 +392,9 @@ fn inactive_wall_applies_no_force() {
     let radius = 0.001;
 
     push_dem_test_atom(&mut atom, &mut dem, 0, [0.01, 0.01, 0.0005], radius);
-    unsafe { atom.set_layout_unchecked(1, atom.nghost(), 1); }
+    unsafe {
+        atom.set_layout_unchecked(1, atom.nghost(), 1);
+    }
 
     let mut registry = AtomDataRegistry::new();
     registry.register_for_atoms(dem, &atom).unwrap();
@@ -421,7 +427,9 @@ fn angled_wall_force_direction() {
     let radius = 0.001;
 
     push_dem_test_atom(&mut atom, &mut dem, 0, [0.0003, 0.0, 0.0003], radius);
-    unsafe { atom.set_layout_unchecked(1, atom.nghost(), 1); }
+    unsafe {
+        atom.set_layout_unchecked(1, atom.nghost(), 1);
+    }
 
     let mut registry = AtomDataRegistry::new();
     registry.register_for_atoms(dem, &atom).unwrap();
@@ -454,7 +462,9 @@ fn bounded_wall_ignores_out_of_bounds_atom() {
     let radius = 0.001;
 
     push_dem_test_atom(&mut atom, &mut dem, 0, [0.05, 0.01, 0.0005], radius);
-    unsafe { atom.set_layout_unchecked(1, atom.nghost(), 1); }
+    unsafe {
+        atom.set_layout_unchecked(1, atom.nghost(), 1);
+    }
 
     let mut registry = AtomDataRegistry::new();
     registry.register_for_atoms(dem, &atom).unwrap();
@@ -488,7 +498,9 @@ fn wall_cohesion_attractive_for_small_overlap() {
     let radius = 0.001;
 
     push_dem_test_atom(&mut atom, &mut dem, 0, [0.01, 0.01, 0.000999], radius);
-    unsafe { atom.set_layout_unchecked(1, atom.nghost(), 1); }
+    unsafe {
+        atom.set_layout_unchecked(1, atom.nghost(), 1);
+    }
 
     let mut registry = AtomDataRegistry::new();
     registry.register_for_atoms(dem, &atom).unwrap();
@@ -530,7 +542,9 @@ fn wall_cohesion_attractive_for_small_overlap() {
 fn constant_velocity_wall_moves() {
     let mut atom = Atom::new();
     atom.dt = 0.001;
-    unsafe { atom.set_layout_unchecked(0, atom.nghost(), 0); }
+    unsafe {
+        atom.set_layout_unchecked(0, atom.nghost(), 0);
+    }
 
     let mut plane = make_wall_plane(0.0, 0.0, 0.0, 0.0, 0.0, 1.0);
     plane.velocity = [0.0, 0.0, -0.01];
@@ -558,7 +572,9 @@ fn constant_velocity_wall_moves() {
 fn oscillating_wall_follows_sine() {
     let mut atom = Atom::new();
     atom.dt = 0.001;
-    unsafe { atom.set_layout_unchecked(0, atom.nghost(), 0); }
+    unsafe {
+        atom.set_layout_unchecked(0, atom.nghost(), 0);
+    }
 
     let amplitude = 0.002;
     let frequency = 50.0;
@@ -592,7 +608,9 @@ fn oscillating_wall_follows_sine() {
 fn servo_wall_adjusts_velocity() {
     let mut atom = Atom::new();
     atom.dt = 0.001;
-    unsafe { atom.set_layout_unchecked(0, atom.nghost(), 0); }
+    unsafe {
+        atom.set_layout_unchecked(0, atom.nghost(), 0);
+    }
 
     let mut plane = make_wall_plane(0.0, 0.0, 0.1, 0.0, 0.0, -1.0);
     plane.motion = WallMotion::Servo {
@@ -637,7 +655,9 @@ fn moving_wall_relative_velocity_affects_damping() {
         let mut atom = Atom::new();
         let mut dem = DemAtom::new();
         push_dem_test_atom(&mut atom, &mut dem, 0, [0.01, 0.01, 0.0005], radius);
-        unsafe { atom.set_layout_unchecked(1, atom.nghost(), 1); }
+        unsafe {
+            atom.set_layout_unchecked(1, atom.nghost(), 1);
+        }
 
         let mut registry = AtomDataRegistry::new();
         registry.register_for_atoms(dem, &atom).unwrap();
@@ -683,7 +703,9 @@ fn wall_history_initializes_without_particle_contact_plugin() {
     atom.vel[0][0] = 0.25;
     dem.omega[0][1] = 40.0;
     atom.dt = 1.0e-5;
-    unsafe { atom.set_layout_unchecked(1, atom.nghost(), 1); }
+    unsafe {
+        atom.set_layout_unchecked(1, atom.nghost(), 1);
+    }
 
     let mut registry = AtomDataRegistry::new();
     registry.register_for_atoms(dem, &atom).unwrap();
@@ -894,7 +916,9 @@ fn cylinder_inside_repels_toward_center() {
         [0.005 + 0.0035, 0.005, 0.005],
         radius,
     );
-    unsafe { atom.set_layout_unchecked(1, atom.nghost(), 1); }
+    unsafe {
+        atom.set_layout_unchecked(1, atom.nghost(), 1);
+    }
 
     let mut registry = AtomDataRegistry::new();
     registry.register_for_atoms(dem, &atom).unwrap();
@@ -940,7 +964,9 @@ fn cylinder_no_force_when_not_touching() {
 
     // Particle well inside cylinder (far from wall)
     push_dem_test_atom(&mut atom, &mut dem, 0, [0.005, 0.005, 0.005], radius);
-    unsafe { atom.set_layout_unchecked(1, atom.nghost(), 1); }
+    unsafe {
+        atom.set_layout_unchecked(1, atom.nghost(), 1);
+    }
 
     let mut registry = AtomDataRegistry::new();
     registry.register_for_atoms(dem, &atom).unwrap();
@@ -991,7 +1017,9 @@ fn sphere_inside_repels_toward_center() {
         [0.005 + 0.0035, 0.005, 0.005],
         radius,
     );
-    unsafe { atom.set_layout_unchecked(1, atom.nghost(), 1); }
+    unsafe {
+        atom.set_layout_unchecked(1, atom.nghost(), 1);
+    }
 
     let mut registry = AtomDataRegistry::new();
     registry.register_for_atoms(dem, &atom).unwrap();
@@ -1034,7 +1062,9 @@ fn sphere_no_force_when_not_touching() {
 
     // Particle at center of sphere
     push_dem_test_atom(&mut atom, &mut dem, 0, [0.005, 0.005, 0.005], radius);
-    unsafe { atom.set_layout_unchecked(1, atom.nghost(), 1); }
+    unsafe {
+        atom.set_layout_unchecked(1, atom.nghost(), 1);
+    }
 
     let mut registry = AtomDataRegistry::new();
     registry.register_for_atoms(dem, &atom).unwrap();
@@ -1091,7 +1121,9 @@ fn cylinder_force_always_points_radially_inward() {
         let mut atom = Atom::new();
         let mut dem = DemAtom::new();
         push_dem_test_atom(&mut atom, &mut dem, 0, [px, py, pz], particle_radius);
-        unsafe { atom.set_layout_unchecked(1, atom.nghost(), 1); }
+        unsafe {
+            atom.set_layout_unchecked(1, atom.nghost(), 1);
+        }
 
         let mut registry = AtomDataRegistry::new();
         registry.register_for_atoms(dem, &atom).unwrap();
@@ -1174,7 +1206,9 @@ fn cylinder_axial_bounds_enforced() {
     let mut atom = Atom::new();
     let mut dem = DemAtom::new();
     push_dem_test_atom(&mut atom, &mut dem, 0, [px, py, pz], particle_radius);
-    unsafe { atom.set_layout_unchecked(1, atom.nghost(), 1); }
+    unsafe {
+        atom.set_layout_unchecked(1, atom.nghost(), 1);
+    }
 
     let mut registry = AtomDataRegistry::new();
     registry.register_for_atoms(dem, &atom).unwrap();
@@ -1246,7 +1280,9 @@ fn sphere_force_points_toward_center_at_multiple_positions() {
         let mut atom = Atom::new();
         let mut dem = DemAtom::new();
         push_dem_test_atom(&mut atom, &mut dem, 0, [px, py, pz], particle_radius);
-        unsafe { atom.set_layout_unchecked(1, atom.nghost(), 1); }
+        unsafe {
+            atom.set_layout_unchecked(1, atom.nghost(), 1);
+        }
 
         let mut registry = AtomDataRegistry::new();
         registry.register_for_atoms(dem, &atom).unwrap();
@@ -1306,7 +1342,9 @@ fn wall_zero_force_at_exact_contact() {
     let mut atom = Atom::new();
     let mut dem = DemAtom::new();
     push_dem_test_atom(&mut atom, &mut dem, 0, [0.01, 0.01, radius], radius);
-    unsafe { atom.set_layout_unchecked(1, atom.nghost(), 1); }
+    unsafe {
+        atom.set_layout_unchecked(1, atom.nghost(), 1);
+    }
 
     let mut registry = AtomDataRegistry::new();
     registry.register_for_atoms(dem, &atom).unwrap();
@@ -1345,7 +1383,9 @@ fn wall_hertz_force_scales_as_delta_three_halves() {
         let mut atom = Atom::new();
         let mut dem = DemAtom::new();
         push_dem_test_atom(&mut atom, &mut dem, 0, [0.01, 0.01, distance], radius);
-        unsafe { atom.set_layout_unchecked(1, atom.nghost(), 1); }
+        unsafe {
+            atom.set_layout_unchecked(1, atom.nghost(), 1);
+        }
 
         let mut registry = AtomDataRegistry::new();
         registry.register_for_atoms(dem, &atom).unwrap();
@@ -1396,7 +1436,9 @@ fn region_sphere_inside_repels() {
         [0.005 + 0.0035, 0.005, 0.005],
         radius,
     );
-    unsafe { atom.set_layout_unchecked(1, atom.nghost(), 1); }
+    unsafe {
+        atom.set_layout_unchecked(1, atom.nghost(), 1);
+    }
 
     let mut registry = AtomDataRegistry::new();
     registry.register_for_atoms(dem, &atom).unwrap();
@@ -1440,7 +1482,9 @@ fn region_sphere_no_force_when_far() {
 
     // Particle at center of sphere (far from wall)
     push_dem_test_atom(&mut atom, &mut dem, 0, [0.005, 0.005, 0.005], radius);
-    unsafe { atom.set_layout_unchecked(1, atom.nghost(), 1); }
+    unsafe {
+        atom.set_layout_unchecked(1, atom.nghost(), 1);
+    }
 
     let mut registry = AtomDataRegistry::new();
     registry.register_for_atoms(dem, &atom).unwrap();
@@ -1484,7 +1528,9 @@ fn region_block_inside_repels() {
 
     // Particle near the +z face of a block (inside, close to top)
     push_dem_test_atom(&mut atom, &mut dem, 0, [0.005, 0.005, 0.0095], radius);
-    unsafe { atom.set_layout_unchecked(1, atom.nghost(), 1); }
+    unsafe {
+        atom.set_layout_unchecked(1, atom.nghost(), 1);
+    }
 
     let mut registry = AtomDataRegistry::new();
     registry.register_for_atoms(dem, &atom).unwrap();
@@ -1536,7 +1582,9 @@ fn region_cone_inside_repels() {
         [0.005 + 0.0028, 0.005, 0.005],
         radius,
     );
-    unsafe { atom.set_layout_unchecked(1, atom.nghost(), 1); }
+    unsafe {
+        atom.set_layout_unchecked(1, atom.nghost(), 1);
+    }
 
     let mut registry = AtomDataRegistry::new();
     registry.register_for_atoms(dem, &atom).unwrap();
@@ -1588,7 +1636,9 @@ fn region_wall_force_matches_dedicated_sphere() {
         let mut atom = Atom::new();
         let mut dem = DemAtom::new();
         push_dem_test_atom(&mut atom, &mut dem, 0, particle_pos, radius);
-        unsafe { atom.set_layout_unchecked(1, atom.nghost(), 1); }
+        unsafe {
+            atom.set_layout_unchecked(1, atom.nghost(), 1);
+        }
         let mut registry = AtomDataRegistry::new();
         registry.register_for_atoms(dem, &atom).unwrap();
         let walls = make_walls_with_sphere(WallSphere {
@@ -1617,7 +1667,9 @@ fn region_wall_force_matches_dedicated_sphere() {
         let mut atom = Atom::new();
         let mut dem = DemAtom::new();
         push_dem_test_atom(&mut atom, &mut dem, 0, particle_pos, radius);
-        unsafe { atom.set_layout_unchecked(1, atom.nghost(), 1); }
+        unsafe {
+            atom.set_layout_unchecked(1, atom.nghost(), 1);
+        }
         let mut registry = AtomDataRegistry::new();
         registry.register_for_atoms(dem, &atom).unwrap();
         let walls = make_walls_with_region(WallRegion {
@@ -1658,7 +1710,9 @@ fn region_wall_force_matches_dedicated_sphere() {
 fn static_wall_unaffected_by_motion_systems() {
     let mut atom = Atom::new();
     atom.dt = 0.001;
-    unsafe { atom.set_layout_unchecked(0, atom.nghost(), 0); }
+    unsafe {
+        atom.set_layout_unchecked(0, atom.nghost(), 0);
+    }
 
     let plane = make_wall_plane(0.0, 0.0, 0.5, 0.0, 0.0, 1.0);
     let walls = make_walls(vec![plane]);

@@ -54,7 +54,9 @@ fn main() {
 
     let mut atom = Atom::new();
     atom.dt = 1.0;
-    unsafe { atom.set_layout_unchecked(2, atom.nghost(), 2); }
+    unsafe {
+        atom.set_layout_unchecked(2, atom.nghost(), 2);
+    }
     let mut dem = DemAtom::new();
     push_sphere(&mut atom, &mut dem, 1, 0.0, cfg.radius, cfg.density);
     push_sphere(

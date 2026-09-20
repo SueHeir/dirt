@@ -32,8 +32,8 @@ pub fn capsule_mass_and_moments(radius: f64, length: f64, density: f64) -> (f64,
     let mass = m_c + m_s;
 
     let i_z = m_c * (0.5 * r * r) + m_s * (0.4 * r * r);
-    let i_x = m_c * (l * l / 12.0 + 0.25 * r * r)
-        + m_s * (0.4 * r * r + 0.25 * l * l + 0.375 * r * l);
+    let i_x =
+        m_c * (l * l / 12.0 + 0.25 * r * r) + m_s * (0.4 * r * r + 0.25 * l * l + 0.375 * r * l);
 
     (mass, [i_x, i_x, i_z])
 }
@@ -92,7 +92,9 @@ mod tests {
         // deterministic LCG sampler
         let mut state = 0x2545F4914F6CDD1Du64;
         let mut next = || {
-            state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            state = state
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
             ((state >> 11) as f64) / ((1u64 << 53) as f64)
         };
         let mut hits = 0u64;
@@ -119,8 +121,19 @@ mod tests {
         let mc_ix = rho * dv * sx;
         let mc_iz = rho * dv * sz;
 
-        assert!((mc_mass - mass).abs() / mass < 0.02, "mass {mc_mass} vs {mass}");
-        assert!((mc_ix - i[0]).abs() / i[0] < 0.02, "I_x {mc_ix} vs {}", i[0]);
-        assert!((mc_iz - i[2]).abs() / i[2] < 0.02, "I_z {mc_iz} vs {}", i[2]);
+        assert!(
+            (mc_mass - mass).abs() / mass < 0.02,
+            "mass {mc_mass} vs {mass}"
+        );
+        assert!(
+            (mc_ix - i[0]).abs() / i[0] < 0.02,
+            "I_x {mc_ix} vs {}",
+            i[0]
+        );
+        assert!(
+            (mc_iz - i[2]).abs() / i[2] < 0.02,
+            "I_z {mc_iz} vs {}",
+            i[2]
+        );
     }
 }

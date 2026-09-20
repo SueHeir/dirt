@@ -1,5 +1,13 @@
 target/
 Cargo.lock
+.codex-tmp/
+.codex-*/
+.DS_Store
+presentation-output/
+/GRASS_SOIL_DIRT_LAMMPS_and_Library_Coupling/
+*.pptx
+*.key
+*.inspect.ndjson
 
 **/*.rs.bk
 .DS_Store
@@ -13,6 +21,7 @@ Cargo.lock
 !examples/bench_guo2018_fiber_shear_cell/data/
 !examples/bench_guo2018_fiber_shear_cell/data/non_equivalent_sensitivity_campaign.json
 **/out/
+**/output*/
 **/sweep/
 **/xval/
 *.csv

@@ -4,10 +4,14 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
+publish = false  # local-only until documented; see 0.1.6
 description = "Single-body sphero-cylinder (capsule) rigid particles for non-spherical DEM"
+keywords = ["dem", "capsule", "spherocylinder", "granular"]
+categories = ["simulation", "science"]
 
 [dependencies]
 soil_core = { workspace = true, default-features = false }
+soil_print = { workspace = true, default-features = false }
 grass_app.workspace = true
 grass_scheduler.workspace = true
 soil_derive.workspace = true
@@ -18,12 +22,17 @@ serde.workspace = true
 toml.workspace = true
 rand.workspace = true
 
+[package.metadata.docs.rs]
+no-default-features = true
+features = ["precision-double"]
+targets = ["x86_64-unknown-linux-gnu"]
+
 [features]
-default = []
+default = ["precision-double"]
 mpi_backend = ["soil_core/mpi_backend"]
-precision-double = ["soil_core/precision-double"]
-precision-mixed = ["soil_core/precision-mixed"]
-precision-single = ["soil_core/precision-single"]
+precision-double = ["soil_core/precision-double", "soil_print/precision-double"]
+precision-mixed = ["soil_core/precision-mixed", "soil_print/precision-mixed"]
+precision-single = ["soil_core/precision-single", "soil_print/precision-single"]
 
 [dev-dependencies]
 dirt_test_utils.workspace = true

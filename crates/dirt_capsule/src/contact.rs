@@ -23,7 +23,9 @@ use std::collections::{HashMap, HashSet};
 
 use grass_app::prelude::*;
 use grass_scheduler::prelude::*;
-use soil_core::{Accum, Atom, Neighbor, ParticleSimScheduleSet, ParticlesWith, Read, Write};
+use soil_core::{
+    Accum, Atom, BondStore, Neighbor, Optional, ParticleSimScheduleSet, ParticlesWith, Read, Write,
+};
 
 use dirt_atom::{DemAtom, MaterialTable, SQRT_5_6};
 use dirt_schedule::CONTACT_FORCE;
@@ -181,13 +183,13 @@ fn capsule_contact_force(
     neighbor: Res<Neighbor>,
     mut history: ResMut<CapsuleContactHistory>,
     material_table: Res<MaterialTable>,
-    particles: ParticlesWith<'_, (Write<DemAtom>, Read<CapsuleAtom>)>,
+    particles: ParticlesWith<'_, (Write<DemAtom>, Read<CapsuleAtom>, Optional<Read<BondStore>>)>,
 ) {
     let dt = atoms.dt;
     let newton = neighbor.newton;
     let nlocal = atoms.nlocal() as usize;
 
-    particles.with(|(mut dem, caps)| {
+    particles.with(|(mut dem, caps, bonds)| {
         let mut seen: HashSet<(u32, u32)> = HashSet::new();
 
         for (i, j) in neighbor.pairs(nlocal) {
@@ -196,9 +198,14 @@ fn capsule_contact_force(
             if !i_cap && !j_cap {
                 continue; // pure sphere pair — not ours
             }
-            // Bonded strand members (same molecule) do not surface-contact — the
-            // bond carries their interaction, mirroring the sphere path.
-            if dirt_atom::same_molecule(&dem, i, j) {
+            // Only the directly/second-neighbor bonded capsules are excluded.
+            // Distant segments of the same fiber must retain self-contact.
+            if dirt_atom::same_body(&dem, i, j)
+                || bonds
+                    .as_ref()
+                    .map(|store| store.are_excluded(i, j, &atoms.tag))
+                    .unwrap_or(false)
+            {
                 continue;
             }
 
@@ -344,8 +351,19 @@ mod tests {
         // Head-on approach: v_rel purely along +n, magnitude 1.0.
         let n = [1.0, 0.0, 0.0];
         let out = hertz_mindlin_pair(
-            delta, r_eff, n, [1.0, 0.0, 0.0], e_eff, 1.0e7, 0.0, 0.3, true, 1e-6, 1.0,
-            [0.0; 3], 1e-7,
+            delta,
+            r_eff,
+            n,
+            [1.0, 0.0, 0.0],
+            e_eff,
+            1.0e7,
+            0.0,
+            0.3,
+            true,
+            1e-6,
+            1.0,
+            [0.0; 3],
+            1e-7,
         );
         // Expected Hertz spring minus a positive damping term (β=0 ⇒ no damping).
         let sdr = (delta * r_eff).sqrt();
@@ -359,8 +377,19 @@ mod tests {
     #[test]
     fn no_tangential_on_pure_normal() {
         let out = hertz_mindlin_pair(
-            0.001, 0.25, [0.0, 0.0, 1.0], [0.0, 0.0, -0.5], 3.0e7, 1.0e7, 0.2, 0.3,
-            true, 1e-6, 1.0, [0.0; 3], 1e-7,
+            0.001,
+            0.25,
+            [0.0, 0.0, 1.0],
+            [0.0, 0.0, -0.5],
+            3.0e7,
+            1.0e7,
+            0.2,
+            0.3,
+            true,
+            1e-6,
+            1.0,
+            [0.0; 3],
+            1e-7,
         );
         assert!(out.spring_canonical.iter().all(|x| x.abs() < 1e-15));
     }

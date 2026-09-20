@@ -57,7 +57,9 @@ fn interior_boundary_split_matches_single_pass() {
         push_test_atom_with_history(&mut atom, &mut dem, &mut hist, 0, [0.0, 0.0, 0.0], r);
         push_test_atom_with_history(&mut atom, &mut dem, &mut hist, 1, [1.5 * r, 0.0, 0.0], r);
         push_test_atom_with_history(&mut atom, &mut dem, &mut hist, 2, [0.0, 1.5 * r, 0.0], r);
-        unsafe { atom.set_layout_unchecked(2, atom.nghost(), 3); }
+        unsafe {
+            atom.set_layout_unchecked(2, atom.nghost(), 3);
+        }
         // Half neighbour list (newton): atom 0 -> {1 (local), 2 (ghost)}.
         let mut nb = Neighbor::new();
         nb.neighbor_offsets = vec![0, 2, 2, 2];
@@ -137,7 +139,9 @@ fn fused_contact_tangential_with_sliding() {
         radius,
     );
     atom.vel[1][1] = 0.1;
-    unsafe { atom.set_layout_unchecked(2, atom.nghost(), 2); }
+    unsafe {
+        atom.set_layout_unchecked(2, atom.nghost(), 2);
+    }
 
     let mut neighbor = Neighbor::new();
     neighbor.neighbor_offsets = vec![0, 1, 1];
@@ -195,7 +199,9 @@ fn linear_nohistory_has_no_spring_accumulation() {
             radius,
         );
         atom.vel[1][1] = 0.001; // small tangential slip, below the Coulomb cap
-        unsafe { atom.set_layout_unchecked(2, atom.nghost(), 2); }
+        unsafe {
+            atom.set_layout_unchecked(2, atom.nghost(), 2);
+        }
         let mut nb = Neighbor::new();
         nb.neighbor_offsets = vec![0, 1, 1];
         nb.neighbor_indices = vec![1];
@@ -260,7 +266,9 @@ fn fused_contact_no_force_for_gap() {
 
     push_test_atom_with_history(&mut atom, &mut dem, &mut hist, 0, [0.0, 0.0, 0.0], radius);
     push_test_atom_with_history(&mut atom, &mut dem, &mut hist, 1, [0.003, 0.0, 0.0], radius);
-    unsafe { atom.set_layout_unchecked(2, atom.nghost(), 2); }
+    unsafe {
+        atom.set_layout_unchecked(2, atom.nghost(), 2);
+    }
 
     let mut neighbor = Neighbor::new();
     neighbor.neighbor_offsets = vec![0, 1, 1];
@@ -331,7 +339,9 @@ fn cohesion_produces_attractive_force() {
         [0.00199999, 0.0, 0.0],
         radius, // delta = 1e-8 (tiny overlap)
     );
-    unsafe { atom.set_layout_unchecked(2, atom.nghost(), 2); }
+    unsafe {
+        atom.set_layout_unchecked(2, atom.nghost(), 2);
+    }
 
     let mut neighbor = Neighbor::new();
     neighbor.neighbor_offsets = vec![0, 1, 1];
@@ -377,7 +387,9 @@ fn zero_cohesion_matches_original() {
         atom.dt = 1e-7;
         push_test_atom_with_history(&mut atom, &mut dem, &mut hist, 0, [0.0, 0.0, 0.0], radius);
         push_test_atom_with_history(&mut atom, &mut dem, &mut hist, 1, [sep, 0.0, 0.0], radius);
-        unsafe { atom.set_layout_unchecked(2, atom.nghost(), 2); }
+        unsafe {
+            atom.set_layout_unchecked(2, atom.nghost(), 2);
+        }
         let mut neighbor = Neighbor::new();
         neighbor.neighbor_offsets = vec![0, 1, 1];
         neighbor.neighbor_indices = vec![1];
@@ -463,7 +475,9 @@ fn jkr_pulloff_force_matches_theory() {
         [2.0 * radius + gap, 0.0, 0.0],
         radius,
     );
-    unsafe { atom.set_layout_unchecked(2, atom.nghost(), 2); }
+    unsafe {
+        atom.set_layout_unchecked(2, atom.nghost(), 2);
+    }
 
     let mut neighbor = Neighbor::new();
     neighbor.neighbor_offsets = vec![0, 1, 1];
@@ -522,7 +536,9 @@ fn jkr_adhesion_only_regime() {
         [2.0 * radius + gap, 0.0, 0.0],
         radius,
     );
-    unsafe { atom.set_layout_unchecked(2, atom.nghost(), 2); }
+    unsafe {
+        atom.set_layout_unchecked(2, atom.nghost(), 2);
+    }
 
     let mut neighbor = Neighbor::new();
     neighbor.neighbor_offsets = vec![0, 1, 1];
@@ -573,7 +589,9 @@ fn jkr_no_interaction_beyond_pulloff() {
         [0.003, 0.0, 0.0],
         radius, // gap = 0.001 >> delta_pulloff
     );
-    unsafe { atom.set_layout_unchecked(2, atom.nghost(), 2); }
+    unsafe {
+        atom.set_layout_unchecked(2, atom.nghost(), 2);
+    }
 
     let mut neighbor = Neighbor::new();
     neighbor.neighbor_offsets = vec![0, 1, 1];
@@ -641,7 +659,9 @@ fn hooke_force_linear_in_delta() {
         atom.dt = 1e-7;
         push_test_atom_with_history(&mut atom, &mut dem, &mut hist, 0, [0.0, 0.0, 0.0], radius);
         push_test_atom_with_history(&mut atom, &mut dem, &mut hist, 1, [sep, 0.0, 0.0], radius);
-        unsafe { atom.set_layout_unchecked(2, atom.nghost(), 2); }
+        unsafe {
+            atom.set_layout_unchecked(2, atom.nghost(), 2);
+        }
         let mut neighbor = Neighbor::new();
         neighbor.neighbor_offsets = vec![0, 1, 1];
         neighbor.neighbor_indices = vec![1];
@@ -685,7 +705,9 @@ fn hooke_no_force_beyond_contact() {
 
     push_test_atom_with_history(&mut atom, &mut dem, &mut hist, 0, [0.0, 0.0, 0.0], radius);
     push_test_atom_with_history(&mut atom, &mut dem, &mut hist, 1, [0.003, 0.0, 0.0], radius);
-    unsafe { atom.set_layout_unchecked(2, atom.nghost(), 2); }
+    unsafe {
+        atom.set_layout_unchecked(2, atom.nghost(), 2);
+    }
 
     let mut neighbor = Neighbor::new();
     neighbor.neighbor_offsets = vec![0, 1, 1];
@@ -730,7 +752,9 @@ fn twisting_friction_opposes_spin() {
     );
     // Spin about contact normal (x-axis)
     dem.omega[0] = [100.0, 0.0, 0.0];
-    unsafe { atom.set_layout_unchecked(2, atom.nghost(), 2); }
+    unsafe {
+        atom.set_layout_unchecked(2, atom.nghost(), 2);
+    }
 
     let mut neighbor = Neighbor::new();
     neighbor.neighbor_offsets = vec![0, 1, 1];
@@ -777,7 +801,9 @@ fn twisting_friction_zero_when_no_spin() {
         radius,
     );
     // No angular velocity at all
-    unsafe { atom.set_layout_unchecked(2, atom.nghost(), 2); }
+    unsafe {
+        atom.set_layout_unchecked(2, atom.nghost(), 2);
+    }
 
     let mut neighbor = Neighbor::new();
     neighbor.neighbor_offsets = vec![0, 1, 1];
@@ -827,7 +853,9 @@ fn rolling_resistance_opposes_angular_velocity() {
     );
     // Give atom 0 a rolling angular velocity (around y-axis — perpendicular to contact normal x)
     dem.omega[0] = [0.0, 100.0, 0.0];
-    unsafe { atom.set_layout_unchecked(2, atom.nghost(), 2); }
+    unsafe {
+        atom.set_layout_unchecked(2, atom.nghost(), 2);
+    }
 
     let mut neighbor = Neighbor::new();
     neighbor.neighbor_offsets = vec![0, 1, 1];
@@ -918,7 +946,9 @@ fn sds_rolling_opposes_angular_velocity() {
     );
     // Give atom 0 angular velocity in y (rolling about contact normal x)
     dem.omega[0] = [0.0, 10.0, 0.0];
-    unsafe { atom.set_layout_unchecked(2, atom.nghost(), 2); }
+    unsafe {
+        atom.set_layout_unchecked(2, atom.nghost(), 2);
+    }
 
     let mut neighbor = Neighbor::new();
     neighbor.neighbor_offsets = vec![0, 1, 1];
@@ -969,7 +999,9 @@ fn sds_rolling_spring_accumulates() {
             radius,
         );
         dem.omega[0] = [0.0, 0.001, 0.0]; // very small angular velocity
-        unsafe { atom.set_layout_unchecked(2, atom.nghost(), 2); }
+        unsafe {
+            atom.set_layout_unchecked(2, atom.nghost(), 2);
+        }
 
         // Pre-load rolling displacement in contact history (canonical: tag 0 < tag 1, sign=+1)
         if preload_y != 0.0 {
@@ -1033,7 +1065,9 @@ fn sds_rolling_coulomb_cap() {
         radius,
     );
     dem.omega[0] = [0.0, 1e6, 0.0]; // very high
-    unsafe { atom.set_layout_unchecked(2, atom.nghost(), 2); }
+    unsafe {
+        atom.set_layout_unchecked(2, atom.nghost(), 2);
+    }
 
     let mut neighbor = Neighbor::new();
     neighbor.neighbor_offsets = vec![0, 1, 1];
@@ -1100,7 +1134,9 @@ fn sds_twisting_opposes_spin() {
     );
     // Spin about contact normal (x-axis)
     dem.omega[0] = [10.0, 0.0, 0.0];
-    unsafe { atom.set_layout_unchecked(2, atom.nghost(), 2); }
+    unsafe {
+        atom.set_layout_unchecked(2, atom.nghost(), 2);
+    }
 
     let mut neighbor = Neighbor::new();
     neighbor.neighbor_offsets = vec![0, 1, 1];
@@ -1149,7 +1185,9 @@ fn sds_twisting_spring_accumulates() {
             radius,
         );
         dem.omega[0] = [0.001, 0.0, 0.0]; // very small spin
-        unsafe { atom.set_layout_unchecked(2, atom.nghost(), 2); }
+        unsafe {
+            atom.set_layout_unchecked(2, atom.nghost(), 2);
+        }
 
         if preload != 0.0 {
             let mut preload_state = [0.0; CONTACT_HISTORY_LEN];
@@ -1238,7 +1276,9 @@ fn run_marshall_twist(mt: MaterialTable, omega_x: f64, preload: f64) -> f64 {
         radius,
     );
     dem.omega[0] = [omega_x, 0.0, 0.0]; // spin about contact normal x̂
-    unsafe { atom.set_layout_unchecked(2, atom.nghost(), 2); }
+    unsafe {
+        atom.set_layout_unchecked(2, atom.nghost(), 2);
+    }
 
     if preload != 0.0 {
         let mut preload_state = [0.0; CONTACT_HISTORY_LEN];
@@ -1361,7 +1401,9 @@ fn constant_model_unchanged_with_sds_config() {
         radius,
     );
     dem.omega[0] = [0.0, 10.0, 0.0];
-    unsafe { atom.set_layout_unchecked(2, atom.nghost(), 2); }
+    unsafe {
+        atom.set_layout_unchecked(2, atom.nghost(), 2);
+    }
 
     let mut neighbor = Neighbor::new();
     neighbor.neighbor_offsets = vec![0, 1, 1];
@@ -1466,7 +1508,9 @@ fn dmt_pulloff_force_matches_theory() {
     atom.dt = 1e-7;
     push_test_atom_with_history(&mut atom, &mut dem, &mut hist, 0, [0.0, 0.0, 0.0], radius);
     push_test_atom_with_history(&mut atom, &mut dem, &mut hist, 1, [sep, 0.0, 0.0], radius);
-    unsafe { atom.set_layout_unchecked(2, atom.nghost(), 2); }
+    unsafe {
+        atom.set_layout_unchecked(2, atom.nghost(), 2);
+    }
 
     let mut neighbor = Neighbor::new();
     neighbor.neighbor_offsets = vec![0, 1, 1];
@@ -1523,7 +1567,9 @@ fn dmt_no_force_beyond_contact() {
         [2.0 * radius + gap, 0.0, 0.0],
         radius,
     );
-    unsafe { atom.set_layout_unchecked(2, atom.nghost(), 2); }
+    unsafe {
+        atom.set_layout_unchecked(2, atom.nghost(), 2);
+    }
 
     let mut neighbor = Neighbor::new();
     neighbor.neighbor_offsets = vec![0, 1, 1];
@@ -1588,7 +1634,9 @@ fn dmt_newtons_third_law() {
         [0.0019, 0.0, 0.0],
         radius,
     );
-    unsafe { atom.set_layout_unchecked(2, atom.nghost(), 2); }
+    unsafe {
+        atom.set_layout_unchecked(2, atom.nghost(), 2);
+    }
 
     let mut neighbor = Neighbor::new();
     neighbor.neighbor_offsets = vec![0, 1, 1];
@@ -1641,7 +1689,9 @@ fn dmt_does_not_break_jkr() {
         [2.0 * radius + gap, 0.0, 0.0],
         radius,
     );
-    unsafe { atom.set_layout_unchecked(2, atom.nghost(), 2); }
+    unsafe {
+        atom.set_layout_unchecked(2, atom.nghost(), 2);
+    }
 
     let mut neighbor = Neighbor::new();
     neighbor.neighbor_offsets = vec![0, 1, 1];
@@ -1691,7 +1741,9 @@ fn hertz_force_scales_as_delta_three_halves() {
         atom.dt = 1e-7;
         push_test_atom_with_history(&mut atom, &mut dem, &mut hist, 0, [0.0, 0.0, 0.0], radius);
         push_test_atom_with_history(&mut atom, &mut dem, &mut hist, 1, [sep, 0.0, 0.0], radius);
-        unsafe { atom.set_layout_unchecked(2, atom.nghost(), 2); }
+        unsafe {
+            atom.set_layout_unchecked(2, atom.nghost(), 2);
+        }
         let mut neighbor = Neighbor::new();
         neighbor.neighbor_offsets = vec![0, 1, 1];
         neighbor.neighbor_indices = vec![1];
@@ -1744,7 +1796,9 @@ fn hooke_force_scales_linearly_across_overlaps() {
         atom.dt = 1e-7;
         push_test_atom_with_history(&mut atom, &mut dem, &mut hist, 0, [0.0, 0.0, 0.0], radius);
         push_test_atom_with_history(&mut atom, &mut dem, &mut hist, 1, [sep, 0.0, 0.0], radius);
-        unsafe { atom.set_layout_unchecked(2, atom.nghost(), 2); }
+        unsafe {
+            atom.set_layout_unchecked(2, atom.nghost(), 2);
+        }
         let mut neighbor = Neighbor::new();
         neighbor.neighbor_offsets = vec![0, 1, 1];
         neighbor.neighbor_indices = vec![1];
@@ -1796,7 +1850,9 @@ fn hertz_force_matches_analytical_value() {
     atom.dt = 1e-7;
     push_test_atom_with_history(&mut atom, &mut dem, &mut hist, 0, [0.0, 0.0, 0.0], radius);
     push_test_atom_with_history(&mut atom, &mut dem, &mut hist, 1, [sep, 0.0, 0.0], radius);
-    unsafe { atom.set_layout_unchecked(2, atom.nghost(), 2); }
+    unsafe {
+        atom.set_layout_unchecked(2, atom.nghost(), 2);
+    }
 
     let mut neighbor = Neighbor::new();
     neighbor.neighbor_offsets = vec![0, 1, 1];
@@ -1873,7 +1929,9 @@ fn linear_momentum_conserved_during_elastic_contact() {
     );
     atom.vel[0] = [0.1, 0.05, -0.02];
     atom.vel[1] = [-0.05, 0.03, 0.01];
-    unsafe { atom.set_layout_unchecked(2, atom.nghost(), 2); }
+    unsafe {
+        atom.set_layout_unchecked(2, atom.nghost(), 2);
+    }
 
     let initial_momentum = [
         atom.mass[0] * atom.vel[0][0] + atom.mass[1] * atom.vel[1][0],
@@ -1961,7 +2019,9 @@ fn contact_force_symmetry_with_tangential_velocity() {
     atom.vel[1] = [-0.3, 0.1, 0.05];
     dem.omega[0] = [10.0, 20.0, -5.0];
     dem.omega[1] = [-15.0, 5.0, 10.0];
-    unsafe { atom.set_layout_unchecked(2, atom.nghost(), 2); }
+    unsafe {
+        atom.set_layout_unchecked(2, atom.nghost(), 2);
+    }
 
     let mut neighbor = Neighbor::new();
     neighbor.neighbor_offsets = vec![0, 1, 1];
@@ -2182,7 +2242,10 @@ fn oblique_persistent_contact_conserves_energy() {
     }
     let growth = (e_max - e0) / e0;
     println!("oblique: E0={e0:.6e}  E_max/E0-1 = {growth:.4e}");
-    assert!(growth < 0.05, "oblique persistent contact injected energy: {growth:.3e}");
+    assert!(
+        growth < 0.05,
+        "oblique persistent contact injected energy: {growth:.3e}"
+    );
 }
 
 /// A free sphere **confined by six fixed neighbours** (octahedral shell) at
@@ -2195,10 +2258,12 @@ fn confined_multicontact_conserves_energy() {
     let r = 0.5_f64;
     let (e_mod, nu) = (1.0e7_f64, 0.3_f64);
     let mut mt = dirt_atom::MaterialTable::new();
-    mt.add(Material::new("elastic", Elastic::new(e_mod, nu, 1.0)).with_friction(Friction {
-        sliding: 0.0,
-        ..Default::default()
-    }))
+    mt.add(
+        Material::new("elastic", Elastic::new(e_mod, nu, 1.0)).with_friction(Friction {
+            sliding: 0.0,
+            ..Default::default()
+        }),
+    )
     .unwrap();
     mt.build_pair_tables();
     let e_eff = e_mod / (2.0 * (1.0 - nu * nu));
@@ -2220,8 +2285,12 @@ fn confined_multicontact_conserves_energy() {
     // 0 = free centre; 1..6 = fixed octahedral neighbours.
     push_test_atom_with_history(&mut atom, &mut dem, &mut hist, 0, [0.0, 0.0, 0.0], r);
     let nbrs = [
-        [d, 0.0, 0.0], [-d, 0.0, 0.0], [0.0, d, 0.0],
-        [0.0, -d, 0.0], [0.0, 0.0, d], [0.0, 0.0, -d],
+        [d, 0.0, 0.0],
+        [-d, 0.0, 0.0],
+        [0.0, d, 0.0],
+        [0.0, -d, 0.0],
+        [0.0, 0.0, d],
+        [0.0, 0.0, -d],
     ];
     for (k, p) in nbrs.iter().enumerate() {
         push_test_atom_with_history(&mut atom, &mut dem, &mut hist, (k + 1) as u32, *p, r);
@@ -2270,40 +2339,85 @@ fn confined_multicontact_conserves_energy() {
     }
     let growth = (e_max - e0) / e0;
     println!("confined 6-contact: E0={e0:.6e}  E_max/E0-1 = {growth:.4e}");
-    assert!(growth < 0.05, "confined multi-contact injected energy: {growth:.3e}");
+    assert!(
+        growth < 0.05,
+        "confined multi-contact injected energy: {growth:.3e}"
+    );
 }
 
 #[test]
 fn confined_multicontact_damps_to_rest() {
     use soil_core::Real;
-    let r = 0.5_f64; let (e_mod, nu) = (1.0e7_f64, 0.3_f64);
+    let r = 0.5_f64;
+    let (e_mod, nu) = (1.0e7_f64, 0.3_f64);
     let mut mt = dirt_atom::MaterialTable::new();
-    mt.add(Material::new("d", Elastic::new(e_mod, nu, 0.6)).with_friction(Friction{sliding:0.0,..Default::default()})).unwrap();
+    mt.add(
+        Material::new("d", Elastic::new(e_mod, nu, 0.6)).with_friction(Friction {
+            sliding: 0.0,
+            ..Default::default()
+        }),
+    )
+    .unwrap();
     mt.build_pair_tables();
-    let delta = 0.02_f64; let d = (2.0*r-delta) as Real;
-    let mut atom=Atom::new(); let mut dem=DemAtom::new(); let mut hist=ContactHistoryStore::new();
-    atom.dt=3.0e-4;
-    push_test_atom_with_history(&mut atom,&mut dem,&mut hist,0,[0.0,0.0,0.0],r);
-    let nbrs=[[d,0.0,0.0],[-d,0.0,0.0],[0.0,d,0.0],[0.0,-d,0.0],[0.0,0.0,d],[0.0,0.0,-d]];
-    for (k,p) in nbrs.iter().enumerate(){push_test_atom_with_history(&mut atom,&mut dem,&mut hist,(k+1) as u32,*p,r);}
-    unsafe{atom.set_layout_unchecked(7,0,7)};
-    let mut nb=Neighbor::new(); nb.neighbor_offsets=vec![0,6,6,6,6,6,6,6]; nb.neighbor_indices=vec![1,2,3,4,5,6];
-    let mut reg=AtomDataRegistry::new(); reg.register_for_atoms(dem,&atom).unwrap(); reg.register_for_atoms(hist,&atom).unwrap();
-    let m=atom.mass[0] as f64; let dt=atom.dt as f64;
-    atom.vel[0]=[0.04 as Real,0.03 as Real,0.02 as Real];
-    let ke=|atom:&Atom|{let v=atom.vel[0]; 0.5*m*((v[0]*v[0]+v[1]*v[1]+v[2]*v[2]) as f64)};
-    for i in 0..7{atom.force[i]=[0.0;3];}
-    contact_force_core(&mut atom,&nb,&reg,&mt,None,ForcePass::All);
-    let ke0=ke(&atom);
-    for _ in 0..400_000 {
-        for k in 0..3{atom.vel[0][k]+=(0.5*dt*atom.force[0][k] as f64/m) as Real; atom.pos[0][k]+=(dt*atom.vel[0][k] as f64) as Real;}
-        for i in 0..7{atom.force[i]=[0.0;3];}
-        contact_force_core(&mut atom,&nb,&reg,&mt,None,ForcePass::All);
-        for k in 0..3{atom.vel[0][k]+=(0.5*dt*atom.force[0][k] as f64/m) as Real;}
+    let delta = 0.02_f64;
+    let d = (2.0 * r - delta) as Real;
+    let mut atom = Atom::new();
+    let mut dem = DemAtom::new();
+    let mut hist = ContactHistoryStore::new();
+    atom.dt = 3.0e-4;
+    push_test_atom_with_history(&mut atom, &mut dem, &mut hist, 0, [0.0, 0.0, 0.0], r);
+    let nbrs = [
+        [d, 0.0, 0.0],
+        [-d, 0.0, 0.0],
+        [0.0, d, 0.0],
+        [0.0, -d, 0.0],
+        [0.0, 0.0, d],
+        [0.0, 0.0, -d],
+    ];
+    for (k, p) in nbrs.iter().enumerate() {
+        push_test_atom_with_history(&mut atom, &mut dem, &mut hist, (k + 1) as u32, *p, r);
     }
-    let ke1=ke(&atom);
-    println!("damped confined: KE0={ke0:.4e} KE_final={ke1:.4e} ratio={:.3e}", ke1/ke0);
-    assert!(ke1 < ke0*0.5, "damped persistent contact did not dissipate: KE {ke0}->{ke1}");
+    unsafe { atom.set_layout_unchecked(7, 0, 7) };
+    let mut nb = Neighbor::new();
+    nb.neighbor_offsets = vec![0, 6, 6, 6, 6, 6, 6, 6];
+    nb.neighbor_indices = vec![1, 2, 3, 4, 5, 6];
+    let mut reg = AtomDataRegistry::new();
+    reg.register_for_atoms(dem, &atom).unwrap();
+    reg.register_for_atoms(hist, &atom).unwrap();
+    let m = atom.mass[0] as f64;
+    let dt = atom.dt as f64;
+    atom.vel[0] = [0.04 as Real, 0.03 as Real, 0.02 as Real];
+    let ke = |atom: &Atom| {
+        let v = atom.vel[0];
+        0.5 * m * ((v[0] * v[0] + v[1] * v[1] + v[2] * v[2]) as f64)
+    };
+    for i in 0..7 {
+        atom.force[i] = [0.0; 3];
+    }
+    contact_force_core(&mut atom, &nb, &reg, &mt, None, ForcePass::All);
+    let ke0 = ke(&atom);
+    for _ in 0..400_000 {
+        for k in 0..3 {
+            atom.vel[0][k] += (0.5 * dt * atom.force[0][k] as f64 / m) as Real;
+            atom.pos[0][k] += (dt * atom.vel[0][k] as f64) as Real;
+        }
+        for i in 0..7 {
+            atom.force[i] = [0.0; 3];
+        }
+        contact_force_core(&mut atom, &nb, &reg, &mt, None, ForcePass::All);
+        for k in 0..3 {
+            atom.vel[0][k] += (0.5 * dt * atom.force[0][k] as f64 / m) as Real;
+        }
+    }
+    let ke1 = ke(&atom);
+    println!(
+        "damped confined: KE0={ke0:.4e} KE_final={ke1:.4e} ratio={:.3e}",
+        ke1 / ke0
+    );
+    assert!(
+        ke1 < ke0 * 0.5,
+        "damped persistent contact did not dissipate: KE {ke0}->{ke1}"
+    );
 }
 
 /// Realized coefficient of restitution for a binary head-on collision at the
@@ -2317,10 +2431,12 @@ fn realized_cor_at_yarn_params() {
     let nominal_cor = 0.6_f64;
     let mut mt = dirt_atom::MaterialTable::new();
     mt.add(
-        Material::new("yarn", Elastic::new(60.78384, 0.4868, nominal_cor)).with_friction(Friction {
-            sliding: 0.0,
-            ..Default::default()
-        }),
+        Material::new("yarn", Elastic::new(60.78384, 0.4868, nominal_cor)).with_friction(
+            Friction {
+                sliding: 0.0,
+                ..Default::default()
+            },
+        ),
     )
     .unwrap();
     mt.build_pair_tables();

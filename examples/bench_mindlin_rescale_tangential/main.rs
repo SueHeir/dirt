@@ -91,7 +91,9 @@ fn build_system(
         dem.molecule_id.push(0.0);
         hist.contacts.push(Vec::new());
     }
-    unsafe { atom.set_layout_unchecked(2, atom.nghost(), 2); }
+    unsafe {
+        atom.set_layout_unchecked(2, atom.nghost(), 2);
+    }
 
     let mut nb = Neighbor::new();
     nb.newton = true;

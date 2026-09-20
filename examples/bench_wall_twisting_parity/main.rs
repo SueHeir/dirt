@@ -113,7 +113,9 @@ fn make_atom(sc: &ScenarioCfg) -> Atom {
             mass,
         )
     };
-    unsafe { atom.set_layout_unchecked(1, atom.nghost(), 1); }
+    unsafe {
+        atom.set_layout_unchecked(1, atom.nghost(), 1);
+    }
     atom
 }
 

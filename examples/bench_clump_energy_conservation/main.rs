@@ -76,7 +76,7 @@ fn place_two_clumps(
     let yc = 0.01;
     let zc = 0.01;
     let v = 0.5; // each clump's speed → closing speed 1.0 m/s
-    // COM offset from the collision point (COM separation = 2*half_gap).
+                 // COM offset from the collision point (COM separation = 2*half_gap).
     let half_gap: f64 = std::env::var("CLUMP_ENERGY_GAP")
         .ok()
         .and_then(|s| s.parse().ok())

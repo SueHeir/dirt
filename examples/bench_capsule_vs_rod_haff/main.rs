@@ -19,6 +19,7 @@ use std::fs;
 use std::io::Write;
 use std::sync::OnceLock;
 
+use dirt_capsule::*;
 use dirt_core::prelude::*;
 
 fn mode() -> String {
@@ -42,7 +43,10 @@ fn main() {
         app.add_plugins(dirt_core::soil_verlet::VelocityVerletPlugin::new())
             .add_plugins(CapsuleContactPlugin)
             .add_plugins(CapsulePlugin);
-        app.add_update_system(measure_capsule, ParticleSimScheduleSet::PostFinalIntegration);
+        app.add_update_system(
+            measure_capsule,
+            ParticleSimScheduleSet::PostFinalIntegration,
+        );
     }
 
     app.start();
@@ -57,11 +61,18 @@ fn write_row(step: usize, time: f64, t_trans: f64, t_rot: f64) {
         let mut f = fs::File::create(&path).expect("create cooling csv");
         writeln!(f, "step,time,T_trans,T_rot,T_total").unwrap();
     });
-    let mut f = fs::OpenOptions::new().append(true).open(&path).expect("open cooling csv");
+    let mut f = fs::OpenOptions::new()
+        .append(true)
+        .open(&path)
+        .expect("open cooling csv");
     writeln!(
         f,
         "{},{:.8e},{:.8e},{:.8e},{:.8e}",
-        step, time, t_trans, t_rot, t_trans + t_rot
+        step,
+        time,
+        t_trans,
+        t_rot,
+        t_trans + t_rot
     )
     .unwrap();
 }
@@ -121,7 +132,7 @@ fn measure_capsule(
             // Rotational: ω·I·ω in the principal frame (principal_axes = identity).
             let q = dem.quaternion[i];
             let qc = [q[0], -q[1], -q[2], -q[3]];
-            let wb = dirt_core::dirt_capsule::quat_rotate(qc, dem.omega[i]);
+            let wb = dirt_capsule::quat_rotate(qc, dem.omega[i]);
             let im = caps.principal_moments[i];
             ke_r += im[0] * wb[0] * wb[0] + im[1] * wb[1] * wb[1] + im[2] * wb[2] * wb[2];
         }
@@ -131,7 +142,12 @@ fn measure_capsule(
     if comm.rank() != 0 || m_tot <= 0.0 {
         return;
     }
-    write_row(step, step as f64 * atoms.dt, ke_t / (3.0 * m_tot), ke_r / (3.0 * m_tot));
+    write_row(
+        step,
+        step as f64 * atoms.dt,
+        ke_t / (3.0 * m_tot),
+        ke_r / (3.0 * m_tot),
+    );
 }
 
 /// Translational + rotational granular temperature of the clump gas.
@@ -186,5 +202,10 @@ fn measure_rod(
     if comm.rank() != 0 || m_tot <= 0.0 {
         return;
     }
-    write_row(step, step as f64 * atoms.dt, ke_t / (3.0 * m_tot), ke_r / (3.0 * m_tot));
+    write_row(
+        step,
+        step as f64 * atoms.dt,
+        ke_t / (3.0 * m_tot),
+        ke_r / (3.0 * m_tot),
+    );
 }

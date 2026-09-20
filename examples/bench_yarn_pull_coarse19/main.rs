@@ -71,7 +71,10 @@ static GRIP_TAGS: std::sync::OnceLock<(
 
 fn grip_tags(
     atoms: &Atom,
-) -> &'static (std::collections::HashSet<u64>, std::collections::HashSet<u64>) {
+) -> &'static (
+    std::collections::HashSet<u64>,
+    std::collections::HashSet<u64>,
+) {
     GRIP_TAGS.get_or_init(|| {
         let (mut left, mut right) = (
             std::collections::HashSet::new(),
@@ -220,7 +223,10 @@ fn measure_pull(
     // Output cadence: coarse (every 20k) until the first bond breaks, then fine
     // (every 1k) to resolve the failure. Reduce the global bond count on EVERY step
     // (collective-safe, no-op in serial) so all ranks agree on the cadence.
-    let local_bonds_now = metrics.as_deref().map(|m| m.bond_count as f64).unwrap_or(0.0);
+    let local_bonds_now = metrics
+        .as_deref()
+        .map(|m| m.bond_count as f64)
+        .unwrap_or(0.0);
     let bonds_now = comm.all_reduce_sum_f64(local_bonds_now) as u64;
     static INIT_BONDS: AtomicU64 = AtomicU64::new(u64::MAX);
     if bonds_now > 0 {

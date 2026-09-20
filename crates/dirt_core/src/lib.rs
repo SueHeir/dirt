@@ -129,8 +129,6 @@ pub use dirt_atom;
 
 /// Inter-particle bonds for DEM: normal, tangential, bending modes with auto-bonding and breakage.
 pub use dirt_bond;
-/// Single-body sphero-cylinder (capsule) rigid particles for non-spherical DEM.
-pub use dirt_capsule;
 /// Rigid clump (multisphere) composites for non-spherical DEM particles.
 pub use dirt_clump;
 
@@ -260,10 +258,6 @@ pub mod prelude {
     };
     pub use dirt_atom::{DemAtomInsertPlugin, ParticlesConfig};
     pub use dirt_bond::DemBondPlugin;
-    pub use dirt_capsule::{
-        insert_capsule, CapsuleAtom, CapsuleContactPlugin, CapsuleDef, CapsulePlugin,
-        CapsuleRegistry,
-    };
     pub use dirt_clump::{
         ClumpAtom, ClumpDef, ClumpPlugin, ClumpRegistry, MultisphereBody, MultisphereBodyStore,
     };

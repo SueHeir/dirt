@@ -15,8 +15,8 @@ use std::io::Write as _; // trait methods (writeln!) without shadowing the ECS `
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::OnceLock;
 
+use dirt_capsule::*;
 use dirt_core::dirt_atom::DemAtom;
-use dirt_core::dirt_capsule::CapsuleAtom;
 use dirt_core::prelude::*;
 use dirt_core::soil_core::{BondEntry, BondStore};
 
@@ -30,9 +30,8 @@ const RIGHT_GRIP_ZMIN: f64 = 9500.0;
 const DENSITY: f64 = 9.93245e-07;
 
 fn spec_path() -> String {
-    std::env::var("CAPSULE_YARN_SPEC").unwrap_or_else(|_| {
-        "examples/bench_capsule_yarn_pull/data/capsule_yarn_k4.txt".to_string()
-    })
+    std::env::var("CAPSULE_YARN_SPEC")
+        .unwrap_or_else(|_| "examples/bench_capsule_yarn_pull/data/capsule_yarn_k4.txt".to_string())
 }
 
 /// Optional: limit to the first N fibres (env FIBRE_LIMIT) for a fast stability check.
@@ -88,7 +87,10 @@ fn main() {
     app.add_setup_system(build_capsule_yarn, ScheduleSetupSet::Setup);
 
     // Rigid z-end grips + stress-strain measurement (same as the sphere yarn).
-    app.add_update_system(seed_straight_rest, ParticleSimScheduleSet::PreInitialIntegration);
+    app.add_update_system(
+        seed_straight_rest,
+        ParticleSimScheduleSet::PreInitialIntegration,
+    );
     app.add_update_system(grip_control, ParticleSimScheduleSet::PreInitialIntegration);
     app.add_update_system(relax_damping_system, ParticleSimScheduleSet::PostForce);
     app.add_update_system(grip_zero_force, ParticleSimScheduleSet::PostForce);
@@ -136,7 +138,11 @@ fn build_capsule_yarn(
             continue;
         }
         caps.push(SpecCapsule {
-            com: [f[0].parse().unwrap(), f[1].parse().unwrap(), f[2].parse().unwrap()],
+            com: [
+                f[0].parse().unwrap(),
+                f[1].parse().unwrap(),
+                f[2].parse().unwrap(),
+            ],
             quat: [
                 f[3].parse().unwrap(),
                 f[4].parse().unwrap(),
@@ -154,7 +160,14 @@ fn build_capsule_yarn(
     raw.next(); // header
     let mut new_i = 0usize;
     for old_i in 0..n_cap {
-        let mol: u32 = raw.next().unwrap().split_whitespace().nth(8).unwrap().parse().unwrap();
+        let mol: u32 = raw
+            .next()
+            .unwrap()
+            .split_whitespace()
+            .nth(8)
+            .unwrap()
+            .parse()
+            .unwrap();
         if mol <= limit {
             keep.insert(old_i, new_i);
             new_i += 1;
@@ -169,7 +182,9 @@ fn build_capsule_yarn(
             length: 2.0 * c.half_length,
         };
         // atom_type 0 = the single [[dem.materials]] entry (material table is 0-indexed).
-        insert_capsule(&mut atoms, &registry, &def, c.com, [0.0; 3], c.quat, DENSITY, 0);
+        insert_capsule(
+            &mut atoms, &registry, &def, c.com, [0.0; 3], c.quat, DENSITY, 0,
+        );
     }
     // molecule id (intra-fibre contact exclusion, mirrors the sphere yarn)
     {
@@ -202,8 +217,16 @@ fn build_capsule_yarn(
                 as f64)
                 .sqrt();
             let (ti, tj) = (atoms.tag[i], atoms.tag[j]);
-            bonds.bonds[i].push(BondEntry { partner_tag: tj, bond_type: bt, r0 });
-            bonds.bonds[j].push(BondEntry { partner_tag: ti, bond_type: bt, r0 });
+            bonds.bonds[i].push(BondEntry {
+                partner_tag: tj,
+                bond_type: bt,
+                r0,
+            });
+            bonds.bonds[j].push(BondEntry {
+                partner_tag: ti,
+                bond_type: bt,
+                r0,
+            });
         }
     }
     println!(
@@ -215,12 +238,17 @@ fn build_capsule_yarn(
 }
 
 /// Static grip membership captured once from initial z (like the sphere yarn).
-static GRIP_TAGS: OnceLock<(std::collections::HashSet<u64>, std::collections::HashSet<u64>)> =
-    OnceLock::new();
+static GRIP_TAGS: OnceLock<(
+    std::collections::HashSet<u64>,
+    std::collections::HashSet<u64>,
+)> = OnceLock::new();
 
 fn grip_tags(
     atoms: &Atom,
-) -> &'static (std::collections::HashSet<u64>, std::collections::HashSet<u64>) {
+) -> &'static (
+    std::collections::HashSet<u64>,
+    std::collections::HashSet<u64>,
+) {
     GRIP_TAGS.get_or_init(|| {
         let (mut left, mut right) = (
             std::collections::HashSet::new(),
@@ -330,13 +358,7 @@ fn quat_to_rotvec(q: [f64; 4]) -> [f64; 3] {
 }
 fn seed_straight_rest(
     atoms: Res<Atom>,
-    particles: ParticlesWith<
-        '_,
-        (
-            Read<DemAtom>,
-            Write<dirt_core::dirt_bond::BondHistoryStore>,
-        ),
-    >,
+    particles: ParticlesWith<'_, (Read<DemAtom>, Write<dirt_core::dirt_bond::BondHistoryStore>)>,
 ) {
     if !straight_rest_enabled() {
         return;
@@ -416,7 +438,17 @@ fn dump_traj(
             // ~one-bead gap between consecutive capsules (2L < COM spacing).
             s.push_str(&format!(
                 "{} 1 {:.4} {:.4} {:.4} {:.5} {:.5} {:.5} {:.5} {:.3} {:.3} {:.3}\n",
-                atoms.tag[i], p[0], p[1], p[2], q[1], q[2], q[3], q[0], r, r, hl + r
+                atoms.tag[i],
+                p[0],
+                p[1],
+                p[2],
+                q[1],
+                q[2],
+                q[3],
+                q[0],
+                r,
+                r,
+                hl + r
             ));
         }
     });
@@ -507,7 +539,12 @@ fn measure_pull(
         writeln!(f, "step,strain,stress_zz,bond_count,gauge").unwrap();
     });
     let mut f = fs::OpenOptions::new().append(true).open(&path).unwrap();
-    writeln!(f, "{},{:.8e},{:.8e},{},{:.6e}", step, strain, stress_zz, bonds, gauge).unwrap();
+    writeln!(
+        f,
+        "{},{:.8e},{:.8e},{},{:.6e}",
+        step, strain, stress_zz, bonds, gauge
+    )
+    .unwrap();
 
     println!(
         "[capsule_yarn] step={step} strain={:.3}% stress={stress_zz:.3e} bonds={bonds} \

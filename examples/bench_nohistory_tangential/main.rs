@@ -111,7 +111,9 @@ fn build_system(
         dem.molecule_id.push(0.0);
         hist.contacts.push(Vec::new());
     }
-    unsafe { atom.set_layout_unchecked(2, atom.nghost(), 2); }
+    unsafe {
+        atom.set_layout_unchecked(2, atom.nghost(), 2);
+    }
 
     // Half neighbour list (newton on): atom 0 → {1}.
     let mut nb = Neighbor::new();
