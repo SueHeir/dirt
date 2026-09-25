@@ -130,11 +130,12 @@ fn material_table_with_twisting() -> MaterialTable {
 }
 
 fn run_wall_twist_case(walls: Walls, pos: [f64; 3], omega: [f64; 3]) -> [f64; 3] {
-    let fixture = ParticleFixture::single(ParticleSpec::new(0, pos, 0.001)).build();
+    let mut fixture = ParticleFixture::single(ParticleSpec::new(0, pos, 0.001)).build();
     fixture
         .registry
         .expect_mut::<DemAtom>("run_wall_twist_case")
         .omega[0] = omega;
+    fixture.register_atom_data(WallSpringStore::new());
     let (atom, _neighbor, registry, _materials) = fixture.into_parts();
     let mut app = App::new();
     app.add_resource(atom);
@@ -331,6 +332,9 @@ fn wall_repulsive_for_overlap() {
 
     let mut registry = AtomDataRegistry::new();
     registry.register_for_atoms(dem, &atom).unwrap();
+    registry
+        .register_for_atoms(WallSpringStore::new(), &atom)
+        .unwrap();
 
     let walls = make_walls(vec![make_wall_plane(0.0, 0.0, 0.0, 0.0, 0.0, 1.0)]);
 
@@ -365,6 +369,9 @@ fn wall_zero_for_no_overlap() {
 
     let mut registry = AtomDataRegistry::new();
     registry.register_for_atoms(dem, &atom).unwrap();
+    registry
+        .register_for_atoms(WallSpringStore::new(), &atom)
+        .unwrap();
 
     let walls = make_walls(vec![make_wall_plane(0.0, 0.0, 0.0, 0.0, 0.0, 1.0)]);
 
@@ -393,6 +400,9 @@ fn inactive_wall_applies_no_force() {
 
     let mut registry = AtomDataRegistry::new();
     registry.register_for_atoms(dem, &atom).unwrap();
+    registry
+        .register_for_atoms(WallSpringStore::new(), &atom)
+        .unwrap();
 
     let mut plane = make_wall_plane(0.0, 0.0, 0.0, 0.0, 0.0, 1.0);
     plane.name = Some("blocker".into());
@@ -427,6 +437,9 @@ fn angled_wall_force_direction() {
 
     let mut registry = AtomDataRegistry::new();
     registry.register_for_atoms(dem, &atom).unwrap();
+    registry
+        .register_for_atoms(WallSpringStore::new(), &atom)
+        .unwrap();
 
     let walls = make_walls(vec![make_wall_plane(0.0, 0.0, 0.0, 1.0, 0.0, 1.0)]);
 
@@ -461,6 +474,9 @@ fn bounded_wall_ignores_out_of_bounds_atom() {
 
     let mut registry = AtomDataRegistry::new();
     registry.register_for_atoms(dem, &atom).unwrap();
+    registry
+        .register_for_atoms(WallSpringStore::new(), &atom)
+        .unwrap();
 
     let mut wall = make_wall_plane(0.0, 0.0, 0.0, 0.0, 0.0, 1.0);
     wall.bound_x_low = 0.0;
@@ -496,6 +512,9 @@ fn wall_cohesion_attractive_for_small_overlap() {
 
     let mut registry = AtomDataRegistry::new();
     registry.register_for_atoms(dem, &atom).unwrap();
+    registry
+        .register_for_atoms(WallSpringStore::new(), &atom)
+        .unwrap();
 
     let walls = make_walls(vec![make_wall_plane(0.0, 0.0, 0.0, 0.0, 0.0, 1.0)]);
 
@@ -649,6 +668,9 @@ fn moving_wall_relative_velocity_affects_damping() {
 
         let mut registry = AtomDataRegistry::new();
         registry.register_for_atoms(dem, &atom).unwrap();
+        registry
+            .register_for_atoms(WallSpringStore::new(), &atom)
+            .unwrap();
 
         let mut plane = make_wall_plane(0.0, 0.0, 0.0, 0.0, 0.0, 1.0);
         plane.velocity = wall_vel;
@@ -696,6 +718,9 @@ fn wall_history_initializes_without_particle_contact_plugin() {
 
     let mut registry = AtomDataRegistry::new();
     registry.register_for_atoms(dem, &atom).unwrap();
+    registry
+        .register_for_atoms(WallSpringStore::new(), &atom)
+        .unwrap();
 
     let mut material_table = dirt_atom::MaterialTable::new();
     material_table.rolling_model = "sds".to_string();
@@ -899,6 +924,9 @@ fn cylinder_inside_repels_toward_center() {
 
     let mut registry = AtomDataRegistry::new();
     registry.register_for_atoms(dem, &atom).unwrap();
+    registry
+        .register_for_atoms(WallSpringStore::new(), &atom)
+        .unwrap();
 
     let walls = make_walls_with_cylinder(WallCylinder {
         axis: 2, // Z
@@ -946,6 +974,9 @@ fn cylinder_no_force_when_not_touching() {
 
     let mut registry = AtomDataRegistry::new();
     registry.register_for_atoms(dem, &atom).unwrap();
+    registry
+        .register_for_atoms(WallSpringStore::new(), &atom)
+        .unwrap();
 
     let walls = make_walls_with_cylinder(WallCylinder {
         axis: 2,
@@ -998,6 +1029,9 @@ fn sphere_inside_repels_toward_center() {
 
     let mut registry = AtomDataRegistry::new();
     registry.register_for_atoms(dem, &atom).unwrap();
+    registry
+        .register_for_atoms(WallSpringStore::new(), &atom)
+        .unwrap();
 
     let walls = make_walls_with_sphere(WallSphere {
         center: [0.005, 0.005, 0.005],
@@ -1042,6 +1076,9 @@ fn sphere_no_force_when_not_touching() {
 
     let mut registry = AtomDataRegistry::new();
     registry.register_for_atoms(dem, &atom).unwrap();
+    registry
+        .register_for_atoms(WallSpringStore::new(), &atom)
+        .unwrap();
 
     let walls = make_walls_with_sphere(WallSphere {
         center: [0.005, 0.005, 0.005],
@@ -1100,6 +1137,9 @@ fn cylinder_force_always_points_radially_inward() {
 
         let mut registry = AtomDataRegistry::new();
         registry.register_for_atoms(dem, &atom).unwrap();
+        registry
+            .register_for_atoms(WallSpringStore::new(), &atom)
+            .unwrap();
 
         let walls = make_walls_with_cylinder(WallCylinder {
             axis: 2,
@@ -1184,6 +1224,9 @@ fn cylinder_axial_bounds_enforced() {
 
     let mut registry = AtomDataRegistry::new();
     registry.register_for_atoms(dem, &atom).unwrap();
+    registry
+        .register_for_atoms(WallSpringStore::new(), &atom)
+        .unwrap();
 
     let walls = make_walls_with_cylinder(WallCylinder {
         axis: 2,
@@ -1257,6 +1300,9 @@ fn sphere_force_points_toward_center_at_multiple_positions() {
 
         let mut registry = AtomDataRegistry::new();
         registry.register_for_atoms(dem, &atom).unwrap();
+        registry
+            .register_for_atoms(WallSpringStore::new(), &atom)
+            .unwrap();
 
         let walls = make_walls_with_sphere(WallSphere {
             center: sph_center,
@@ -1318,6 +1364,9 @@ fn wall_zero_force_at_exact_contact() {
 
     let mut registry = AtomDataRegistry::new();
     registry.register_for_atoms(dem, &atom).unwrap();
+    registry
+        .register_for_atoms(WallSpringStore::new(), &atom)
+        .unwrap();
 
     let walls = make_walls(vec![make_wall_plane(0.0, 0.0, 0.0, 0.0, 0.0, 1.0)]);
 
@@ -1358,6 +1407,9 @@ fn wall_hertz_force_scales_as_delta_three_halves() {
 
         let mut registry = AtomDataRegistry::new();
         registry.register_for_atoms(dem, &atom).unwrap();
+        registry
+            .register_for_atoms(WallSpringStore::new(), &atom)
+            .unwrap();
 
         let walls = make_walls(vec![make_wall_plane(0.0, 0.0, 0.0, 0.0, 0.0, 1.0)]);
 
@@ -1410,6 +1462,9 @@ fn region_sphere_inside_repels() {
 
     let mut registry = AtomDataRegistry::new();
     registry.register_for_atoms(dem, &atom).unwrap();
+    registry
+        .register_for_atoms(WallSpringStore::new(), &atom)
+        .unwrap();
 
     let walls = make_walls_with_region(WallRegion {
         region: Region::Sphere {
@@ -1455,6 +1510,9 @@ fn region_sphere_no_force_when_far() {
 
     let mut registry = AtomDataRegistry::new();
     registry.register_for_atoms(dem, &atom).unwrap();
+    registry
+        .register_for_atoms(WallSpringStore::new(), &atom)
+        .unwrap();
 
     let walls = make_walls_with_region(WallRegion {
         region: Region::Sphere {
@@ -1500,6 +1558,9 @@ fn region_block_inside_repels() {
 
     let mut registry = AtomDataRegistry::new();
     registry.register_for_atoms(dem, &atom).unwrap();
+    registry
+        .register_for_atoms(WallSpringStore::new(), &atom)
+        .unwrap();
 
     let walls = make_walls_with_region(WallRegion {
         region: Region::Block {
@@ -1553,6 +1614,9 @@ fn region_cone_inside_repels() {
 
     let mut registry = AtomDataRegistry::new();
     registry.register_for_atoms(dem, &atom).unwrap();
+    registry
+        .register_for_atoms(WallSpringStore::new(), &atom)
+        .unwrap();
 
     let walls = make_walls_with_region(WallRegion {
         region: Region::Cone {
@@ -1605,6 +1669,9 @@ fn region_wall_force_matches_dedicated_sphere() {
         unsafe { atom.set_layout_unchecked(1, atom.nghost(), 1) };
         let mut registry = AtomDataRegistry::new();
         registry.register_for_atoms(dem, &atom).unwrap();
+        registry
+            .register_for_atoms(WallSpringStore::new(), &atom)
+            .unwrap();
         let walls = make_walls_with_sphere(WallSphere {
             center: sphere_center,
             radius: sphere_radius,
@@ -1635,6 +1702,9 @@ fn region_wall_force_matches_dedicated_sphere() {
         unsafe { atom.set_layout_unchecked(1, atom.nghost(), 1) };
         let mut registry = AtomDataRegistry::new();
         registry.register_for_atoms(dem, &atom).unwrap();
+        registry
+            .register_for_atoms(WallSpringStore::new(), &atom)
+            .unwrap();
         let walls = make_walls_with_region(WallRegion {
             region: Region::Sphere {
                 center: sphere_center,
