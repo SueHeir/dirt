@@ -1546,8 +1546,8 @@ mod tests {
 
     fn setup_clump_test() -> (Atom, AtomDataRegistry, MultisphereBodyStore) {
         let mut registry = AtomDataRegistry::new();
-        registry.try_register(DemAtom::new(), 0).unwrap();
-        registry.try_register(ClumpAtom::new(), 0).unwrap();
+        registry.register_for_atoms(DemAtom::new(), &Atom::new()).unwrap();
+        registry.register_for_atoms(ClumpAtom::new(), &Atom::new()).unwrap();
         (Atom::new(), registry, MultisphereBodyStore::new())
     }
 
@@ -1663,8 +1663,8 @@ region = { type = "block", min = [1.0, 1.0, 1.0], max = [1.0, 2.0, 2.0] }
     fn config_insert_snapshot(seed: Option<u64>) -> Vec<u64> {
         let mut app = App::new();
         let mut registry = AtomDataRegistry::new();
-        registry.try_register(DemAtom::new(), 0).unwrap();
-        registry.try_register(ClumpAtom::new(), 0).unwrap();
+        registry.register_for_atoms(DemAtom::new(), &Atom::new()).unwrap();
+        registry.register_for_atoms(ClumpAtom::new(), &Atom::new()).unwrap();
 
         let mut domain = Domain::new();
         domain.boundaries_low = [-0.03; 3];
@@ -1788,8 +1788,8 @@ region = { type = "block", min = [1.0, 1.0, 1.0], max = [1.0, 2.0, 2.0] }
         );
 
         assert_eq!(count, 2, "Should insert 2 sub-spheres (no parent atom)");
-        assert_eq!(atoms.nlocal, 2);
-        assert_eq!(atoms.natoms, 2);
+        assert_eq!(atoms.nlocal(), 2);
+        assert_eq!(atoms.natoms(), 2);
         assert_eq!(bodies.bodies.len(), 1);
 
         // Both atoms are sub-spheres with real radii
@@ -1822,9 +1822,9 @@ region = { type = "block", min = [1.0, 1.0, 1.0], max = [1.0, 2.0, 2.0] }
     #[test]
     fn clump_row_rejection_rolls_back_atoms_before_body_commit() {
         let mut registry = AtomDataRegistry::new();
-        registry.try_register(DemAtom::new(), 0).unwrap();
-        registry.try_register(ClumpAtom::new(), 0).unwrap();
-        registry.try_register(RejectDefaultRow, 0).unwrap();
+        registry.register_for_atoms(DemAtom::new(), &Atom::new()).unwrap();
+        registry.register_for_atoms(ClumpAtom::new(), &Atom::new()).unwrap();
+        registry.register_for_atoms(RejectDefaultRow, &Atom::new()).unwrap();
         let mut atoms = Atom::new();
         let mut bodies = MultisphereBodyStore::new();
         let error = try_insert_clump_with_cutoff_padding(
@@ -1842,7 +1842,7 @@ region = { type = "block", min = [1.0, 1.0, 1.0], max = [1.0, 2.0, 2.0] }
         .unwrap_err();
         assert_eq!(error, ParticleStoreError::MalformedExtensionRecord);
         assert!(atoms.is_empty());
-        assert_eq!((atoms.nlocal, atoms.nghost, atoms.natoms), (0, 0, 0));
+        assert_eq!((atoms.nlocal(), atoms.nghost(), atoms.natoms()), (0, 0, 0));
         assert!(registry.validate_rows(0));
         assert!(bodies.bodies.is_empty());
         assert_eq!(bodies.find_by_id(7), None);

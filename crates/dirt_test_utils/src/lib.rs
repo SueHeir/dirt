@@ -13,7 +13,7 @@
 //! let atom = make_atoms(3); // 3 atoms at (0,0,0), (1,0,0), (2,0,0)
 //! let groups = make_group_registry("all", vec![true, true, true]);
 //! let _comm = make_single_comm();
-//! assert_eq!(atom.nlocal, 3);
+//! assert_eq!(atom.nlocal(), 3);
 //! assert_eq!(groups.groups[0].count, 3);
 //! ```
 //!
@@ -23,7 +23,7 @@
 //! use dirt_test_utils::ParticleFixture;
 //!
 //! let fixture = ParticleFixture::new().build();
-//! assert_eq!(fixture.atom.nlocal, 2);
+//! assert_eq!(fixture.atom.nlocal(), 2);
 //! assert_eq!(fixture.neighbor.neighbor_indices, vec![1]);
 //! ```
 //!
@@ -273,8 +273,8 @@ impl SimulationFixture {
 /// use dirt_test_utils::make_atoms;
 ///
 /// let atom = make_atoms(5);
-/// assert_eq!(atom.nlocal, 5);
-/// assert_eq!(atom.natoms, 5);
+/// assert_eq!(atom.nlocal(), 5);
+/// assert_eq!(atom.natoms(), 5);
 /// assert_eq!(atom.pos[2], [2.0, 0.0, 0.0]);
 /// ```
 pub fn make_atoms(n: usize) -> Atom {
@@ -357,8 +357,8 @@ pub fn make_single_comm() -> CommResource {
 /// assert_eq!(dem.radius[0], 0.5);
 /// assert_eq!(dem.density[0], 2500.0);
 /// // push_dem_test_atom does NOT set nlocal/natoms — the caller must:
-/// atom.nlocal = 1;
-/// atom.natoms = 1;
+/// // SAFETY: `dem` is not registered yet, so only the core layout changes.
+/// unsafe { atom.set_layout_unchecked(1, 0, 1) };
 /// ```
 pub fn push_dem_test_atom(
     atom: &mut Atom,
@@ -429,8 +429,8 @@ mod fixture_tests {
     #[test]
     fn default_fixture_is_nonempty_and_synchronized() {
         let fixture = ParticleFixture::default().build();
-        assert_eq!(fixture.atom.nlocal, 2);
-        assert_eq!(fixture.atom.natoms, 2);
+        assert_eq!(fixture.atom.nlocal(), 2);
+        assert_eq!(fixture.atom.natoms(), 2);
         assert_eq!(fixture.atom.len(), 2);
         assert_eq!(
             fixture

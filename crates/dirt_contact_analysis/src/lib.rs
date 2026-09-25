@@ -844,8 +844,8 @@ mod tests {
             atoms.push_test_atom(1, [0.0, 0.0, 0.0], 0.5, 1.0);
             atoms.push_test_atom(2, [0.9, 0.0, 0.0], 0.5, 1.0);
         }
-        atoms.nlocal = 2;
-        atoms.natoms = 2;
+        // SAFETY: core-only fixture layout; no extension rows are resized here.
+        unsafe { atoms.set_layout_unchecked(2, atoms.nghost(), 2) };
 
         let dem = make_dem_atom(2);
         let neighbor = build_neighbor_list(&atoms);
@@ -865,8 +865,8 @@ mod tests {
             atoms.push_test_atom(1, [0.0, 0.0, 0.0], 0.5, 1.0);
             atoms.push_test_atom(2, [5.0, 0.0, 0.0], 0.5, 1.0);
         }
-        atoms.nlocal = 2;
-        atoms.natoms = 2;
+        // SAFETY: core-only fixture layout; no extension rows are resized here.
+        unsafe { atoms.set_layout_unchecked(2, atoms.nghost(), 2) };
 
         let dem = make_dem_atom(2);
         let neighbor = build_neighbor_list(&atoms);
@@ -891,8 +891,8 @@ mod tests {
             atoms.push_test_atom(3, [1.8, 0.0, 0.0], 0.5, 1.0);
             atoms.push_test_atom(4, [2.7, 0.0, 0.0], 0.5, 1.0);
         }
-        atoms.nlocal = 4;
-        atoms.natoms = 4;
+        // SAFETY: core-only fixture layout; no extension rows are resized here.
+        unsafe { atoms.set_layout_unchecked(4, atoms.nghost(), 4) };
 
         let dem = make_dem_atom(4);
         let neighbor = build_neighbor_list(&atoms);
@@ -918,8 +918,8 @@ mod tests {
             atoms.push_test_atom(4, [0.0, 0.9, 0.0], 0.5, 1.0); // rattler
             atoms.push_test_atom(5, [0.0, -0.9, 0.0], 0.5, 1.0); // rattler
         }
-        atoms.nlocal = 5;
-        atoms.natoms = 5;
+        // SAFETY: core-only fixture layout; no extension rows are resized here.
+        unsafe { atoms.set_layout_unchecked(5, atoms.nghost(), 5) };
 
         let dem = make_dem_atom(5);
         let neighbor = build_neighbor_list(&atoms);
@@ -1121,7 +1121,7 @@ coordination = true
         app.add_resource(Atom::default());
         app.add_resource(Neighbor::default());
         let mut registry = AtomDataRegistry::default();
-        registry.try_register(DemAtom::new(), 0).unwrap();
+        registry.register_for_atoms(DemAtom::new(), &Atom::new()).unwrap();
         app.add_resource(registry);
         app.add_resource(RunState::new());
         app.add_update_system(

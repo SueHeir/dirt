@@ -79,7 +79,7 @@ fn track_kharaz(
     input: Res<Input>,
     mut tracker: ResMut<KharazTracker>,
 ) {
-    if tracker.finished || atoms.nlocal < 1 {
+    if tracker.finished || atoms.nlocal() < 1 {
         return;
     }
     let dem = registry.expect::<DemAtom>("track_kharaz");

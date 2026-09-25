@@ -53,8 +53,8 @@ fn main() {
 
     let mut atom = Atom::new();
     atom.dt = 1.0;
-    atom.nlocal = 2;
-    atom.natoms = 2;
+    // SAFETY: core-only fixture layout; no extension rows are resized here.
+    unsafe { atom.set_layout_unchecked(2, atom.nghost(), 2) };
     let mut dem = DemAtom::new();
     push_sphere(&mut atom, &mut dem, 1, 0.0, cfg.radius, cfg.density);
     push_sphere(
@@ -70,8 +70,8 @@ fn main() {
     history.contacts.resize_with(2, Vec::new);
 
     let mut registry = AtomDataRegistry::new();
-    registry.try_register(dem, atom.len()).unwrap();
-    registry.try_register(history, atom.len()).unwrap();
+    registry.register_for_atoms(dem, &atom).unwrap();
+    registry.register_for_atoms(history, &atom).unwrap();
 
     let mut neighbor = Neighbor::new();
     neighbor.neighbor_offsets = vec![0, 1, 1];

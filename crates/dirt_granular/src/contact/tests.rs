@@ -57,15 +57,15 @@ fn interior_boundary_split_matches_single_pass() {
         push_test_atom_with_history(&mut atom, &mut dem, &mut hist, 0, [0.0, 0.0, 0.0], r);
         push_test_atom_with_history(&mut atom, &mut dem, &mut hist, 1, [1.5 * r, 0.0, 0.0], r);
         push_test_atom_with_history(&mut atom, &mut dem, &mut hist, 2, [0.0, 1.5 * r, 0.0], r);
-        atom.nlocal = 2;
-        atom.natoms = 3;
+        // SAFETY: core-only fixture layout; no extension rows are resized here.
+        unsafe { atom.set_layout_unchecked(2, atom.nghost(), 3) };
         // Half neighbour list (newton): atom 0 -> {1 (local), 2 (ghost)}.
         let mut nb = Neighbor::new();
         nb.neighbor_offsets = vec![0, 2, 2, 2];
         nb.neighbor_indices = vec![1, 2];
         let mut reg = AtomDataRegistry::new();
-        reg.try_register(dem, atom.len()).unwrap();
-        reg.try_register(hist, atom.len()).unwrap();
+        reg.register_for_atoms(dem, &atom).unwrap();
+        reg.register_for_atoms(hist, &atom).unwrap();
         (atom, nb, reg)
     };
     let mt = make_material_table();
@@ -138,16 +138,16 @@ fn fused_contact_tangential_with_sliding() {
         radius,
     );
     atom.vel[1][1] = 0.1;
-    atom.nlocal = 2;
-    atom.natoms = 2;
+    // SAFETY: core-only fixture layout; no extension rows are resized here.
+    unsafe { atom.set_layout_unchecked(2, atom.nghost(), 2) };
 
     let mut neighbor = Neighbor::new();
     neighbor.neighbor_offsets = vec![0, 1, 1];
     neighbor.neighbor_indices = vec![1];
 
     let mut registry = AtomDataRegistry::new();
-    registry.try_register(dem, atom.len()).unwrap();
-    registry.try_register(hist, atom.len()).unwrap();
+    registry.register_for_atoms(dem, &atom).unwrap();
+    registry.register_for_atoms(hist, &atom).unwrap();
 
     app.add_resource(atom);
     app.add_resource(neighbor);
@@ -197,14 +197,14 @@ fn linear_nohistory_has_no_spring_accumulation() {
             radius,
         );
         atom.vel[1][1] = 0.001; // small tangential slip, below the Coulomb cap
-        atom.nlocal = 2;
-        atom.natoms = 2;
+        // SAFETY: core-only fixture layout; no extension rows are resized here.
+        unsafe { atom.set_layout_unchecked(2, atom.nghost(), 2) };
         let mut nb = Neighbor::new();
         nb.neighbor_offsets = vec![0, 1, 1];
         nb.neighbor_indices = vec![1];
         let mut reg = AtomDataRegistry::new();
-        reg.try_register(dem, atom.len()).unwrap();
-        reg.try_register(hist, atom.len()).unwrap();
+        reg.register_for_atoms(dem, &atom).unwrap();
+        reg.register_for_atoms(hist, &atom).unwrap();
         (atom, nb, reg)
     };
     let spring_mag = |reg: &AtomDataRegistry| -> f64 {
@@ -263,16 +263,16 @@ fn fused_contact_no_force_for_gap() {
 
     push_test_atom_with_history(&mut atom, &mut dem, &mut hist, 0, [0.0, 0.0, 0.0], radius);
     push_test_atom_with_history(&mut atom, &mut dem, &mut hist, 1, [0.003, 0.0, 0.0], radius);
-    atom.nlocal = 2;
-    atom.natoms = 2;
+    // SAFETY: core-only fixture layout; no extension rows are resized here.
+    unsafe { atom.set_layout_unchecked(2, atom.nghost(), 2) };
 
     let mut neighbor = Neighbor::new();
     neighbor.neighbor_offsets = vec![0, 1, 1];
     neighbor.neighbor_indices = vec![1];
 
     let mut registry = AtomDataRegistry::new();
-    registry.try_register(dem, atom.len()).unwrap();
-    registry.try_register(hist, atom.len()).unwrap();
+    registry.register_for_atoms(dem, &atom).unwrap();
+    registry.register_for_atoms(hist, &atom).unwrap();
 
     app.add_resource(atom);
     app.add_resource(neighbor);
@@ -335,16 +335,16 @@ fn cohesion_produces_attractive_force() {
         [0.00199999, 0.0, 0.0],
         radius, // delta = 1e-8 (tiny overlap)
     );
-    atom.nlocal = 2;
-    atom.natoms = 2;
+    // SAFETY: core-only fixture layout; no extension rows are resized here.
+    unsafe { atom.set_layout_unchecked(2, atom.nghost(), 2) };
 
     let mut neighbor = Neighbor::new();
     neighbor.neighbor_offsets = vec![0, 1, 1];
     neighbor.neighbor_indices = vec![1];
 
     let mut registry = AtomDataRegistry::new();
-    registry.try_register(dem, atom.len()).unwrap();
-    registry.try_register(hist, atom.len()).unwrap();
+    registry.register_for_atoms(dem, &atom).unwrap();
+    registry.register_for_atoms(hist, &atom).unwrap();
 
     app.add_resource(atom);
     app.add_resource(neighbor);
@@ -382,14 +382,14 @@ fn zero_cohesion_matches_original() {
         atom.dt = 1e-7;
         push_test_atom_with_history(&mut atom, &mut dem, &mut hist, 0, [0.0, 0.0, 0.0], radius);
         push_test_atom_with_history(&mut atom, &mut dem, &mut hist, 1, [sep, 0.0, 0.0], radius);
-        atom.nlocal = 2;
-        atom.natoms = 2;
+        // SAFETY: core-only fixture layout; no extension rows are resized here.
+        unsafe { atom.set_layout_unchecked(2, atom.nghost(), 2) };
         let mut neighbor = Neighbor::new();
         neighbor.neighbor_offsets = vec![0, 1, 1];
         neighbor.neighbor_indices = vec![1];
         let mut registry = AtomDataRegistry::new();
-        registry.try_register(dem, atom.len()).unwrap();
-        registry.try_register(hist, atom.len()).unwrap();
+        registry.register_for_atoms(dem, &atom).unwrap();
+        registry.register_for_atoms(hist, &atom).unwrap();
         app.add_resource(atom);
         app.add_resource(neighbor);
         app.add_resource(registry);
@@ -469,16 +469,16 @@ fn jkr_pulloff_force_matches_theory() {
         [2.0 * radius + gap, 0.0, 0.0],
         radius,
     );
-    atom.nlocal = 2;
-    atom.natoms = 2;
+    // SAFETY: core-only fixture layout; no extension rows are resized here.
+    unsafe { atom.set_layout_unchecked(2, atom.nghost(), 2) };
 
     let mut neighbor = Neighbor::new();
     neighbor.neighbor_offsets = vec![0, 1, 1];
     neighbor.neighbor_indices = vec![1];
 
     let mut registry = AtomDataRegistry::new();
-    registry.try_register(dem, atom.len()).unwrap();
-    registry.try_register(hist, atom.len()).unwrap();
+    registry.register_for_atoms(dem, &atom).unwrap();
+    registry.register_for_atoms(hist, &atom).unwrap();
 
     let mt = make_material_table_jkr();
     app.add_resource(atom);
@@ -529,16 +529,16 @@ fn jkr_adhesion_only_regime() {
         [2.0 * radius + gap, 0.0, 0.0],
         radius,
     );
-    atom.nlocal = 2;
-    atom.natoms = 2;
+    // SAFETY: core-only fixture layout; no extension rows are resized here.
+    unsafe { atom.set_layout_unchecked(2, atom.nghost(), 2) };
 
     let mut neighbor = Neighbor::new();
     neighbor.neighbor_offsets = vec![0, 1, 1];
     neighbor.neighbor_indices = vec![1];
 
     let mut registry = AtomDataRegistry::new();
-    registry.try_register(dem, atom.len()).unwrap();
-    registry.try_register(hist, atom.len()).unwrap();
+    registry.register_for_atoms(dem, &atom).unwrap();
+    registry.register_for_atoms(hist, &atom).unwrap();
 
     app.add_resource(atom);
     app.add_resource(neighbor);
@@ -581,16 +581,16 @@ fn jkr_no_interaction_beyond_pulloff() {
         [0.003, 0.0, 0.0],
         radius, // gap = 0.001 >> delta_pulloff
     );
-    atom.nlocal = 2;
-    atom.natoms = 2;
+    // SAFETY: core-only fixture layout; no extension rows are resized here.
+    unsafe { atom.set_layout_unchecked(2, atom.nghost(), 2) };
 
     let mut neighbor = Neighbor::new();
     neighbor.neighbor_offsets = vec![0, 1, 1];
     neighbor.neighbor_indices = vec![1];
 
     let mut registry = AtomDataRegistry::new();
-    registry.try_register(dem, atom.len()).unwrap();
-    registry.try_register(hist, atom.len()).unwrap();
+    registry.register_for_atoms(dem, &atom).unwrap();
+    registry.register_for_atoms(hist, &atom).unwrap();
 
     app.add_resource(atom);
     app.add_resource(neighbor);
@@ -650,14 +650,14 @@ fn hooke_force_linear_in_delta() {
         atom.dt = 1e-7;
         push_test_atom_with_history(&mut atom, &mut dem, &mut hist, 0, [0.0, 0.0, 0.0], radius);
         push_test_atom_with_history(&mut atom, &mut dem, &mut hist, 1, [sep, 0.0, 0.0], radius);
-        atom.nlocal = 2;
-        atom.natoms = 2;
+        // SAFETY: core-only fixture layout; no extension rows are resized here.
+        unsafe { atom.set_layout_unchecked(2, atom.nghost(), 2) };
         let mut neighbor = Neighbor::new();
         neighbor.neighbor_offsets = vec![0, 1, 1];
         neighbor.neighbor_indices = vec![1];
         let mut registry = AtomDataRegistry::new();
-        registry.try_register(dem, atom.len()).unwrap();
-        registry.try_register(hist, atom.len()).unwrap();
+        registry.register_for_atoms(dem, &atom).unwrap();
+        registry.register_for_atoms(hist, &atom).unwrap();
         app.add_resource(atom);
         app.add_resource(neighbor);
         app.add_resource(registry);
@@ -695,16 +695,16 @@ fn hooke_no_force_beyond_contact() {
 
     push_test_atom_with_history(&mut atom, &mut dem, &mut hist, 0, [0.0, 0.0, 0.0], radius);
     push_test_atom_with_history(&mut atom, &mut dem, &mut hist, 1, [0.003, 0.0, 0.0], radius);
-    atom.nlocal = 2;
-    atom.natoms = 2;
+    // SAFETY: core-only fixture layout; no extension rows are resized here.
+    unsafe { atom.set_layout_unchecked(2, atom.nghost(), 2) };
 
     let mut neighbor = Neighbor::new();
     neighbor.neighbor_offsets = vec![0, 1, 1];
     neighbor.neighbor_indices = vec![1];
 
     let mut registry = AtomDataRegistry::new();
-    registry.try_register(dem, atom.len()).unwrap();
-    registry.try_register(hist, atom.len()).unwrap();
+    registry.register_for_atoms(dem, &atom).unwrap();
+    registry.register_for_atoms(hist, &atom).unwrap();
 
     app.add_resource(atom);
     app.add_resource(neighbor);
@@ -741,16 +741,16 @@ fn twisting_friction_opposes_spin() {
     );
     // Spin about contact normal (x-axis)
     dem.omega[0] = [100.0, 0.0, 0.0];
-    atom.nlocal = 2;
-    atom.natoms = 2;
+    // SAFETY: core-only fixture layout; no extension rows are resized here.
+    unsafe { atom.set_layout_unchecked(2, atom.nghost(), 2) };
 
     let mut neighbor = Neighbor::new();
     neighbor.neighbor_offsets = vec![0, 1, 1];
     neighbor.neighbor_indices = vec![1];
 
     let mut registry = AtomDataRegistry::new();
-    registry.try_register(dem, atom.len()).unwrap();
-    registry.try_register(hist, atom.len()).unwrap();
+    registry.register_for_atoms(dem, &atom).unwrap();
+    registry.register_for_atoms(hist, &atom).unwrap();
 
     app.add_resource(atom);
     app.add_resource(neighbor);
@@ -789,16 +789,16 @@ fn twisting_friction_zero_when_no_spin() {
         radius,
     );
     // No angular velocity at all
-    atom.nlocal = 2;
-    atom.natoms = 2;
+    // SAFETY: core-only fixture layout; no extension rows are resized here.
+    unsafe { atom.set_layout_unchecked(2, atom.nghost(), 2) };
 
     let mut neighbor = Neighbor::new();
     neighbor.neighbor_offsets = vec![0, 1, 1];
     neighbor.neighbor_indices = vec![1];
 
     let mut registry = AtomDataRegistry::new();
-    registry.try_register(dem, atom.len()).unwrap();
-    registry.try_register(hist, atom.len()).unwrap();
+    registry.register_for_atoms(dem, &atom).unwrap();
+    registry.register_for_atoms(hist, &atom).unwrap();
 
     app.add_resource(atom);
     app.add_resource(neighbor);
@@ -840,16 +840,16 @@ fn rolling_resistance_opposes_angular_velocity() {
     );
     // Give atom 0 a rolling angular velocity (around y-axis — perpendicular to contact normal x)
     dem.omega[0] = [0.0, 100.0, 0.0];
-    atom.nlocal = 2;
-    atom.natoms = 2;
+    // SAFETY: core-only fixture layout; no extension rows are resized here.
+    unsafe { atom.set_layout_unchecked(2, atom.nghost(), 2) };
 
     let mut neighbor = Neighbor::new();
     neighbor.neighbor_offsets = vec![0, 1, 1];
     neighbor.neighbor_indices = vec![1];
 
     let mut registry = AtomDataRegistry::new();
-    registry.try_register(dem, atom.len()).unwrap();
-    registry.try_register(hist, atom.len()).unwrap();
+    registry.register_for_atoms(dem, &atom).unwrap();
+    registry.register_for_atoms(hist, &atom).unwrap();
 
     app.add_resource(atom);
     app.add_resource(neighbor);
@@ -932,16 +932,16 @@ fn sds_rolling_opposes_angular_velocity() {
     );
     // Give atom 0 angular velocity in y (rolling about contact normal x)
     dem.omega[0] = [0.0, 10.0, 0.0];
-    atom.nlocal = 2;
-    atom.natoms = 2;
+    // SAFETY: core-only fixture layout; no extension rows are resized here.
+    unsafe { atom.set_layout_unchecked(2, atom.nghost(), 2) };
 
     let mut neighbor = Neighbor::new();
     neighbor.neighbor_offsets = vec![0, 1, 1];
     neighbor.neighbor_indices = vec![1];
 
     let mut registry = AtomDataRegistry::new();
-    registry.try_register(dem, atom.len()).unwrap();
-    registry.try_register(hist, atom.len()).unwrap();
+    registry.register_for_atoms(dem, &atom).unwrap();
+    registry.register_for_atoms(hist, &atom).unwrap();
 
     app.add_resource(atom);
     app.add_resource(neighbor);
@@ -984,8 +984,8 @@ fn sds_rolling_spring_accumulates() {
             radius,
         );
         dem.omega[0] = [0.0, 0.001, 0.0]; // very small angular velocity
-        atom.nlocal = 2;
-        atom.natoms = 2;
+        // SAFETY: core-only fixture layout; no extension rows are resized here.
+        unsafe { atom.set_layout_unchecked(2, atom.nghost(), 2) };
 
         // Pre-load rolling displacement in contact history (canonical: tag 0 < tag 1, sign=+1)
         if preload_y != 0.0 {
@@ -999,8 +999,8 @@ fn sds_rolling_spring_accumulates() {
         neighbor.neighbor_indices = vec![1];
 
         let mut registry = AtomDataRegistry::new();
-        registry.try_register(dem, atom.len()).unwrap();
-        registry.try_register(hist, atom.len()).unwrap();
+        registry.register_for_atoms(dem, &atom).unwrap();
+        registry.register_for_atoms(hist, &atom).unwrap();
 
         app.add_resource(atom);
         app.add_resource(neighbor);
@@ -1049,16 +1049,16 @@ fn sds_rolling_coulomb_cap() {
         radius,
     );
     dem.omega[0] = [0.0, 1e6, 0.0]; // very high
-    atom.nlocal = 2;
-    atom.natoms = 2;
+    // SAFETY: core-only fixture layout; no extension rows are resized here.
+    unsafe { atom.set_layout_unchecked(2, atom.nghost(), 2) };
 
     let mut neighbor = Neighbor::new();
     neighbor.neighbor_offsets = vec![0, 1, 1];
     neighbor.neighbor_indices = vec![1];
 
     let mut registry = AtomDataRegistry::new();
-    registry.try_register(dem, atom.len()).unwrap();
-    registry.try_register(hist, atom.len()).unwrap();
+    registry.register_for_atoms(dem, &atom).unwrap();
+    registry.register_for_atoms(hist, &atom).unwrap();
 
     let mt = make_material_table_sds_rolling();
     let mu_r = mt.rolling_friction_ij[0][0];
@@ -1117,16 +1117,16 @@ fn sds_twisting_opposes_spin() {
     );
     // Spin about contact normal (x-axis)
     dem.omega[0] = [10.0, 0.0, 0.0];
-    atom.nlocal = 2;
-    atom.natoms = 2;
+    // SAFETY: core-only fixture layout; no extension rows are resized here.
+    unsafe { atom.set_layout_unchecked(2, atom.nghost(), 2) };
 
     let mut neighbor = Neighbor::new();
     neighbor.neighbor_offsets = vec![0, 1, 1];
     neighbor.neighbor_indices = vec![1];
 
     let mut registry = AtomDataRegistry::new();
-    registry.try_register(dem, atom.len()).unwrap();
-    registry.try_register(hist, atom.len()).unwrap();
+    registry.register_for_atoms(dem, &atom).unwrap();
+    registry.register_for_atoms(hist, &atom).unwrap();
 
     app.add_resource(atom);
     app.add_resource(neighbor);
@@ -1167,8 +1167,8 @@ fn sds_twisting_spring_accumulates() {
             radius,
         );
         dem.omega[0] = [0.001, 0.0, 0.0]; // very small spin
-        atom.nlocal = 2;
-        atom.natoms = 2;
+        // SAFETY: core-only fixture layout; no extension rows are resized here.
+        unsafe { atom.set_layout_unchecked(2, atom.nghost(), 2) };
 
         if preload != 0.0 {
             let mut preload_state = [0.0; CONTACT_HISTORY_LEN];
@@ -1181,8 +1181,8 @@ fn sds_twisting_spring_accumulates() {
         neighbor.neighbor_indices = vec![1];
 
         let mut registry = AtomDataRegistry::new();
-        registry.try_register(dem, atom.len()).unwrap();
-        registry.try_register(hist, atom.len()).unwrap();
+        registry.register_for_atoms(dem, &atom).unwrap();
+        registry.register_for_atoms(hist, &atom).unwrap();
 
         app.add_resource(atom);
         app.add_resource(neighbor);
@@ -1257,8 +1257,8 @@ fn run_marshall_twist(mt: MaterialTable, omega_x: f64, preload: f64) -> f64 {
         radius,
     );
     dem.omega[0] = [omega_x, 0.0, 0.0]; // spin about contact normal x̂
-    atom.nlocal = 2;
-    atom.natoms = 2;
+    // SAFETY: core-only fixture layout; no extension rows are resized here.
+    unsafe { atom.set_layout_unchecked(2, atom.nghost(), 2) };
 
     if preload != 0.0 {
         let mut preload_state = [0.0; CONTACT_HISTORY_LEN];
@@ -1271,8 +1271,8 @@ fn run_marshall_twist(mt: MaterialTable, omega_x: f64, preload: f64) -> f64 {
     neighbor.neighbor_indices = vec![1];
 
     let mut registry = AtomDataRegistry::new();
-    registry.try_register(dem, atom.len()).unwrap();
-    registry.try_register(hist, atom.len()).unwrap();
+    registry.register_for_atoms(dem, &atom).unwrap();
+    registry.register_for_atoms(hist, &atom).unwrap();
 
     app.add_resource(atom);
     app.add_resource(neighbor);
@@ -1381,8 +1381,8 @@ fn constant_model_unchanged_with_sds_config() {
         radius,
     );
     dem.omega[0] = [0.0, 10.0, 0.0];
-    atom.nlocal = 2;
-    atom.natoms = 2;
+    // SAFETY: core-only fixture layout; no extension rows are resized here.
+    unsafe { atom.set_layout_unchecked(2, atom.nghost(), 2) };
 
     let mut neighbor = Neighbor::new();
     neighbor.neighbor_offsets = vec![0, 1, 1];
@@ -1407,8 +1407,8 @@ fn constant_model_unchanged_with_sds_config() {
     mt.build_pair_tables();
 
     let mut registry = AtomDataRegistry::new();
-    registry.try_register(dem, atom.len()).unwrap();
-    registry.try_register(hist, atom.len()).unwrap();
+    registry.register_for_atoms(dem, &atom).unwrap();
+    registry.register_for_atoms(hist, &atom).unwrap();
 
     app.add_resource(atom);
     app.add_resource(neighbor);
@@ -1487,16 +1487,16 @@ fn dmt_pulloff_force_matches_theory() {
     atom.dt = 1e-7;
     push_test_atom_with_history(&mut atom, &mut dem, &mut hist, 0, [0.0, 0.0, 0.0], radius);
     push_test_atom_with_history(&mut atom, &mut dem, &mut hist, 1, [sep, 0.0, 0.0], radius);
-    atom.nlocal = 2;
-    atom.natoms = 2;
+    // SAFETY: core-only fixture layout; no extension rows are resized here.
+    unsafe { atom.set_layout_unchecked(2, atom.nghost(), 2) };
 
     let mut neighbor = Neighbor::new();
     neighbor.neighbor_offsets = vec![0, 1, 1];
     neighbor.neighbor_indices = vec![1];
 
     let mut registry = AtomDataRegistry::new();
-    registry.try_register(dem, atom.len()).unwrap();
-    registry.try_register(hist, atom.len()).unwrap();
+    registry.register_for_atoms(dem, &atom).unwrap();
+    registry.register_for_atoms(hist, &atom).unwrap();
 
     app.add_resource(atom);
     app.add_resource(neighbor);
@@ -1545,16 +1545,16 @@ fn dmt_no_force_beyond_contact() {
         [2.0 * radius + gap, 0.0, 0.0],
         radius,
     );
-    atom.nlocal = 2;
-    atom.natoms = 2;
+    // SAFETY: core-only fixture layout; no extension rows are resized here.
+    unsafe { atom.set_layout_unchecked(2, atom.nghost(), 2) };
 
     let mut neighbor = Neighbor::new();
     neighbor.neighbor_offsets = vec![0, 1, 1];
     neighbor.neighbor_indices = vec![1];
 
     let mut registry = AtomDataRegistry::new();
-    registry.try_register(dem, atom.len()).unwrap();
-    registry.try_register(hist, atom.len()).unwrap();
+    registry.register_for_atoms(dem, &atom).unwrap();
+    registry.register_for_atoms(hist, &atom).unwrap();
 
     app.add_resource(atom);
     app.add_resource(neighbor);
@@ -1611,16 +1611,16 @@ fn dmt_newtons_third_law() {
         [0.0019, 0.0, 0.0],
         radius,
     );
-    atom.nlocal = 2;
-    atom.natoms = 2;
+    // SAFETY: core-only fixture layout; no extension rows are resized here.
+    unsafe { atom.set_layout_unchecked(2, atom.nghost(), 2) };
 
     let mut neighbor = Neighbor::new();
     neighbor.neighbor_offsets = vec![0, 1, 1];
     neighbor.neighbor_indices = vec![1];
 
     let mut registry = AtomDataRegistry::new();
-    registry.try_register(dem, atom.len()).unwrap();
-    registry.try_register(hist, atom.len()).unwrap();
+    registry.register_for_atoms(dem, &atom).unwrap();
+    registry.register_for_atoms(hist, &atom).unwrap();
 
     app.add_resource(atom);
     app.add_resource(neighbor);
@@ -1665,16 +1665,16 @@ fn dmt_does_not_break_jkr() {
         [2.0 * radius + gap, 0.0, 0.0],
         radius,
     );
-    atom.nlocal = 2;
-    atom.natoms = 2;
+    // SAFETY: core-only fixture layout; no extension rows are resized here.
+    unsafe { atom.set_layout_unchecked(2, atom.nghost(), 2) };
 
     let mut neighbor = Neighbor::new();
     neighbor.neighbor_offsets = vec![0, 1, 1];
     neighbor.neighbor_indices = vec![1];
 
     let mut registry = AtomDataRegistry::new();
-    registry.try_register(dem, atom.len()).unwrap();
-    registry.try_register(hist, atom.len()).unwrap();
+    registry.register_for_atoms(dem, &atom).unwrap();
+    registry.register_for_atoms(hist, &atom).unwrap();
 
     // Use JKR material table (default adhesion_model = "jkr")
     app.add_resource(atom);
@@ -1716,14 +1716,14 @@ fn hertz_force_scales_as_delta_three_halves() {
         atom.dt = 1e-7;
         push_test_atom_with_history(&mut atom, &mut dem, &mut hist, 0, [0.0, 0.0, 0.0], radius);
         push_test_atom_with_history(&mut atom, &mut dem, &mut hist, 1, [sep, 0.0, 0.0], radius);
-        atom.nlocal = 2;
-        atom.natoms = 2;
+        // SAFETY: core-only fixture layout; no extension rows are resized here.
+        unsafe { atom.set_layout_unchecked(2, atom.nghost(), 2) };
         let mut neighbor = Neighbor::new();
         neighbor.neighbor_offsets = vec![0, 1, 1];
         neighbor.neighbor_indices = vec![1];
         let mut registry = AtomDataRegistry::new();
-        registry.try_register(dem, atom.len()).unwrap();
-        registry.try_register(hist, atom.len()).unwrap();
+        registry.register_for_atoms(dem, &atom).unwrap();
+        registry.register_for_atoms(hist, &atom).unwrap();
         app.add_resource(atom);
         app.add_resource(neighbor);
         app.add_resource(registry);
@@ -1770,14 +1770,14 @@ fn hooke_force_scales_linearly_across_overlaps() {
         atom.dt = 1e-7;
         push_test_atom_with_history(&mut atom, &mut dem, &mut hist, 0, [0.0, 0.0, 0.0], radius);
         push_test_atom_with_history(&mut atom, &mut dem, &mut hist, 1, [sep, 0.0, 0.0], radius);
-        atom.nlocal = 2;
-        atom.natoms = 2;
+        // SAFETY: core-only fixture layout; no extension rows are resized here.
+        unsafe { atom.set_layout_unchecked(2, atom.nghost(), 2) };
         let mut neighbor = Neighbor::new();
         neighbor.neighbor_offsets = vec![0, 1, 1];
         neighbor.neighbor_indices = vec![1];
         let mut registry = AtomDataRegistry::new();
-        registry.try_register(dem, atom.len()).unwrap();
-        registry.try_register(hist, atom.len()).unwrap();
+        registry.register_for_atoms(dem, &atom).unwrap();
+        registry.register_for_atoms(hist, &atom).unwrap();
         app.add_resource(atom);
         app.add_resource(neighbor);
         app.add_resource(registry);
@@ -1823,15 +1823,15 @@ fn hertz_force_matches_analytical_value() {
     atom.dt = 1e-7;
     push_test_atom_with_history(&mut atom, &mut dem, &mut hist, 0, [0.0, 0.0, 0.0], radius);
     push_test_atom_with_history(&mut atom, &mut dem, &mut hist, 1, [sep, 0.0, 0.0], radius);
-    atom.nlocal = 2;
-    atom.natoms = 2;
+    // SAFETY: core-only fixture layout; no extension rows are resized here.
+    unsafe { atom.set_layout_unchecked(2, atom.nghost(), 2) };
 
     let mut neighbor = Neighbor::new();
     neighbor.neighbor_offsets = vec![0, 1, 1];
     neighbor.neighbor_indices = vec![1];
     let mut registry = AtomDataRegistry::new();
-    registry.try_register(dem, atom.len()).unwrap();
-    registry.try_register(hist, atom.len()).unwrap();
+    registry.register_for_atoms(dem, &atom).unwrap();
+    registry.register_for_atoms(hist, &atom).unwrap();
 
     let mt = make_material_table();
     let e_eff = mt.e_eff_ij[0][0];
@@ -1901,8 +1901,8 @@ fn linear_momentum_conserved_during_elastic_contact() {
     );
     atom.vel[0] = [0.1, 0.05, -0.02];
     atom.vel[1] = [-0.05, 0.03, 0.01];
-    atom.nlocal = 2;
-    atom.natoms = 2;
+    // SAFETY: core-only fixture layout; no extension rows are resized here.
+    unsafe { atom.set_layout_unchecked(2, atom.nghost(), 2) };
 
     let initial_momentum = [
         atom.mass[0] * atom.vel[0][0] + atom.mass[1] * atom.vel[1][0],
@@ -1914,8 +1914,8 @@ fn linear_momentum_conserved_during_elastic_contact() {
     neighbor.neighbor_offsets = vec![0, 1, 1];
     neighbor.neighbor_indices = vec![1];
     let mut registry = AtomDataRegistry::new();
-    registry.try_register(dem, atom.len()).unwrap();
-    registry.try_register(hist, atom.len()).unwrap();
+    registry.register_for_atoms(dem, &atom).unwrap();
+    registry.register_for_atoms(hist, &atom).unwrap();
 
     let mut app = App::new();
     app.add_resource(atom);
@@ -1990,15 +1990,15 @@ fn contact_force_symmetry_with_tangential_velocity() {
     atom.vel[1] = [-0.3, 0.1, 0.05];
     dem.omega[0] = [10.0, 20.0, -5.0];
     dem.omega[1] = [-15.0, 5.0, 10.0];
-    atom.nlocal = 2;
-    atom.natoms = 2;
+    // SAFETY: core-only fixture layout; no extension rows are resized here.
+    unsafe { atom.set_layout_unchecked(2, atom.nghost(), 2) };
 
     let mut neighbor = Neighbor::new();
     neighbor.neighbor_offsets = vec![0, 1, 1];
     neighbor.neighbor_indices = vec![1];
     let mut registry = AtomDataRegistry::new();
-    registry.try_register(dem, atom.len()).unwrap();
-    registry.try_register(hist, atom.len()).unwrap();
+    registry.register_for_atoms(dem, &atom).unwrap();
+    registry.register_for_atoms(hist, &atom).unwrap();
 
     app.add_resource(atom);
     app.add_resource(neighbor);
