@@ -55,7 +55,7 @@ fn record_profile(
     if step % 5000 != 0 {
         return;
     }
-    let nlocal = atoms.nlocal as usize;
+    let nlocal = atoms.nlocal() as usize;
     let ylo = domain.boundaries_low[1];
     let yhi = domain.boundaries_high[1];
     let dy = (yhi - ylo) / NBINS as f64;

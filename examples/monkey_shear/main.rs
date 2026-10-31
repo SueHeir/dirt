@@ -108,7 +108,7 @@ fn instrument_blowup(
     if step % 2000 != 0 {
         return;
     }
-    let nlocal = atoms.nlocal as usize;
+    let nlocal = atoms.nlocal() as usize;
 
     // Total kinetic energy Σ ½ m|v|².
     let mut ke = 0.0f64;
@@ -250,7 +250,7 @@ fn instrument_blowup(
 /// integration systems already skip `body_id == 0` atoms, so this only makes the
 /// column lengths consistent for the spatial-sort permutation.
 fn pad_clump_atom_columns(atoms: Res<Atom>, registry: Res<AtomDataRegistry>) {
-    let nlocal = atoms.nlocal as usize;
+    let nlocal = atoms.nlocal() as usize;
     if let Some(mut clump) = registry.get_mut::<ClumpAtom>() {
         while clump.body_id.len() < nlocal {
             clump.body_id.push(0.0);
@@ -271,7 +271,7 @@ fn damp_during_prep(mut atoms: ResMut<Atom>, domain: Res<Domain>) {
     if domain.boundary_vel[0].abs() > 1e-12 {
         return;
     }
-    let nlocal = atoms.nlocal as usize;
+    let nlocal = atoms.nlocal() as usize;
     let dt = atoms.dt;
     if dt <= 0.0 {
         return;
@@ -302,7 +302,7 @@ fn record_shear(
         return;
     }
 
-    let nlocal = atoms.nlocal as usize;
+    let nlocal = atoms.nlocal() as usize;
     let vol = domain.volume;
     if vol <= 0.0 {
         return;

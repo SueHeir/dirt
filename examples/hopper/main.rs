@@ -41,7 +41,7 @@ fn check_settled(
         return;
     }
 
-    let nlocal = atoms.nlocal as usize;
+    let nlocal = atoms.nlocal() as usize;
     let local_ke: f64 = (0..nlocal)
         .map(|i| {
             let vx = atoms.vel[i][0] as f64;

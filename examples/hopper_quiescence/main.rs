@@ -92,7 +92,7 @@ fn main() {
     let total = t0.elapsed().as_secs_f64();
 
     if let Some(atoms) = app.get_resource_ref::<Atom>() {
-        let nlocal = atoms.nlocal as usize;
+        let nlocal = atoms.nlocal() as usize;
         let discharged = (0..nlocal)
             .filter(|&i| (atoms.pos[i][2] as f64) < GATE_Z)
             .count();
@@ -180,7 +180,7 @@ fn write_stats(
     if step % STATS_EVERY != 0 {
         return;
     }
-    let nlocal = atoms.nlocal as usize;
+    let nlocal = atoms.nlocal() as usize;
 
     let mut ke = 0.0;
     let mut discharged = 0usize;
