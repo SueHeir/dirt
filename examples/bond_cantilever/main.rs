@@ -84,7 +84,7 @@ fn record_cantilever(
     // Find the tip locally; if not owned on this rank, contribute z = +inf so
     // the global min reduction yields the owning rank's value.
     let mut local_tip_z = f64::MAX;
-    let nlocal = atoms.nlocal as usize;
+    let nlocal = atoms.nlocal() as usize;
     for i in 0..nlocal {
         if atoms.tag[i] == TIP_TAG {
             local_tip_z = atoms.pos[i][2] as f64;

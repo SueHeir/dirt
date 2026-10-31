@@ -84,8 +84,10 @@ fn main() {
 
 fn run_case(mat: &MaterialCfg, sc: &ScenarioCfg, walls: Walls) -> [f64; 3] {
     let mut app = App::new();
-    app.add_resource(make_atom(sc));
-    app.add_resource(make_registry(sc));
+    let atom = make_atom(sc);
+    let registry = make_registry(sc, &atom);
+    app.add_resource(atom);
+    app.add_resource(registry);
     app.add_resource(make_material_table(mat));
     app.add_resource(walls);
     app.add_update_system(wall_contact_force, ParticleSimScheduleSet::Force);
@@ -113,12 +115,11 @@ fn make_atom(sc: &ScenarioCfg) -> Atom {
             mass,
         )
     };
-    atom.nlocal = 1;
-    atom.natoms = 1;
+    unsafe { atom.set_layout_unchecked(1, 0, 1) };
     atom
 }
 
-fn make_registry(sc: &ScenarioCfg) -> AtomDataRegistry {
+fn make_registry(sc: &ScenarioCfg, atom: &Atom) -> AtomDataRegistry {
     let density = 2500.0;
     let mass = density * 4.0 / 3.0 * std::f64::consts::PI * sc.radius.powi(3);
     let mut dem = DemAtom::new();
@@ -132,7 +133,7 @@ fn make_registry(sc: &ScenarioCfg) -> AtomDataRegistry {
     dem.torque.push([0.0; 3]);
     dem.body_id.push(0.0);
     let mut registry = AtomDataRegistry::new();
-    registry.try_register(dem, 1).unwrap();
+    registry.register_for_atoms(dem, atom).unwrap();
     registry
 }
 

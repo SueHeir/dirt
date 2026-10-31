@@ -54,7 +54,7 @@ fn record_shear(
         return;
     }
 
-    let nlocal = atoms.nlocal as usize;
+    let nlocal = atoms.nlocal() as usize;
     let vol = domain.volume;
     if vol <= 0.0 {
         return;

@@ -65,12 +65,10 @@ fn main() {
         .expect("parse config");
 
     let mut app = App::new();
-    app.add_resource(make_atom(
-        cfg.scenario.radius,
-        cfg.scenario.overlap,
-        cfg.scenario.dt,
-    ));
-    app.add_resource(make_registry(cfg.scenario.radius));
+    let atom = make_atom(cfg.scenario.radius, cfg.scenario.overlap, cfg.scenario.dt);
+    let registry = make_registry(cfg.scenario.radius, &atom);
+    app.add_resource(atom);
+    app.add_resource(registry);
     app.add_resource(make_material_table(&cfg.material));
     app.add_resource(make_walls(&cfg.scenario));
 
@@ -135,12 +133,11 @@ fn make_atom(radius: f64, overlap: f64, dt: f64) -> Atom {
     atom.dt = dt;
     // No extension registry exists in this one-particle benchmark fixture.
     unsafe { atom.push_test_atom(1, [0.0, 0.0, radius - overlap], radius, mass) };
-    atom.nlocal = 1;
-    atom.natoms = 1;
+    unsafe { atom.set_layout_unchecked(1, 0, 1) };
     atom
 }
 
-fn make_registry(radius: f64) -> AtomDataRegistry {
+fn make_registry(radius: f64, atom: &Atom) -> AtomDataRegistry {
     let density = 2500.0;
     let mass = density * 4.0 / 3.0 * std::f64::consts::PI * radius.powi(3);
 
@@ -155,7 +152,7 @@ fn make_registry(radius: f64) -> AtomDataRegistry {
     dem.body_id.push(0.0);
 
     let mut registry = AtomDataRegistry::new();
-    registry.try_register(dem, 1).unwrap();
+    registry.register_for_atoms(dem, atom).unwrap();
     registry
 }
 
