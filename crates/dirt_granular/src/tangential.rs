@@ -109,9 +109,30 @@ impl AtomData for ContactHistoryStore {
     }
 
     unsafe fn apply_permutation(&mut self, perm: &[usize], n: usize) {
-        let new_contacts: Vec<Vec<(u32, ContactHistory, bool)>> =
-            perm.iter().map(|&p| self.contacts[p].clone()).collect();
-        self.contacts[..n].clone_from_slice(&new_contacts);
+        // `perm` is a permutation of `0..n`, so each source row is moved out
+        // exactly once: no per-row clone of the contact lists.
+        let new_contacts: Vec<Vec<(u32, ContactHistory, bool)>> = perm
+            .iter()
+            .map(|&p| std::mem::take(&mut self.contacts[p]))
+            .collect();
+        for (slot, list) in self.contacts[..n].iter_mut().zip(new_contacts) {
+            *slot = list;
+        }
+    }
+
+    // Every hook above is a plain per-row `Vec` operation, so `ParticleStore`
+    // can roll back by truncation instead of cloning every contact list.
+    fn row_local_structural_hooks(&self) -> bool {
+        true
+    }
+
+    // Force kernels only read `contacts[i]` for local `i`, so ghosts carry no
+    // history: the border record is empty and ghost rows start empty.
+    fn pack_border(&self, _i: usize, _buf: &mut Vec<f64>) {}
+
+    unsafe fn unpack_border(&mut self, _buf: &[f64]) -> usize {
+        self.contacts.push(Vec::new());
+        0
     }
 
     fn pack(&self, i: usize, buf: &mut Vec<f64>) {

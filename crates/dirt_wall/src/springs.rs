@@ -241,9 +241,28 @@ impl AtomData for WallSpringStore {
     }
 
     unsafe fn apply_permutation(&mut self, perm: &[usize], n: usize) {
-        let permuted: Vec<Vec<WallSpring>> =
-            perm.iter().map(|&p| self.rows[p].clone()).collect();
-        self.rows[..n].clone_from_slice(&permuted);
+        // `perm` is a permutation of `0..n`: move each row out once, no clones.
+        let permuted: Vec<Vec<WallSpring>> = perm
+            .iter()
+            .map(|&p| std::mem::take(&mut self.rows[p]))
+            .collect();
+        for (slot, row) in self.rows[..n].iter_mut().zip(permuted) {
+            *slot = row;
+        }
+    }
+
+    // Plain per-row `Vec` hooks: `ParticleStore` can roll back by truncation.
+    fn row_local_structural_hooks(&self) -> bool {
+        true
+    }
+
+    // Wall forces act on owned atoms only (`0..nlocal`), so ghosts carry no
+    // wall springs: the border record is empty and ghost rows start empty.
+    fn pack_border(&self, _i: usize, _buf: &mut Vec<f64>) {}
+
+    unsafe fn unpack_border(&mut self, _buf: &[f64]) -> usize {
+        self.rows.push(Vec::new());
+        0
     }
 
     /// Wire format: `count`, then `count` records of
