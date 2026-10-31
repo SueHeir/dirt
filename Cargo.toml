@@ -310,3 +310,13 @@ path = "examples/bench_mdr_elastoplastic_normal/main.rs"
 [[example]]
 name = "bench_hooke_wall_rebound"
 path = "examples/bench_hooke_wall_rebound/main.rs"
+
+# Local preview: build DIRT (and SOIL) against the local grass checkout.
+[patch."https://github.com/SueHeir/grass.git"]
+grass_app = { path = "../grass/crates/grass_app" }
+grass_derive = { path = "../grass/crates/grass_derive" }
+grass_scheduler = { path = "../grass/crates/grass_scheduler" }
+grass_io = { path = "../grass/crates/grass_io" }
+grass_mpi = { path = "../grass/crates/grass_mpi" }
+grass_multi = { path = "../grass/crates/grass_multi" }
+grass_map = { path = "../grass/crates/grass_map" }

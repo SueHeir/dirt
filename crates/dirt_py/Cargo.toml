@@ -1,0 +1,18 @@
+[package]
+name = "dirt_py"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Python module `dirt`: DIRT Apps from Python (preview)"
+publish = false
+
+[lib]
+name = "dirt"
+crate-type = ["cdylib"]
+
+[dependencies]
+dirt_core = { workspace = true, default-features = false, features = ["precision-double"] }
+grass_pyo3 = { path = "../../../grass/crates/grass_pyo3" }
+pyo3 = { version = "0.25", features = ["extension-module", "abi3-py39"] }
+numpy = "0.25"
