@@ -133,7 +133,7 @@ fn record_biaxial(
         loading_top_z,
     });
 
-    let nlocal = atoms.nlocal as usize;
+    let nlocal = atoms.nlocal() as usize;
     let dem = registry.expect::<DemAtom>("record_biaxial");
     let mut kin = [0.0f64; 6];
     let mut solid_volume = 0.0f64;
@@ -216,8 +216,8 @@ fn record_biaxial(
         0.0
     };
     let contacts = acc[13];
-    let coordination = if atoms.natoms > 0 {
-        acc[14] / atoms.natoms as f64
+    let coordination = if atoms.natoms() > 0 {
+        acc[14] / atoms.natoms() as f64
     } else {
         0.0
     };
@@ -288,7 +288,7 @@ fn record_biaxial(
 }
 
 fn contact_metrics(atoms: &Atom, neighbor: &Neighbor, dem: &DemAtom) -> (f64, f64, [f64; 6]) {
-    let nlocal = atoms.nlocal as usize;
+    let nlocal = atoms.nlocal() as usize;
     let mut contacts = 0.0;
     let mut coord_sum = 0.0;
     let mut fabric = [0.0f64; 6];

@@ -81,7 +81,7 @@ fn record_crossover(
     input: Res<Input>,
     mut recorder: ResMut<Recorder>,
 ) {
-    let nlocal = atoms.nlocal as usize;
+    let nlocal = atoms.nlocal() as usize;
     if nlocal == 0 {
         return;
     }

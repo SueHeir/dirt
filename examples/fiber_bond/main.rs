@@ -179,7 +179,7 @@ fn apply_three_step_load(mut atoms: ResMut<Atom>, input: Res<Input>, run_state: 
     if f == 0.0 {
         return;
     }
-    let nlocal = atoms.nlocal as usize;
+    let nlocal = atoms.nlocal() as usize;
     for i in 0..nlocal {
         if atoms.tag[i] == TIP_TAG {
             atoms.force[i][2] += f as dirt_core::soil_core::Accum;
@@ -193,7 +193,7 @@ fn apply_three_step_load(mut atoms: ResMut<Atom>, input: Res<Input>, run_state: 
 /// whereas local indices do not — the recorder resolves index from tag each
 /// sample.
 fn find_endpoint_tags_by_initial_x(atoms: &Atom) -> (Option<u32>, Option<u32>) {
-    let nlocal = atoms.nlocal as usize;
+    let nlocal = atoms.nlocal() as usize;
     if nlocal == 0 {
         return (None, None);
     }
@@ -214,7 +214,7 @@ fn find_endpoint_tags_by_initial_x(atoms: &Atom) -> (Option<u32>, Option<u32>) {
 /// local index and the partner tag.
 fn find_middle_bond(atoms: &Atom, registry: &AtomDataRegistry) -> Option<(usize, u32, u32, f64)> {
     let bonds = registry.get::<BondStore>()?;
-    let nlocal = atoms.nlocal as usize;
+    let nlocal = atoms.nlocal() as usize;
     let mut x_lo = f64::INFINITY;
     let mut x_hi = f64::NEG_INFINITY;
     for i in 0..nlocal {
@@ -272,7 +272,7 @@ fn record_fiber_state(
         };
         let (i_mid_a, tag_mid_a, tag_mid_b, r0_mid) = mid;
         // Partner local index.
-        let i_mid_b = match (0..atoms.nlocal as usize).find(|&k| atoms.tag[k] == tag_mid_b) {
+        let i_mid_b = match (0..atoms.nlocal() as usize).find(|&k| atoms.tag[k] == tag_mid_b) {
             Some(i) => i,
             None => return,
         };
@@ -293,7 +293,7 @@ fn record_fiber_state(
             None => bond_config.bending_stiffness,
         };
 
-        let nlocal_now = atoms.nlocal as usize;
+        let nlocal_now = atoms.nlocal() as usize;
         let il_idx = tag_left.and_then(|t| (0..nlocal_now).find(|&k| atoms.tag[k] == t));
         let ir_idx = tag_right.and_then(|t| (0..nlocal_now).find(|&k| atoms.tag[k] == t));
         let length0 = match (il_idx, ir_idx) {
@@ -328,7 +328,7 @@ fn record_fiber_state(
 
         // Capture initial positions indexed by atom tag so profile rows can
         // be matched up later regardless of any reordering inside the engine.
-        let nlocal = atoms.nlocal as usize;
+        let nlocal = atoms.nlocal() as usize;
         let max_tag = (0..nlocal)
             .map(|i| atoms.tag[i] as usize)
             .max()
@@ -382,7 +382,7 @@ fn record_fiber_state(
             writeln!(bw, "tag_a,tag_b,r0,thr0,thr1,thr2,thr3").ok();
             let hist = registry.expect::<BondHistoryStore>("threshold_dump");
             let bonds = registry.expect::<BondStore>("threshold_dump");
-            let nlocal_now = atoms.nlocal as usize;
+            let nlocal_now = atoms.nlocal() as usize;
             for i in 0..nlocal_now.min(hist.history.len()) {
                 let tag_a = atoms.tag[i];
                 for entry in &hist.history[i] {
@@ -428,7 +428,7 @@ fn record_fiber_state(
     // Endpoint state — resolve tag → local index every sample so we are
     // robust against engine atom-reordering (neighbour-list rebuilds, MPI
     // exchange, etc.).
-    let nlocal_now = atoms.nlocal as usize;
+    let nlocal_now = atoms.nlocal() as usize;
     let i_left = rec
         .tag_left
         .and_then(|t| (0..nlocal_now).find(|&k| atoms.tag[k] == t));
@@ -468,7 +468,7 @@ fn record_fiber_state(
     };
 
     // Middle-bond kinematics + plastic state.
-    let nlocal = atoms.nlocal as usize;
+    let nlocal = atoms.nlocal() as usize;
     let i_a = (0..nlocal).find(|&k| atoms.tag[k] == rec.tag_mid_a);
     let i_b = (0..nlocal).find(|&k| atoms.tag[k] == rec.tag_mid_b);
     let (
@@ -638,7 +638,7 @@ fn record_fiber_state(
     if let Ok(f) = File::create(&profile_path) {
         let mut bw = BufWriter::new(f);
         writeln!(bw, "tag,x0,y0,z0,x,y,z,mass").ok();
-        let nlocal = atoms.nlocal as usize;
+        let nlocal = atoms.nlocal() as usize;
         for i in 0..nlocal {
             let tag = atoms.tag[i] as usize;
             let p0 = rec.initial_pos.get(tag).copied().unwrap_or([0.0; 3]);
@@ -673,7 +673,7 @@ fn record_fiber_state(
             None => return,
         };
         let hist = registry.expect::<BondHistoryStore>("bond_profile");
-        let nlocal = atoms.nlocal as usize;
+        let nlocal = atoms.nlocal() as usize;
         for i in 0..nlocal.min(bonds.bonds.len()).min(hist.history.len()) {
             let tag_a = atoms.tag[i];
             for b in &bonds.bonds[i] {

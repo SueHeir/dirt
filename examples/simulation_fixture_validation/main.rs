@@ -38,8 +38,8 @@ fn emit(name: &str, fixture: dirt_test_utils::SimulationFixture) {
     println!(
         "{name},{},{},{},{},{offsets},{indices},{},{},{},{:.17e}",
         fixture.atom.len(),
-        fixture.atom.nlocal,
-        fixture.atom.natoms,
+        fixture.atom.nlocal(),
+        fixture.atom.natoms(),
         dem_rows,
         fixture.materials.names.len(),
         fixture.materials.e_eff_ij.len(),

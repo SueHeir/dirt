@@ -143,7 +143,7 @@ fn init_recorder(
     .unwrap();
     writeln!(cracks, "step,strain,x_m,y_m,z_m,mode").unwrap();
 
-    let nlocal = atoms.nlocal as usize;
+    let nlocal = atoms.nlocal() as usize;
     let mut y_min = f64::INFINITY;
     let mut y_max = f64::NEG_INFINITY;
     for i in 0..nlocal {
@@ -177,7 +177,7 @@ fn init_recorder(
 
 fn live_bond_set(atoms: &Atom, bonds: &BondStore) -> BTreeSet<(u32, u32)> {
     let mut set = BTreeSet::new();
-    let nlocal = atoms.nlocal as usize;
+    let nlocal = atoms.nlocal() as usize;
     for i in 0..nlocal.min(bonds.bonds.len()) {
         let tag_i = atoms.tag[i];
         for b in &bonds.bonds[i] {
@@ -190,7 +190,7 @@ fn live_bond_set(atoms: &Atom, bonds: &BondStore) -> BTreeSet<(u32, u32)> {
 }
 
 fn avg_y_for_tags(atoms: &Atom, tags: &BTreeSet<u32>) -> Option<f64> {
-    let nlocal = atoms.nlocal as usize;
+    let nlocal = atoms.nlocal() as usize;
     let mut sum = 0.0;
     let mut n = 0usize;
     for i in 0..nlocal {
@@ -203,7 +203,7 @@ fn avg_y_for_tags(atoms: &Atom, tags: &BTreeSet<u32>) -> Option<f64> {
 }
 
 fn tag_index(atoms: &Atom, tag: u32) -> Option<usize> {
-    (0..atoms.nlocal as usize).find(|&i| atoms.tag[i] == tag)
+    (0..atoms.nlocal() as usize).find(|&i| atoms.tag[i] == tag)
 }
 
 fn record_compression_state(
@@ -242,7 +242,7 @@ fn record_compression_state(
     let mut axial_force = 0.0;
     let mut crossing_bonds = 0usize;
 
-    let nlocal = atoms.nlocal as usize;
+    let nlocal = atoms.nlocal() as usize;
     for i in 0..nlocal.min(bonds.bonds.len()) {
         let yi = atoms.pos[i][1] as f64;
         for b in &bonds.bonds[i] {

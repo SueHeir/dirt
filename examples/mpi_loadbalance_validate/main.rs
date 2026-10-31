@@ -60,7 +60,7 @@ fn dump_final_state(
     let path = format!("{dir}/state_e{}_n{ranks}_rank{rank}.csv", info.every);
     let mut f = fs::File::create(&path).expect("cannot create state csv");
     writeln!(f, "tag,x,y,z").unwrap();
-    for i in 0..atoms.nlocal as usize {
+    for i in 0..atoms.nlocal() as usize {
         writeln!(
             f,
             "{},{:.9e},{:.9e},{:.9e}",

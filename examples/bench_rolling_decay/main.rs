@@ -87,7 +87,7 @@ fn init_pure_rolling(
     registry: Res<AtomDataRegistry>,
     mut tracker: ResMut<RollingTracker>,
 ) {
-    if tracker.initialized || atoms.nlocal < 1 {
+    if tracker.initialized || atoms.nlocal() < 1 {
         return;
     }
     let mut dem = registry.expect_mut::<DemAtom>("init_pure_rolling");
@@ -135,7 +135,7 @@ fn record(
     input: Res<Input>,
     mut tracker: ResMut<RollingTracker>,
 ) {
-    if tracker.written || atoms.nlocal == 0 {
+    if tracker.written || atoms.nlocal() == 0 {
         return;
     }
     let tag = match tracker.mover_tag {
@@ -144,7 +144,7 @@ fn record(
     };
     let dem = registry.expect::<DemAtom>("record");
 
-    let i = match (0..atoms.nlocal as usize).find(|&k| atoms.tag[k] == tag) {
+    let i = match (0..atoms.nlocal() as usize).find(|&k| atoms.tag[k] == tag) {
         Some(k) => k,
         None => return,
     };

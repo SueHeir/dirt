@@ -39,7 +39,7 @@ fn main() {
 }
 
 fn index_of_tag(atoms: &Atom, tag: u32) -> Option<usize> {
-    (0..atoms.nlocal as usize).find(|&i| atoms.tag[i] == tag)
+    (0..atoms.nlocal() as usize).find(|&i| atoms.tag[i] == tag)
 }
 
 fn record_bridge(
@@ -49,11 +49,11 @@ fn record_bridge(
     input: Res<Input>,
     mut tracker: ResMut<BridgeTracker>,
 ) {
-    if tracker.finished || atoms.nlocal < 2 {
+    if tracker.finished || atoms.nlocal() < 2 {
         return;
     }
     if tracker.moving_tag.is_none() {
-        for i in 0..atoms.nlocal as usize {
+        for i in 0..atoms.nlocal() as usize {
             let speed2 = atoms.vel[i][0] as f64 * atoms.vel[i][0] as f64
                 + atoms.vel[i][1] as f64 * atoms.vel[i][1] as f64
                 + atoms.vel[i][2] as f64 * atoms.vel[i][2] as f64;
