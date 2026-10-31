@@ -621,9 +621,28 @@ impl AtomData for BondHistoryStore {
     }
 
     unsafe fn apply_permutation(&mut self, perm: &[usize], n: usize) {
-        let new_history: Vec<Vec<BondHistoryEntry>> =
-            perm.iter().map(|&p| self.history[p].clone()).collect();
-        self.history[..n].clone_from_slice(&new_history);
+        // `perm` is a permutation of `0..n`: move each row out once, no clones.
+        let new_history: Vec<Vec<BondHistoryEntry>> = perm
+            .iter()
+            .map(|&p| std::mem::take(&mut self.history[p]))
+            .collect();
+        for (slot, list) in self.history[..n].iter_mut().zip(new_history) {
+            *slot = list;
+        }
+    }
+
+    // Plain per-row `Vec` hooks: `ParticleStore` can roll back by truncation.
+    fn row_local_structural_hooks(&self) -> bool {
+        true
+    }
+
+    // `bond_force` only reads `history[i]` for local `i`, so ghosts carry no
+    // bond history: the border record is empty and ghost rows start empty.
+    fn pack_border(&self, _i: usize, _buf: &mut Vec<f64>) {}
+
+    unsafe fn unpack_border(&mut self, _buf: &[f64]) -> usize {
+        self.history.push(Vec::new());
+        0
     }
 
     /// Wire format: `[count, (partner_tag, dt[3], dθ[3], thr[4], θ_p_bend[3],
