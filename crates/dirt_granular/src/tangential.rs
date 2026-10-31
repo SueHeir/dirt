@@ -126,14 +126,9 @@ impl AtomData for ContactHistoryStore {
         true
     }
 
-    // Force kernels only read `contacts[i]` for local `i`, so ghosts carry no
-    // history: the border record is empty and ghost rows start empty.
-    fn pack_border(&self, _i: usize, _buf: &mut Vec<f64>) {}
-
-    unsafe fn unpack_border(&mut self, _buf: &[f64]) -> usize {
-        self.contacts.push(Vec::new());
-        0
-    }
+    // Ghosts keep the full record (default `pack_border`): when a boundary
+    // pair changes which rank lists it at a rebuild, the new holder recovers
+    // the spring from the ghost's copy (`find_contact_history`).
 
     fn pack(&self, i: usize, buf: &mut Vec<f64>) {
         if i < self.contacts.len() {
