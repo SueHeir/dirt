@@ -8,7 +8,7 @@
 //! force accumulator to `data/wall_activate_by_name_results.csv`.
 
 use dirt_core::dirt_atom::DemAtom;
-use dirt_core::dirt_wall::wall_contact_force;
+use dirt_core::dirt_wall::{wall_contact_force, WallSpringStore};
 use dirt_core::prelude::*;
 use serde::Deserialize;
 use std::fs;
@@ -153,6 +153,10 @@ fn make_registry(radius: f64, atom: &Atom) -> AtomDataRegistry {
 
     let mut registry = AtomDataRegistry::new();
     registry.register_for_atoms(dem, atom).unwrap();
+    // `wall_contact_force` keeps per-atom wall spring history in this store.
+    registry
+        .register_for_atoms(WallSpringStore::new(), atom)
+        .unwrap();
     registry
 }
 

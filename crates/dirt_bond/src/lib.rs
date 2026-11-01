@@ -2036,14 +2036,16 @@ Bonds
         let radius = 0.001;
         push_dem_test_atom(&mut atom, &mut dem, 1, [0.0, 0.0, 0.0], radius);
         push_dem_test_atom(&mut atom, &mut dem, 2, [0.002, 0.0, 0.0], radius);
-        atom.nlocal = 2;
-        atom.natoms = 2;
+        // SAFETY: test fixture sets the ownership partition directly.
+        unsafe { atom.set_layout_unchecked(2, atom.nghost(), 2) };
 
         let mut registry = AtomDataRegistry::new();
-        registry.try_register(dem, atom.len()).unwrap();
-        registry.try_register(BondStore::new(), atom.len()).unwrap();
+        registry.register_for_atoms(dem, &atom).unwrap();
         registry
-            .try_register(BondHistoryStore::new(), atom.len())
+            .register_for_atoms(BondStore::new(), &atom)
+            .unwrap();
+        registry
+            .register_for_atoms(BondHistoryStore::new(), &atom)
             .unwrap();
 
         let mut domain = soil_core::Domain::new();
@@ -2078,14 +2080,16 @@ Bonds
         let radius = 0.001;
         push_dem_test_atom(&mut atom, &mut dem, 1, [0.0, 0.0, 0.0], radius);
         push_dem_test_atom(&mut atom, &mut dem, 2, [0.01, 0.0, 0.0], radius);
-        atom.nlocal = 2;
-        atom.natoms = 2;
+        // SAFETY: test fixture sets the ownership partition directly.
+        unsafe { atom.set_layout_unchecked(2, atom.nghost(), 2) };
 
         let mut registry = AtomDataRegistry::new();
-        registry.try_register(dem, atom.len()).unwrap();
-        registry.try_register(BondStore::new(), atom.len()).unwrap();
+        registry.register_for_atoms(dem, &atom).unwrap();
         registry
-            .try_register(BondHistoryStore::new(), atom.len())
+            .register_for_atoms(BondStore::new(), &atom)
+            .unwrap();
+        registry
+            .register_for_atoms(BondHistoryStore::new(), &atom)
             .unwrap();
 
         let mut domain = soil_core::Domain::new();
@@ -2410,6 +2414,19 @@ format = "lammps_data"
         assert_eq!(cfg.format.as_deref(), Some("lammps_data"));
     }
 
+    /// A core-only `Atom` with `n` local rows, for registering a store whose
+    /// row count must match.
+    fn core_atoms(n: usize) -> soil_core::Atom {
+        let mut atoms = soil_core::Atom::new();
+        for tag in 0..n {
+            // SAFETY: core-only fixture; the ownership partition is set below.
+            unsafe { atoms.push_test_atom(tag as u32, [0.0; 3], 0.001, 1.0) };
+        }
+        // SAFETY: no extensions are registered and every pushed row is local.
+        unsafe { atoms.set_layout_unchecked(n as u32, 0, n as u64) };
+        atoms
+    }
+
     #[test]
     fn extend_ghost_cutoff_respects_max_bond_r0() {
         // Registry with a BondStore carrying a known max r0; Domain starts with
@@ -2442,7 +2459,9 @@ format = "lammps_data"
 
         let mut registry = AtomDataRegistry::new();
         let atom_count = bond_store.len();
-        registry.try_register(bond_store, atom_count).unwrap();
+        registry
+            .register_for_atoms(bond_store, &core_atoms(atom_count))
+            .unwrap();
 
         let mut domain = soil_core::Domain::new();
         domain.ghost_cutoff = 0.001; // deliberately too small
@@ -2480,7 +2499,9 @@ format = "lammps_data"
 
         let mut registry = AtomDataRegistry::new();
         let atom_count = bond_store.len();
-        registry.try_register(bond_store, atom_count).unwrap();
+        registry
+            .register_for_atoms(bond_store, &core_atoms(atom_count))
+            .unwrap();
 
         let mut domain = soil_core::Domain::new();
         domain.ghost_cutoff = 0.001;
@@ -2513,7 +2534,9 @@ format = "lammps_data"
 
         let mut registry = AtomDataRegistry::new();
         let atom_count = bond_store.len();
-        registry.try_register(bond_store, atom_count).unwrap();
+        registry
+            .register_for_atoms(bond_store, &core_atoms(atom_count))
+            .unwrap();
 
         let mut domain = soil_core::Domain::new();
         domain.ghost_cutoff = 0.05; // already larger than 0.002 × 2.5 = 0.005
