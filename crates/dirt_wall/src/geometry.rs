@@ -205,6 +205,15 @@ pub struct Walls {
 }
 
 impl Walls {
+    /// True when at least one wall of any kind is active. When this is false
+    /// the wall force pass has nothing to evaluate and returns early.
+    pub fn any_active(&self) -> bool {
+        self.active.iter().any(|&a| a)
+            || self.cylinder_active.iter().any(|&a| a)
+            || self.sphere_active.iter().any(|&a| a)
+            || self.region_active.iter().any(|&a| a)
+    }
+
     /// Deactivate all walls (of any type) whose `name` matches the given string.
     ///
     /// Deactivated walls are skipped during contact force computation and
