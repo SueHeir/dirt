@@ -309,7 +309,7 @@ pub fn quiescent_contact_force(
         *m = 0.0;
     }
 
-    let nlocal = atoms.nlocal as usize;
+    let nlocal = atoms.nlocal() as usize;
     let mut overlap_warnings = 0usize;
 
     let sleep_skip = store.sleep_skip_on;

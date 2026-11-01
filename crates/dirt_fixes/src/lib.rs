@@ -941,6 +941,10 @@ gz = -9.81"#,
 ///
 /// Ghost atoms (index ≥ `nlocal`) are not affected.
 pub fn apply_gravity(mut atoms: ResMut<Atom>, gravity: Res<GravityConfig>) {
+    // g = 0 adds nothing; skip the pass (and the write to every force row).
+    if gravity.gx == 0.0 && gravity.gy == 0.0 && gravity.gz == 0.0 {
+        return;
+    }
     for i in 0..atoms.nlocal() as usize {
         atoms.force[i][0] += (atoms.mass[i] as f64 * gravity.gx) as Accum;
         atoms.force[i][1] += (atoms.mass[i] as f64 * gravity.gy) as Accum;
