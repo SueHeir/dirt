@@ -1555,8 +1555,8 @@ misspelled_force = 1.0
         atom.dt = 1e-6;
         // This fixture has no registered extensions.
         unsafe { atom.push_test_atom(0, [0.0; 3], 0.001, mass) };
-        atom.nlocal = 1;
-        atom.natoms = 1;
+        // SAFETY: test fixture sets the ownership partition directly.
+        unsafe { atom.set_layout_unchecked(1, atom.nghost(), 1) };
         atom
     }
 
