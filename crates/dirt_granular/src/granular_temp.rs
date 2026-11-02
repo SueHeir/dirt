@@ -115,7 +115,7 @@ pub fn print_granular_temperature(
     };
     let result = fs::create_dir_all(&base_dir);
     if let Err(_error) = result {
-        println!("Could not create file directory {}", base_dir)
+        grass_app::say!("Could not create file directory {}", base_dir)
     }
     let data_path = format!("{}/GranularTemp.txt", base_dir);
     let mut file = if run_state.total_cycle == 0 {

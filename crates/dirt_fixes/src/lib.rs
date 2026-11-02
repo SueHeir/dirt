@@ -564,37 +564,37 @@ fn setup_fixes(registry: Res<FixesRegistry>, comm: Res<CommResource>, groups: Re
 
     // Print a summary of all active fixes on rank 0.
     for f in &registry.add_forces {
-        println!(
+        grass_app::say!(
             "Fix addforce: group='{}', fx={}, fy={}, fz={}",
             f.group, f.fx, f.fy, f.fz
         );
     }
     for f in &registry.set_forces {
-        println!(
+        grass_app::say!(
             "Fix setforce: group='{}', fx={}, fy={}, fz={}",
             f.group, f.fx, f.fy, f.fz
         );
     }
     for f in &registry.move_linears {
-        println!(
+        grass_app::say!(
             "Fix move_linear: group='{}', vx={}, vy={}, vz={}",
             f.group, f.vx, f.vy, f.vz
         );
     }
     for f in &registry.freezes {
-        println!("Fix freeze: group='{}'", f.group);
+        grass_app::say!("Fix freeze: group='{}'", f.group);
     }
     for f in &registry.viscous {
-        println!("Fix viscous: group='{}', gamma={}", f.group, f.gamma);
+        grass_app::say!("Fix viscous: group='{}', gamma={}", f.group, f.gamma);
     }
     for f in &registry.cundall {
-        println!(
+        grass_app::say!(
             "Fix cundall: group='{}', gamma_l={}, gamma_a={}",
             f.group, f.gamma_l, f.gamma_a
         );
     }
     for f in &registry.nve_limit {
-        println!(
+        grass_app::say!(
             "Fix nve_limit: group='{}', max_displacement={}",
             f.group, f.max_displacement
         );
