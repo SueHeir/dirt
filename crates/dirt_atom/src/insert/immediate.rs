@@ -234,7 +234,7 @@ pub fn dem_insert_atoms(
                             .expect(
                                 "rate insertion was validated during fallible plugin preflight",
                             );
-                    println!(
+                    grass_app::say!(
                         "DemAtomInsert: registering rate-based insertion for material '{}' (rate={}/every {})",
                         mat_name,
                         rate,
@@ -261,7 +261,7 @@ pub fn dem_insert_atoms(
                     )
                     .expect("random insertion was validated during fallible plugin preflight");
                     if comm.rank() == 0 {
-                        println!(
+                        grass_app::say!(
                             "DemAtomInsert: inserting {} particles of material '{}' (r={}, rho={}, E={}, nu={})",
                             count,
                             mat_name,

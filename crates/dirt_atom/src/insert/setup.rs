@@ -284,7 +284,7 @@ pub(super) fn calculate_delta_time(
     if config_dt > 0.0 {
         atoms.dt = config_dt;
         if comm.rank() == 0 {
-            println!("Using {} for delta time (from config)", config_dt);
+            grass_app::say!("Using {} for delta time (from config)", config_dt);
         }
         return;
     }
@@ -306,7 +306,7 @@ pub(super) fn calculate_delta_time(
     dt = comm.all_reduce_min_f64(dt);
 
     if comm.rank() == 0 {
-        println!("Using {} for delta time", dt * 0.15);
+        grass_app::say!("Using {} for delta time", dt * 0.15);
     }
     atoms.dt = dt * 0.15;
 }

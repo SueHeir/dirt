@@ -461,7 +461,7 @@ fn measure_plane_report(
         plane.pending_thermo = (global_total, mass_flow_rate, crossing_rate);
 
         if comm.rank() == 0 {
-            println!(
+            grass_app::say!(
                 "  [{}] crossings={}, mass_flow_rate={:.6e} kg/s, crossing_rate={:.1} /s",
                 plane.name, global_total as u64, mass_flow_rate, crossing_rate,
             );

@@ -986,7 +986,7 @@ pub fn auto_bond_touching(
         }
 
         if comm.rank() == 0 {
-            println!("DemBond: auto-bonded {} pairs", bond_count);
+            grass_app::say!("DemBond: auto-bonded {} pairs", bond_count);
         }
     });
 }
@@ -1017,7 +1017,7 @@ pub fn load_bonds_from_file(
         Ok(Some(b)) => b,
         Ok(None) => {
             if comm.rank() == 0 {
-                println!(
+                grass_app::say!(
                     "DemBond: no Bonds section found in '{}', skipping",
                     file_path
                 );
@@ -1085,7 +1085,7 @@ pub fn load_bonds_from_file(
         }
 
         if comm.rank() == 0 {
-            println!(
+            grass_app::say!(
                 "DemBond: loaded {} bonds from LAMMPS data file '{}'",
                 bond_count, file_path
             );
@@ -1175,7 +1175,7 @@ pub fn extend_ghost_cutoff_for_bonds(
         let old = domain.ghost_cutoff;
         domain.ghost_cutoff = required;
         if comm.rank() == 0 {
-            println!(
+            grass_app::say!(
                 "DemBond: extended ghost_cutoff {:.6} → {:.6} (max r₀ = {:.6} × multiplier {:.2})",
                 old, required, global_max_r0, bond_config.ghost_cutoff_multiplier
             );

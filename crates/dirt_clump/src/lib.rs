@@ -557,7 +557,7 @@ fn extend_ghost_cutoff_for_clumps(
         let extension = 2.0 * max_r_bound;
         domain.ghost_cutoff += extension;
         if comm.rank() == 0 {
-            println!(
+            grass_app::say!(
                 "ClumpPlugin: extended ghost_cutoff by {:.6} (2 * R_bound={:.6}) → {:.6}",
                 extension, max_r_bound, domain.ghost_cutoff
             );
@@ -1159,7 +1159,7 @@ fn clump_insert_atoms(
             ],
         });
 
-        println!(
+        grass_app::say!(
             "ClumpInsert: inserting {} '{}' clumps (eff_r={:.4}mm, rho={}, mat='{}')",
             insert.count,
             insert.definition,
