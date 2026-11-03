@@ -10,13 +10,28 @@ use std::rc::Rc;
 
 use cubecl::prelude::*;
 use grass_gpu::cubecl;
-use soil_gpu::neighbor_slots::{slot_clear_from, slot_lookup, slot_write, MAX_CONTACTS, SENTINEL};
+use soil_gpu::neighbor_slots::{slot_clear_from, slot_find, MAX_CONTACTS, PAYLOAD, SENTINEL};
 use soil_gpu::{
     DeviceColumn, GpuDevice, GpuForce, GpuReal, GpuState, Grid, NeighborSlots, StepColumns,
 };
 
-/// Per-row material parameters for a pair table: `[e_eff, beta, g_eff, mu, mu_roll, mu_twist]`.
-pub const PAIR_FIELDS: usize = 6;
+/// Per-row material parameters for a pair table: `[e_eff, beta, g_eff, mu, mu_roll, mu_twist,
+/// k_roll, gamma_roll, k_twist, gamma_twist]`.
+pub const PAIR_FIELDS: usize = 10;
+
+/// Floats per contact with spring-based rolling or twisting: sliding, rolling, twisting.
+pub const SPRING_PAYLOAD: usize = 7;
+
+/// Rolling models the kernels run.
+pub const ROLLING_CONSTANT: i32 = 0;
+/// See [`ROLLING_CONSTANT`].
+pub const ROLLING_SDS: i32 = 1;
+/// Twisting models the kernels run.
+pub const TWISTING_CONSTANT: i32 = 0;
+/// See [`TWISTING_CONSTANT`].
+pub const TWISTING_SDS: i32 = 1;
+/// See [`TWISTING_CONSTANT`].
+pub const TWISTING_MARSHALL: i32 = 2;
 
 /// Contact parameters for each pair of atom types, flattened by `type_i * ntypes + type_j`.
 #[derive(Clone, Debug)]
@@ -25,6 +40,10 @@ pub struct MaterialPairs {
     pub ntypes: usize,
     /// `ntypes * ntypes * PAIR_FIELDS` values.
     pub rows: Vec<GpuReal>,
+    /// [`ROLLING_CONSTANT`] or [`ROLLING_SDS`].
+    pub rolling_model: i32,
+    /// [`TWISTING_CONSTANT`], [`TWISTING_SDS`] or [`TWISTING_MARSHALL`].
+    pub twisting_model: i32,
 }
 
 impl MaterialPairs {
@@ -32,7 +51,18 @@ impl MaterialPairs {
     pub fn uniform(e_eff: GpuReal, beta: GpuReal, g_eff: GpuReal, mu: GpuReal) -> Self {
         Self {
             ntypes: 1,
-            rows: vec![e_eff, beta, g_eff, mu, 0.0, 0.0],
+            rows: vec![e_eff, beta, g_eff, mu, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            rolling_model: ROLLING_CONSTANT,
+            twisting_model: TWISTING_CONSTANT,
+        }
+    }
+
+    /// Floats each contact keeps: more with spring-based rolling or twisting.
+    pub fn payload_len(&self) -> usize {
+        if self.rolling_model == ROLLING_CONSTANT && self.twisting_model == TWISTING_CONSTANT {
+            PAYLOAD
+        } else {
+            SPRING_PAYLOAD
         }
     }
 }
@@ -115,6 +145,10 @@ fn contact_force<F: Float>(
     let zero = F::new(0.0f32);
     let (nx_cells, ny_cells, nz_cells) = (sizes[1], sizes[2], sizes[3]);
     let ntypes = sizes[4] as u32;
+    let rolling_model = sizes[5];
+    let twisting_model = sizes[6];
+    let stride = sizes[7] as u32;
+    let keeps_rotation = stride > 3u32;
     let (dt, advance, lx, ly, lz, tilt_xy, dv_xy) = (
         params[0], params[1], params[2], params[3], params[4], params[5], params[6],
     );
@@ -290,19 +324,33 @@ fn contact_force<F: Float>(
                                                 let vt_z = vr_z - v_n * nz;
 
                                                 let partner = tag[j];
-                                                let old = slot_lookup::<F>(
-                                                    old_partner,
-                                                    old_payload,
-                                                    i_u32,
-                                                    partner,
-                                                );
-                                                let s_dot_n = old.0 * nx + old.1 * ny + old.2 * nz;
+                                                let found = slot_find(old_partner, i_u32, partner);
+                                                let mut old_x = zero;
+                                                let mut old_y = zero;
+                                                let mut old_z = zero;
+                                                let mut roll_x_old = zero;
+                                                let mut roll_y_old = zero;
+                                                let mut roll_z_old = zero;
+                                                let mut twist_old = zero;
+                                                if found != 0xFFFF_FFFFu32 {
+                                                    let at = (found * stride) as usize;
+                                                    old_x = old_payload[at];
+                                                    old_y = old_payload[at + 1];
+                                                    old_z = old_payload[at + 2];
+                                                    if keeps_rotation {
+                                                        roll_x_old = old_payload[at + 3];
+                                                        roll_y_old = old_payload[at + 4];
+                                                        roll_z_old = old_payload[at + 5];
+                                                        twist_old = old_payload[at + 6];
+                                                    }
+                                                }
+                                                let s_dot_n = old_x * nx + old_y * ny + old_z * nz;
                                                 let mut sx =
-                                                    old.0 - s_dot_n * nx + vt_x * dt * advance;
+                                                    old_x - s_dot_n * nx + vt_x * dt * advance;
                                                 let mut sy =
-                                                    old.1 - s_dot_n * ny + vt_y * dt * advance;
+                                                    old_y - s_dot_n * ny + vt_y * dt * advance;
                                                 let mut sz =
-                                                    old.2 - s_dot_n * nz + vt_z * dt * advance;
+                                                    old_z - s_dot_n * nz + vt_z * dt * advance;
 
                                                 let f_t_max = mu * F::abs(f_n_mag);
                                                 let spring =
@@ -338,37 +386,129 @@ fn contact_force<F: Float>(
                                                 ty += r1z * ft_x - r1x * ft_z;
                                                 tz += r1x * ft_y - r1y * ft_x;
 
-                                                // Constant-torque rolling and twisting friction. Each atom's own view of the
-                                                // relative spin gives equal and opposite torques on the two atoms.
+                                                // Rolling and twisting friction. Each atom's own view of the relative spin gives
+                                                // equal and opposite torques on the two atoms.
                                                 let or_x = wix - wjx;
                                                 let or_y = wiy - wjy;
                                                 let or_z = wiz - wjz;
                                                 let or_n = or_x * nx + or_y * ny + or_z * nz;
+                                                let roll_x = or_x - or_n * nx;
+                                                let roll_y = or_y - or_n * ny;
+                                                let roll_z = or_z - or_n * nz;
+                                                let mut rd_x = zero;
+                                                let mut rd_y = zero;
+                                                let mut rd_z = zero;
+                                                let mut twist = twist_old;
                                                 if mu_roll > zero {
-                                                    let roll_x = or_x - or_n * nx;
-                                                    let roll_y = or_y - or_n * ny;
-                                                    let roll_z = or_z - or_n * nz;
-                                                    let roll_mag = F::sqrt(
-                                                        roll_x * roll_x
-                                                            + roll_y * roll_y
-                                                            + roll_z * roll_z,
-                                                    );
-                                                    if roll_mag > rotation_epsilon {
-                                                        let scale =
-                                                            mu_roll * F::abs(f_n_mag) * r_eff
-                                                                / roll_mag;
-                                                        tx -= scale * roll_x;
-                                                        ty -= scale * roll_y;
-                                                        tz -= scale * roll_z;
+                                                    if rolling_model == comptime!(ROLLING_SDS) {
+                                                        // Spring-dashpot-slider: the spring leaves the normal plane with the contact,
+                                                        // and the slider caps the torque and rescales the spring to match.
+                                                        let k_roll = pairs[row + 6];
+                                                        let gamma_roll = pairs[row + 7];
+                                                        let rd_n = roll_x_old * nx
+                                                            + roll_y_old * ny
+                                                            + roll_z_old * nz;
+                                                        rd_x = roll_x_old - rd_n * nx
+                                                            + roll_x * dt * advance;
+                                                        rd_y = roll_y_old - rd_n * ny
+                                                            + roll_y * dt * advance;
+                                                        rd_z = roll_z_old - rd_n * nz
+                                                            + roll_z * dt * advance;
+                                                        let mut tr_x =
+                                                            -(k_roll * rd_x) - gamma_roll * roll_x;
+                                                        let mut tr_y =
+                                                            -(k_roll * rd_y) - gamma_roll * roll_y;
+                                                        let mut tr_z =
+                                                            -(k_roll * rd_z) - gamma_roll * roll_z;
+                                                        let tr_mag = F::sqrt(
+                                                            tr_x * tr_x + tr_y * tr_y + tr_z * tr_z,
+                                                        );
+                                                        let tau_max =
+                                                            mu_roll * F::abs(f_n_mag) * r_eff;
+                                                        if tr_mag > tau_max && tr_mag > epsilon {
+                                                            let scale = tau_max / tr_mag;
+                                                            tr_x *= scale;
+                                                            tr_y *= scale;
+                                                            tr_z *= scale;
+                                                            if k_roll > epsilon {
+                                                                rd_x = -(tr_x
+                                                                    + gamma_roll * roll_x)
+                                                                    / k_roll;
+                                                                rd_y = -(tr_y
+                                                                    + gamma_roll * roll_y)
+                                                                    / k_roll;
+                                                                rd_z = -(tr_z
+                                                                    + gamma_roll * roll_z)
+                                                                    / k_roll;
+                                                            }
+                                                        }
+                                                        tx += tr_x;
+                                                        ty += tr_y;
+                                                        tz += tr_z;
+                                                    } else {
+                                                        let roll_mag = F::sqrt(
+                                                            roll_x * roll_x
+                                                                + roll_y * roll_y
+                                                                + roll_z * roll_z,
+                                                        );
+                                                        if roll_mag > rotation_epsilon {
+                                                            let scale =
+                                                                mu_roll * F::abs(f_n_mag) * r_eff
+                                                                    / roll_mag;
+                                                            tx -= scale * roll_x;
+                                                            ty -= scale * roll_y;
+                                                            tz -= scale * roll_z;
+                                                        }
                                                     }
                                                 }
-                                                if mu_twist > zero
-                                                    && F::abs(or_n) > rotation_epsilon
+                                                if twisting_model == comptime!(TWISTING_CONSTANT) {
+                                                    if mu_twist > zero
+                                                        && F::abs(or_n) > rotation_epsilon
+                                                    {
+                                                        let mut tau =
+                                                            mu_twist * F::abs(f_n_mag) * r_eff;
+                                                        if or_n > zero {
+                                                            tau = -tau;
+                                                        }
+                                                        tx += tau * nx;
+                                                        ty += tau * ny;
+                                                        tz += tau * nz;
+                                                    }
+                                                } else if twisting_model
+                                                    == comptime!(TWISTING_MARSHALL)
+                                                    || mu_twist > zero
                                                 {
-                                                    let mut tau =
+                                                    // SDS takes its coefficients from the table. Marshall derives them from the
+                                                    // tangential model and the Hertz contact radius.
+                                                    let mut k_twist = pairs[row + 8];
+                                                    let mut gamma_twist = pairs[row + 9];
+                                                    let mut tau_max =
                                                         mu_twist * F::abs(f_n_mag) * r_eff;
-                                                    if or_n > zero {
-                                                        tau = -tau;
+                                                    if twisting_model
+                                                        == comptime!(TWISTING_MARSHALL)
+                                                    {
+                                                        let a_sq = delta * r_eff;
+                                                        k_twist = F::new(0.5f32) * k_t * a_sq;
+                                                        gamma_twist =
+                                                            F::new(0.5f32) * gamma_t * a_sq;
+                                                        tau_max = F::new(2.0f32) / F::new(3.0f32)
+                                                            * F::sqrt(a_sq)
+                                                            * mu
+                                                            * F::abs(f_n_mag);
+                                                    }
+                                                    twist += or_n * dt * advance;
+                                                    let mut tau =
+                                                        -(k_twist * twist) - gamma_twist * or_n;
+                                                    if F::abs(tau) > tau_max {
+                                                        if tau > zero {
+                                                            tau = tau_max;
+                                                        } else {
+                                                            tau = -tau_max;
+                                                        }
+                                                        if k_twist > epsilon {
+                                                            twist = -(tau + gamma_twist * or_n)
+                                                                / k_twist;
+                                                        }
                                                     }
                                                     tx += tau * nx;
                                                     ty += tau * ny;
@@ -376,14 +516,20 @@ fn contact_force<F: Float>(
                                                 }
 
                                                 if nslot < comptime!(MAX_CONTACTS as u32) {
-                                                    slot_write::<F>(
-                                                        new_partner,
-                                                        new_payload,
-                                                        i_u32,
-                                                        nslot,
-                                                        partner,
-                                                        (sx, sy, sz),
-                                                    );
+                                                    let slot = i_u32
+                                                        * comptime!(MAX_CONTACTS as u32)
+                                                        + nslot;
+                                                    new_partner[slot as usize] = partner;
+                                                    let at = (slot * stride) as usize;
+                                                    new_payload[at] = sx;
+                                                    new_payload[at + 1] = sy;
+                                                    new_payload[at + 2] = sz;
+                                                    if keeps_rotation {
+                                                        new_payload[at + 3] = rd_x;
+                                                        new_payload[at + 4] = rd_y;
+                                                        new_payload[at + 5] = rd_z;
+                                                        new_payload[at + 6] = twist;
+                                                    }
                                                     nslot += 1u32;
                                                 }
                                             }
@@ -413,7 +559,8 @@ pub struct GranularForce {
     n_force: u32,
     omega: usize,
     sizes: DeviceColumn,
-    ntypes: i32,
+    /// `[ntypes, rolling_model, twisting_model, payload_len]`
+    models: [i32; 4],
     pairs: DeviceColumn,
     params: DeviceColumn,
     params_prime: DeviceColumn,
@@ -468,7 +615,7 @@ impl GranularColumns {
     pub fn write_slots(&self, rows: usize, partner: &[u32], payload: &[GpuReal]) {
         let mut slots = self.slots.borrow_mut();
         if slots.len() != rows {
-            *slots = NeighborSlots::new(self.gpu.clone(), rows);
+            *slots = NeighborSlots::with_payload(self.gpu.clone(), rows, slots.payload_len());
         }
         slots.write_for_next(partner, payload);
     }
@@ -504,12 +651,22 @@ impl GranularForce {
             ))),
             bond_tag: Rc::new(RefCell::new(DeviceColumn::from_slice(&gpu, &[0u32]))),
             bond_alive: Rc::new(RefCell::new(DeviceColumn::from_slice(&gpu, &[0u32]))),
-            slots: Rc::new(RefCell::new(NeighborSlots::new(gpu.clone(), n))),
+            slots: Rc::new(RefCell::new(NeighborSlots::with_payload(
+                gpu.clone(),
+                n,
+                pairs.payload_len(),
+            ))),
             gpu: gpu.clone(),
         };
         Self {
             n_force: n as u32,
             omega,
+            models: [
+                pairs.ntypes as i32,
+                pairs.rolling_model,
+                pairs.twisting_model,
+                pairs.payload_len() as i32,
+            ],
             sizes: DeviceColumn::from_slice(
                 &gpu,
                 &[
@@ -518,9 +675,11 @@ impl GranularForce {
                     grid.n[1],
                     grid.n[2],
                     pairs.ntypes as i32,
+                    pairs.rolling_model,
+                    pairs.twisting_model,
+                    pairs.payload_len() as i32,
                 ],
             ),
-            ntypes: pairs.ntypes as i32,
             pairs: DeviceColumn::from_slice(&gpu, &pairs.rows),
             params: DeviceColumn::from_slice(&gpu, &config.params(1.0)),
             params_prime: DeviceColumn::from_slice(&gpu, &config.params(0.0)),
@@ -576,7 +735,16 @@ impl GpuForce for GranularForce {
         self.n_force = n_force as u32;
         self.sizes = DeviceColumn::from_slice(
             &self.columns.gpu,
-            &[n_force as i32, grid.n[0], grid.n[1], grid.n[2], self.ntypes],
+            &[
+                n_force as i32,
+                grid.n[0],
+                grid.n[1],
+                grid.n[2],
+                self.models[0],
+                self.models[1],
+                self.models[2],
+                self.models[3],
+            ],
         );
     }
 
@@ -661,7 +829,11 @@ mod tests {
         let (mu_roll, mu_twist) = (0.1, 0.05);
         let pairs = MaterialPairs {
             ntypes: 1,
-            rows: vec![1.0e6, 0.0, 4.0e5, 0.0, mu_roll, mu_twist],
+            rows: vec![
+                1.0e6, 0.0, 4.0e5, 0.0, mu_roll, mu_twist, 0.0, 0.0, 0.0, 0.0,
+            ],
+            rolling_model: ROLLING_CONSTANT,
+            twisting_model: TWISTING_CONSTANT,
         };
         let hook = GranularForce::new(
             &state,

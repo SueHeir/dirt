@@ -6,13 +6,16 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use crate::granular_force::PAIR_FIELDS;
+use crate::granular_force::{PAIR_FIELDS, ROLLING_SDS};
 use cubecl::prelude::*;
 use grass_gpu::cubecl;
 use soil_gpu::{Boundary, DeviceColumn, GpuDevice, GpuForce, GpuReal, GpuState, Grid, StepColumns};
 
 /// The most walls a run can hold.
 pub const MAX_WALLS: usize = 8;
+
+/// History per atom per wall: sliding displacement, then rolling displacement.
+pub const WALL_SPRING: usize = 6;
 
 const TANGENTIAL_EPSILON: f32 = 1.0e-10;
 const ROTATION_EPSILON: f32 = 1.0e-30;
@@ -40,6 +43,7 @@ fn wall_force<F: Float>(
     }
     let zero = F::new(0.0f32);
     let n_walls = sizes[1];
+    let rolling_sds = sizes[2] == comptime!(ROLLING_SDS as u32);
     let (dt, advance) = (params[0], params[1]);
     let rotation_epsilon = F::new(comptime!(ROTATION_EPSILON));
     let sqrt_5_6 = F::sqrt(F::new(5.0f32) / F::new(6.0f32));
@@ -64,7 +68,8 @@ fn wall_force<F: Float>(
     let mut w = 0u32;
     while w < n_walls {
         let wall = w as usize;
-        let sb = (3u32 * ((i as u32) * comptime!(MAX_WALLS as u32) + w)) as usize;
+        let sb = (comptime!(WALL_SPRING as u32) * ((i as u32) * comptime!(MAX_WALLS as u32) + w))
+            as usize;
         w += 1u32;
         let (nx, ny, nz) = (
             planes[6 * wall + 3],
@@ -80,6 +85,9 @@ fn wall_force<F: Float>(
                 wall_spring[sb] = zero;
                 wall_spring[sb + 1] = zero;
                 wall_spring[sb + 2] = zero;
+                wall_spring[sb + 3] = zero;
+                wall_spring[sb + 4] = zero;
+                wall_spring[sb + 5] = zero;
             }
         } else {
             let row =
@@ -147,18 +155,54 @@ fn wall_force<F: Float>(
             ty -= ri * (nz * ft_x - nx * ft_z);
             tz -= ri * (nx * ft_y - ny * ft_x);
 
-            // Constant-torque rolling and twisting friction, with the wall as a body at rest.
+            // Rolling and twisting friction, with the wall as a body at rest.
             let spin_n = wix * nx + wiy * ny + wiz * nz;
+            let mut rd_x = zero;
+            let mut rd_y = zero;
+            let mut rd_z = zero;
             if mu_roll > zero {
                 let roll_x = wix - spin_n * nx;
                 let roll_y = wiy - spin_n * ny;
                 let roll_z = wiz - spin_n * nz;
-                let roll_mag = F::sqrt(roll_x * roll_x + roll_y * roll_y + roll_z * roll_z);
-                if roll_mag > rotation_epsilon {
-                    let scale = mu_roll * F::abs(f_n_mag) * ri / roll_mag;
-                    tx -= scale * roll_x;
-                    ty -= scale * roll_y;
-                    tz -= scale * roll_z;
+                if rolling_sds {
+                    let k_roll = table[row + 6];
+                    let gamma_roll = table[row + 7];
+                    let (ox2, oy2, oz2) = (
+                        wall_spring[sb + 3],
+                        wall_spring[sb + 4],
+                        wall_spring[sb + 5],
+                    );
+                    let rd_n = ox2 * nx + oy2 * ny + oz2 * nz;
+                    rd_x = ox2 - rd_n * nx + roll_x * dt * advance;
+                    rd_y = oy2 - rd_n * ny + roll_y * dt * advance;
+                    rd_z = oz2 - rd_n * nz + roll_z * dt * advance;
+                    let mut tr_x = -(k_roll * rd_x) - gamma_roll * roll_x;
+                    let mut tr_y = -(k_roll * rd_y) - gamma_roll * roll_y;
+                    let mut tr_z = -(k_roll * rd_z) - gamma_roll * roll_z;
+                    let tr_mag = F::sqrt(tr_x * tr_x + tr_y * tr_y + tr_z * tr_z);
+                    let tau_max = mu_roll * F::abs(f_n_mag) * ri;
+                    if tr_mag > tau_max && tr_mag > rotation_epsilon {
+                        let scale = tau_max / tr_mag;
+                        tr_x *= scale;
+                        tr_y *= scale;
+                        tr_z *= scale;
+                        if k_roll > rotation_epsilon {
+                            rd_x = -(tr_x + gamma_roll * roll_x) / k_roll;
+                            rd_y = -(tr_y + gamma_roll * roll_y) / k_roll;
+                            rd_z = -(tr_z + gamma_roll * roll_z) / k_roll;
+                        }
+                    }
+                    tx += tr_x;
+                    ty += tr_y;
+                    tz += tr_z;
+                } else {
+                    let roll_mag = F::sqrt(roll_x * roll_x + roll_y * roll_y + roll_z * roll_z);
+                    if roll_mag > rotation_epsilon {
+                        let scale = mu_roll * F::abs(f_n_mag) * ri / roll_mag;
+                        tx -= scale * roll_x;
+                        ty -= scale * roll_y;
+                        tz -= scale * roll_z;
+                    }
                 }
             }
             if mu_twist > zero && F::abs(spin_n) > rotation_epsilon {
@@ -176,6 +220,9 @@ fn wall_force<F: Float>(
                 wall_spring[sb] = sx;
                 wall_spring[sb + 1] = sy;
                 wall_spring[sb + 2] = sz;
+                wall_spring[sb + 3] = rd_x;
+                wall_spring[sb + 4] = rd_y;
+                wall_spring[sb + 5] = rd_z;
             }
         }
     }
@@ -189,7 +236,7 @@ fn wall_force<F: Float>(
 }
 
 fn springs_len(rows: usize) -> usize {
-    rows * MAX_WALLS * 3
+    rows * MAX_WALLS * WALL_SPRING
 }
 
 /// DEM wall-contact hook.
@@ -197,6 +244,7 @@ pub struct WallForce {
     n: usize,
     n_walls: usize,
     omega: usize,
+    rolling_model: u32,
     sizes: DeviceColumn,
     params: DeviceColumn,
     params_prime: DeviceColumn,
@@ -225,7 +273,7 @@ impl WallColumns {
         *self.atom_type.borrow_mut() = DeviceColumn::from_slice(&self.gpu, atom_type);
     }
 
-    /// Each of the first `rows` atoms' springs: `[rows][MAX_WALLS][3]`, flattened.
+    /// Each of the first `rows` atoms' springs: `[rows][MAX_WALLS][WALL_SPRING]`, flattened.
     pub fn read_springs(&self, rows: usize) -> Vec<GpuReal> {
         self.spring.borrow().read(&self.gpu, springs_len(rows))
     }
@@ -246,6 +294,7 @@ impl WallForce {
         radius: &[GpuReal],
         boundary: &Boundary,
         table: &[GpuReal],
+        rolling_model: i32,
         dt: GpuReal,
     ) -> Self {
         let gpu = state.device().clone();
@@ -272,7 +321,11 @@ impl WallForce {
             n,
             n_walls: boundary.len(),
             omega,
-            sizes: DeviceColumn::from_slice(&gpu, &[n as u32, boundary.len() as u32]),
+            rolling_model: rolling_model as u32,
+            sizes: DeviceColumn::from_slice(
+                &gpu,
+                &[n as u32, boundary.len() as u32, rolling_model as u32],
+            ),
             params: DeviceColumn::from_slice(&gpu, &params(1.0)),
             params_prime: DeviceColumn::from_slice(&gpu, &params(0.0)),
             planes: DeviceColumn::from_slice(&gpu, &boundary.to_gpu()),
@@ -315,8 +368,10 @@ impl WallForce {
 impl GpuForce for WallForce {
     fn set_active(&mut self, _n_all: usize, n_force: usize, _grid: &Grid) {
         self.n = n_force;
-        self.sizes =
-            DeviceColumn::from_slice(&self.columns.gpu, &[n_force as u32, self.n_walls as u32]);
+        self.sizes = DeviceColumn::from_slice(
+            &self.columns.gpu,
+            &[n_force as u32, self.n_walls as u32, self.rolling_model],
+        );
     }
 
     fn launch(&mut self, c: &StepColumns<'_>) {
@@ -360,17 +415,19 @@ mod tests {
         state.set_aux_state(omega, &spin0);
 
         let (mu_roll, mu_twist) = (0.02, 0.01);
-        let rows = [e, 0.5, 4.0e6, 0.0, mu_roll, mu_twist];
+        let rows = [e, 0.5, 4.0e6, 0.0, mu_roll, mu_twist, 0.0, 0.0, 0.0, 0.0];
         let pairs = MaterialPairs {
             ntypes: 1,
             rows: rows.to_vec(),
+            rolling_model: 0,
+            twisting_model: 0,
         };
         let contact =
             GranularForce::new(&state, &grid, omega, &[r], &pairs, GranularConfig::new(dt));
         state.add_force_hook(Box::new(contact));
         let mut boundary = Boundary::new();
         boundary.push(Plane::new([0.0, 0.0, 0.0], [0.0, 0.0, 1.0]));
-        let wall = WallForce::new(&state, omega, &[r], &boundary, &rows, dt);
+        let wall = WallForce::new(&state, omega, &[r], &boundary, &rows, 0, dt);
         state.add_force_hook(Box::new(wall));
 
         let steps = 2000;
@@ -413,7 +470,7 @@ mod tests {
         state.add_force_hook(Box::new(contact));
         let mut boundary = Boundary::new();
         boundary.push(Plane::new([0.0, 0.0, 0.0], [0.0, 0.0, 1.0]));
-        let wall = WallForce::new(&state, omega, &[r], &boundary, &pairs.rows, dt);
+        let wall = WallForce::new(&state, omega, &[r], &boundary, &pairs.rows, 0, dt);
         state.add_force_hook(Box::new(wall));
         state.run_steps(5000);
         let p = state.pos().to_vec();

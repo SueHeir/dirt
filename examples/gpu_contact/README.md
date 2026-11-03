@@ -102,17 +102,26 @@ On the force path, bond force is the CPU's own and only contact exclusion runs o
 
 ## Rolling and twisting friction
 
-These are checked differently, because the constant-torque models are singular. When two grains
-spin alike their relative spin is rounding noise, yet the torque keeps its full size, with a
-direction set by that noise. So any change in arithmetic moves trajectories from the first such
-contact on, and a trajectory comparison says nothing. The CPU force does the same under a small
-perturbation.
+Use the spring-based models, `sds` rolling with `sds` or `marshall` twisting, which are the ones LAMMPS
+offers. With two materials and walls, f64 kernels against the CPU force in double precision:
 
-Instead: with rolling friction on, the f64 kernels' torque matched `contact_force_core_views`
-given the same state, atom by atom, to 1e-9 relative, on every one of 1000 steps of a 400-grain
-run. That was a one-off check with a temporary patch. Twisting has not had that check. `dirt_gpu`'s
-tests cover both through the torque formulas on one pair, and the linear spin-down of a sphere
-on a floor.
+| models | steps | position difference, either GPU path |
+|---|---:|---:|
+| `sds` rolling alone | 2000 | 1.1e-13 |
+| `sds` twisting alone | 4000 | 1.6e-11 |
+| both | 4000 | 4.1e-9 |
+
+The twisting rows need the CPU fix in the twist-sign PR. Without it the CPU flips the sign of a contact's
+twist history when the pair's order flips at a rebuild, and the comparison leaves rounding by 1000 steps.
+
+The constant-torque models are checked differently, because they are singular. When two grains spin
+alike their relative spin is rounding noise, yet the torque keeps its full size, with a direction set
+by that noise. So any change in arithmetic moves trajectories from the first such contact on, and a
+trajectory comparison says nothing. With constant-torque rolling on, the f64 kernels' torque matched
+`contact_force_core_views` given the same state, atom by atom, to 1e-9 relative, on every one of 1000
+steps of a 400-grain run, in a one-off check with a temporary patch. Constant-torque twisting has not
+had that check. `dirt_gpu`'s tests cover both through the torque formulas on one pair, and the linear
+spin-down of a sphere on a floor.
 
 An earlier hand-written WGSL version of the same kernels reached 12.3× at 216,000 grains, so
 CubeCL's version is faster here. None of this has run on CUDA yet.

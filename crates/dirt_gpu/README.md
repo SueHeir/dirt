@@ -27,8 +27,9 @@ With the resident path, a `[[run]]` stage's `steps` count windows, so simulated 
 
 ## What the kernels cover
 
-Hertz-Mindlin with spring history and torque, constant-torque rolling and twisting friction,
-and any number of materials. Spring-based (SDS or Marshall) rolling or twisting, cohesion,
+Hertz-Mindlin with spring history and torque, constant-torque or `sds` rolling, constant-torque,
+`sds` or `marshall` twisting, and any number of materials. Prefer the spring-based models, which
+are what LAMMPS offers: the constant-torque ones cannot be reproduced grain by grain. Cohesion,
 adhesion, liquid bridges, other contact or tangential models, and rigid clumps all panic at
 the first step, so a run cannot silently lose physics.
 
