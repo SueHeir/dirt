@@ -30,27 +30,58 @@ use soil_core::{
 use soil_gpu::neighbor_slots::{MAX_CONTACTS, PAYLOAD, SENTINEL};
 use soil_gpu::{GpuReal, GpuState, Grid};
 
-use crate::granular_force::{GranularColumns, GranularConfig, GranularForce};
+use crate::granular_force::{
+    GranularColumns, GranularConfig, GranularForce, MaterialPairs, PAIR_FIELDS,
+};
 
 /// Cells allowed per atom. Memory stays bounded if one particle flies far.
 const CELLS_PER_ATOM: usize = 8;
 
+/// The contact table for every pair of materials.
+pub(crate) fn material_pairs(mt: &MaterialTable) -> MaterialPairs {
+    let ntypes = mt.e_eff_ij.len();
+    let mut rows = Vec::with_capacity(ntypes * ntypes * PAIR_FIELDS);
+    for i in 0..ntypes {
+        for j in 0..ntypes {
+            rows.extend(pair_row(mt, i, j));
+        }
+    }
+    MaterialPairs { ntypes, rows }
+}
+
+/// One pair's parameters, in `PAIR_FIELDS` order.
+pub(crate) fn pair_row(mt: &MaterialTable, i: usize, j: usize) -> [GpuReal; PAIR_FIELDS] {
+    [
+        mt.e_eff_ij[i][j] as GpuReal,
+        mt.beta_ij[i][j] as GpuReal,
+        mt.g_eff_ij[i][j] as GpuReal,
+        mt.friction_ij[i][j] as GpuReal,
+        mt.rolling_friction_ij[i][j] as GpuReal,
+        mt.twisting_friction_ij[i][j] as GpuReal,
+    ]
+}
+
 /// What the kernels leave out, for one material table. Empty means they can run it.
 fn unsupported_features(mt: &MaterialTable) -> Vec<String> {
     let mut found = Vec::new();
-    let n = mt.e_eff_ij.len();
-    if n != 1 {
-        found.push(format!("{n} materials (the kernels hold one)"));
+    let any = |table: &[Vec<f64>]| table.iter().flatten().any(|&value| value != 0.0);
+    if any(&mt.cohesion_energy_ij) {
+        found.push("cohesion energy".to_string());
     }
-    let mut check = |name: &str, table: &[Vec<f64>]| {
-        if table.iter().flatten().any(|&value| value != 0.0) {
-            found.push(name.to_string());
-        }
-    };
-    check("rolling friction", &mt.rolling_friction_ij);
-    check("twisting friction", &mt.twisting_friction_ij);
-    check("cohesion energy", &mt.cohesion_energy_ij);
-    check("surface energy", &mt.surface_energy_ij);
+    if any(&mt.surface_energy_ij) {
+        found.push("surface energy".to_string());
+    }
+    if any(&mt.rolling_friction_ij) && mt.rolling_model != "constant" {
+        found.push(format!("rolling_model = {:?}", mt.rolling_model));
+    }
+    if mt.twisting_model == "marshall"
+        || (any(&mt.twisting_friction_ij) && mt.twisting_model != "constant")
+    {
+        found.push(format!("twisting_model = {:?}", mt.twisting_model));
+    }
+    if !mt.limit_damping {
+        found.push("limit_damping = false".to_string());
+    }
     if mt.contact_model != "hertz" {
         found.push(format!("contact_model = {:?}", mt.contact_model));
     }
@@ -73,8 +104,8 @@ pub(crate) fn require_supported(mt: &MaterialTable, dem: &DemAtom, nall: usize) 
     }
     assert!(
         found.is_empty(),
-        "GpuContactPlugin runs plain Hertz-Mindlin on one material. This run uses: {}. \
-         Use HertzMindlinContactPlugin for it.",
+        "The GPU kernels run Hertz-Mindlin with constant-torque rolling and twisting. This run \
+         uses: {}. Use HertzMindlinContactPlugin for it.",
         found.join(", ")
     );
 }
@@ -92,14 +123,14 @@ impl Resident {
         // alongside gravity, walls, and other fixes.
         state.set_params(dt, [0.0; 3]);
         let omega = state.add_aux_dof();
-        let config = GranularConfig::new(
-            mt.e_eff_ij[0][0] as GpuReal,
-            mt.beta_ij[0][0] as GpuReal,
-            mt.g_eff_ij[0][0] as GpuReal,
-            mt.friction_ij[0][0] as GpuReal,
-            dt,
+        let hook = GranularForce::new(
+            &state,
+            &grid,
+            omega,
+            &vec![0.0; n],
+            &material_pairs(mt),
+            GranularConfig::new(dt),
         );
-        let hook = GranularForce::new(&state, &grid, omega, &vec![0.0; n], config);
         let columns = hook.columns();
         state.add_force_hook(Box::new(hook));
         Self {
@@ -282,6 +313,7 @@ pub fn gpu_contact_force(
             resident.state.set_aux_inv_coeff(resident.omega, &zero);
             resident.columns.write_radius(&radius);
             resident.columns.write_tag(&atoms.tag[..nall]);
+            resident.columns.write_type(&atoms.atom_type[..nall]);
             let (partner, payload) = store_to_slots(&history, &atoms.tag[..nall], nlocal);
             resident.columns.write_slots(nlocal, &partner, &payload);
 
@@ -332,9 +364,9 @@ pub fn gpu_contact_force(
 /// app.add_plugins(CorePlugins).add_plugins(GranularGpuPlugins);
 /// ```
 ///
-/// It covers plain Hertz-Mindlin on one material, and panics at the first step on
-/// rolling or twisting friction, cohesion, adhesion, liquid bridges, other contact or
-/// tangential models, multiple materials, and rigid clumps. It also panics on a machine
+/// It covers Hertz-Mindlin with constant-torque rolling and twisting friction and any number
+/// of materials. It panics at the first step on spring-based rolling or twisting, cohesion,
+/// adhesion, liquid bridges, other contact or tangential models, and rigid clumps. It also panics on a machine
 /// with no GPU. Bond exclusion is not applied, so do not use it with bonded particles.
 /// It does not add to the virial, so per-contact stress output needs the CPU force.
 pub struct GpuContactPlugin;
@@ -416,8 +448,13 @@ mod tests {
             unsupported_features(&table(0.0, &["m"])),
             Vec::<String>::new()
         );
-        assert!(unsupported_features(&table(0.1, &["m"])).contains(&"rolling friction".to_string()));
-        assert!(unsupported_features(&table(0.0, &["a", "b"]))[0].contains("2 materials"));
+        assert_eq!(
+            unsupported_features(&table(0.1, &["a", "b"])),
+            Vec::<String>::new()
+        );
+        let mut sds = table(0.1, &["m"]);
+        sds.rolling_model = "sds".to_string();
+        assert!(unsupported_features(&sds)[0].contains("sds"));
     }
 
     #[test]

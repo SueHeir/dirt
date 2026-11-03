@@ -1,4 +1,4 @@
-"""Is the GPU contact force within single-precision reach of the CPU?
+"""Do the GPU kernels agree with the CPU force?
 
 A settled pile is chaotic, so any change in rounding eventually sends grains elsewhere.
 The fair question is whether the GPU differs from double-precision CPU by about as much
@@ -86,3 +86,80 @@ for mode in ("cpu", "gpu"):
     for ranks in (2, 4):
         diff = worst(base, run(DOUBLE, mode, 2000, ranks=ranks))
         print(f"{mode} {ranks} ranks: position {diff['position']:.3e}, velocity {diff['velocity']:.3e}, spin {diff['spin']:.3e}", flush=True)
+
+# Several materials and walls, with no gravity. With no
+# gravity and no contact at the start, the CPU's first half kick loses nothing, so the whole
+# step can be compared directly. Build with --features gpu-cpu-f64 --target-dir target-f64 to
+# run the f64 kernels on CubeCL's CPU runtime, and this should reach rounding error.
+F64 = os.path.join(ROOT, "target-f64/release/examples/gpu_contact")
+
+
+def materials_config(steps, window=1):
+    text = open(os.path.join(HERE, "config.toml")).read()
+    text = re.sub(r"gz = -9.81", "gz = 0.0", text)
+    text = re.sub(r"\[\[particles.insert\]\].*?(?=\[\[run\]\])", """[[particles.insert]]
+material = "glass"
+count = 250
+radius = 0.0018
+density = 2500.0
+velocity = 0.3
+seed = 7
+region = { type = "block", min = [0.003, 0.003, 0.003], max = [0.037, 0.037, 0.026] }
+
+[[particles.insert]]
+material = "steel"
+count = 200
+radius = 0.0012
+density = 7800.0
+velocity = 0.3
+seed = 11
+region = { type = "block", min = [0.003, 0.003, 0.03], max = [0.037, 0.037, 0.05] }
+
+""", text, flags=re.S)
+    # The blocks do not touch, because a contact at the first step would feel the CPU's first
+    # half kick. Rolling and twisting friction stay off here. Their constant-torque models are singular
+    # when two grains spin alike: the torque keeps full size, with a direction set by rounding
+    # noise, so trajectories diverge from the first such contact on any arithmetic change.
+    text = text.replace('friction = 0.5\n', """friction = 0.5
+
+[[dem.materials]]
+name = "steel"
+youngs_mod = 3.0e7
+poisson_ratio = 0.3
+restitution = 0.7
+friction = 0.2
+""", 1)
+    text = text.replace('z_high = 0.12', 'z_high = 0.06')
+    # A lid, since grains now fly upward too. Atoms leaving the box would change the count.
+    text = text.replace('[[particles.insert]]', '''[[wall]]
+type = "plane"
+point_x = 0.0
+point_y = 0.0
+point_z = 0.055
+normal_x = 0.0
+normal_y = 0.0
+normal_z = -1.0
+material = "steel"
+
+[[particles.insert]]''', 1)
+    text = re.sub(r"thermo = \d+", f"thermo = {max(steps // window // 2, 1)}", text)
+    return re.sub(r"steps = \d+", f"steps = {steps // window}", text)
+
+
+def materials_run(binary, mode, steps, window=1):
+    global config
+    original = config
+    config = lambda s, sort, w: materials_config(s, w)
+    try:
+        return run(binary, mode, steps, window=window)
+    finally:
+        config = original
+
+
+if os.path.exists(F64):
+    print("\nSeveral materials and walls, no gravity: f64 kernels on the CPU runtime")
+    for steps in (1000, 2000, 4000):
+        reference = materials_run(DOUBLE, "cpu", steps)
+        force = worst(reference, materials_run(F64, "gpu", steps))
+        whole = worst(reference, materials_run(F64, "resident", steps, window=100))
+        print(f"{steps:>6} GPU force: position {force['position']:.2e}, spin {force['spin']:.2e}; whole step: position {whole['position']:.2e}, spin {whole['spin']:.2e}", flush=True)

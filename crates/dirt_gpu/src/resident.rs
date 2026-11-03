@@ -14,8 +14,8 @@
 //!   windows, which reorders the sums).
 //! - If the CPU re-sorts atoms or adds some, the springs follow their atoms by tag.
 //!
-//! It runs on one rank, for plain Hertz-Mindlin on one material, with gravity, periodic
-//! axes, and fixed infinite planar walls. Anything else panics at the first step. Use
+//! It runs on one rank, for what the kernels cover, with gravity, periodic axes, and fixed
+//! infinite planar walls. Anything else panics at the first step. Use
 //! [`GpuContactPlugin`](crate::GpuContactPlugin) for those: under MPI, ghosts would go
 //! stale inside a window, and other physics has no kernel here.
 //!
@@ -41,7 +41,7 @@ use soil_gpu::{
     AtomColumnSync, Boundary, GpuReal, GpuState, Grid, Plane, ResidentAtoms, ResidentAtomsPlugin,
 };
 
-use crate::contact::require_supported;
+use crate::contact::{material_pairs, pair_row, require_supported};
 use crate::granular_force::{GranularColumns, GranularConfig, GranularForce};
 use crate::wall_force::{WallColumns, WallForce, MAX_WALLS};
 
@@ -121,6 +121,20 @@ fn planes(walls: Option<&Walls>) -> Boundary {
     boundary
 }
 
+/// The contact table for each atom type against each active plane, in `planes` order.
+fn wall_table(walls: Option<&Walls>, mt: &MaterialTable) -> Vec<GpuReal> {
+    let Some(walls) = walls else {
+        return Vec::new();
+    };
+    let mut rows = Vec::new();
+    for i in 0..mt.e_eff_ij.len() {
+        for (plane, _) in walls.planes.iter().zip(&walls.active).filter(|(_, &on)| on) {
+            rows.extend(pair_row(mt, i, plane.material_index));
+        }
+    }
+    rows
+}
+
 /// Remaps per-row state from `old` row order to `new`, by tag. Rows with no old
 /// counterpart get `empty`.
 fn remap_rows<T: Copy>(values: &[T], stride: usize, old: &[u32], new: &[u32], empty: T) -> Vec<T> {
@@ -156,6 +170,7 @@ fn build(
     mt: &MaterialTable,
     domain: &Domain,
     boundary: &Boundary,
+    wall_rows: Vec<GpuReal>,
     gravity: [GpuReal; 3],
     grid: &Grid,
     n: usize,
@@ -180,21 +195,15 @@ fn build(
         );
     }
     let omega = state.add_aux_dof();
-    let (e, beta, g, mu) = (
-        mt.e_eff_ij[0][0] as GpuReal,
-        mt.beta_ij[0][0] as GpuReal,
-        mt.g_eff_ij[0][0] as GpuReal,
-        mt.friction_ij[0][0] as GpuReal,
-    );
-    let mut config = GranularConfig::new(e, beta, g, mu, dt);
+    let mut config = GranularConfig::new(dt);
     (config.lx, config.ly, config.lz) = (lengths[0], lengths[1], lengths[2]);
     let zeros = vec![0.0; n];
-    let contact = GranularForce::new(&state, grid, omega, &zeros, config);
+    let contact = GranularForce::new(&state, grid, omega, &zeros, &material_pairs(mt), config);
     let granular = contact.columns();
     state.add_force_hook(Box::new(contact));
     // Walls come after contact, since contact is what starts each torque at zero.
     let walls = (!boundary.is_empty()).then(|| {
-        let hook = WallForce::new(&state, omega, &zeros, boundary, e, beta, g, mu, dt);
+        let hook = WallForce::new(&state, omega, &zeros, boundary, &wall_rows, dt);
         let columns = hook.columns();
         state.add_force_hook(Box::new(hook));
         columns
@@ -257,8 +266,10 @@ fn gpu_resident_step(
                 [g.gx as GpuReal, g.gy as GpuReal, g.gz as GpuReal]
             });
             let boundary = planes(walls.as_deref());
-            let (state, omega, granular, wall_columns) =
-                build(&dem.gpu, &atoms, &mt, &domain, &boundary, g, &grid, n);
+            let wall_rows = wall_table(walls.as_deref(), &mt);
+            let (state, omega, granular, wall_columns) = build(
+                &dem.gpu, &atoms, &mt, &domain, &boundary, wall_rows, g, &grid, n,
+            );
             resident.state = Some(state);
             resident.columns = vec![AtomColumnSync {
                 aux: omega,
@@ -291,8 +302,10 @@ fn gpu_resident_step(
         let granular = dem.granular.as_ref().expect("built with state");
         granular.write_radius(&radius);
         granular.write_tag(tags);
+        granular.write_type(&atoms.atom_type[..n]);
         if let Some(wall) = &dem.walls {
             wall.write_radius(&radius);
+            wall.write_type(&atoms.atom_type[..n]);
         }
         let (partner, payload, wall) = match old {
             Some((partner, payload, wall)) => (

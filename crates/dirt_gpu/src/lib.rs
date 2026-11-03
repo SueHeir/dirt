@@ -14,8 +14,8 @@
 //! Kernels are CubeCL `#[cube]` functions over `GpuReal`: `f32` on the Mac and `f64` with the
 //! `cuda` feature. Compare `f32` runs against a CPU run within the single-precision band.
 //!
-//! The kernels cover plain Hertz-Mindlin on one material. Anything else is refused at
-//! startup, not silently ignored.
+//! The kernels cover Hertz-Mindlin with constant-torque rolling and twisting friction, and any
+//! number of materials. Anything else is refused at startup, not silently ignored.
 
 mod contact;
 pub use contact::{GpuContact, GpuContactPlugin, GranularGpuPlugins};
@@ -24,7 +24,9 @@ mod resident;
 pub use resident::{GpuResidentPlugin, GranularResidentPlugins};
 
 mod granular_force;
-pub use granular_force::{GranularColumns, GranularConfig, GranularForce};
+pub use granular_force::{
+    GranularColumns, GranularConfig, GranularForce, MaterialPairs, PAIR_FIELDS,
+};
 
 mod wall_force;
 pub use wall_force::{WallColumns, WallForce, MAX_WALLS};

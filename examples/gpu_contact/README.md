@@ -77,5 +77,29 @@ contact force in double precision, position differs by 1.1e-15 at 1000 steps and
 the single-precision runs show. This exercises the kernels' logic in `f64`, not CUDA's compiler
 or hardware.
 
+With two materials, walls and no gravity, where the CPU's first half kick loses nothing, the
+whole-step path can be compared directly too. Largest position difference from the CPU force in
+double precision, with `validate.py` printing this when the f64 build is present:
+
+| steps | GPU force | GPU whole step |
+|---:|---:|---:|
+| 1000 | 4.5e-15 | 4.4e-15 |
+| 2000 | 8.9e-14 | 6.8e-14 |
+| 4000 | 1.9e-11 | 1.9e-11 |
+
+## Rolling and twisting friction
+
+These are checked differently, because the constant-torque models are singular. When two grains
+spin alike their relative spin is rounding noise, yet the torque keeps its full size, with a
+direction set by that noise. So any change in arithmetic moves trajectories from the first such
+contact on, and a trajectory comparison says nothing. The CPU force does the same under a small
+perturbation.
+
+Instead: with rolling friction on, the f64 kernels' torque matched `contact_force_core_views`
+given the same state, atom by atom, to 1e-9 relative, on every one of 1000 steps of a 400-grain
+run. That was a one-off check with a temporary patch. Twisting has not had that check. `dirt_gpu`'s
+tests cover both through the torque formulas on one pair, and the linear spin-down of a sphere
+on a floor.
+
 An earlier hand-written WGSL version of the same kernels reached 12.3× at 216,000 grains, so
 CubeCL's version is faster here. None of this has run on CUDA yet.

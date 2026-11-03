@@ -27,10 +27,10 @@ With the resident path, a `[[run]]` stage's `steps` count windows, so simulated 
 
 ## What the kernels cover
 
-Plain Hertz-Mindlin on one material, with spring history and torque. Rolling or twisting
-friction, cohesion, adhesion, liquid bridges, other contact or tangential models, several
-materials, and rigid clumps all panic at the first step, so a run cannot silently lose
-physics. Bonded particles are not supported and are not detected on the force-only path,
+Hertz-Mindlin with spring history and torque, constant-torque rolling and twisting friction,
+and any number of materials. Spring-based (SDS or Marshall) rolling or twisting, cohesion,
+adhesion, liquid bridges, other contact or tangential models, and rigid clumps all panic at
+the first step, so a run cannot silently lose physics. Bonded particles are not supported and are not detected on the force-only path,
 so do not combine them. Neither path adds to the virial, so per-contact stress output
 needs the CPU force.
 

@@ -15,13 +15,31 @@ use soil_gpu::{
     DeviceColumn, GpuDevice, GpuForce, GpuReal, GpuState, Grid, NeighborSlots, StepColumns,
 };
 
-/// Material and contact parameters (effective moduli already reduced for the pair).
+/// Per-row material parameters for a pair table: `[e_eff, beta, g_eff, mu, mu_roll, mu_twist]`.
+pub const PAIR_FIELDS: usize = 6;
+
+/// Contact parameters for each pair of atom types, flattened by `type_i * ntypes + type_j`.
+#[derive(Clone, Debug)]
+pub struct MaterialPairs {
+    /// Atom types the table covers.
+    pub ntypes: usize,
+    /// `ntypes * ntypes * PAIR_FIELDS` values.
+    pub rows: Vec<GpuReal>,
+}
+
+impl MaterialPairs {
+    /// One material with sliding friction only.
+    pub fn uniform(e_eff: GpuReal, beta: GpuReal, g_eff: GpuReal, mu: GpuReal) -> Self {
+        Self {
+            ntypes: 1,
+            rows: vec![e_eff, beta, g_eff, mu, 0.0, 0.0],
+        }
+    }
+}
+
+/// Time step and box for the contact kernel.
 #[derive(Clone, Copy, Debug)]
 pub struct GranularConfig {
-    pub e_eff: GpuReal,
-    pub beta: GpuReal,
-    pub g_eff: GpuReal,
-    pub mu: GpuReal,
     pub dt: GpuReal,
     /// Periodic box (0 length means a non-periodic axis): the stencil wraps and the pair vector
     /// uses the triclinic minimum image. A y-image pair gets the Lees-Edwards x tilt and
@@ -35,12 +53,8 @@ pub struct GranularConfig {
 
 impl GranularConfig {
     /// An open-box config.
-    pub fn new(e_eff: GpuReal, beta: GpuReal, g_eff: GpuReal, mu: GpuReal, dt: GpuReal) -> Self {
+    pub fn new(dt: GpuReal) -> Self {
         Self {
-            e_eff,
-            beta,
-            g_eff,
-            mu,
             dt,
             lx: 0.0,
             ly: 0.0,
@@ -52,12 +66,8 @@ impl GranularConfig {
 
     /// `advance` is 1 in the step loop and 0 in the entry prime, which reprojects the spring
     /// but does not integrate it.
-    fn params(&self, advance: GpuReal) -> [GpuReal; 11] {
+    fn params(&self, advance: GpuReal) -> [GpuReal; 7] {
         [
-            self.e_eff,
-            self.beta,
-            self.g_eff,
-            self.mu,
             self.dt,
             advance,
             self.lx,
@@ -70,12 +80,15 @@ impl GranularConfig {
 }
 
 const TANGENTIAL_EPSILON: f32 = 1.0e-10;
+const ROTATION_EPSILON: f32 = 1.0e-30;
 
 #[cube(launch_unchecked)]
 #[allow(clippy::too_many_arguments)]
 fn contact_force<F: Float>(
     sizes: &[i32],
     params: &[F],
+    pairs: &[F],
+    atom_type: &[u32],
     pos: &[F],
     vel: &[F],
     omega: &[F],
@@ -98,10 +111,11 @@ fn contact_force<F: Float>(
     }
     let zero = F::new(0.0f32);
     let (nx_cells, ny_cells, nz_cells) = (sizes[1], sizes[2], sizes[3]);
-    let (e_eff, beta, g_eff, mu, dt, advance) = (
-        params[0], params[1], params[2], params[3], params[4], params[5],
+    let ntypes = sizes[4] as u32;
+    let (dt, advance, lx, ly, lz, tilt_xy, dv_xy) = (
+        params[0], params[1], params[2], params[3], params[4], params[5], params[6],
     );
-    let (lx, ly, lz, tilt_xy, dv_xy) = (params[6], params[7], params[8], params[9], params[10]);
+    let rotation_epsilon = F::new(comptime!(ROTATION_EPSILON));
     let sqrt_5_6 = F::sqrt(F::new(5.0f32) / F::new(6.0f32));
     let epsilon = F::new(comptime!(TANGENTIAL_EPSILON));
 
@@ -189,6 +203,17 @@ fn contact_force<F: Float>(
                                             let ny = ddy * inv_dist;
                                             let nz = ddz * inv_dist;
 
+                                            let row = ((atom_type[i] * ntypes + atom_type[j])
+                                                * comptime!(PAIR_FIELDS as u32))
+                                                as usize;
+                                            let (e_eff, beta, g_eff, mu, mu_roll, mu_twist) = (
+                                                pairs[row],
+                                                pairs[row + 1],
+                                                pairs[row + 2],
+                                                pairs[row + 3],
+                                                pairs[row + 4],
+                                                pairs[row + 5],
+                                            );
                                             let r_eff = (ri * rj) / sum_r;
                                             let sdr = F::sqrt(delta * r_eff);
                                             let s_n = F::new(2.0f32) * e_eff * sdr;
@@ -271,6 +296,39 @@ fn contact_force<F: Float>(
                                             ty += r1z * ft_x - r1x * ft_z;
                                             tz += r1x * ft_y - r1y * ft_x;
 
+                                            // Constant-torque rolling and twisting friction. Each atom's own view of the
+                                            // relative spin gives equal and opposite torques on the two atoms.
+                                            let or_x = wix - wjx;
+                                            let or_y = wiy - wjy;
+                                            let or_z = wiz - wjz;
+                                            let or_n = or_x * nx + or_y * ny + or_z * nz;
+                                            if mu_roll > zero {
+                                                let roll_x = or_x - or_n * nx;
+                                                let roll_y = or_y - or_n * ny;
+                                                let roll_z = or_z - or_n * nz;
+                                                let roll_mag = F::sqrt(
+                                                    roll_x * roll_x
+                                                        + roll_y * roll_y
+                                                        + roll_z * roll_z,
+                                                );
+                                                if roll_mag > rotation_epsilon {
+                                                    let scale = mu_roll * F::abs(f_n_mag) * r_eff
+                                                        / roll_mag;
+                                                    tx -= scale * roll_x;
+                                                    ty -= scale * roll_y;
+                                                    tz -= scale * roll_z;
+                                                }
+                                            }
+                                            if mu_twist > zero && F::abs(or_n) > rotation_epsilon {
+                                                let mut tau = mu_twist * F::abs(f_n_mag) * r_eff;
+                                                if or_n > zero {
+                                                    tau = -tau;
+                                                }
+                                                tx += tau * nx;
+                                                ty += tau * ny;
+                                                tz += tau * nz;
+                                            }
+
                                             if nslot < comptime!(MAX_CONTACTS as u32) {
                                                 slot_write::<F>(
                                                     new_partner,
@@ -308,6 +366,8 @@ pub struct GranularForce {
     n_force: u32,
     omega: usize,
     sizes: DeviceColumn,
+    ntypes: i32,
+    pairs: DeviceColumn,
     params: DeviceColumn,
     params_prime: DeviceColumn,
     columns: GranularColumns,
@@ -319,6 +379,7 @@ pub struct GranularColumns {
     gpu: GpuDevice,
     radius: Rc<RefCell<DeviceColumn>>,
     tag: Rc<RefCell<DeviceColumn>>,
+    atom_type: Rc<RefCell<DeviceColumn>>,
     slots: Rc<RefCell<NeighborSlots>>,
 }
 
@@ -332,6 +393,11 @@ impl GranularColumns {
     /// atoms reorder.
     pub fn write_tag(&self, tag: &[u32]) {
         *self.tag.borrow_mut() = DeviceColumn::from_slice(&self.gpu, tag);
+    }
+
+    /// Replaces the atom types, which index the pair table.
+    pub fn write_type(&self, atom_type: &[u32]) {
+        *self.atom_type.borrow_mut() = DeviceColumn::from_slice(&self.gpu, atom_type);
     }
 
     /// The springs as last written, for the first `rows` atoms.
@@ -357,6 +423,7 @@ impl GranularForce {
         grid: &Grid,
         omega: usize,
         radius: &[GpuReal],
+        pairs: &MaterialPairs,
         config: GranularConfig,
     ) -> Self {
         let gpu = state.device().clone();
@@ -368,13 +435,28 @@ impl GranularForce {
         let columns = GranularColumns {
             radius: Rc::new(RefCell::new(DeviceColumn::from_slice(&gpu, radius))),
             tag: Rc::new(RefCell::new(DeviceColumn::from_slice(&gpu, &identity))),
+            atom_type: Rc::new(RefCell::new(DeviceColumn::from_slice(
+                &gpu,
+                &vec![0u32; n.max(1)],
+            ))),
             slots: Rc::new(RefCell::new(NeighborSlots::new(gpu.clone(), n))),
             gpu: gpu.clone(),
         };
         Self {
             n_force: n as u32,
             omega,
-            sizes: DeviceColumn::from_slice(&gpu, &[n as i32, grid.n[0], grid.n[1], grid.n[2]]),
+            sizes: DeviceColumn::from_slice(
+                &gpu,
+                &[
+                    n as i32,
+                    grid.n[0],
+                    grid.n[1],
+                    grid.n[2],
+                    pairs.ntypes as i32,
+                ],
+            ),
+            ntypes: pairs.ntypes as i32,
+            pairs: DeviceColumn::from_slice(&gpu, &pairs.rows),
             params: DeviceColumn::from_slice(&gpu, &config.params(1.0)),
             params_prime: DeviceColumn::from_slice(&gpu, &config.params(0.0)),
             columns,
@@ -399,6 +481,8 @@ impl GranularForce {
                 CubeDim::new_1d(64),
                 self.sizes.arg(),
                 params,
+                self.pairs.arg(),
+                self.columns.atom_type.borrow().arg(),
                 c.pos.arg(),
                 c.vel.arg(),
                 aux.state.arg(),
@@ -424,7 +508,7 @@ impl GpuForce for GranularForce {
         self.n_force = n_force as u32;
         self.sizes = DeviceColumn::from_slice(
             &self.columns.gpu,
-            &[n_force as i32, grid.n[0], grid.n[1], grid.n[2]],
+            &[n_force as i32, grid.n[0], grid.n[1], grid.n[2], self.ntypes],
         );
     }
 
@@ -473,12 +557,14 @@ mod tests {
         let grid = Grid::from_positions(&p0, 2.0 * r);
         let dt = 1.0e-5;
         let (mut state, omega) = pair_state(gpu, r, &p0, grid, dt);
+        let pairs = MaterialPairs::uniform(1.0e6, 0.1, 4.0e5, 0.5);
         let hook = GranularForce::new(
             &state,
             &grid,
             omega,
             &[r; 2],
-            GranularConfig::new(1.0e6, 0.1, 4.0e5, 0.5, dt),
+            &pairs,
+            GranularConfig::new(dt),
         );
         state.add_force_hook(Box::new(hook));
         state.run_steps(3000);
@@ -488,6 +574,57 @@ mod tests {
         assert!((p[0] + p[3]).abs() < 1e-4, "asymmetric: {p:?}");
         assert!((v[0] + v[3]).abs() < 1e-4, "momentum: {v:?}");
         assert!(p[1].abs() < 1e-5 && p[2].abs() < 1e-5, "off-axis: {p:?}");
+    }
+
+    #[test]
+    fn rolling_and_twisting_torques_match_the_cpu_formulas() {
+        let Ok(gpu) = GpuDevice::default_device() else {
+            eprintln!("no GPU adapter; skipping");
+            return;
+        };
+        let r = 0.5;
+        let p0 = [-0.45, 0.0, 0.0, 0.45, 0.0, 0.0];
+        let grid = Grid::from_positions(&p0, 2.0 * r);
+        let dt = 1.0e-5;
+        let (mut state, omega) = pair_state(gpu, r, &p0, grid, dt);
+        let spin = [1.0, 2.0, 3.0];
+        state.set_aux_state(omega, &[spin[0], spin[1], spin[2], 0.0, 0.0, 0.0]);
+        // No sliding friction, so the only torque is rolling and twisting.
+        let (mu_roll, mu_twist) = (0.1, 0.05);
+        let pairs = MaterialPairs {
+            ntypes: 1,
+            rows: vec![1.0e6, 0.0, 4.0e5, 0.0, mu_roll, mu_twist],
+        };
+        let hook = GranularForce::new(
+            &state,
+            &grid,
+            omega,
+            &[r; 2],
+            &pairs,
+            GranularConfig::new(dt),
+        );
+        state.add_force_hook(Box::new(hook));
+        state.eval_force_once();
+        let force = state.force().to_vec();
+        let torque = state.aux_rate(omega).to_vec();
+
+        // The normal is +x from atom 0, and the force on atom 0 is along -x.
+        let f_n = force[3].abs();
+        let r_eff = r / 2.0;
+        let roll_mag = (spin[1] * spin[1] + spin[2] * spin[2]).sqrt();
+        let roll = mu_roll * f_n * r_eff / roll_mag;
+        let expected = [-mu_twist * f_n * r_eff, -roll * spin[1], -roll * spin[2]];
+        for d in 0..3 {
+            let tolerance = 1e-3 * expected[d].abs();
+            assert!(
+                (torque[d] - expected[d]).abs() < tolerance,
+                "atom 0: {torque:?} vs {expected:?}"
+            );
+            assert!(
+                (torque[3 + d] + expected[d]).abs() < tolerance,
+                "atom 1: {torque:?} vs {expected:?}"
+            );
+        }
     }
 
     #[test]
@@ -503,9 +640,16 @@ mod tests {
         let dt = 1.0e-5;
         let (mut state, omega) = pair_state(gpu, r, &p0, grid, dt);
         state.set_box([1.0; 3], [0.0; 3], 0.0, 0.0);
-        let mut config = GranularConfig::new(1.0e6, 0.1, 4.0e5, 0.5, dt);
+        let mut config = GranularConfig::new(dt);
         (config.lx, config.ly, config.lz) = (1.0, 1.0, 1.0);
-        let hook = GranularForce::new(&state, &grid, omega, &[r; 2], config);
+        let hook = GranularForce::new(
+            &state,
+            &grid,
+            omega,
+            &[r; 2],
+            &MaterialPairs::uniform(1.0e6, 0.1, 4.0e5, 0.5),
+            config,
+        );
         state.add_force_hook(Box::new(hook));
         // Few enough steps that they have not yet travelled around the box and met again.
         state.run_steps(20);
