@@ -15,12 +15,18 @@ use std::fs::File;
 use std::io::Write as IoWrite;
 
 use dirt_core::dirt_atom::DemAtom;
+use dirt_core::dirt_bond::DemBondPlugin;
 use dirt_core::prelude::*;
 use dirt_gpu::{GranularGpuPlugins, GranularResidentPlugins};
 
 /// `cpu`, `gpu` or `resident`, from the environment since the command line belongs to the config.
 fn mode() -> String {
     std::env::var("DIRT_CONTACT").unwrap_or_else(|_| "cpu".to_string())
+}
+
+/// Whether this run has bonds, set by the validation script.
+fn bonded() -> bool {
+    std::env::var("DIRT_BONDS").is_ok()
 }
 
 /// Writes every local atom's state to `<mode>.rank<r>.csv` on the last step.
@@ -57,13 +63,19 @@ fn main() {
     match mode().as_str() {
         "gpu" => {
             app.add_plugins(GranularGpuPlugins);
+            if bonded() {
+                app.add_plugins(DemBondPlugin);
+            }
         }
         "resident" => {
             let window = std::env::var("DIRT_WINDOW").map_or(100, |v| v.parse().expect("DIRT_WINDOW"));
-            app.add_plugins(GranularResidentPlugins { window });
+            app.add_plugins(GranularResidentPlugins { window, bonds: bonded() });
         }
         _ => {
             app.add_plugins(GranularDefaultPlugins);
+            if bonded() {
+                app.add_plugins(DemBondPlugin);
+            }
         }
     }
     app.add_plugins(GravityPlugin).add_plugins(WallPlugin);

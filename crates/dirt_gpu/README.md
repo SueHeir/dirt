@@ -30,8 +30,13 @@ With the resident path, a `[[run]]` stage's `steps` count windows, so simulated 
 Hertz-Mindlin with spring history and torque, constant-torque rolling and twisting friction,
 and any number of materials. Spring-based (SDS or Marshall) rolling or twisting, cohesion,
 adhesion, liquid bridges, other contact or tangential models, and rigid clumps all panic at
-the first step, so a run cannot silently lose physics. Bonded particles are not supported and are not detected on the force-only path,
-so do not combine them. Neither path adds to the virial, so per-contact stress output
+the first step, so a run cannot silently lose physics.
+
+Bonds: on the force-only path, add `DemBondPlugin` and everything it supports stays on the CPU, with
+bonded pairs left out of GPU contact. On the whole-step path, `GranularResidentPlugins { bonds: true }`
+runs elastic beams with `combined_stress` breakage or none, and refuses plasticity and other criteria.
+
+Neither path adds to the virial, so per-contact stress output
 needs the CPU force.
 
 The resident path also leaves out three things. Springs are not written to restart files,

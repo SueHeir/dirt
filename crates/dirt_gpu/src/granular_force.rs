@@ -10,7 +10,7 @@ use std::rc::Rc;
 
 use cubecl::prelude::*;
 use grass_gpu::cubecl;
-use soil_gpu::neighbor_slots::{slot_clear_from, slot_lookup, slot_write, MAX_CONTACTS};
+use soil_gpu::neighbor_slots::{slot_clear_from, slot_lookup, slot_write, MAX_CONTACTS, SENTINEL};
 use soil_gpu::{
     DeviceColumn, GpuDevice, GpuForce, GpuReal, GpuState, Grid, NeighborSlots, StepColumns,
 };
@@ -95,6 +95,9 @@ fn contact_force<F: Float>(
     radius: &[F],
     inv_mass: &[F],
     tag: &[u32],
+    bond_start: &[u32],
+    bond_tag: &[u32],
+    bond_alive: &[u32],
     atom_cell: &[u32],
     cell_start: &[u32],
     sorted_atoms: &[u32],
@@ -203,142 +206,186 @@ fn contact_force<F: Float>(
                                             let ny = ddy * inv_dist;
                                             let nz = ddz * inv_dist;
 
-                                            let row = ((atom_type[i] * ntypes + atom_type[j])
-                                                * comptime!(PAIR_FIELDS as u32))
-                                                as usize;
-                                            let (e_eff, beta, g_eff, mu, mu_roll, mu_twist) = (
-                                                pairs[row],
-                                                pairs[row + 1],
-                                                pairs[row + 2],
-                                                pairs[row + 3],
-                                                pairs[row + 4],
-                                                pairs[row + 5],
-                                            );
-                                            let r_eff = (ri * rj) / sum_r;
-                                            let sdr = F::sqrt(delta * r_eff);
-                                            let s_n = F::new(2.0f32) * e_eff * sdr;
-                                            let k_n = F::new(4.0f32) / F::new(3.0f32) * e_eff * sdr;
-                                            let k_t = F::new(8.0f32) * g_eff * sdr;
-                                            let m_r = F::new(1.0f32) / (imi + inv_mass[j]);
-
-                                            let (r1x, r1y, r1z) = (ri * nx, ri * ny, ri * nz);
-                                            let vc_ix = vix + (wiy * r1z - wiz * r1y);
-                                            let vc_iy = viy + (wiz * r1x - wix * r1z);
-                                            let vc_iz = viz + (wix * r1y - wiy * r1x);
-                                            let (wjx, wjy, wjz) =
-                                                (omega[3 * j], omega[3 * j + 1], omega[3 * j + 2]);
-                                            let (r2x, r2y, r2z) = (rj * nx, rj * ny, rj * nz);
-                                            let vc_jx = (vel[3 * j] - dv_xy * image_y)
-                                                + (wjz * r2y - wjy * r2z);
-                                            let vc_jy = vel[3 * j + 1] + (wjx * r2z - wjz * r2x);
-                                            let vc_jz = vel[3 * j + 2] + (wjy * r2x - wjx * r2y);
-
-                                            let vr_x = vc_jx - vc_ix;
-                                            let vr_y = vc_jy - vc_iy;
-                                            let vr_z = vc_jz - vc_iz;
-                                            let v_n = vr_x * nx + vr_y * ny + vr_z * nz;
-
-                                            let f_diss_n = F::new(2.0f32)
-                                                * beta
-                                                * sqrt_5_6
-                                                * F::sqrt(s_n * m_r)
-                                                * v_n;
-                                            let f_n_mag = F::max(k_n * delta - f_diss_n, zero);
-                                            fx -= f_n_mag * nx;
-                                            fy -= f_n_mag * ny;
-                                            fz -= f_n_mag * nz;
-
-                                            let vt_x = vr_x - v_n * nx;
-                                            let vt_y = vr_y - v_n * ny;
-                                            let vt_z = vr_z - v_n * nz;
-
-                                            let partner = tag[j];
-                                            let old = slot_lookup::<F>(
-                                                old_partner,
-                                                old_payload,
-                                                i_u32,
-                                                partner,
-                                            );
-                                            let s_dot_n = old.0 * nx + old.1 * ny + old.2 * nz;
-                                            let mut sx = old.0 - s_dot_n * nx + vt_x * dt * advance;
-                                            let mut sy = old.1 - s_dot_n * ny + vt_y * dt * advance;
-                                            let mut sz = old.2 - s_dot_n * nz + vt_z * dt * advance;
-
-                                            let f_t_max = mu * F::abs(f_n_mag);
-                                            let spring = k_t * F::sqrt(sx * sx + sy * sy + sz * sz);
-                                            if spring > f_t_max && spring > epsilon {
-                                                let scale = f_t_max / spring;
-                                                sx *= scale;
-                                                sy *= scale;
-                                                sz *= scale;
+                                            // Bonded partners and atoms sharing one do not touch, as in
+                                            // `BondStore::are_excluded`. A bond broken this window stops counting at once.
+                                            let tag_j = tag[j];
+                                            let mut excluded = false;
+                                            let (j_first, j_end) =
+                                                (bond_start[j], bond_start[j + 1]);
+                                            let i_end = bond_start[i + 1];
+                                            let mut a = bond_start[i];
+                                            while a < i_end {
+                                                if bond_alive[a as usize] != comptime!(SENTINEL) {
+                                                    let shared = bond_tag[a as usize];
+                                                    if shared == tag_j {
+                                                        excluded = true;
+                                                    }
+                                                    let mut c = j_first;
+                                                    while c < j_end {
+                                                        if bond_alive[c as usize]
+                                                            != comptime!(SENTINEL)
+                                                            && bond_tag[c as usize] == shared
+                                                        {
+                                                            excluded = true;
+                                                        }
+                                                        c += 1u32;
+                                                    }
+                                                }
+                                                a += 1u32;
                                             }
-
-                                            let gamma_t = F::new(2.0f32)
-                                                * sqrt_5_6
-                                                * beta
-                                                * F::sqrt(k_t * m_r);
-                                            let mut ft_x = k_t * sx + gamma_t * vt_x;
-                                            let mut ft_y = k_t * sy + gamma_t * vt_y;
-                                            let mut ft_z = k_t * sz + gamma_t * vt_z;
-                                            let f_t_mag =
-                                                F::sqrt(ft_x * ft_x + ft_y * ft_y + ft_z * ft_z);
-                                            if f_t_mag > f_t_max && f_t_mag > epsilon {
-                                                let scale = f_t_max / f_t_mag;
-                                                ft_x *= scale;
-                                                ft_y *= scale;
-                                                ft_z *= scale;
-                                            }
-
-                                            fx += ft_x;
-                                            fy += ft_y;
-                                            fz += ft_z;
-                                            tx += r1y * ft_z - r1z * ft_y;
-                                            ty += r1z * ft_x - r1x * ft_z;
-                                            tz += r1x * ft_y - r1y * ft_x;
-
-                                            // Constant-torque rolling and twisting friction. Each atom's own view of the
-                                            // relative spin gives equal and opposite torques on the two atoms.
-                                            let or_x = wix - wjx;
-                                            let or_y = wiy - wjy;
-                                            let or_z = wiz - wjz;
-                                            let or_n = or_x * nx + or_y * ny + or_z * nz;
-                                            if mu_roll > zero {
-                                                let roll_x = or_x - or_n * nx;
-                                                let roll_y = or_y - or_n * ny;
-                                                let roll_z = or_z - or_n * nz;
-                                                let roll_mag = F::sqrt(
-                                                    roll_x * roll_x
-                                                        + roll_y * roll_y
-                                                        + roll_z * roll_z,
+                                            if !excluded {
+                                                let row = ((atom_type[i] * ntypes + atom_type[j])
+                                                    * comptime!(PAIR_FIELDS as u32))
+                                                    as usize;
+                                                let (e_eff, beta, g_eff, mu, mu_roll, mu_twist) = (
+                                                    pairs[row],
+                                                    pairs[row + 1],
+                                                    pairs[row + 2],
+                                                    pairs[row + 3],
+                                                    pairs[row + 4],
+                                                    pairs[row + 5],
                                                 );
-                                                if roll_mag > rotation_epsilon {
-                                                    let scale = mu_roll * F::abs(f_n_mag) * r_eff
-                                                        / roll_mag;
-                                                    tx -= scale * roll_x;
-                                                    ty -= scale * roll_y;
-                                                    tz -= scale * roll_z;
-                                                }
-                                            }
-                                            if mu_twist > zero && F::abs(or_n) > rotation_epsilon {
-                                                let mut tau = mu_twist * F::abs(f_n_mag) * r_eff;
-                                                if or_n > zero {
-                                                    tau = -tau;
-                                                }
-                                                tx += tau * nx;
-                                                ty += tau * ny;
-                                                tz += tau * nz;
-                                            }
+                                                let r_eff = (ri * rj) / sum_r;
+                                                let sdr = F::sqrt(delta * r_eff);
+                                                let s_n = F::new(2.0f32) * e_eff * sdr;
+                                                let k_n =
+                                                    F::new(4.0f32) / F::new(3.0f32) * e_eff * sdr;
+                                                let k_t = F::new(8.0f32) * g_eff * sdr;
+                                                let m_r = F::new(1.0f32) / (imi + inv_mass[j]);
 
-                                            if nslot < comptime!(MAX_CONTACTS as u32) {
-                                                slot_write::<F>(
-                                                    new_partner,
-                                                    new_payload,
+                                                let (r1x, r1y, r1z) = (ri * nx, ri * ny, ri * nz);
+                                                let vc_ix = vix + (wiy * r1z - wiz * r1y);
+                                                let vc_iy = viy + (wiz * r1x - wix * r1z);
+                                                let vc_iz = viz + (wix * r1y - wiy * r1x);
+                                                let (wjx, wjy, wjz) = (
+                                                    omega[3 * j],
+                                                    omega[3 * j + 1],
+                                                    omega[3 * j + 2],
+                                                );
+                                                let (r2x, r2y, r2z) = (rj * nx, rj * ny, rj * nz);
+                                                let vc_jx = (vel[3 * j] - dv_xy * image_y)
+                                                    + (wjz * r2y - wjy * r2z);
+                                                let vc_jy =
+                                                    vel[3 * j + 1] + (wjx * r2z - wjz * r2x);
+                                                let vc_jz =
+                                                    vel[3 * j + 2] + (wjy * r2x - wjx * r2y);
+
+                                                let vr_x = vc_jx - vc_ix;
+                                                let vr_y = vc_jy - vc_iy;
+                                                let vr_z = vc_jz - vc_iz;
+                                                let v_n = vr_x * nx + vr_y * ny + vr_z * nz;
+
+                                                let f_diss_n = F::new(2.0f32)
+                                                    * beta
+                                                    * sqrt_5_6
+                                                    * F::sqrt(s_n * m_r)
+                                                    * v_n;
+                                                let f_n_mag = F::max(k_n * delta - f_diss_n, zero);
+                                                fx -= f_n_mag * nx;
+                                                fy -= f_n_mag * ny;
+                                                fz -= f_n_mag * nz;
+
+                                                let vt_x = vr_x - v_n * nx;
+                                                let vt_y = vr_y - v_n * ny;
+                                                let vt_z = vr_z - v_n * nz;
+
+                                                let partner = tag[j];
+                                                let old = slot_lookup::<F>(
+                                                    old_partner,
+                                                    old_payload,
                                                     i_u32,
-                                                    nslot,
                                                     partner,
-                                                    (sx, sy, sz),
                                                 );
-                                                nslot += 1u32;
+                                                let s_dot_n = old.0 * nx + old.1 * ny + old.2 * nz;
+                                                let mut sx =
+                                                    old.0 - s_dot_n * nx + vt_x * dt * advance;
+                                                let mut sy =
+                                                    old.1 - s_dot_n * ny + vt_y * dt * advance;
+                                                let mut sz =
+                                                    old.2 - s_dot_n * nz + vt_z * dt * advance;
+
+                                                let f_t_max = mu * F::abs(f_n_mag);
+                                                let spring =
+                                                    k_t * F::sqrt(sx * sx + sy * sy + sz * sz);
+                                                if spring > f_t_max && spring > epsilon {
+                                                    let scale = f_t_max / spring;
+                                                    sx *= scale;
+                                                    sy *= scale;
+                                                    sz *= scale;
+                                                }
+
+                                                let gamma_t = F::new(2.0f32)
+                                                    * sqrt_5_6
+                                                    * beta
+                                                    * F::sqrt(k_t * m_r);
+                                                let mut ft_x = k_t * sx + gamma_t * vt_x;
+                                                let mut ft_y = k_t * sy + gamma_t * vt_y;
+                                                let mut ft_z = k_t * sz + gamma_t * vt_z;
+                                                let f_t_mag = F::sqrt(
+                                                    ft_x * ft_x + ft_y * ft_y + ft_z * ft_z,
+                                                );
+                                                if f_t_mag > f_t_max && f_t_mag > epsilon {
+                                                    let scale = f_t_max / f_t_mag;
+                                                    ft_x *= scale;
+                                                    ft_y *= scale;
+                                                    ft_z *= scale;
+                                                }
+
+                                                fx += ft_x;
+                                                fy += ft_y;
+                                                fz += ft_z;
+                                                tx += r1y * ft_z - r1z * ft_y;
+                                                ty += r1z * ft_x - r1x * ft_z;
+                                                tz += r1x * ft_y - r1y * ft_x;
+
+                                                // Constant-torque rolling and twisting friction. Each atom's own view of the
+                                                // relative spin gives equal and opposite torques on the two atoms.
+                                                let or_x = wix - wjx;
+                                                let or_y = wiy - wjy;
+                                                let or_z = wiz - wjz;
+                                                let or_n = or_x * nx + or_y * ny + or_z * nz;
+                                                if mu_roll > zero {
+                                                    let roll_x = or_x - or_n * nx;
+                                                    let roll_y = or_y - or_n * ny;
+                                                    let roll_z = or_z - or_n * nz;
+                                                    let roll_mag = F::sqrt(
+                                                        roll_x * roll_x
+                                                            + roll_y * roll_y
+                                                            + roll_z * roll_z,
+                                                    );
+                                                    if roll_mag > rotation_epsilon {
+                                                        let scale =
+                                                            mu_roll * F::abs(f_n_mag) * r_eff
+                                                                / roll_mag;
+                                                        tx -= scale * roll_x;
+                                                        ty -= scale * roll_y;
+                                                        tz -= scale * roll_z;
+                                                    }
+                                                }
+                                                if mu_twist > zero
+                                                    && F::abs(or_n) > rotation_epsilon
+                                                {
+                                                    let mut tau =
+                                                        mu_twist * F::abs(f_n_mag) * r_eff;
+                                                    if or_n > zero {
+                                                        tau = -tau;
+                                                    }
+                                                    tx += tau * nx;
+                                                    ty += tau * ny;
+                                                    tz += tau * nz;
+                                                }
+
+                                                if nslot < comptime!(MAX_CONTACTS as u32) {
+                                                    slot_write::<F>(
+                                                        new_partner,
+                                                        new_payload,
+                                                        i_u32,
+                                                        nslot,
+                                                        partner,
+                                                        (sx, sy, sz),
+                                                    );
+                                                    nslot += 1u32;
+                                                }
                                             }
                                         }
                                     }
@@ -380,6 +427,9 @@ pub struct GranularColumns {
     radius: Rc<RefCell<DeviceColumn>>,
     tag: Rc<RefCell<DeviceColumn>>,
     atom_type: Rc<RefCell<DeviceColumn>>,
+    bond_start: Rc<RefCell<DeviceColumn>>,
+    bond_tag: Rc<RefCell<DeviceColumn>>,
+    bond_alive: Rc<RefCell<DeviceColumn>>,
     slots: Rc<RefCell<NeighborSlots>>,
 }
 
@@ -398,6 +448,15 @@ impl GranularColumns {
     /// Replaces the atom types, which index the pair table.
     pub fn write_type(&self, atom_type: &[u32]) {
         *self.atom_type.borrow_mut() = DeviceColumn::from_slice(&self.gpu, atom_type);
+    }
+
+    /// Replaces the bond lists contact checks, for every atom ghosts included: CSR offsets, the
+    /// partner tag at each end, and a column holding `SENTINEL` at ends that have broken.
+    pub fn write_bonds(&self, start: &[u32], tags: &[u32], alive: DeviceColumn) {
+        *self.bond_start.borrow_mut() = DeviceColumn::from_slice(&self.gpu, start);
+        let tags = if tags.is_empty() { &[0u32][..] } else { tags };
+        *self.bond_tag.borrow_mut() = DeviceColumn::from_slice(&self.gpu, tags);
+        *self.bond_alive.borrow_mut() = alive;
     }
 
     /// The springs as last written, for the first `rows` atoms.
@@ -439,6 +498,12 @@ impl GranularForce {
                 &gpu,
                 &vec![0u32; n.max(1)],
             ))),
+            bond_start: Rc::new(RefCell::new(DeviceColumn::from_slice(
+                &gpu,
+                &vec![0u32; n + 1],
+            ))),
+            bond_tag: Rc::new(RefCell::new(DeviceColumn::from_slice(&gpu, &[0u32]))),
+            bond_alive: Rc::new(RefCell::new(DeviceColumn::from_slice(&gpu, &[0u32]))),
             slots: Rc::new(RefCell::new(NeighborSlots::new(gpu.clone(), n))),
             gpu: gpu.clone(),
         };
@@ -489,6 +554,9 @@ impl GranularForce {
                 self.columns.radius.borrow().arg(),
                 c.inv_mass.arg(),
                 self.columns.tag.borrow().arg(),
+                self.columns.bond_start.borrow().arg(),
+                self.columns.bond_tag.borrow().arg(),
+                self.columns.bond_alive.borrow().arg(),
                 c.cells.atom_cell(),
                 c.cells.cell_start(),
                 c.cells.sorted_atoms(),

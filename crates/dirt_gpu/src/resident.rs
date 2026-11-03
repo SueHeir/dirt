@@ -22,10 +22,16 @@
 //! Three things do not carry through. Springs are not written to restart files. Periodic
 //! image counters are not updated, so unwrapped positions are wrong. Quaternions are not
 //! integrated, so a run needing particle orientation should use the CPU rotation path.
+//!
+//! Bonds run on the device too, from `DemBondPlugin`'s setup: elastic beams with
+//! `combined_stress` breakage or none. Their history lives on the device for the run, and a broken
+//! bond stops excluding its pair from contact at once, as on the CPU.
 
 use std::collections::HashMap;
 
 use dirt_atom::{DemAtom, MaterialTable};
+use dirt_bond::breakage::BreakageConfig;
+use dirt_bond::{BondConfig, BondHistoryStore};
 use dirt_schedule::CONTACT_FORCE;
 use dirt_wall::Walls;
 use grass_app::prelude::*;
@@ -33,7 +39,7 @@ use grass_gpu::GpuDevice;
 use grass_mpi::CommResource;
 use grass_scheduler::prelude::*;
 use grass_scheduler::CoherenceRegistry;
-use soil_core::{Atom, AtomDataRegistry, Domain, ParticleSimScheduleSet};
+use soil_core::{Atom, AtomDataRegistry, BondStore, Domain, ParticleSimScheduleSet};
 use soil_fixes::GravityConfig;
 use soil_gpu::neighbor_slots::{MAX_CONTACTS, PAYLOAD, SENTINEL};
 use soil_gpu::resident::to_gpu;
@@ -41,6 +47,7 @@ use soil_gpu::{
     AtomColumnSync, Boundary, GpuReal, GpuState, Grid, Plane, ResidentAtoms, ResidentAtomsPlugin,
 };
 
+use crate::bond_force::{BondColumns, BondForce, BondTopology, BOND_STATE};
 use crate::contact::{material_pairs, pair_row, require_supported};
 use crate::granular_force::{GranularColumns, GranularConfig, GranularForce};
 use crate::wall_force::{WallColumns, WallForce, MAX_WALLS};
@@ -50,6 +57,10 @@ const CELLS_PER_ATOM: usize = 8;
 /// The rest of the resident state, beside `soil_gpu`'s [`ResidentAtoms`].
 struct ResidentDem {
     gpu: GpuDevice,
+    bonds: Option<BondColumns>,
+    /// `(tag, partner tag)` at each bond end, in column order.
+    bond_ends: Vec<(u32, u32)>,
+    breakable: bool,
     window: usize,
     omega: usize,
     granular: Option<GranularColumns>,
@@ -135,6 +146,155 @@ fn wall_table(walls: Option<&Walls>, mt: &MaterialTable) -> Vec<GpuReal> {
     rows
 }
 
+/// Why the kernels cannot run these bonds, if so.
+fn require_supported_bonds(config: &BondConfig) {
+    assert!(
+        config.plasticity.is_none(),
+        "GpuResidentPlugin runs elastic bonds. This run has plasticity. Use GpuContactPlugin, whose bonds stay on the CPU."
+    );
+    assert!(
+        matches!(
+            config.breakage,
+            None | Some(BreakageConfig::Unbreakable) | Some(BreakageConfig::CombinedStress { .. })
+        ),
+        "GpuResidentPlugin runs combined_stress breakage or none. Use GpuContactPlugin, whose bonds stay on the CPU."
+    );
+    assert!(
+        config.bond_radius_ratio > 0.0,
+        "GpuResidentPlugin needs bond_radius_ratio > 0."
+    );
+}
+
+/// The bonds as flat columns, carrying history from `old` where a bond's ends match, or else
+/// from the CPU store. Fixed values follow the CPU's `bond_force`.
+fn bond_topology(
+    atoms: &Atom,
+    registry: &AtomDataRegistry,
+    config: &BondConfig,
+    n: usize,
+    old: Option<&HashMap<(u32, u32), [GpuReal; BOND_STATE]>>,
+) -> BondTopology {
+    let bonds = registry.expect::<BondStore>("bond_topology");
+    let history = registry.expect::<BondHistoryStore>("bond_topology");
+    let dem = registry.expect::<DemAtom>("bond_topology");
+    let row: HashMap<u32, usize> = atoms.tag[..n]
+        .iter()
+        .enumerate()
+        .map(|(i, &t)| (t, i))
+        .collect();
+    // History lives with the bond's lower tag, in that end's frame.
+    let mut host: HashMap<(u32, u32), ([f64; 6], [f64; 2])> = HashMap::new();
+    for (i, list) in history.history.iter().enumerate().take(n) {
+        for entry in list {
+            let d = entry.delta_t;
+            let t = entry.delta_theta;
+            host.insert(
+                (atoms.tag[i], entry.partner_tag),
+                (
+                    [d[0], d[1], d[2], t[0], t[1], t[2]],
+                    [entry.thresholds[0], entry.thresholds[1]],
+                ),
+            );
+        }
+    }
+    let unbreakable = matches!(config.breakage, None | Some(BreakageConfig::Unbreakable));
+
+    let mut topology = BondTopology {
+        start: vec![0],
+        ..Default::default()
+    };
+    for i in 0..n {
+        for bond in bonds.bonds.get(i).map_or(&[][..], Vec::as_slice) {
+            let tag_i = atoms.tag[i];
+            let Some(&j) = row.get(&bond.partner_tag) else {
+                continue;
+            };
+            let (lower, upper, sign) = if tag_i < bond.partner_tag {
+                (tag_i, bond.partner_tag, 1.0)
+            } else {
+                (bond.partner_tag, tag_i, -1.0)
+            };
+            let seeded = host.get(&(lower, upper));
+            let geometry = bond_values(atoms, &dem, config, i, j, bond.r0);
+            let limits = match (unbreakable, seeded) {
+                (false, Some((_, thresholds))) => *thresholds,
+                _ => [f64::INFINITY; 2],
+            };
+            topology.partner.push(j as u32);
+            topology.table.extend(geometry.map(|x| x as GpuReal));
+            topology.table.extend(limits.map(|x| x as GpuReal));
+            let state = match old.and_then(|old| old.get(&(tag_i, bond.partner_tag))) {
+                Some(state) => *state,
+                None => {
+                    let start = seeded.map_or([0.0; 6], |(state, _)| *state);
+                    start.map(|x| (sign * x) as GpuReal)
+                }
+            };
+            topology.state.extend(state);
+        }
+        topology.start.push(topology.partner.len() as u32);
+    }
+    topology
+}
+
+/// `[r0, k_n, k_t, k_tor, k_bend, gamma_n, gamma_t, gamma_tor, gamma_bend, area, r_b, iben, jpol]`
+fn bond_values(
+    atoms: &Atom,
+    dem: &DemAtom,
+    config: &BondConfig,
+    i: usize,
+    j: usize,
+    r0: f64,
+) -> [f64; 13] {
+    let r_b = config.bond_radius_ratio * dem.radius[i].min(dem.radius[j]);
+    let area = std::f64::consts::PI * r_b * r_b;
+    let jpol = 0.5 * std::f64::consts::PI * r_b.powi(4);
+    let iben = 0.5 * jpol;
+    let k_n = config
+        .youngs_modulus
+        .map_or(config.normal_stiffness, |e| e * area / r0);
+    let k_t = config
+        .shear_modulus
+        .map_or(config.shear_stiffness, |g| g * area / r0);
+    let k_tor = config
+        .shear_modulus
+        .map_or(config.twist_stiffness, |g| g * jpol / r0);
+    let k_bend = config
+        .youngs_modulus
+        .map_or(config.bending_stiffness, |e| e * iben / r0);
+    let (m_i, m_j) = (atoms.mass[i] as f64, atoms.mass[j] as f64);
+    let m_red = if m_i + m_j > 0.0 {
+        m_i * m_j / (m_i + m_j)
+    } else {
+        0.0
+    };
+    let moi = |x: f64| if x > 0.0 { 1.0 / x } else { 0.0 };
+    let (moi_i, moi_j) = (moi(dem.inv_inertia[i]), moi(dem.inv_inertia[j]));
+    let moi_red = if moi_i + moi_j > 0.0 {
+        moi_i * moi_j / (moi_i + moi_j)
+    } else {
+        0.0
+    };
+    let gamma = |raw: Option<f64>, beta: f64, inertia: f64, k: f64| {
+        raw.unwrap_or_else(|| 2.0 * beta * (inertia * k.max(0.0)).sqrt())
+    };
+    [
+        r0,
+        k_n,
+        k_t,
+        k_tor,
+        k_bend,
+        gamma(config.normal_damping, config.beta_normal, m_red, k_n),
+        gamma(config.shear_damping, config.beta_shear, m_red, k_t),
+        gamma(config.twist_damping, config.beta_twist, moi_red, k_tor),
+        gamma(config.bending_damping, config.beta_bending, moi_red, k_bend),
+        area,
+        r_b,
+        iben,
+        jpol,
+    ]
+}
+
 /// Remaps per-row state from `old` row order to `new`, by tag. Rows with no old
 /// counterpart get `empty`.
 fn remap_rows<T: Copy>(values: &[T], stride: usize, old: &[u32], new: &[u32], empty: T) -> Vec<T> {
@@ -211,6 +371,45 @@ fn build(
     (state, omega, granular, walls)
 }
 
+/// `(tag, partner tag)` at each bond end.
+fn bond_ends(topology: &BondTopology, tags: &[u32]) -> Vec<(u32, u32)> {
+    let mut ends = Vec::with_capacity(topology.partner.len());
+    for (i, range) in topology.start.windows(2).enumerate() {
+        for &j in &topology.partner[range[0] as usize..range[1] as usize] {
+            ends.push((tags[i], tags[j as usize]));
+        }
+    }
+    ends
+}
+
+/// Takes bonds the kernels broke off the CPU's lists.
+fn sync_broken_bonds(dem: &ResidentDem, atoms: &Atom, registry: &AtomDataRegistry, n: usize) {
+    let Some(columns) = dem.bonds.as_ref() else {
+        return;
+    };
+    let partners = columns.read_partners();
+    let mut bonds = registry.expect_mut::<BondStore>("sync_broken_bonds");
+    let mut history = registry.expect_mut::<BondHistoryStore>("sync_broken_bonds");
+    let local = n.min(atoms.nlocal() as usize);
+    let row: HashMap<u32, usize> = atoms.tag[..local]
+        .iter()
+        .enumerate()
+        .map(|(i, &t)| (t, i))
+        .collect();
+    for (&(tag, partner), &now) in dem.bond_ends.iter().zip(&partners) {
+        if now == SENTINEL {
+            if let Some(&i) = row.get(&tag) {
+                if bonds.bonds[i].iter().any(|b| b.partner_tag == partner) {
+                    bonds.bonds[i].retain(|b| b.partner_tag != partner);
+                    if let Some(list) = history.history.get_mut(i) {
+                        list.retain(|h| h.partner_tag != partner);
+                    }
+                }
+            }
+        }
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn gpu_resident_step(
     atoms: Res<Atom>,
@@ -219,6 +418,7 @@ fn gpu_resident_step(
     domain: Res<Domain>,
     walls: Option<Res<Walls>>,
     gravity: Option<Res<GravityConfig>>,
+    bond_config: Option<Res<BondConfig>>,
     mut resident: ResMut<ResidentAtoms>,
     mut dem_state: ResMut<ResidentDem>,
     mut coherence: ResMut<CoherenceRegistry>,
@@ -241,6 +441,22 @@ fn gpu_resident_step(
             domain.tilt == [0.0; 3],
             "GpuResidentPlugin does not run a sheared or tilted box. Use GpuContactPlugin."
         );
+
+        // Bonds broken in the last window must leave the CPU's list first, so the topology
+        // built below does not bring them back.
+        if dem.breakable && resident.state.is_some() {
+            sync_broken_bonds(dem, &atoms, &registry, dem.row_tags.len());
+        }
+        let old_bonds = dem.bonds.as_ref().map(|columns| {
+            let state = columns.read_state();
+            let mut by_end = HashMap::new();
+            for (end, values) in dem.bond_ends.iter().zip(state.chunks_exact(BOND_STATE)) {
+                let mut copy = [0.0; BOND_STATE];
+                copy.copy_from_slice(values);
+                by_end.insert(*end, copy);
+            }
+            by_end
+        });
 
         // Springs, read from the old rows before anything is replaced.
         let old = resident.state.as_ref().map(|_| {
@@ -323,6 +539,39 @@ fn gpu_resident_step(
         if let (Some(columns), Some(springs)) = (&dem.walls, wall) {
             columns.write_springs(&springs);
         }
+        if let Some(config) = bond_config.as_deref() {
+            require_supported_bonds(config);
+            let topology = bond_topology(&atoms, &registry, config, n, old_bonds.as_ref());
+            dem.bond_ends = bond_ends(&topology, tags);
+            dem.breakable = matches!(config.breakage, Some(BreakageConfig::CombinedStress { .. }));
+            match &dem.bonds {
+                Some(columns) => columns.write(&topology),
+                None => {
+                    let periodic = [0, 1, 2].map(|d| {
+                        if domain.is_periodic(d) {
+                            domain.size[d] as GpuReal
+                        } else {
+                            0.0
+                        }
+                    });
+                    let params = [
+                        atoms.dt as GpuReal,
+                        periodic[0],
+                        periodic[1],
+                        periodic[2],
+                        0.0,
+                    ];
+                    let state = resident.state.as_mut().expect("just built");
+                    let hook = BondForce::new(state, dem.omega, &topology, params);
+                    dem.bonds = Some(hook.columns());
+                    state.add_force_hook(Box::new(hook));
+                }
+            }
+            // Contact reads the same partner column the bond kernel marks when a bond breaks.
+            let partner_tags: Vec<u32> = dem.bond_ends.iter().map(|end| end.1).collect();
+            let alive = dem.bonds.as_ref().expect("set above").alive();
+            granular.write_bonds(&topology.start, &partner_tags, alive);
+        }
         dem.row_tags.clear();
         dem.row_tags.extend_from_slice(tags);
         dem.primed = false;
@@ -352,6 +601,11 @@ fn gpu_resident_step(
                 .fold(f64::MIN_POSITIVE, f64::max) as GpuReal;
             state.set_grid(grid_for(&domain, &cpu_pos, 2.0 * r_max, max_cells));
         }
+    }
+
+    // Bonds the kernels broke come off the CPU's list, and those two atoms can touch again.
+    if dem.breakable && !rows_changed {
+        sync_broken_bonds(dem, &atoms, &registry, n);
     }
 
     let window = dem.window;
@@ -399,8 +653,15 @@ impl Plugin for GpuResidentPlugin {
             .get_resource_ref::<GpuDevice>()
             .expect("installed above")
             .clone();
+        // The CPU bond force would otherwise run each tick on a stale view.
+        if app.has_resource::<BondConfig>() {
+            app.remove_update_system(dirt_bond::bond_force);
+        }
         app.add_resource(ResidentDem {
             gpu,
+            bonds: None,
+            bond_ends: Vec::new(),
+            breakable: false,
             window: self.window.max(1),
             omega: 0,
             granular: None,
@@ -419,16 +680,23 @@ impl Plugin for GpuResidentPlugin {
 pub struct GranularResidentPlugins {
     /// See [`GpuResidentPlugin::window`].
     pub window: usize,
+    /// Adds `DemBondPlugin`, with its force running on the GPU.
+    pub bonds: bool,
 }
 
 impl PluginGroup for GranularResidentPlugins {
     fn build(self) -> PluginGroupBuilder {
-        PluginGroupBuilder::start::<Self>()
+        let group = PluginGroupBuilder::start::<Self>()
             .add(dirt_atom::DemAtomPlugin)
-            .add(dirt_atom::DemAtomInsertPlugin)
-            .add(GpuResidentPlugin {
-                window: self.window,
-            })
+            .add(dirt_atom::DemAtomInsertPlugin);
+        let group = if self.bonds {
+            group.add(dirt_bond::DemBondPlugin)
+        } else {
+            group
+        };
+        group.add(GpuResidentPlugin {
+            window: self.window,
+        })
     }
 }
 

@@ -87,6 +87,19 @@ double precision, with `validate.py` printing this when the f64 build is present
 | 2000 | 8.9e-14 | 6.8e-14 |
 | 4000 | 1.9e-11 | 1.9e-11 |
 
+## Bonds
+
+A block of 216 grains with 540 bonds at rest, hit by a free grain, against the CPU force in double
+precision. The whole-step path used a window of 50, and each run's breakage threshold was low enough
+to change the CPU's result by 4.8e-2 at 2000 steps. Largest position difference:
+
+| steps | elastic, GPU force | elastic, whole step | breaking, GPU force | breaking, whole step |
+|---:|---:|---:|---:|---:|
+| 1000 | 6.9e-17 | 1.0e-16 | 1.6e-15 | 5.6e-15 |
+| 2000 | 1.3e-16 | 4.6e-16 | 8.2e-14 | 9.1e-14 |
+
+On the force path, bond force is the CPU's own and only contact exclusion runs on the GPU.
+
 ## Rolling and twisting friction
 
 These are checked differently, because the constant-torque models are singular. When two grains

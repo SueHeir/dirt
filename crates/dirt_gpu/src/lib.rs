@@ -23,6 +23,9 @@ pub use contact::{GpuContact, GpuContactPlugin, GranularGpuPlugins};
 mod resident;
 pub use resident::{GpuResidentPlugin, GranularResidentPlugins};
 
+mod bond_force;
+pub use bond_force::{BondColumns, BondForce, BondTopology, BOND_FIELDS, BOND_STATE};
+
 mod granular_force;
 pub use granular_force::{
     GranularColumns, GranularConfig, GranularForce, MaterialPairs, PAIR_FIELDS,

@@ -163,3 +163,90 @@ if os.path.exists(F64):
         force = worst(reference, materials_run(F64, "gpu", steps))
         whole = worst(reference, materials_run(F64, "resident", steps, window=100))
         print(f"{steps:>6} GPU force: position {force['position']:.2e}, spin {force['spin']:.2e}; whole step: position {whole['position']:.2e}, spin {whole['spin']:.2e}", flush=True)
+
+
+# A bonded block at rest, hit by one free grain. Nothing is in contact at the first step, and
+# bonds start unstretched, so the CPU's first half kick loses nothing here either.
+def bonded_config(steps, window, breakage):
+    text = open(os.path.join(HERE, "config.toml")).read()
+    text = re.sub(r"gz = -9.81", "gz = 0.0", text)
+    text = re.sub(r"\[\[particles.insert\]\].*?(?=\[\[run\]\])", """[[wall]]
+type = "plane"
+point_x = 0.0
+point_y = 0.0
+point_z = 0.11
+normal_x = 0.0
+normal_y = 0.0
+normal_z = -1.0
+material = "glass"
+
+[[particles.insert]]
+source = "file"
+format = "csv"
+file = "init.csv"
+material = "glass"
+radius = 0.0015
+density = 2500.0
+columns = { x = 0, y = 1, z = 2, radius = 3, vx = 4, vy = 5, vz = 6 }
+
+[bonds]
+auto_bond = true
+bond_tolerance = 1.001
+bond_radius_ratio = 0.5
+youngs_modulus = 1.0e7
+shear_modulus = 4.0e6
+beta_normal = 0.2
+beta_shear = 0.2
+beta_twist = 0.2
+beta_bending = 0.2
+
+""" + breakage + "\n", text, flags=re.S)
+    text = re.sub(r"thermo = \d+", f"thermo = {max(steps // window // 2, 1)}", text)
+    return re.sub(r"steps = \d+", f"steps = {steps // window}", text)
+
+
+def bonded_init(path):
+    r = 0.0015
+    with open(path, "w") as f:
+        f.write("x,y,z,radius,vx,vy,vz\n")
+        for i in range(6):
+            for j in range(6):
+                for k in range(6):
+                    f.write(f"{0.008 + 2 * r * i},{0.008 + 2 * r * j},{0.03 + 2 * r * k},{r},0,0,0\n")
+        # The free grain, aimed off-centre so that it twists and bends the block.
+        f.write(f"{0.0165},{0.0175},{0.02},{r},0.1,0.2,3.0\n")
+
+
+def bonded_run(binary, mode, steps, window, breakage):
+    with tempfile.TemporaryDirectory() as tmp:
+        with open(os.path.join(tmp, "config.toml"), "w") as f:
+            f.write(bonded_config(steps, window, breakage))
+        bonded_init(os.path.join(tmp, "init.csv"))
+        env = dict(os.environ, DIRT_CONTACT=mode, DIRT_BONDS="1", DIRT_WINDOW=str(window), DIRT_WRITE_EVERY="1")
+        done = subprocess.run([os.path.abspath(binary), "config.toml"], cwd=tmp, env=env, capture_output=True, text=True)
+        if done.returncode != 0:
+            at = done.stderr.find("panicked")
+            raise RuntimeError(f"{mode}: {done.stderr[at:at + 600]}")
+        rows = {}
+        for name in glob.glob(os.path.join(tmp, f"{mode}.rank*.csv")):
+            with open(name) as f:
+                for row in csv.DictReader(f):
+                    rows[int(row["tag"])] = [float(row[k]) for k in row if k != "tag"]
+        return rows
+
+
+if os.path.exists(F64):
+    cases = [("elastic bonds", ""), ("breaking bonds", """[bonds.breakage]
+kind = "combined_stress"
+tensile = { kind = "constant", value = 2.0e3 }
+shear = { kind = "constant", value = 2.0e3 }
+""")]
+    print("\nA bonded block hit by a free grain: f64 kernels on the CPU runtime against CPU double")
+    moved = worst(bonded_run(DOUBLE, "cpu", 2000, 1, ""), bonded_run(DOUBLE, "cpu", 2000, 1, cases[1][1]))
+    print(f"Breakage changes the CPU run by {moved['position']:.2e} in position at 2000 steps, so it did happen")
+    for name, breakage in cases:
+        for steps in (1000, 2000, 4000):
+            reference = bonded_run(DOUBLE, "cpu", steps, 1, breakage)
+            force = worst(reference, bonded_run(F64, "gpu", steps, 1, breakage))
+            whole = worst(reference, bonded_run(F64, "resident", steps, 50, breakage))
+            print(f"{name:>15} {steps:>6} GPU force: position {force['position']:.2e}, spin {force['spin']:.2e}; whole step: position {whole['position']:.2e}, spin {whole['spin']:.2e}", flush=True)

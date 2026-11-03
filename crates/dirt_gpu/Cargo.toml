@@ -11,14 +11,15 @@ categories = ["simulation", "science"]
 [features]
 # These set the precision of the CPU-side atoms. Kernels use grass_gpu::GpuReal.
 default = ["precision-double"]
-precision-double = ["soil_core/precision-double", "soil_gpu/precision-double", "soil_verlet/precision-double", "soil_fixes/precision-double", "dirt_wall/precision-double", "dirt_granular/precision-double"]
-precision-mixed = ["soil_core/precision-mixed", "soil_gpu/precision-mixed", "soil_verlet/precision-mixed", "soil_fixes/precision-mixed", "dirt_wall/precision-mixed", "dirt_granular/precision-mixed"]
-precision-single = ["soil_core/precision-single", "soil_gpu/precision-single", "soil_verlet/precision-single", "soil_fixes/precision-single", "dirt_wall/precision-single", "dirt_granular/precision-single"]
+precision-double = ["soil_core/precision-double", "soil_gpu/precision-double", "soil_verlet/precision-double", "soil_fixes/precision-double", "dirt_wall/precision-double", "dirt_bond/precision-double", "dirt_granular/precision-double"]
+precision-mixed = ["soil_core/precision-mixed", "soil_gpu/precision-mixed", "soil_verlet/precision-mixed", "soil_fixes/precision-mixed", "dirt_wall/precision-mixed", "dirt_bond/precision-mixed", "dirt_granular/precision-mixed"]
+precision-single = ["soil_core/precision-single", "soil_gpu/precision-single", "soil_verlet/precision-single", "soil_fixes/precision-single", "dirt_wall/precision-single", "dirt_bond/precision-single", "dirt_granular/precision-single"]
 cuda = ["soil_gpu/cuda", "grass_gpu/cuda"]
 cpu-f64 = ["grass_gpu/cpu-f64"]
 
 [dependencies]
 dirt_atom.workspace = true
+dirt_bond.workspace = true
 dirt_granular.workspace = true
 dirt_schedule.workspace = true
 grass_app.workspace = true

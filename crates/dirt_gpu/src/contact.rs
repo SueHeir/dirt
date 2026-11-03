@@ -24,11 +24,11 @@ use grass_app::prelude::*;
 use grass_gpu::{GpuDevice, GpuPlugin};
 use grass_scheduler::prelude::*;
 use soil_core::{
-    register_atom_data, Accum, Atom, CommState, ParticleSimScheduleSet, ParticlesWith, Read, Real,
-    Write,
+    register_atom_data, Accum, Atom, BondStore, CommState, Optional, ParticleSimScheduleSet,
+    ParticlesWith, Read, Real, Write,
 };
 use soil_gpu::neighbor_slots::{MAX_CONTACTS, PAYLOAD, SENTINEL};
-use soil_gpu::{GpuReal, GpuState, Grid};
+use soil_gpu::{DeviceColumn, GpuReal, GpuState, Grid};
 
 use crate::granular_force::{
     GranularColumns, GranularConfig, GranularForce, MaterialPairs, PAIR_FIELDS,
@@ -149,6 +149,36 @@ pub struct GpuContact {
     row_tags: Vec<u32>,
     /// The springs are in the [`ContactHistoryStore`], and the GPU copy is stale.
     history_on_host: bool,
+    /// Bonds counted when the bond lists were last sent.
+    bond_total: usize,
+}
+
+/// Every row's bond partners by tag, for the contact kernel: CSR offsets and tags.
+pub(crate) fn bond_lists(bonds: Option<&BondStore>, rows: usize) -> (Vec<u32>, Vec<u32>) {
+    let mut start = Vec::with_capacity(rows + 1);
+    let mut tags = Vec::new();
+    start.push(0);
+    for i in 0..rows {
+        let list = bonds
+            .and_then(|b| b.bonds.get(i))
+            .map_or(&[][..], Vec::as_slice);
+        tags.extend(list.iter().map(|bond| bond.partner_tag));
+        start.push(tags.len() as u32);
+    }
+    (start, tags)
+}
+
+/// Sends the CPU's bonds to the contact kernel. Their force stays on the CPU here, so no end is
+/// broken as far as the kernel knows: a broken bond is simply gone from the list.
+fn write_cpu_bonds(
+    gpu: &GpuDevice,
+    columns: &GranularColumns,
+    bonds: Option<&BondStore>,
+    rows: usize,
+) {
+    let (start, tags) = bond_lists(bonds, rows);
+    let alive = DeviceColumn::from_slice(gpu, &vec![0u32; tags.len().max(1)]);
+    columns.write_bonds(&start, &tags, alive);
 }
 
 fn cast3(column: &[[Real; 3]], out: &mut Vec<GpuReal>) {
@@ -281,7 +311,14 @@ fn gpu_contact_history_to_host(
 pub fn gpu_contact_force(
     gpu: Res<GpuDevice>,
     mut atoms: ResMut<Atom>,
-    particles: ParticlesWith<'_, (Write<DemAtom>, Read<ContactHistoryStore>)>,
+    particles: ParticlesWith<
+        '_,
+        (
+            Write<DemAtom>,
+            Read<ContactHistoryStore>,
+            Optional<Read<BondStore>>,
+        ),
+    >,
     material_table: Res<MaterialTable>,
     mut contact: ResMut<GpuContact>,
     mut scratch: Local<Vec<GpuReal>>,
@@ -289,7 +326,10 @@ pub fn gpu_contact_force(
     let nall = atoms.len();
     let nlocal = atoms.nlocal() as usize;
     let dt = atoms.dt as GpuReal;
-    particles.with(|(mut dem, history)| {
+    particles.with(|(mut dem, history, bonds)| {
+        let bond_total = bonds
+            .as_deref()
+            .map_or(0, |b| b.bonds.iter().map(Vec::len).sum::<usize>());
         if contact.history_on_host {
             require_supported(&material_table, &dem, nall);
             cast3(&atoms.pos[..nall], &mut scratch);
@@ -317,11 +357,20 @@ pub fn gpu_contact_force(
             let (partner, payload) = store_to_slots(&history, &atoms.tag[..nall], nlocal);
             resident.columns.write_slots(nlocal, &partner, &payload);
 
+            write_cpu_bonds(&gpu, &resident.columns, bonds.as_deref(), nall);
+            contact.bond_total = bond_total;
+
             contact.row_tags.clear();
             contact.row_tags.extend_from_slice(&atoms.tag[..nlocal]);
             contact.history_on_host = false;
         }
 
+        // A CPU bond broke since the last rebuild, so those two atoms can touch now.
+        if bond_total != contact.bond_total {
+            let resident = contact.resident.as_ref().expect("built on the first step");
+            write_cpu_bonds(&gpu, &resident.columns, bonds.as_deref(), nall);
+            contact.bond_total = bond_total;
+        }
         let resident = contact.resident.as_mut().expect("built on the first step");
         cast3(&atoms.pos[..nall], &mut scratch);
         resident.state.write_pos(&scratch);
@@ -366,8 +415,9 @@ pub fn gpu_contact_force(
 ///
 /// It covers Hertz-Mindlin with constant-torque rolling and twisting friction and any number
 /// of materials. It panics at the first step on spring-based rolling or twisting, cohesion,
-/// adhesion, liquid bridges, other contact or tangential models, and rigid clumps. It also panics on a machine
-/// with no GPU. Bond exclusion is not applied, so do not use it with bonded particles.
+/// adhesion, liquid bridges, other contact or tangential models, and rigid clumps. It also panics on a machine with no GPU.
+/// Bonded particles work: add `DemBondPlugin`, whose force stays on the CPU, and bonded
+/// pairs and their neighbors are left out of contact as `BondStore::are_excluded` does.
 /// It does not add to the virial, so per-contact stress output needs the CPU force.
 pub struct GpuContactPlugin;
 
