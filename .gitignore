@@ -38,3 +38,5 @@ examples/run/hopper_discharge/
 
 # local knowledge-graph tooling output
 graphify-out/
+
+target-*/

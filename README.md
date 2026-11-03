@@ -180,6 +180,7 @@ individual pieces for applications that need direct control:
 | [`dirt_atom`](crates/dirt_atom/README.md) | DEM particle data, materials, radius distributions, and insertion |
 | [`dirt_granular`](crates/dirt_granular/README.md) | normal/tangential contact, adhesion, rolling/twisting, and rotation |
 | [`dirt_wall`](crates/dirt_wall/README.md) | wall geometry, contact response, motion, and servo control |
+| [`dirt_gpu`](crates/dirt_gpu/README.md) | optional GPU contact kernels: the whole step on one rank, or the force under MPI |
 | [`dirt_bond`](crates/dirt_bond/README.md) | bonded-particle beams, plasticity, breakage, and sintering |
 | [`dirt_clump`](crates/dirt_clump/README.md) | rigid multisphere composites |
 | [`dirt_fixes`](crates/dirt_fixes/README.md) | gravity, damping, constraints, motion, and applied forces |
