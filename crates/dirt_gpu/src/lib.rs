@@ -14,8 +14,8 @@
 //! Kernels are CubeCL `#[cube]` functions over `GpuReal`: `f32` on the Mac and `f64` with the
 //! `cuda` feature. Compare `f32` runs against a CPU run within the single-precision band.
 //!
-//! The kernels cover Hertz-Mindlin with constant-torque rolling and twisting friction, and any
-//! number of materials. Anything else is refused at startup, not silently ignored.
+//! The kernels cover Hertz-Mindlin with constant-torque or `sds` rolling, constant-torque, `sds` or
+//! `marshall` twisting, and any number of materials. Anything else is refused at startup, not silently ignored.
 
 mod contact;
 pub use contact::{GpuContact, GpuContactPlugin, GranularGpuPlugins};
@@ -28,10 +28,11 @@ pub use bond_force::{BondColumns, BondForce, BondTopology, BOND_FIELDS, BOND_STA
 
 mod granular_force;
 pub use granular_force::{
-    GranularColumns, GranularConfig, GranularForce, MaterialPairs, PAIR_FIELDS,
+    GranularColumns, GranularConfig, GranularForce, MaterialPairs, PAIR_FIELDS, ROLLING_CONSTANT,
+    ROLLING_SDS, SPRING_PAYLOAD, TWISTING_CONSTANT, TWISTING_MARSHALL, TWISTING_SDS,
 };
 
 mod wall_force;
-pub use wall_force::{WallColumns, WallForce, MAX_WALLS};
+pub use wall_force::{WallColumns, WallForce, MAX_WALLS, WALL_SPRING};
 
 pub use soil_gpu::{Boundary, GpuDevice, GpuReal, GpuState, Grid, Plane};

@@ -27,11 +27,12 @@ use soil_core::{
     register_atom_data, Accum, Atom, BondStore, CommState, Optional, ParticleSimScheduleSet,
     ParticlesWith, Read, Real, Write,
 };
-use soil_gpu::neighbor_slots::{MAX_CONTACTS, PAYLOAD, SENTINEL};
+use soil_gpu::neighbor_slots::{MAX_CONTACTS, SENTINEL};
 use soil_gpu::{DeviceColumn, GpuReal, GpuState, Grid};
 
 use crate::granular_force::{
-    GranularColumns, GranularConfig, GranularForce, MaterialPairs, PAIR_FIELDS,
+    GranularColumns, GranularConfig, GranularForce, MaterialPairs, PAIR_FIELDS, ROLLING_CONSTANT,
+    ROLLING_SDS, TWISTING_CONSTANT, TWISTING_MARSHALL, TWISTING_SDS,
 };
 
 /// Cells allowed per atom. Memory stays bounded if one particle flies far.
@@ -46,7 +47,21 @@ pub(crate) fn material_pairs(mt: &MaterialTable) -> MaterialPairs {
             rows.extend(pair_row(mt, i, j));
         }
     }
-    MaterialPairs { ntypes, rows }
+    let rolling_sds = mt.rolling_model == "sds";
+    MaterialPairs {
+        ntypes,
+        rows,
+        rolling_model: if rolling_sds {
+            ROLLING_SDS
+        } else {
+            ROLLING_CONSTANT
+        },
+        twisting_model: match mt.twisting_model.as_str() {
+            "sds" => TWISTING_SDS,
+            "marshall" => TWISTING_MARSHALL,
+            _ => TWISTING_CONSTANT,
+        },
+    }
 }
 
 /// One pair's parameters, in `PAIR_FIELDS` order.
@@ -58,6 +73,10 @@ pub(crate) fn pair_row(mt: &MaterialTable, i: usize, j: usize) -> [GpuReal; PAIR
         mt.friction_ij[i][j] as GpuReal,
         mt.rolling_friction_ij[i][j] as GpuReal,
         mt.twisting_friction_ij[i][j] as GpuReal,
+        mt.rolling_stiffness_ij[i][j] as GpuReal,
+        mt.rolling_damping_ij[i][j] as GpuReal,
+        mt.twisting_stiffness_ij[i][j] as GpuReal,
+        mt.twisting_damping_ij[i][j] as GpuReal,
     ]
 }
 
@@ -70,14 +89,6 @@ fn unsupported_features(mt: &MaterialTable) -> Vec<String> {
     }
     if any(&mt.surface_energy_ij) {
         found.push("surface energy".to_string());
-    }
-    if any(&mt.rolling_friction_ij) && mt.rolling_model != "constant" {
-        found.push(format!("rolling_model = {:?}", mt.rolling_model));
-    }
-    if mt.twisting_model == "marshall"
-        || (any(&mt.twisting_friction_ij) && mt.twisting_model != "constant")
-    {
-        found.push(format!("twisting_model = {:?}", mt.twisting_model));
     }
     if !mt.limit_damping {
         found.push("limit_damping = false".to_string());
@@ -190,6 +201,17 @@ fn cast3(column: &[[Real; 3]], out: &mut Vec<GpuReal>) {
     );
 }
 
+/// Sliding and rolling displacement flip between a contact's two ends, since the normal and the
+/// relative motion both do. Twist, in slot 6, does not: it integrates relative spin along the
+/// normal, and both of those flip.
+fn frame_sign(slot: usize, sign: f64) -> f64 {
+    if slot == 6 {
+        1.0
+    } else {
+        sign
+    }
+}
+
 /// Packs the store into GPU slots for the first `nlocal` rows. A pair may be recorded on
 /// only one side, or on a ghost's copy of its owner's list, so every list is searched
 /// for records that mention a local atom.
@@ -197,6 +219,7 @@ fn store_to_slots(
     history: &ContactHistoryStore,
     tag: &[u32],
     nlocal: usize,
+    payload_len: usize,
 ) -> (Vec<u32>, Vec<GpuReal>) {
     let local: HashMap<u32, usize> = tag[..nlocal]
         .iter()
@@ -204,7 +227,7 @@ fn store_to_slots(
         .map(|(i, &t)| (t, i))
         .collect();
     let mut partner = vec![SENTINEL; nlocal * MAX_CONTACTS];
-    let mut payload = vec![0.0 as GpuReal; nlocal * MAX_CONTACTS * PAYLOAD];
+    let mut payload = vec![0.0 as GpuReal; nlocal * MAX_CONTACTS * payload_len];
     let mut used = vec![0usize; nlocal];
     let mut put = |row: usize, other: u32, canonical: &[f64; CONTACT_HISTORY_LEN]| {
         let base = row * MAX_CONTACTS;
@@ -215,8 +238,8 @@ fn store_to_slots(
         let k = base + used[row];
         partner[k] = other;
         let sign = if tag[row] < other { 1.0 } else { -1.0 };
-        for d in 0..PAYLOAD {
-            payload[k * PAYLOAD + d] = (sign * canonical[d]) as GpuReal;
+        for d in 0..payload_len {
+            payload[k * payload_len + d] = (frame_sign(d, sign) * canonical[d]) as GpuReal;
         }
         used[row] += 1;
     };
@@ -254,6 +277,7 @@ fn gpu_contact_history_to_host(
     };
     let rows = row_tags.len();
     let (partner, payload) = resident.columns.read_slots(rows);
+    let payload_len = payload.len() / (rows * MAX_CONTACTS).max(1);
 
     particles.with(|mut history| {
         let nlocal = atoms.nlocal() as usize;
@@ -291,8 +315,8 @@ fn gpu_contact_history_to_host(
                 }
                 let sign = if owner < other { 1.0 } else { -1.0 };
                 let mut canonical = [0.0; CONTACT_HISTORY_LEN];
-                for d in 0..PAYLOAD {
-                    canonical[d] = sign * payload[k * PAYLOAD + d] as f64;
+                for d in 0..payload_len {
+                    canonical[d] = frame_sign(d, sign) * payload[k * payload_len + d] as f64;
                 }
                 list.push((other, canonical, false));
             }
@@ -354,7 +378,9 @@ pub fn gpu_contact_force(
             resident.columns.write_radius(&radius);
             resident.columns.write_tag(&atoms.tag[..nall]);
             resident.columns.write_type(&atoms.atom_type[..nall]);
-            let (partner, payload) = store_to_slots(&history, &atoms.tag[..nall], nlocal);
+            let payload_len = material_pairs(&material_table).payload_len();
+            let (partner, payload) =
+                store_to_slots(&history, &atoms.tag[..nall], nlocal, payload_len);
             resident.columns.write_slots(nlocal, &partner, &payload);
 
             write_cpu_bonds(&gpu, &resident.columns, bonds.as_deref(), nall);
@@ -470,6 +496,7 @@ impl PluginGroup for GranularGpuPlugins {
 mod tests {
     use super::*;
     use dirt_atom::{Elastic, Friction, Material};
+    use soil_gpu::neighbor_slots::PAYLOAD;
 
     fn entry(canonical: f64) -> [f64; CONTACT_HISTORY_LEN] {
         let mut history = [0.0; CONTACT_HISTORY_LEN];
@@ -502,9 +529,9 @@ mod tests {
             unsupported_features(&table(0.1, &["a", "b"])),
             Vec::<String>::new()
         );
-        let mut sds = table(0.1, &["m"]);
-        sds.rolling_model = "sds".to_string();
-        assert!(unsupported_features(&sds)[0].contains("sds"));
+        let mut hooke = table(0.1, &["m"]);
+        hooke.contact_model = "hooke".to_string();
+        assert!(unsupported_features(&hooke)[0].contains("hooke"));
     }
 
     #[test]
@@ -518,7 +545,7 @@ mod tests {
             vec![],
             vec![(9, entry(4.0), false)],
         ];
-        let (partner, payload) = store_to_slots(&history, &tag, 2);
+        let (partner, payload) = store_to_slots(&history, &tag, 2, PAYLOAD);
 
         let at = |row: usize, k: usize| {
             (
@@ -538,7 +565,7 @@ mod tests {
         let tag = [5, 9];
         let mut history = ContactHistoryStore::new();
         history.contacts = vec![vec![(9, entry(2.0), false)], vec![(5, entry(7.0), false)]];
-        let (partner, payload) = store_to_slots(&history, &tag, 2);
+        let (partner, payload) = store_to_slots(&history, &tag, 2, PAYLOAD);
         assert_eq!((partner[0], payload[0]), (9, 2.0));
         assert_eq!(
             (partner[MAX_CONTACTS], payload[MAX_CONTACTS * PAYLOAD]),

@@ -250,3 +250,36 @@ shear = { kind = "constant", value = 2.0e3 }
             force = worst(reference, bonded_run(F64, "gpu", steps, 1, breakage))
             whole = worst(reference, bonded_run(F64, "resident", steps, 50, breakage))
             print(f"{name:>15} {steps:>6} GPU force: position {force['position']:.2e}, spin {force['spin']:.2e}; whole step: position {whole['position']:.2e}, spin {whole['spin']:.2e}", flush=True)
+
+
+# Spring-based rolling and twisting, which are well conditioned, so trajectories can be compared.
+def rolling_run(binary, mode, steps, window, rolling, twisting, mutate=lambda text: text):
+    global materials_config
+    plain = materials_config
+    def config_with_models(s, w=1):
+        text = plain(s, w)
+        text = text.replace('contact_model = "hertz"', f'contact_model = "hertz"\nrolling_model = "{rolling}"\ntwisting_model = "{twisting}"')
+        sds_extra = """rolling_friction = {r}
+rolling_stiffness = 1.0e-3
+rolling_damping = 1.0e-6
+twisting_friction = {t}
+twisting_stiffness = 1.0e-3
+twisting_damping = 1.0e-6
+"""
+        text = text.replace("friction = 0.5\n", "friction = 0.5\n" + sds_extra.format(r=0.1, t=0.05), 1)
+        return mutate(text.replace("friction = 0.2\n", "friction = 0.2\n" + sds_extra.format(r=0.05, t=0.02), 1))
+    materials_config = config_with_models
+    try:
+        return materials_run(binary, mode, steps, window=window)
+    finally:
+        materials_config = plain
+
+
+if os.path.exists(F64):
+    print("\nSpring-based rolling and twisting, two materials, walls: f64 kernels against CPU double")
+    for rolling, twisting in (("sds", "sds"), ("sds", "marshall")):
+        for steps in (1000, 2000, 4000):
+            reference = rolling_run(DOUBLE, "cpu", steps, 1, rolling, twisting)
+            force = worst(reference, rolling_run(F64, "gpu", steps, 1, rolling, twisting))
+            whole = worst(reference, rolling_run(F64, "resident", steps, 100, rolling, twisting))
+            print(f"{rolling}/{twisting} {steps:>6} GPU force: position {force['position']:.2e}, spin {force['spin']:.2e}; whole step: position {whole['position']:.2e}, spin {whole['spin']:.2e}", flush=True)

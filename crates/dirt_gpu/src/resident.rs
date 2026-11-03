@@ -41,7 +41,7 @@ use grass_scheduler::prelude::*;
 use grass_scheduler::CoherenceRegistry;
 use soil_core::{Atom, AtomDataRegistry, BondStore, Domain, ParticleSimScheduleSet};
 use soil_fixes::GravityConfig;
-use soil_gpu::neighbor_slots::{MAX_CONTACTS, PAYLOAD, SENTINEL};
+use soil_gpu::neighbor_slots::{MAX_CONTACTS, SENTINEL};
 use soil_gpu::resident::to_gpu;
 use soil_gpu::{
     AtomColumnSync, Boundary, GpuReal, GpuState, Grid, Plane, ResidentAtoms, ResidentAtomsPlugin,
@@ -50,7 +50,7 @@ use soil_gpu::{
 use crate::bond_force::{BondColumns, BondForce, BondTopology, BOND_STATE};
 use crate::contact::{material_pairs, pair_row, require_supported};
 use crate::granular_force::{GranularColumns, GranularConfig, GranularForce};
-use crate::wall_force::{WallColumns, WallForce, MAX_WALLS};
+use crate::wall_force::{WallColumns, WallForce, MAX_WALLS, WALL_SPRING};
 
 const CELLS_PER_ATOM: usize = 8;
 
@@ -363,7 +363,15 @@ fn build(
     state.add_force_hook(Box::new(contact));
     // Walls come after contact, since contact is what starts each torque at zero.
     let walls = (!boundary.is_empty()).then(|| {
-        let hook = WallForce::new(&state, omega, &zeros, boundary, &wall_rows, dt);
+        let hook = WallForce::new(
+            &state,
+            omega,
+            &zeros,
+            boundary,
+            &wall_rows,
+            material_pairs(mt).rolling_model,
+            dt,
+        );
         let columns = hook.columns();
         state.add_force_hook(Box::new(hook));
         columns
@@ -523,16 +531,25 @@ fn gpu_resident_step(
             wall.write_radius(&radius);
             wall.write_type(&atoms.atom_type[..n]);
         }
+        let payload_len = material_pairs(&mt).payload_len();
         let (partner, payload, wall) = match old {
             Some((partner, payload, wall)) => (
                 remap_rows(&partner, MAX_CONTACTS, &dem.row_tags, tags, SENTINEL),
-                remap_rows(&payload, MAX_CONTACTS * PAYLOAD, &dem.row_tags, tags, 0.0),
-                wall.map(|w| remap_rows(&w, MAX_WALLS * 3, &dem.row_tags, tags, 0.0)),
+                remap_rows(
+                    &payload,
+                    MAX_CONTACTS * payload_len,
+                    &dem.row_tags,
+                    tags,
+                    0.0,
+                ),
+                wall.map(|w| remap_rows(&w, MAX_WALLS * WALL_SPRING, &dem.row_tags, tags, 0.0)),
             ),
             None => (
                 vec![SENTINEL; n * MAX_CONTACTS],
-                vec![0.0; n * MAX_CONTACTS * PAYLOAD],
-                dem.walls.as_ref().map(|_| vec![0.0; n * MAX_WALLS * 3]),
+                vec![0.0; n * MAX_CONTACTS * payload_len],
+                dem.walls
+                    .as_ref()
+                    .map(|_| vec![0.0; n * MAX_WALLS * WALL_SPRING]),
             ),
         };
         granular.write_slots(n, &partner, &payload);
