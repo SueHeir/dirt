@@ -109,10 +109,15 @@ offers. With two materials and walls, f64 kernels against the CPU force in doubl
 |---|---:|---:|
 | `sds` rolling alone | 2000 | 1.1e-13 |
 | `sds` twisting alone | 4000 | 1.6e-11 |
-| both | 4000 | 4.1e-9 |
+| `sds` rolling, `marshall` twisting | 4000 | 9.7e-12 |
+| `sds` rolling, `sds` twisting | 4000 | 4.1e-9 |
 
-The twisting rows need the CPU fix in the twist-sign PR. Without it the CPU flips the sign of a contact's
-twist history when the pair's order flips at a rebuild, and the comparison leaves rounding by 1000 steps.
+The twisting rows need the CPU fix in dirt#10. Without it the CPU flips the sign of a contact's twist
+history when the pair's order flips at a rebuild, and the comparison leaves rounding by 1000 steps.
+
+`sds` on both is the outlier, with spin differing by 2e-5 at 1000 steps against 6e-10 for `marshall`
+twisting, and its cause is not known. Both GPU paths give the same number, the kernel and CPU branches
+read alike, and turning wall twisting off on both sides leaves the 1000-step number unchanged.
 
 The constant-torque models are checked differently, because they are singular. When two grains spin
 alike their relative spin is rounding noise, yet the torque keeps its full size, with a direction set
