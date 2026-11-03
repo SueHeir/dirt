@@ -911,6 +911,85 @@ fn make_material_table_sds_twisting() -> MaterialTable {
     mt
 }
 
+/// Neighbor rebuilds can visit a pair in either order, and the physics must not notice. History is
+/// stored once for the pair, so a wrong sign on any slot shows up as a different torque here.
+#[test]
+fn spring_history_does_not_depend_on_pair_order() {
+    let radius = 0.001;
+    let torque_on_atom_0 = |mt: MaterialTable, slot: usize, flipped: bool| -> [f64; 3] {
+        let mut app = App::new();
+        let mut atom = Atom::new();
+        let mut dem = DemAtom::new();
+        let mut hist = ContactHistoryStore::new();
+        atom.dt = 1e-7;
+
+        push_test_atom_with_history(&mut atom, &mut dem, &mut hist, 0, [0.0, 0.0, 0.0], radius);
+        push_test_atom_with_history(
+            &mut atom,
+            &mut dem,
+            &mut hist,
+            1,
+            [0.0019, 0.0, 0.0],
+            radius,
+        );
+        dem.omega[0] = [0.001, 0.001, 0.0];
+        // SAFETY: test fixture sets the ownership partition directly.
+        unsafe { atom.set_layout_unchecked(2, atom.nghost(), 2) };
+
+        // History as a rebuild leaves it, stored on the lower tag.
+        let mut preload = [0.0; CONTACT_HISTORY_LEN];
+        preload[slot] = 1e-5;
+        hist.contacts[0].push((1, preload, false));
+
+        let mut neighbor = Neighbor::new();
+        neighbor.neighbor_offsets = if flipped {
+            vec![0, 0, 1]
+        } else {
+            vec![0, 1, 1]
+        };
+        neighbor.neighbor_indices = if flipped { vec![0] } else { vec![1] };
+
+        let mut registry = AtomDataRegistry::new();
+        registry.register_for_atoms(dem, &atom).unwrap();
+        registry.register_for_atoms(hist, &atom).unwrap();
+
+        app.add_resource(atom);
+        app.add_resource(neighbor);
+        app.add_resource(registry);
+        app.add_resource(mt);
+        app.add_update_system(hertz_mindlin_contact_force, ParticleSimScheduleSet::Force);
+        app.organize_systems();
+        app.run();
+
+        let reg = app.get_resource_ref::<AtomDataRegistry>().unwrap();
+        let d = reg.expect::<DemAtom>("test");
+        let torque = d.torque[0];
+        torque
+    };
+
+    for (name, table, slot) in [
+        (
+            "rolling",
+            make_material_table_sds_rolling as fn() -> MaterialTable,
+            4,
+        ),
+        (
+            "twisting",
+            make_material_table_sds_twisting as fn() -> MaterialTable,
+            6,
+        ),
+    ] {
+        let forward = torque_on_atom_0(table(), slot, false);
+        let flipped = torque_on_atom_0(table(), slot, true);
+        for axis in 0..3 {
+            assert!(
+                (forward[axis] - flipped[axis]).abs() <= 1e-12 * forward[axis].abs().max(1e-30),
+                "{name} torque depends on pair order: {forward:?} vs {flipped:?}"
+            );
+        }
+    }
+}
+
 #[test]
 fn sds_rolling_opposes_angular_velocity() {
     // Two overlapping particles, one spinning → SDS rolling torque opposes it

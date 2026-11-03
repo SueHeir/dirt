@@ -613,7 +613,9 @@ pub fn contact_force_core_views(
         let mut roll_disp_x = sign * stored[3];
         let mut roll_disp_y = sign * stored[4];
         let mut roll_disp_z = sign * stored[5];
-        let mut twist_disp = sign * stored[6];
+        // Unlike the slots above, twist takes no sign. It integrates the relative spin along
+        // the normal, and swapping the pair's order negates the spin and the normal together.
+        let mut twist_disp = stored[6];
 
         if mu_r > 0.0 {
             let roll_mag = (roll_x * roll_x + roll_y * roll_y + roll_z * roll_z).sqrt();
@@ -799,7 +801,7 @@ pub fn contact_force_core_views(
         new_spring[3] = sign * roll_disp_x;
         new_spring[4] = sign * roll_disp_y;
         new_spring[5] = sign * roll_disp_z;
-        new_spring[6] = sign * twist_disp;
+        new_spring[6] = twist_disp;
         new_spring[7] = contact_radius;
         match entry_idx {
             Some(idx) => {
@@ -1147,7 +1149,9 @@ pub fn hooke_contact_force(
             let mut roll_disp_x = sign * stored[3];
             let mut roll_disp_y = sign * stored[4];
             let mut roll_disp_z = sign * stored[5];
-            let mut twist_disp = sign * stored[6];
+            // Unlike the slots above, twist takes no sign. It integrates the relative spin along
+            // the normal, and swapping the pair's order negates the spin and the normal together.
+            let mut twist_disp = stored[6];
 
             // Rolling resistance
             if mu_r > 0.0 {
@@ -1308,7 +1312,7 @@ pub fn hooke_contact_force(
             new_spring[3] = sign * roll_disp_x;
             new_spring[4] = sign * roll_disp_y;
             new_spring[5] = sign * roll_disp_z;
-            new_spring[6] = sign * twist_disp;
+            new_spring[6] = twist_disp;
             new_spring[7] = contact_radius;
             match entry_idx {
                 Some(idx) => {
