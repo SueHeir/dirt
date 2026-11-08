@@ -6,11 +6,11 @@
 > positions + velocity distributions (verified same KE/atom). (3) **a real damping
 > bug** — from identical init DIRT cooled ~5–9 % faster; root-caused to DIRT using the
 > *linear* damping ratio on its *nonlinear Hertz* contact, fixed to the Tsuji
-> polynomial LAMMPS uses (codes now agree to ~1 %, see Physics note). After all three:
-> **DIRT genuinely wins dense (~1.3–1.5×, real kernel), dilute is ~parity** (its earlier
-> "win" was the over-damping artifact), **and LAMMPS scales better** — so the instinct
-> that "the scaling doesn't hold as well" *and* "I don't believe these results" were
-> both right, and led to a genuine physics fix.
+> polynomial LAMMPS uses (codes now agree to ~1 %, see Physics note). After all three,
+> DIRT won dense (real kernel), dilute sat at ~parity (its earlier "win" was the
+> over-damping artifact), and LAMMPS scaled better. The SOIL/DIRT comm, sort-cadence and
+> dead-pass work since then changes that: **DIRT now leads LAMMPS 1.15–1.33× in every
+> regime at every core count, with near-matching parallel efficiency** (see Findings).
 
 
 A **performance** benchmark (not a validation one). It measures how fast DIRT
@@ -171,41 +171,50 @@ only at higher core counts — run the ladder out on a server to see it).
 (3) **dense phase breakdown** — comm's share of the step climbing with core count
 (modest over 1→16 on a laptop; pronounced once you run the ladder out on a server).
 
-## Findings (Apple M5 Pro, 6 P + 12 E cores; strong N≈157k, weak ≈10k/core)
+## Findings (Apple M5 Pro, 6 P + 12 E cores; strong N=157,464, weak ≈10k/core)
 
-DIRT(optimized) ÷ native LAMMPS, both built native, both **`newton on`** (half list),
-matched init, both with **identical (Tsuji) contact physics** — they agree to ~1 %
-in a Haff-cooling test (see Physics note). **3-rep medians, cores 1–16:**
+DIRT ÷ native LAMMPS (stable 22Jul2025 update 4, `-O3 -mcpu=native`), both **`newton on`**
+(half list), matched init, both with **identical (Tsuji) contact physics** — they agree
+to ~1 % in a Haff-cooling test (see Physics note). DIRT at SOIL `c3dff02` / GRASS main
+(`f928e5c`). The two codes run interleaved case by case under `caffeinate`, on AC power,
+nothing else heavy running. **3-rep medians, cores 1–16:**
 
 | cores | strong dense | strong dilute | weak dense | weak dilute |
 |---:|:---:|:---:|:---:|:---:|
-| 1 | 1.49× | 1.11× | 1.23× | 0.90× |
-| 2 | 1.46× | 1.09× | 1.23× | 0.89× |
-| 4 | 1.40× | 1.08× | 1.16× | 0.88× |
-| 8\* | 1.32× | 1.07× | 1.21× | 0.95× |
-| 16\* | 1.37× | 1.13× | 1.34× | 1.09× |
+| 1 | 1.29× | 1.31× | 1.28× | 1.17× |
+| 2 | 1.30× | 1.33× | 1.27× | 1.16× |
+| 4 | 1.25× | 1.25× | 1.21× | 1.16× |
+| 8\* | 1.15× | 1.27× | 1.17× | 1.18× |
+| 16\* | 1.17× | 1.23× | 1.17× | 1.21× |
 
-`*` 8/16 ranks spill onto E-cores (only 6 P-cores), so absolute efficiency there is
-hardware-limited — but the **ratio is still meaningful** because both codes pay the
-same E-core penalty and it cancels.
+Throughput behind the ratios (M particle-steps/s, LAMMPS / DIRT):
 
-- **DIRT wins the dense (contact-bound) regime ~1.3–1.5×** — a real specialized-DEM-
-  kernel-vs-general-purpose-code advantage. It's robust to the damping fix because at
-  φ=0.50 the contact count (hence force work) is set by the *packing density*, not the
-  temperature.
-- **Dilute (overhead-bound) is ~parity**, and which way it tips depends on size:
-  LAMMPS marginally ahead at small N (weak 1–4 core, 0.88–0.90×), DIRT marginally ahead
-  at large N (strong, 1.07–1.13×). DIRT's earlier *apparent* dilute edge was a *physics*
-  artifact (the old over-damping ran a too-cold gas → fewer collisions → less work);
-  with correct damping it's a genuine near-tie.
-- **DIRT's advantage grows with system size.** The dense 1-core ratio is 1.35× at
-  N≈39k but 1.49× at N≈157k, and dilute flips from LAMMPS-ahead at 10k to DIRT-ahead at
-  157k — DIRT's data layout stays more cache-friendly as N climbs.
-- **LAMMPS still scales a touch better.** DIRT's lead is largest serially and erodes
-  with cores (clean P-core strong-dense parallel efficiency at 4 cores: LAMMPS 0.82 vs
-  DIRT 0.77). DIRT leads on absolute throughput, LAMMPS on scaling slope; per-phase
-  panels show **force/neighbor parallelize near-ideal while comm does not.** How
-  dominant comm becomes at high core counts needs a homogeneous-core server to measure.
+| cores | strong dense | strong dilute | weak dense | weak dilute |
+|---:|:---:|:---:|:---:|:---:|
+| 1 | 19.4 / 25.0 | 56.7 / 74.1 | 21.9 / 28.0 | 64.1 / 74.9 |
+| 4 | 65.1 / 81.1 | 184 / 230 | 75.2 / 91.2 | 202 / 233 |
+| 16\* | 149 / 174 | 388 / 476 | 152 / 178 | 338 / 410 |
+
+`*` This machine has only 6 P-cores, so the 8- and 16-rank points include E-cores.
+Absolute efficiency there is hardware-limited, but the **ratio is still meaningful**
+because both codes pay the same E-core penalty and it cancels.
+
+- **DIRT now wins every regime.** Dense (contact-bound) is the force kernel, as before.
+  Dilute moved from ~0.9× to 1.16–1.33× once three per-step overheads came out. Removing
+  them cut DIRT's serial strong-dilute step from 14.8 s to 10.7 s (LAMMPS: 14.4 s):
+  - atom sorting is now once per `sort_every` steps, not every neighbor rebuild
+    (`sort_atoms_by_bin` 2.30 → 0.09 s);
+  - the gravity pass is skipped when g = 0 (1.45 → 0 s);
+  - the wall pass is skipped when no wall is active (0.45 → 0 s).
+- **Comm no longer runs away.** Against DIRT before the SOIL comm work, comm time at
+  16 ranks fell to 0.25–0.41× (strong dense 4.53 → 1.83 s), and DIRT throughput rose
+  1.3–2.0× at high core counts.
+- **Parallel efficiency is now close to LAMMPS's.** On P-cores only, strong efficiency at 4
+  cores is 0.81 (DIRT) vs 0.84 (LAMMPS) dense and 0.78 vs 0.81 dilute; weak dilute is
+  even (0.78 vs 0.79). LAMMPS keeps a small edge in dense, which is why the dense ratio
+  eases from 1.3× serially to ~1.17× at 8–16 ranks. Comm time stays roughly flat as
+  ranks are added in strong scaling (about 2 s for dense at 1 and 16 ranks), so it
+  remains the phase that limits strong scaling.
 
 ### Why DIRT wins dense — a per-phase autopsy (1 core, no MPI confound)
 

@@ -86,7 +86,7 @@ fn record_drift(
         return;
     }
 
-    let global_nlocal = comm.all_reduce_sum_f64(atoms.nlocal as f64) as usize;
+    let global_nlocal = comm.all_reduce_sum_f64(atoms.nlocal() as f64) as usize;
     let global_bond_count = comm.all_reduce_sum_f64(bond_metrics.bond_count as f64) as usize;
     let global_missing =
         comm.all_reduce_sum_f64(bond_metrics.missing_partner_skips as f64) as usize;

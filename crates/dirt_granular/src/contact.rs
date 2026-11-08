@@ -29,7 +29,9 @@ mod shared;
 
 use mdr::mdr_normal_force;
 use normal::{mdr_nonadhesive_force, mdr_round_up_negative_epsilon};
-use shared::{is_mindlin_force_history, is_mindlin_rescale, zero_contact_history};
+use shared::{
+    find_contact_history, is_mindlin_force_history, is_mindlin_rescale,
+};
 
 pub use adhesion::willett2000_liquid_bridge_force;
 pub use force::{

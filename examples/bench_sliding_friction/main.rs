@@ -64,7 +64,7 @@ fn record(
     input: Res<Input>,
     mut tracker: ResMut<SlideTracker>,
 ) {
-    if atoms.nlocal == 0 {
+    if atoms.nlocal() == 0 {
         return;
     }
     let dem = registry.expect::<DemAtom>("record");

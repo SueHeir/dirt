@@ -54,13 +54,13 @@ fn main() {
 }
 
 fn init_probe(mut atoms: ResMut<Atom>, mut probe: ResMut<Probe>) {
-    if probe.initialized || atoms.nlocal < 3 {
+    if probe.initialized || atoms.nlocal() < 3 {
         return;
     }
-    let anchor = (0..atoms.nlocal as usize)
+    let anchor = (0..atoms.nlocal() as usize)
         .min_by(|&a, &b| atoms.pos[a][0].partial_cmp(&atoms.pos[b][0]).unwrap())
         .unwrap();
-    let mover = (0..atoms.nlocal as usize)
+    let mover = (0..atoms.nlocal() as usize)
         .max_by(|&a, &b| atoms.pos[a][0].partial_cmp(&atoms.pos[b][0]).unwrap())
         .unwrap();
 
@@ -92,10 +92,10 @@ fn record_probe(
         (Some(a), Some(b)) => (a, b),
         _ => return,
     };
-    if !(0..atoms.nlocal as usize).any(|i| atoms.tag[i] == tag_a) {
+    if !(0..atoms.nlocal() as usize).any(|i| atoms.tag[i] == tag_a) {
         return;
     }
-    let ib = match (0..atoms.nlocal as usize).find(|&i| atoms.tag[i] == tag_b) {
+    let ib = match (0..atoms.nlocal() as usize).find(|&i| atoms.tag[i] == tag_b) {
         Some(i) => i,
         None => return,
     };
@@ -106,7 +106,7 @@ fn record_probe(
         atoms.pos[ib][0] as f64 - probe.x0
     };
     let finite = if q.is_finite()
-        && (0..atoms.nlocal as usize).all(|i| {
+        && (0..atoms.nlocal() as usize).all(|i| {
             atoms.pos[i].iter().all(|x| (*x as f64).is_finite())
                 && atoms.vel[i].iter().all(|x| (*x as f64).is_finite())
         }) {

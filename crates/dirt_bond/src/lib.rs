@@ -621,9 +621,28 @@ impl AtomData for BondHistoryStore {
     }
 
     unsafe fn apply_permutation(&mut self, perm: &[usize], n: usize) {
-        let new_history: Vec<Vec<BondHistoryEntry>> =
-            perm.iter().map(|&p| self.history[p].clone()).collect();
-        self.history[..n].clone_from_slice(&new_history);
+        // `perm` is a permutation of `0..n`: move each row out once, no clones.
+        let new_history: Vec<Vec<BondHistoryEntry>> = perm
+            .iter()
+            .map(|&p| std::mem::take(&mut self.history[p]))
+            .collect();
+        for (slot, list) in self.history[..n].iter_mut().zip(new_history) {
+            *slot = list;
+        }
+    }
+
+    // Plain per-row `Vec` hooks: `ParticleStore` can roll back by truncation.
+    fn row_local_structural_hooks(&self) -> bool {
+        true
+    }
+
+    // `bond_force` only reads `history[i]` for local `i`, so ghosts carry no
+    // bond history: the border record is empty and ghost rows start empty.
+    fn pack_border(&self, _i: usize, _buf: &mut Vec<f64>) {}
+
+    unsafe fn unpack_border(&mut self, _buf: &[f64]) -> usize {
+        self.history.push(Vec::new());
+        0
     }
 
     /// Wire format: `[count, (partner_tag, dt[3], dθ[3], thr[4], θ_p_bend[3],
@@ -967,7 +986,7 @@ pub fn auto_bond_touching(
         }
 
         if comm.rank() == 0 {
-            println!("DemBond: auto-bonded {} pairs", bond_count);
+            grass_app::say!("DemBond: auto-bonded {} pairs", bond_count);
         }
     });
 }
@@ -998,7 +1017,7 @@ pub fn load_bonds_from_file(
         Ok(Some(b)) => b,
         Ok(None) => {
             if comm.rank() == 0 {
-                println!(
+                grass_app::say!(
                     "DemBond: no Bonds section found in '{}', skipping",
                     file_path
                 );
@@ -1066,7 +1085,7 @@ pub fn load_bonds_from_file(
         }
 
         if comm.rank() == 0 {
-            println!(
+            grass_app::say!(
                 "DemBond: loaded {} bonds from LAMMPS data file '{}'",
                 bond_count, file_path
             );
@@ -1156,7 +1175,7 @@ pub fn extend_ghost_cutoff_for_bonds(
         let old = domain.ghost_cutoff;
         domain.ghost_cutoff = required;
         if comm.rank() == 0 {
-            println!(
+            grass_app::say!(
                 "DemBond: extended ghost_cutoff {:.6} → {:.6} (max r₀ = {:.6} × multiplier {:.2})",
                 old, required, global_max_r0, bond_config.ghost_cutoff_multiplier
             );
@@ -1238,15 +1257,6 @@ pub fn bond_force(
             None => return,
         };
 
-        let pflags = domain.periodic_flags();
-        let box_size = domain.size;
-        // Triclinic (Lees–Edwards) tilt factors [xy, xz, yz]. When the box is
-        // sheared, minimum-image must account for the tilt: wrapping a bond across
-        // the y (gradient) seam also shifts x by `xy`. Ignoring it makes a
-        // seam-spanning bond's separation drift with the accumulating tilt, which
-        // injects a spurious, strain-growing force (energy blow-up under shear).
-        let tilt = domain.tilt;
-        let triclinic = domain.triclinic;
 
         let nlocal = atoms.nlocal() as usize;
         if bonds.bonds.len() < nlocal {
@@ -1299,57 +1309,21 @@ pub fn bond_force(
                     continue;
                 }
 
-                // Minimum-image distance on periodic axes. The tag_to_index
+                // Minimum-image distance on periodic axes (SOIL's shared
+                // `Domain::minimum_image`, triclinic-aware: wrapping a bond across
+                // a sheared seam also shifts by the tilt). The tag_to_index
                 // lookup above can resolve a partner to a ghost copy at a
                 // wrap-image position when the same tag appears as both local
                 // and ghost; using minimum-image normalises that so within-chain
                 // bonds always see the short distance and wrap bonds always
                 // see the wrapped distance regardless of which atom copy the
                 // map happens to land on.
-                let mut dxv = [
+                let dxv = [
                     atoms.pos[j][0] as f64 - atoms.pos[i][0] as f64,
                     atoms.pos[j][1] as f64 - atoms.pos[i][1] as f64,
                     atoms.pos[j][2] as f64 - atoms.pos[i][2] as f64,
                 ];
-                if triclinic {
-                    // Triclinic minimum image: map the separation into fractional
-                    // (lamda) coordinates via H⁻¹ (H upper-triangular with the tilt
-                    // factors), wrap each periodic component to nearest, map back.
-                    // Tilt factors [xy, xz, yz] are lengths; the fractional λ are
-                    // dimensionless. H·λ (matching Domain::from_lamda): dx = Lx·λx +
-                    // xy·λy + xz·λz, dy = Ly·λy + yz·λz, dz = Lz·λz.
-                    let [xy, xz, yz] = tilt;
-                    let lz = if box_size[2] != 0.0 {
-                        dxv[2] / box_size[2]
-                    } else {
-                        0.0
-                    };
-                    let ly = if box_size[1] != 0.0 {
-                        (dxv[1] - yz * lz) / box_size[1]
-                    } else {
-                        0.0
-                    };
-                    let lx = if box_size[0] != 0.0 {
-                        (dxv[0] - xy * ly - xz * lz) / box_size[0]
-                    } else {
-                        0.0
-                    };
-                    let mut lam = [lx, ly, lz];
-                    for k in 0..3 {
-                        if pflags[k] {
-                            lam[k] -= lam[k].round();
-                        }
-                    }
-                    dxv[0] = box_size[0] * lam[0] + xy * lam[1] + xz * lam[2];
-                    dxv[1] = box_size[1] * lam[1] + yz * lam[2];
-                    dxv[2] = box_size[2] * lam[2];
-                } else {
-                    for k in 0..3 {
-                        if pflags[k] {
-                            dxv[k] -= box_size[k] * (dxv[k] / box_size[k]).round();
-                        }
-                    }
-                }
+                let dxv = domain.minimum_image(dxv);
                 let dx = dxv[0];
                 let dy = dxv[1];
                 let dz = dxv[2];
@@ -2017,14 +1991,16 @@ Bonds
         let radius = 0.001;
         push_dem_test_atom(&mut atom, &mut dem, 1, [0.0, 0.0, 0.0], radius);
         push_dem_test_atom(&mut atom, &mut dem, 2, [0.002, 0.0, 0.0], radius);
-        atom.nlocal = 2;
-        atom.natoms = 2;
+        // SAFETY: test fixture sets the ownership partition directly.
+        unsafe { atom.set_layout_unchecked(2, atom.nghost(), 2) };
 
         let mut registry = AtomDataRegistry::new();
-        registry.try_register(dem, atom.len()).unwrap();
-        registry.try_register(BondStore::new(), atom.len()).unwrap();
+        registry.register_for_atoms(dem, &atom).unwrap();
         registry
-            .try_register(BondHistoryStore::new(), atom.len())
+            .register_for_atoms(BondStore::new(), &atom)
+            .unwrap();
+        registry
+            .register_for_atoms(BondHistoryStore::new(), &atom)
             .unwrap();
 
         let mut domain = soil_core::Domain::new();
@@ -2059,14 +2035,16 @@ Bonds
         let radius = 0.001;
         push_dem_test_atom(&mut atom, &mut dem, 1, [0.0, 0.0, 0.0], radius);
         push_dem_test_atom(&mut atom, &mut dem, 2, [0.01, 0.0, 0.0], radius);
-        atom.nlocal = 2;
-        atom.natoms = 2;
+        // SAFETY: test fixture sets the ownership partition directly.
+        unsafe { atom.set_layout_unchecked(2, atom.nghost(), 2) };
 
         let mut registry = AtomDataRegistry::new();
-        registry.try_register(dem, atom.len()).unwrap();
-        registry.try_register(BondStore::new(), atom.len()).unwrap();
+        registry.register_for_atoms(dem, &atom).unwrap();
         registry
-            .try_register(BondHistoryStore::new(), atom.len())
+            .register_for_atoms(BondStore::new(), &atom)
+            .unwrap();
+        registry
+            .register_for_atoms(BondHistoryStore::new(), &atom)
             .unwrap();
 
         let mut domain = soil_core::Domain::new();
@@ -2391,6 +2369,19 @@ format = "lammps_data"
         assert_eq!(cfg.format.as_deref(), Some("lammps_data"));
     }
 
+    /// A core-only `Atom` with `n` local rows, for registering a store whose
+    /// row count must match.
+    fn core_atoms(n: usize) -> soil_core::Atom {
+        let mut atoms = soil_core::Atom::new();
+        for tag in 0..n {
+            // SAFETY: core-only fixture; the ownership partition is set below.
+            unsafe { atoms.push_test_atom(tag as u32, [0.0; 3], 0.001, 1.0) };
+        }
+        // SAFETY: no extensions are registered and every pushed row is local.
+        unsafe { atoms.set_layout_unchecked(n as u32, 0, n as u64) };
+        atoms
+    }
+
     #[test]
     fn extend_ghost_cutoff_respects_max_bond_r0() {
         // Registry with a BondStore carrying a known max r0; Domain starts with
@@ -2423,7 +2414,9 @@ format = "lammps_data"
 
         let mut registry = AtomDataRegistry::new();
         let atom_count = bond_store.len();
-        registry.try_register(bond_store, atom_count).unwrap();
+        registry
+            .register_for_atoms(bond_store, &core_atoms(atom_count))
+            .unwrap();
 
         let mut domain = soil_core::Domain::new();
         domain.ghost_cutoff = 0.001; // deliberately too small
@@ -2461,7 +2454,9 @@ format = "lammps_data"
 
         let mut registry = AtomDataRegistry::new();
         let atom_count = bond_store.len();
-        registry.try_register(bond_store, atom_count).unwrap();
+        registry
+            .register_for_atoms(bond_store, &core_atoms(atom_count))
+            .unwrap();
 
         let mut domain = soil_core::Domain::new();
         domain.ghost_cutoff = 0.001;
@@ -2494,7 +2489,9 @@ format = "lammps_data"
 
         let mut registry = AtomDataRegistry::new();
         let atom_count = bond_store.len();
-        registry.try_register(bond_store, atom_count).unwrap();
+        registry
+            .register_for_atoms(bond_store, &core_atoms(atom_count))
+            .unwrap();
 
         let mut domain = soil_core::Domain::new();
         domain.ghost_cutoff = 0.05; // already larger than 0.002 × 2.5 = 0.005

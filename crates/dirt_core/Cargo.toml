@@ -12,9 +12,9 @@ categories = ["simulation", "science"]
 [features]
 default = ["mpi_backend", "precision-double"]
 mpi_backend = ["soil_core/mpi_backend", "dirt_clump/mpi_backend"]
-precision-double = ["soil_core/precision-double"]
-precision-mixed = ["soil_core/precision-mixed"]
-precision-single = ["soil_core/precision-single"]
+precision-double = ["soil_core/precision-double", "soil_plugins/precision-double"]
+precision-mixed = ["soil_core/precision-mixed", "soil_plugins/precision-mixed"]
+precision-single = ["soil_core/precision-single", "soil_plugins/precision-single"]
 
 [dependencies]
 grass_scheduler.workspace = true
@@ -23,6 +23,7 @@ grass_derive.workspace = true
 soil_core = { workspace = true, default-features = false }
 soil_verlet = { workspace = true, default-features = false }
 soil_print = { workspace = true, default-features = false }
+soil_plugins = { workspace = true, default-features = false }
 dirt_atom.workspace = true
 dirt_bond.workspace = true
 dirt_clump.workspace = true

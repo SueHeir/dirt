@@ -99,12 +99,19 @@ pub struct WallSpring {
 pub struct WallSpringStore {
     /// `rows[i]` is local atom `i`'s wall spring history.
     pub rows: Vec<Vec<WallSpring>>,
+    /// Set by [`Self::clear_local`] once every local row is known to be empty,
+    /// and cleared by anything that may add an entry. Lets the wall force pass
+    /// skip its per-atom bookkeeping entirely when no wall is active.
+    local_rows_empty: bool,
 }
 
 impl WallSpringStore {
     /// An empty store with no atom rows.
     pub fn new() -> Self {
-        WallSpringStore { rows: Vec::new() }
+        WallSpringStore {
+            rows: Vec::new(),
+            local_rows_empty: false,
+        }
     }
 
     /// Grow the store to `n` rows, so every atom — including ghosts, which
@@ -118,12 +125,28 @@ impl WallSpringStore {
     /// Mark every entry of the first `nlocal` rows untouched, before a force
     /// pass. Entries the pass does not touch are dropped by [`Self::prune`].
     pub fn begin_step(&mut self, nlocal: usize) {
+        self.local_rows_empty = false;
         let n = nlocal.min(self.rows.len());
         for row in &mut self.rows[..n] {
             for entry in row.iter_mut() {
                 entry.active = false;
             }
         }
+    }
+
+    /// Drop every entry of the first `nlocal` rows, as a force pass with no
+    /// active wall would (it touches nothing, so [`Self::prune`] drops all).
+    /// After the first call the rows are known to be empty, so repeated calls
+    /// on wall-free steps cost nothing until something adds an entry again.
+    pub fn clear_local(&mut self, nlocal: usize) {
+        if self.local_rows_empty {
+            return;
+        }
+        let n = nlocal.min(self.rows.len());
+        for row in &mut self.rows[..n] {
+            row.clear();
+        }
+        self.local_rows_empty = true;
     }
 
     /// Drop every entry of the first `nlocal` rows that this step's force pass
@@ -160,6 +183,7 @@ impl WallSpringStore {
     /// Find or create this atom's entry for `(kind, index)` and mark it
     /// touched this step.
     fn entry_mut(&mut self, atom: usize, kind: u8, index: u32) -> &mut WallSpring {
+        self.local_rows_empty = false;
         self.ensure_rows(atom + 1);
         let row = &mut self.rows[atom];
         let at = match row.iter().position(|e| e.kind == kind && e.index == index) {
@@ -217,6 +241,7 @@ impl AtomData for WallSpringStore {
     fn snapshot(&self) -> Box<dyn AtomData> {
         Box::new(WallSpringStore {
             rows: self.rows.clone(),
+            local_rows_empty: self.local_rows_empty,
         })
     }
 
@@ -241,9 +266,28 @@ impl AtomData for WallSpringStore {
     }
 
     unsafe fn apply_permutation(&mut self, perm: &[usize], n: usize) {
-        let permuted: Vec<Vec<WallSpring>> =
-            perm.iter().map(|&p| self.rows[p].clone()).collect();
-        self.rows[..n].clone_from_slice(&permuted);
+        // `perm` is a permutation of `0..n`: move each row out once, no clones.
+        let permuted: Vec<Vec<WallSpring>> = perm
+            .iter()
+            .map(|&p| std::mem::take(&mut self.rows[p]))
+            .collect();
+        for (slot, row) in self.rows[..n].iter_mut().zip(permuted) {
+            *slot = row;
+        }
+    }
+
+    // Plain per-row `Vec` hooks: `ParticleStore` can roll back by truncation.
+    fn row_local_structural_hooks(&self) -> bool {
+        true
+    }
+
+    // Wall forces act on owned atoms only (`0..nlocal`), so ghosts carry no
+    // wall springs: the border record is empty and ghost rows start empty.
+    fn pack_border(&self, _i: usize, _buf: &mut Vec<f64>) {}
+
+    unsafe fn unpack_border(&mut self, _buf: &[f64]) -> usize {
+        self.rows.push(Vec::new());
+        0
     }
 
     /// Wire format: `count`, then `count` records of
@@ -271,6 +315,9 @@ impl AtomData for WallSpringStore {
 
     unsafe fn unpack(&mut self, buf: &[f64]) -> usize {
         let count = buf[0] as usize;
+        if count > 0 {
+            self.local_rows_empty = false;
+        }
         let mut row = Vec::with_capacity(count);
         let mut pos = 1;
         // 2 identity scalars + WALL_SPRING_LEN spring scalars per entry.

@@ -279,6 +279,15 @@ pub fn wall_contact_force(
         let nlocal = atoms.nlocal() as usize;
         let dt = atoms.dt;
 
+        // No active wall: nothing can be in contact, so every spring would be
+        // pruned. Clear them (a no-op after the first wall-free step) and skip
+        // the per-atom bookkeeping, which otherwise costs two O(N) passes a step.
+        if !walls.any_active() {
+            springs.ensure_rows(atoms.len());
+            springs.clear_local(nlocal);
+            return;
+        }
+
         // The spring history is a per-atom row in `springs`, so a lookup is by
         // local atom index and needs no borrow of `walls` at all. Every entry
         // is marked untouched here and the untouched ones are pruned after the

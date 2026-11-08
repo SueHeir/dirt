@@ -133,7 +133,7 @@ fn record_discharge(
     mut tracker: ResMut<DischargeTracker>,
 ) {
     let step = run_state.total_cycle;
-    let nlocal = atoms.nlocal as usize;
+    let nlocal = atoms.nlocal() as usize;
 
     // Tally any particle that is now below the orifice and not yet counted.
     let oz = tracker.orifice_z;

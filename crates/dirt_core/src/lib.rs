@@ -166,7 +166,8 @@ pub use soil_verlet;
 
 use grass_app::prelude::*;
 
-/// Core simulation infrastructure plugin group.
+/// Core simulation infrastructure plugin group — SOIL's shared
+/// [`soil_plugins::CorePlugins`], the same group dev_soil_sph and dev_soil_peri use.
 ///
 /// Includes, in registration order:
 /// - [`InputPlugin`](soil_core::InputPlugin) — CLI parsing, banner printing, TOML config loading
@@ -195,25 +196,7 @@ use grass_app::prelude::*;
 /// app.add_plugins(CorePlugins).add_plugins(GranularDefaultPlugins);
 /// app.start();
 /// ```
-pub struct CorePlugins;
-
-impl PluginGroup for CorePlugins {
-    fn build(self) -> PluginGroupBuilder {
-        let builder = PluginGroupBuilder::start::<Self>()
-            .add(|app: &mut App| {
-                app.set_warning_fn(soil_core::verlet_schedule_warnings);
-            })
-            .add(soil_core::InputPlugin);
-
-        builder
-            .add(soil_core::CommunicationPlugin)
-            .add(soil_core::DomainPlugin)
-            .add(soil_core::NeighborPlugin)
-            .add(soil_core::GroupPlugin)
-            .add(soil_core::RunPlugin)
-            .add(soil_print::PrintPlugin)
-    }
-}
+pub use soil_plugins::CorePlugins;
 
 /// The DIRT prelude — import everything you need for a typical simulation.
 ///

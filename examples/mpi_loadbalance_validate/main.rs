@@ -27,8 +27,13 @@ fn main() {
     app.add_plugins(CorePlugins)
         .add_plugins(GranularDefaultPlugins);
     if every > 0 {
-        // Rebalance the x-decomposition by particle count every `every` steps.
-        app.add_plugins(LoadBalancePlugin { every, nbins: 64 });
+        // Rebalance every decomposed axis by particle count every `every`
+        // steps; threshold 1.0 rebalances on every due rebuild step.
+        app.add_plugins(LoadBalancePlugin {
+            every,
+            nbins: 64,
+            threshold: 1.0,
+        });
     }
     app.add_resource(DumpInfo { every });
     app.add_update_system(
@@ -60,7 +65,7 @@ fn dump_final_state(
     let path = format!("{dir}/state_e{}_n{ranks}_rank{rank}.csv", info.every);
     let mut f = fs::File::create(&path).expect("cannot create state csv");
     writeln!(f, "tag,x,y,z").unwrap();
-    for i in 0..atoms.nlocal as usize {
+    for i in 0..atoms.nlocal() as usize {
         writeln!(
             f,
             "{},{:.9e},{:.9e},{:.9e}",

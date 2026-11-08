@@ -564,37 +564,37 @@ fn setup_fixes(registry: Res<FixesRegistry>, comm: Res<CommResource>, groups: Re
 
     // Print a summary of all active fixes on rank 0.
     for f in &registry.add_forces {
-        println!(
+        grass_app::say!(
             "Fix addforce: group='{}', fx={}, fy={}, fz={}",
             f.group, f.fx, f.fy, f.fz
         );
     }
     for f in &registry.set_forces {
-        println!(
+        grass_app::say!(
             "Fix setforce: group='{}', fx={}, fy={}, fz={}",
             f.group, f.fx, f.fy, f.fz
         );
     }
     for f in &registry.move_linears {
-        println!(
+        grass_app::say!(
             "Fix move_linear: group='{}', vx={}, vy={}, vz={}",
             f.group, f.vx, f.vy, f.vz
         );
     }
     for f in &registry.freezes {
-        println!("Fix freeze: group='{}'", f.group);
+        grass_app::say!("Fix freeze: group='{}'", f.group);
     }
     for f in &registry.viscous {
-        println!("Fix viscous: group='{}', gamma={}", f.group, f.gamma);
+        grass_app::say!("Fix viscous: group='{}', gamma={}", f.group, f.gamma);
     }
     for f in &registry.cundall {
-        println!(
+        grass_app::say!(
             "Fix cundall: group='{}', gamma_l={}, gamma_a={}",
             f.group, f.gamma_l, f.gamma_a
         );
     }
     for f in &registry.nve_limit {
-        println!(
+        grass_app::say!(
             "Fix nve_limit: group='{}', max_displacement={}",
             f.group, f.max_displacement
         );
@@ -867,86 +867,10 @@ fn apply_nve_limit(
 
 // ── Gravity ─────────────────────────────────────────────────────────────────
 
-/// Gravitational acceleration configuration.
-///
-/// Applies a body force **F** = m **g** to every local atom each timestep,
-/// where m is the atom's mass and **g** = `(gx, gy, gz)`.
-///
-/// # TOML Configuration
-///
-/// ```toml
-/// [gravity]
-/// gx = 0.0      # acceleration in x direction (default: 0.0)
-/// gy = 0.0      # acceleration in y direction (default: 0.0)
-/// gz = -9.81    # acceleration in z direction (default: -9.81)
-/// ```
-#[derive(Deserialize, Clone)]
-#[serde(deny_unknown_fields)]
-pub struct GravityConfig {
-    /// Gravitational acceleration in x direction. Default: 0.0.
-    #[serde(default)]
-    pub gx: f64,
-    /// Gravitational acceleration in y direction. Default: 0.0.
-    #[serde(default)]
-    pub gy: f64,
-    /// Gravitational acceleration in z direction. Default: −9.81.
-    #[serde(default = "default_gravity_gz")]
-    pub gz: f64,
-}
-
-impl Default for GravityConfig {
-    fn default() -> Self {
-        GravityConfig {
-            gx: 0.0,
-            gy: 0.0,
-            gz: -9.81,
-        }
-    }
-}
-
-fn default_gravity_gz() -> f64 {
-    -9.81
-}
-
-/// Plugin that applies a constant gravitational body force (**F** = m**g**)
-/// to all local atoms during the Force schedule phase.
-pub struct GravityPlugin;
-
-impl Plugin for GravityPlugin {
-    fn default_config(&self) -> Option<&str> {
-        Some(
-            r#"[gravity]
-# Gravitational acceleration components (m/s^2)
-gx = 0.0
-gy = 0.0
-gz = -9.81"#,
-        )
-    }
-
-    fn build(&self, app: &mut App) {
-        Config::try_load::<GravityConfig>(app, "gravity")
-            .unwrap_or_else(|error| panic!("GravityPlugin failed to build: {error}"));
-        app.add_update_system(apply_gravity, ParticleSimScheduleSet::Force);
-    }
-
-    fn try_build(&self, app: &mut App) -> Result<(), AppError> {
-        Config::try_load::<GravityConfig>(app, "gravity")
-            .map_err(|error| AppError::message(error.to_string()))?;
-        app.add_update_system(apply_gravity, ParticleSimScheduleSet::Force);
-        Ok(())
-    }
-}
-
-/// Applies gravitational body force **F**_i = m_i **g** to all local atoms.
-///
-/// Ghost atoms (index ≥ `nlocal`) are not affected.
-pub fn apply_gravity(mut atoms: ResMut<Atom>, gravity: Res<GravityConfig>) {
-    for i in 0..atoms.nlocal() as usize {
-        atoms.force[i][0] += (atoms.mass[i] as f64 * gravity.gx) as Accum;
-        atoms.force[i][1] += (atoms.mass[i] as f64 * gravity.gy) as Accum;
-        atoms.force[i][2] += (atoms.mass[i] as f64 * gravity.gz) as Accum;
-    }
-}
+// Gravity reads only base `Atom` state, so it lives in SOIL and is shared with
+// the SPH and peridynamics tiers. Re-exported here so `dirt_fixes::GravityPlugin`
+// keeps working.
+pub use soil_fixes::{apply_gravity, GravityConfig, GravityPlugin};
 
 // ── Tests ──────────────────────────────────────────────────────────────────
 
@@ -1542,70 +1466,6 @@ misspelled_force = 1.0
             (a.force[0][0] - 5.0 * (1.0 - gl)).abs() < 1e-12,
             "linear damped by gamma_l"
         );
-    }
-
-    // ── Gravity tests ──────────────────────────────────────────────────────
-
-    fn make_gravity_atom(mass: f64) -> Atom {
-        let mut atom = Atom::new();
-        atom.dt = 1e-6;
-        // This fixture has no registered extensions.
-        unsafe { atom.push_test_atom(0, [0.0; 3], 0.001, mass) };
-        atom.nlocal = 1;
-        atom.natoms = 1;
-        atom
-    }
-
-    #[test]
-    fn gravity_applies_force_equal_to_mg() {
-        let mass = 0.5;
-        let gz = -9.81;
-
-        let mut app = App::new();
-        app.add_resource(make_gravity_atom(mass));
-        app.add_resource(GravityConfig {
-            gx: 0.0,
-            gy: 0.0,
-            gz,
-        });
-        app.add_update_system(apply_gravity, ParticleSimScheduleSet::Force);
-        app.organize_systems();
-        app.run();
-
-        let atom = app.get_resource_ref::<Atom>().unwrap();
-        assert!((atom.force[0][0]).abs() < 1e-15);
-        assert!((atom.force[0][1]).abs() < 1e-15);
-        assert!((atom.force[0][2] - mass * gz).abs() < 1e-15);
-    }
-
-    #[test]
-    fn gravity_skips_ghost_atoms() {
-        let mass = 1.0;
-        let gz = -9.81;
-
-        let mut atom = make_gravity_atom(mass);
-        // Add a ghost atom
-        // This fixture has no registered extensions.
-        unsafe { atom.push_test_atom(1, [0.0; 3], 0.001, mass) };
-        atom.is_ghost[1] = true;
-        // nlocal stays 1, ghost is index 1
-
-        let mut app = App::new();
-        app.add_resource(atom);
-        app.add_resource(GravityConfig {
-            gx: 0.0,
-            gy: 0.0,
-            gz,
-        });
-        app.add_update_system(apply_gravity, ParticleSimScheduleSet::Force);
-        app.organize_systems();
-        app.run();
-
-        let atom = app.get_resource_ref::<Atom>().unwrap();
-        // Local atom gets force
-        assert!((atom.force[0][2] - mass * gz).abs() < 1e-15);
-        // Ghost atom does not
-        assert!((atom.force[1][2]).abs() < 1e-15);
     }
 
     // ── NVE/Limit tests ─────────────────────────────────────────────────

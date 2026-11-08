@@ -49,7 +49,7 @@ fn measure_cooling(
         return;
     }
 
-    let nlocal = atoms.nlocal as usize;
+    let nlocal = atoms.nlocal() as usize;
     if nlocal == 0 {
         return;
     }

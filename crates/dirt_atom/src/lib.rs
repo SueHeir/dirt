@@ -1469,6 +1469,8 @@ impl MaterialTable {
 /// - **`#[reverse]`** — Accumulated from ghosts back to owner (e.g., `torque`).
 /// - **`#[zero]`** — Zeroed before each force computation (e.g., `torque`).
 ///
+/// - **`#[no_ghost]`** — Owner-only; left out of ghost border records (ghost rows are zero).
+///
 /// Fields without attributes are only communicated during atom migration (ownership transfer).
 #[derive(AtomData)]
 pub struct DemAtom {
@@ -1480,18 +1482,22 @@ pub struct DemAtom {
     /// Precomputed at insertion for efficient torque-to-angular-acceleration conversion.
     pub inv_inertia: Vec<f64>,
     /// Orientation quaternion [w, x, y, z] (unit quaternion). Initialized to [1, 0, 0, 0].
+    /// Integrator state on the owner only, so ghosts skip it.
+    #[no_ghost]
     pub quaternion: Vec<[f64; 4]>,
     /// Angular velocity (rad/s) in [x, y, z] components.
     /// Marked `#[forward]`: communicated from owner to ghost atoms each timestep.
     #[forward]
     pub omega: Vec<[f64; 3]>,
-    /// Angular momentum (kg·m²/s) in [x, y, z] components.
+    /// Angular momentum (kg·m²/s) in [x, y, z] components. Owner only.
+    #[no_ghost]
     pub ang_mom: Vec<[f64; 3]>,
     /// Torque (N·m) in [x, y, z] components.
     /// Marked `#[reverse]`: ghost contributions are summed back to the owning atom.
     /// Marked `#[zero]`: zeroed before each force computation step.
     #[reverse]
     #[zero]
+    #[no_ghost]
     pub torque: Vec<[f64; 3]>,
     /// Rigid body ID for clump/multisphere membership. 0.0 = independent particle.
     /// Positive values indicate sub-spheres of the same rigid body (same value = same body).

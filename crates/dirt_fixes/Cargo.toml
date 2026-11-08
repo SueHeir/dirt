@@ -9,12 +9,13 @@ keywords = ["fix", "force", "freeze", "molecular-dynamics", "dem"]
 categories = ["simulation", "science"]
 
 [features]
-precision-double = ["soil_core/precision-double"]
-precision-mixed = ["soil_core/precision-mixed"]
-precision-single = ["soil_core/precision-single"]
+precision-double = ["soil_core/precision-double", "soil_fixes/precision-double"]
+precision-mixed = ["soil_core/precision-mixed", "soil_fixes/precision-mixed"]
+precision-single = ["soil_core/precision-single", "soil_fixes/precision-single"]
 
 [dependencies]
 soil_core = { workspace = true, default-features = false }
+soil_fixes = { workspace = true, default-features = false }
 grass_app.workspace = true
 grass_scheduler.workspace = true
 dirt_schedule.workspace = true

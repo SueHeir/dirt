@@ -138,7 +138,7 @@ pub(super) fn read_csv_particles(
         *max_tag += 1;
     }
 
-    println!(
+    grass_app::say!(
         "DemAtomInsert: loaded {} local particles from CSV '{}'",
         count, file_path
     );
@@ -328,7 +328,7 @@ pub(super) fn read_lammps_dump_particles(
     }
 
     let _ = n_atoms; // used for format validation if needed
-    println!(
+    grass_app::say!(
         "DemAtomInsert: loaded {} local particles from LAMMPS dump '{}'",
         count, file_path
     );
@@ -599,7 +599,7 @@ pub(super) fn read_lammps_data_particles(
         *max_tag += 1;
     }
 
-    println!(
+    grass_app::say!(
         "DemAtomInsert: loaded {} local particles from LAMMPS data file '{}' (style: {})",
         count, file_path, atom_style
     );

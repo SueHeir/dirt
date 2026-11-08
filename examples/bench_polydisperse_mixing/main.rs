@@ -108,7 +108,7 @@ fn track_collision(
     input: Res<Input>,
     mut tracker: ResMut<CollisionTracker>,
 ) {
-    if tracker.finished || atoms.nlocal != 2 {
+    if tracker.finished || atoms.nlocal() != 2 {
         return;
     }
     let dem = registry.expect::<DemAtom>("track_collision");

@@ -384,7 +384,7 @@ fn production_rate_insert_partitions_exact_deterministic_tag_rows_and_cleans_lat
     );
     let mut packed = Vec::new();
     ParticleStore::new(&mut ghost, &ghost_registry)
-        .pack_migrant(0, &mut packed)
+        .pack_border(0, [0.0; 3], [0.0; 3], &mut packed)
         .unwrap();
     ParticleStore::new(&mut atom, &registry)
         .append_ghost_records(&packed, 1)
@@ -614,7 +614,7 @@ fn rate_insertion_ghost_cleanup_keeps_dem_rows_synchronized() {
     );
     let mut packed = Vec::new();
     ParticleStore::new(&mut source, &source_registry)
-        .pack_migrant(0, &mut packed)
+        .pack_border(0, [0.0; 3], [0.0; 3], &mut packed)
         .unwrap();
 
     let registry = test_dem_registry();

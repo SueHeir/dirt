@@ -85,7 +85,7 @@ fn main() {
 /// Returns `(overlap, v_rel_normal, contact_force_mag)` where `v_rel_normal` is
 /// positive while the bodies approach along the contact normal.
 fn contact_state(atoms: &Atom, dem: &DemAtom) -> (f64, f64, f64) {
-    if atoms.nlocal >= 2 {
+    if atoms.nlocal() >= 2 {
         // Sphere–sphere (Test 1): pair 0–1.
         let p0 = atoms.pos[0];
         let p1 = atoms.pos[1];
@@ -125,7 +125,7 @@ fn track_impact(
     input: Res<Input>,
     mut tracker: ResMut<ImpactTracker>,
 ) {
-    if tracker.finished || atoms.nlocal == 0 {
+    if tracker.finished || atoms.nlocal() == 0 {
         return;
     }
 
@@ -179,7 +179,7 @@ fn track_impact(
         writeln!(
             f,
             "{},{:.10e},{:.10e},{:.10e},{:.10e},{:.10e},{:.10e},{:.10e}",
-            atoms.nlocal,
+            atoms.nlocal(),
             tracker.v_impact,
             tracker.max_force,
             contact_time,
@@ -191,7 +191,7 @@ fn track_impact(
         .unwrap();
 
         println!("=== Chung & Ooi (2011) Impact Results ===");
-        println!("  Particles:        {}", atoms.nlocal);
+        println!("  Particles:        {}", atoms.nlocal());
         println!(
             "  Impact velocity:  {:.6e} m/s (relative, normal)",
             tracker.v_impact

@@ -114,7 +114,7 @@ fn track_rebound(
     input: Res<Input>,
     mut tracker: ResMut<ReboundTracker>,
 ) {
-    if tracker.finished || atoms.nlocal < 2 {
+    if tracker.finished || atoms.nlocal() < 2 {
         return;
     }
 

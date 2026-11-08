@@ -1,0 +1,103 @@
+# A frictional pile settling in a box, for comparing the GPU contact force with the CPU.
+# Soft and strongly frictional, so tangential springs carry real load for the whole run.
+# sort_every is short on purpose: atoms re-sort many times, and springs must survive it.
+#
+# See main.rs for how to run it.
+
+[comm]
+processors_x = 1
+processors_y = 1
+processors_z = 1
+
+[domain]
+x_low = 0.0
+x_high = 0.04
+y_low = 0.0
+y_high = 0.04
+z_low = 0.0
+z_high = 0.12
+boundary_x = "fixed"
+boundary_y = "fixed"
+boundary_z = "fixed"
+
+[neighbor]
+skin_fraction = 1.2
+bin_size = 0.004
+every = 10
+sort_every = 200
+
+[gravity]
+gz = -9.81
+
+[dem]
+contact_model = "hertz"
+
+[[dem.materials]]
+name = "glass"
+youngs_mod = 1.0e7
+poisson_ratio = 0.25
+restitution = 0.5
+friction = 0.5
+
+[[wall]]
+type = "plane"
+point_x = 0.0
+point_y = 0.0
+point_z = 0.0
+normal_x = 0.0
+normal_y = 0.0
+normal_z = 1.0
+material = "glass"
+
+[[wall]]
+type = "plane"
+point_x = 0.0
+point_y = 0.0
+point_z = 0.0
+normal_x = 1.0
+normal_y = 0.0
+normal_z = 0.0
+material = "glass"
+
+[[wall]]
+type = "plane"
+point_x = 0.04
+point_y = 0.0
+point_z = 0.0
+normal_x = -1.0
+normal_y = 0.0
+normal_z = 0.0
+material = "glass"
+
+[[wall]]
+type = "plane"
+point_x = 0.0
+point_y = 0.0
+point_z = 0.0
+normal_x = 0.0
+normal_y = 1.0
+normal_z = 0.0
+material = "glass"
+
+[[wall]]
+type = "plane"
+point_x = 0.0
+point_y = 0.04
+point_z = 0.0
+normal_x = 0.0
+normal_y = -1.0
+normal_z = 0.0
+material = "glass"
+
+[[particles.insert]]
+material = "glass"
+count = 800
+radius = 0.0018
+density = 2500.0
+seed = 7
+region = { type = "block", min = [0.003, 0.003, 0.003], max = [0.037, 0.037, 0.115] }
+
+[[run]]
+name = "settle"
+steps = 40000
+thermo = 10000

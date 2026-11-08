@@ -40,7 +40,7 @@ fn write_state(app: &App, output: &str) -> std::io::Result<()> {
 
     let mut out = BufWriter::new(File::create(output)?);
     writeln!(out, "kind,index,field,x,y,z,w")?;
-    for i in 0..atoms.nlocal as usize {
+    for i in 0..atoms.nlocal() as usize {
         writeln!(
             out,
             "atom,{i},pos,{},{},{},",

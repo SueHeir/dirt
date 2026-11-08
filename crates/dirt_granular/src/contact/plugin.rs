@@ -27,6 +27,7 @@ impl Plugin for HertzMindlinContactPlugin {
             let mt = app
                 .get_resource_ref::<MaterialTable>()
                 .expect("MaterialTable must exist before HertzMindlinContactPlugin");
+            warn_about_constant_torque(&mt);
             mt.contact_model.clone()
         };
 
@@ -67,5 +68,21 @@ impl Plugin for HertzMindlinContactPlugin {
         }
         self.build(app);
         Ok(())
+    }
+}
+
+/// Constant-torque rolling and twisting are singular when two grains spin alike: the relative
+/// spin is rounding noise, yet the torque keeps its full size with a direction set by that noise.
+/// Runs stay valid in aggregate, but cannot be reproduced grain by grain.
+fn warn_about_constant_torque(mt: &MaterialTable) {
+    let any = |values: &[f64]| values.iter().any(|&value| value > 0.0);
+    let rolling = mt.rolling_model == "constant" && any(&mt.rolling_friction);
+    let twisting = mt.twisting_model == "constant" && any(&mt.twisting_friction);
+    if rolling || twisting {
+        eprintln!(
+            "WARNING: constant-torque rolling or twisting friction is singular at equal spin, so \
+             individual grains are sensitive to rounding. rolling_model = \"sds\" and \
+             twisting_model = \"sds\" or \"marshall\" avoid this, and are what LAMMPS offers."
+        );
     }
 }

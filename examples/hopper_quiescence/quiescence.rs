@@ -117,7 +117,7 @@ impl Plugin for QuiescencePlugin {
         // DumpRegistry extension point, from this (non-core) plugin's build().
         if let Some(dump_reg) = app.get_resource_ref::<DumpRegistry>() {
             dump_reg.register_scalar("mode", |atoms, registry| {
-                let nlocal = atoms.nlocal as usize;
+                let nlocal = atoms.nlocal() as usize;
                 match registry.get::<QcStore>() {
                     Some(store) => (0..nlocal)
                         .map(|i| {
@@ -134,7 +134,7 @@ impl Plugin for QuiescencePlugin {
             // Binary "frozen" flag (1 = asleep/pinned, 0 = active or adjacent) —
             // convenient for thresholding/coloring in ParaView or OVITO.
             dump_reg.register_scalar("frozen", |atoms, registry| {
-                let nlocal = atoms.nlocal as usize;
+                let nlocal = atoms.nlocal() as usize;
                 match registry.get::<QcStore>() {
                     Some(store) => (0..nlocal)
                         .map(|i| {
@@ -200,7 +200,7 @@ fn q_post_force(
     }
     let mut store = registry.expect_mut::<QcStore>("q_post_force");
     let mut dem = registry.expect_mut::<DemAtom>("q_post_force");
-    let nlocal = atoms.nlocal as usize;
+    let nlocal = atoms.nlocal() as usize;
     store.ensure_len(atoms.len());
     if q.active_flag.len() < nlocal {
         q.active_flag.resize(nlocal, false);
@@ -335,7 +335,7 @@ fn q_zero_sleepers(mut atoms: ResMut<Atom>, q: Res<Quiescence>, registry: Res<At
     }
     let store = registry.expect_mut::<QcStore>("q_zero_sleepers");
     let mut dem = registry.expect_mut::<DemAtom>("q_zero_sleepers");
-    let nlocal = atoms.nlocal as usize;
+    let nlocal = atoms.nlocal() as usize;
     for i in 0..nlocal {
         if i < store.mode.len() && store.mode[i] == MODE_ASLEEP {
             atoms.force[i] = [0.0; 3];
