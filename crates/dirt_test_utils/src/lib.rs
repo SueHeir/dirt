@@ -429,8 +429,8 @@ mod fixture_tests {
     #[test]
     fn default_fixture_is_nonempty_and_synchronized() {
         let fixture = ParticleFixture::default().build();
-        assert_eq!(fixture.atom.nlocal, 2);
-        assert_eq!(fixture.atom.natoms, 2);
+        assert_eq!(fixture.atom.nlocal(), 2);
+        assert_eq!(fixture.atom.natoms(), 2);
         assert_eq!(fixture.atom.len(), 2);
         assert_eq!(
             fixture
