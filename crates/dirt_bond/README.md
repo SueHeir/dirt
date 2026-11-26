@@ -82,6 +82,42 @@ The bending and axial channels are independently optional
 Plastic anchors and max-strain history are carried per bond in
 `BondHistoryStore` and survive MPI communication and atom reordering.
 
+## Matching LAMMPS `bond_style bpm/guo`
+
+`formulation = "bpm_guo"` in `[bonds]` switches the force law to follow
+LAMMPS `bond_bpm_guo.cpp` step for step: shear/twist/bend history is
+re-projected each step keeping its magnitude, the lever arm is the current
+half-length, damping uses the owner's mass and inertia, the bond radius is
+the mean of the two radii, and break checks use the elastic loads (before
+damping). The default, `"dirt"`, keeps DIRT's historical law.
+
+The LAMMPS break models map to these `[bonds.breakage]` kinds:
+
+| LAMMPS `break_model` | DIRT `kind` | fields |
+|---|---|---|
+| `guo σmax τmax` | `guo` | `sigma_max`, `tau_max` |
+| `guo_weibull σ0 m Lcalib ρ` | `guo_weibull` | `sigma0`, `m` (5), `l_calib`, `rho_shear` (0.5) |
+| `strain εmax γmax` | `guo_strain` | `strain_limit`, `shear_limit` |
+| `strain_weibull σ0 m Lcalib ρ` | `guo_strain_weibull` | `sigma0`, `m`, `l_calib`, `rho_shear` (1.0) |
+
+Weibull thresholds use LAMMPS's tag-pair hash, so the same bonds break as
+in LAMMPS for the same seed. Stress-based Guo checks are skipped while the
+bond is in compression, as LAMMPS does.
+
+LAMMPS `plastic edl f1 pdl f2 ebal pbal` maps to
+`[bonds.plasticity.axial] kind = "piecewise"` (tension-only, incremental:
+reloading is elastic up to the previous peak) and
+`[bonds.plasticity.bending] kind = "angle_piecewise"` with
+`breakpoint_angles` and `slope_multipliers`.
+
+Other `[bonds]` keys useful for yarn runs:
+
+- `bond_radius = "min" | "mean"` overrides the radius rule.
+- `breakage_start_step = N` keeps every bond intact for the first N steps
+  (relaxation).
+- `[dem] deep_overlap_abort = 0` keeps a run going through a break cascade
+  instead of aborting after 500 deep overlaps in one step.
+
 ## Key types
 
 | Item | Role |

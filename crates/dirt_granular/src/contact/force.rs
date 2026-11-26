@@ -859,21 +859,21 @@ pub fn contact_force_core_views(
         }
 
         // Store updated spring back (canonical form) and mark active
-        let mut new_spring = stored;
-        new_spring[0] = sign * sx;
-        new_spring[1] = sign * sy;
-        new_spring[2] = sign * sz;
-        new_spring[3] = sign * roll_disp_x;
-        new_spring[4] = sign * roll_disp_y;
-        new_spring[5] = sign * roll_disp_z;
-        new_spring[6] = sign * twist_disp;
-        new_spring[7] = contact_radius;
+        // Write the updated springs into `stored` in place (no second 184-byte copy).
+        stored[0] = sign * sx;
+        stored[1] = sign * sy;
+        stored[2] = sign * sz;
+        stored[3] = sign * roll_disp_x;
+        stored[4] = sign * roll_disp_y;
+        stored[5] = sign * roll_disp_z;
+        stored[6] = sign * twist_disp;
+        stored[7] = contact_radius;
         match entry_idx {
             Some(idx) => {
-                history.contacts[i][idx].1 = new_spring;
+                history.contacts[i][idx].1 = stored;
                 history.contacts[i][idx].2 = true;
             }
-            None => history.contacts[i].push((tag_j, new_spring, true)),
+            None => history.contacts[i].push((tag_j, stored, true)),
         }
     }
 
@@ -1097,7 +1097,7 @@ pub fn hooke_contact_force(
             let sign: f64 = if tag_i < tag_j { 1.0 } else { -1.0 };
 
             let entry_idx = history.contacts[i].iter().position(|(t, _, _)| *t == tag_j);
-            let stored = match entry_idx {
+            let mut stored = match entry_idx {
                 Some(idx) => history.contacts[i][idx].1,
                 None => zero_contact_history(),
             };
@@ -1376,21 +1376,21 @@ pub fn hooke_contact_force(
                 }
             }
 
-            let mut new_spring = stored;
-            new_spring[0] = sign * sx;
-            new_spring[1] = sign * sy;
-            new_spring[2] = sign * sz;
-            new_spring[3] = sign * roll_disp_x;
-            new_spring[4] = sign * roll_disp_y;
-            new_spring[5] = sign * roll_disp_z;
-            new_spring[6] = sign * twist_disp;
-            new_spring[7] = contact_radius;
+            // Write the updated springs into `stored` in place (no second 184-byte copy).
+            stored[0] = sign * sx;
+            stored[1] = sign * sy;
+            stored[2] = sign * sz;
+            stored[3] = sign * roll_disp_x;
+            stored[4] = sign * roll_disp_y;
+            stored[5] = sign * roll_disp_z;
+            stored[6] = sign * twist_disp;
+            stored[7] = contact_radius;
             match entry_idx {
                 Some(idx) => {
-                    history.contacts[i][idx].1 = new_spring;
+                    history.contacts[i][idx].1 = stored;
                     history.contacts[i][idx].2 = true;
                 }
-                None => history.contacts[i].push((tag_j, new_spring, true)),
+                None => history.contacts[i].push((tag_j, stored, true)),
             }
         }
 

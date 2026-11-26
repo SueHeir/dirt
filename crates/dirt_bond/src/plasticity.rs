@@ -110,6 +110,15 @@ pub enum BendingPlasticityConfig {
         /// Material yield stress σ_0 (Pa).
         yield_stress: f64,
     },
+    /// Piecewise-linear bending envelope with breakpoints in **bending angle**
+    /// (radians), the form LAMMPS `bpm/guo … plastic edl f1 pdl f2 ebal pbal`
+    /// uses: `breakpoint_angles = [ebal, pbal]`, `slope_multipliers = [0.5, 0.0]`.
+    AnglePiecewise {
+        /// Strictly ascending bending-angle breakpoints (rad).
+        breakpoint_angles: Vec<f64>,
+        /// Slope multipliers past each breakpoint, relative to `K_e`.
+        slope_multipliers: Vec<f64>,
+    },
     /// Piecewise-linear bending envelope.
     Piecewise {
         /// Breakpoints in **extreme-fibre strain** `ε = r_b · θ_bend / l_b`
@@ -150,6 +159,13 @@ pub enum BendingPlasticity {
         /// Material yield stress σ_0 (Pa).
         yield_stress: f64,
     },
+    /// Piecewise-linear bending envelope in bending-angle space (rad).
+    AnglePiecewise {
+        /// Strictly-ascending bending-angle breakpoints (rad).
+        breakpoint_angles: Vec<f64>,
+        /// Per-segment slope multipliers relative to the elastic stiffness `K_e`.
+        slope_multipliers: Vec<f64>,
+    },
     /// Piecewise-linear bending envelope in extreme-fibre-strain space.
     Piecewise {
         /// Strictly-ascending breakpoints in extreme-fibre strain
@@ -161,6 +177,45 @@ pub enum BendingPlasticity {
 }
 
 impl BendingPlasticity {
+    /// Slope multiplier for the LAMMPS-style incremental rule at bending angle
+    /// `theta` (rad): `1` below the first breakpoint, else the multiplier of the
+    /// last breakpoint with `theta ≥` it (LAMMPS compares the bend angle with
+    /// `>=`). `k_e`, `r_b`, `l_b` convert stress or strain breakpoints to angles.
+    pub fn slope_multiplier(&self, theta: f64, k_e: f64, r_b: f64, l_b: f64) -> f64 {
+        let pick = |breaks: &[f64], slopes: &[f64], scale: f64| {
+            let mut s = 1.0;
+            for (k, &b) in breaks.iter().enumerate() {
+                if theta >= b * scale {
+                    s = slopes[k];
+                } else {
+                    break;
+                }
+            }
+            s
+        };
+        match self {
+            Self::GuoBending { yield_stress } => {
+                let m_p = (4.0 / 3.0) * yield_stress * r_b.powi(3);
+                if k_e > 0.0 && theta >= m_p / k_e {
+                    0.0
+                } else {
+                    1.0
+                }
+            }
+            Self::AnglePiecewise {
+                breakpoint_angles,
+                slope_multipliers,
+            } => pick(breakpoint_angles, slope_multipliers, 1.0),
+            Self::Piecewise {
+                breakpoint_strains,
+                slope_multipliers,
+            } => {
+                let scale = if r_b > 0.0 { l_b / r_b } else { 0.0 };
+                pick(breakpoint_strains, slope_multipliers, scale)
+            }
+        }
+    }
+
     /// Evaluate the bending-moment envelope `|M_env|` at elastic-strain
     /// magnitude `|θ_e|`. `k_e = E_b·I/l_b` is the elastic bending stiffness
     /// for this bond; `r_b`, `l_b` are the bond geometry.
@@ -170,6 +225,10 @@ impl BendingPlasticity {
                 let m_p = (4.0 / 3.0) * yield_stress * r_b.powi(3);
                 (k_e * theta_e_mag).min(m_p)
             }
+            Self::AnglePiecewise {
+                breakpoint_angles,
+                slope_multipliers,
+            } => evaluate_piecewise(theta_e_mag, k_e, breakpoint_angles, slope_multipliers, 1.0),
             Self::Piecewise {
                 breakpoint_strains,
                 slope_multipliers,
@@ -307,6 +366,16 @@ impl BondPlasticityModel {
                 BendingPlasticity::Piecewise {
                     breakpoint_strains: vec![eps_e, eps_p],
                     slope_multipliers: vec![0.5, 0.0],
+                }
+            }
+            BendingPlasticityConfig::AnglePiecewise {
+                breakpoint_angles,
+                slope_multipliers,
+            } => {
+                validate_piecewise("bending", breakpoint_angles, slope_multipliers);
+                BendingPlasticity::AnglePiecewise {
+                    breakpoint_angles: breakpoint_angles.clone(),
+                    slope_multipliers: slope_multipliers.clone(),
                 }
             }
             BendingPlasticityConfig::Piecewise {
@@ -757,7 +826,10 @@ mod tests {
         let k_eff = k_n * l0;
         let f_yield = k_eff * 0.01;
         let (f, eps_p, eps_max) = drive(&[0.03], k_n, l0, &model);
-        assert!((f - f_yield).abs() / f_yield < 1e-3, "f = {f}, cap {f_yield}");
+        assert!(
+            (f - f_yield).abs() / f_yield < 1e-3,
+            "f = {f}, cap {f_yield}"
+        );
         assert!((eps_p - 0.02).abs() / 0.02 < 1e-3);
         assert!((eps_max - 0.03).abs() / 0.03 < 1e-12);
     }
@@ -858,7 +930,10 @@ mod tests {
         assert!((f_back - k_eff * (0.02 - eps_p_peak)).abs() / f_back < 1e-12);
         let (f_on, _, eps_max_on) = drive(&[0.02, 0.0, 0.025], k_n, l0, &model);
         let expected = 0.015 * k_eff + 0.1 * k_eff * 0.005;
-        assert!((f_on - expected).abs() / expected < 1e-3, "{f_on} vs {expected}");
+        assert!(
+            (f_on - expected).abs() / expected < 1e-3,
+            "{f_on} vs {expected}"
+        );
         assert!(eps_max_on > eps_max_peak);
     }
 }

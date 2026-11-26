@@ -80,6 +80,30 @@ pub(super) fn insert_single_particle(
     row.write_dem(&mut dem_data, i, mass);
 }
 
+/// Append many particles under one structural transaction. File readers use
+/// this instead of [`insert_single_particle`] in a loop: each single insert
+/// snapshots the whole store, which makes an N-particle file O(N²) to load.
+pub(super) fn insert_particles(atom: &mut Atom, registry: &AtomDataRegistry, rows: &[DemParticle]) {
+    if rows.is_empty() {
+        return;
+    }
+    let global_natoms = atom
+        .natoms()
+        .checked_add(rows.len() as u64)
+        .expect("global particle count overflow during DEM insertion");
+    let first = atom.len();
+    ParticleStore::new(atom, registry)
+        .push_default_locals(rows.len(), global_natoms)
+        .expect("registered DEM rows must accept transactional insertion");
+    let mut dem_data = registry.expect_mut::<DemAtom>("insert_particles");
+    for (k, row) in rows.iter().enumerate() {
+        let i = first + k;
+        let mass = row.mass();
+        row.write_core(atom, i, mass);
+        row.write_dem(&mut dem_data, i, mass);
+    }
+}
+
 // ── Helper: subdomain ownership ─────────────────────────────────────────────
 
 /// Whether `pos` lies inside this rank's subdomain, using a half-open interval

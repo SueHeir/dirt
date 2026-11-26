@@ -990,9 +990,9 @@ fn validate_material(material: &Material) -> Result<(), MaterialError> {
         return Err(invalid("elastic.youngs_mod", "finite and > 0"));
     }
     if !finite(material.elastic.poisson_ratio)
-        || !(0.0..0.5).contains(&material.elastic.poisson_ratio)
+        || !(0.0..=0.5).contains(&material.elastic.poisson_ratio)
     {
-        return Err(invalid("elastic.poisson_ratio", "finite and in [0, 0.5)"));
+        return Err(invalid("elastic.poisson_ratio", "finite and in [0, 0.5]"));
     }
     if !finite(material.elastic.restitution) || !(0.0..=1.0).contains(&material.elastic.restitution)
     {

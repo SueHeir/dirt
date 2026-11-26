@@ -59,37 +59,98 @@ fn dump_every() -> u64 {
         .unwrap_or(0)
 }
 
-/// Static grip membership: the set of atom tags in each z-end grip, captured once
-/// from the initial configuration (like LAMMPS's `group left region boxleft`,
-/// assigned at setup and fixed thereafter). Re-evaluating membership by *current*
-/// z each step would let interior atoms drift across the boundary and be captured
-/// into the rigid grip, shortening the effective gauge.
-static GRIP_TAGS: std::sync::OnceLock<(
-    std::collections::HashSet<u64>,
-    std::collections::HashSet<u64>,
-)> = std::sync::OnceLock::new();
+/// Static grip membership, by atom tag: 0 = free, 1 = left grip, 2 = right
+/// grip. Captured once from the initial configuration (like LAMMPS's
+/// `group left region boxleft`, assigned at setup and fixed thereafter), so
+/// interior atoms that drift across the grip plane are never captured.
+///
+/// Read from the data file named in the config, so every rank sees the same
+/// global membership: an atom that migrates to another rank mid-pull stays in
+/// its grip. Falls back to classifying this rank's atoms by their current z if
+/// the file can't be read. A dense `Vec<u8>` keeps the per-step lookup a
+/// load instead of two SipHash probes per atom.
+static GRIP_TAGS: std::sync::OnceLock<Vec<u8>> = std::sync::OnceLock::new();
 
-fn grip_tags(
-    atoms: &Atom,
-) -> &'static (
-    std::collections::HashSet<u64>,
-    std::collections::HashSet<u64>,
-) {
-    GRIP_TAGS.get_or_init(|| {
-        let (mut left, mut right) = (
-            std::collections::HashSet::new(),
-            std::collections::HashSet::new(),
-        );
-        for i in 0..atoms.nlocal() as usize {
-            let z = atoms.pos[i][2] as f64;
-            if z < LEFT_GRIP_ZMAX {
-                left.insert(atoms.tag[i] as u64);
-            } else if z > RIGHT_GRIP_ZMIN {
-                right.insert(atoms.tag[i] as u64);
+fn classify(z: f64) -> u8 {
+    if z < LEFT_GRIP_ZMAX {
+        1
+    } else if z > RIGHT_GRIP_ZMIN {
+        2
+    } else {
+        0
+    }
+}
+
+/// `file = "..."` of the first `[[particles.insert]]` block in the run config.
+fn data_file_from_config() -> Option<String> {
+    let cfg = std::fs::read_to_string(std::env::args().nth(1)?).ok()?;
+    let mut in_insert = false;
+    for line in cfg.lines() {
+        let t = line.trim();
+        if t.starts_with('[') {
+            in_insert = t == "[[particles.insert]]";
+            continue;
+        }
+        if in_insert {
+            if let Some(rest) = t.strip_prefix("file") {
+                let v = rest.trim_start().strip_prefix('=')?.trim();
+                return Some(v.trim_matches('"').to_string());
             }
         }
-        (left, right)
+    }
+    None
+}
+
+/// Grip class per tag from a `bpm/sphere` data file (`id mol type d rho x y z`).
+fn grip_tags_from_file(path: &str) -> Option<Vec<u8>> {
+    let text = std::fs::read_to_string(path).ok()?;
+    let mut lines = text.lines();
+    lines.find(|l| l.trim_start().starts_with("Atoms"))?;
+    let mut out: Vec<u8> = Vec::new();
+    let mut seen = false;
+    for line in lines {
+        let t = line.trim();
+        if t.is_empty() {
+            if seen {
+                break;
+            }
+            continue;
+        }
+        let f: Vec<&str> = t.split_whitespace().collect();
+        if f.len() < 8 || f[0].parse::<usize>().is_err() {
+            break;
+        }
+        seen = true;
+        let tag: usize = f[0].parse().ok()?;
+        let z: f64 = f[7].parse().ok()?;
+        if out.len() <= tag {
+            out.resize(tag + 1, 0);
+        }
+        out[tag] = classify(z);
+    }
+    seen.then_some(out)
+}
+
+fn grip_tags(atoms: &Atom) -> &'static [u8] {
+    GRIP_TAGS.get_or_init(|| {
+        if let Some(v) = data_file_from_config().and_then(|p| grip_tags_from_file(&p)) {
+            return v;
+        }
+        let mut out = Vec::new();
+        for i in 0..atoms.nlocal() as usize {
+            let tag = atoms.tag[i] as usize;
+            if out.len() <= tag {
+                out.resize(tag + 1, 0);
+            }
+            out[tag] = classify(atoms.pos[i][2] as f64);
+        }
+        out
     })
+}
+
+#[inline]
+fn grip_of(grips: &[u8], tag: u32) -> u8 {
+    grips.get(tag as usize).copied().unwrap_or(0)
 }
 
 fn main() {
@@ -118,13 +179,12 @@ fn grip_control(mut atoms: ResMut<Atom>, run_state: Res<RunState>) {
     if (run_state.total_cycle as u64) < relax_steps() {
         return;
     }
-    let (left, right) = grip_tags(&atoms);
+    let grips = grip_tags(&atoms);
     for i in 0..atoms.nlocal() as usize {
-        let t = atoms.tag[i] as u64;
-        if left.contains(&t) {
-            atoms.vel[i] = [0.0, 0.0, -V_PULL as Real];
-        } else if right.contains(&t) {
-            atoms.vel[i] = [0.0, 0.0, V_PULL as Real];
+        match grip_of(grips, atoms.tag[i]) {
+            1 => atoms.vel[i] = [0.0, 0.0, -V_PULL as Real],
+            2 => atoms.vel[i] = [0.0, 0.0, V_PULL as Real],
+            _ => {}
         }
     }
 }
@@ -136,10 +196,9 @@ fn grip_zero_force(mut atoms: ResMut<Atom>, run_state: Res<RunState>) {
     if (run_state.total_cycle as u64) < relax_steps() {
         return;
     }
-    let (left, right) = grip_tags(&atoms);
+    let grips = grip_tags(&atoms);
     for i in 0..atoms.nlocal() as usize {
-        let t = atoms.tag[i] as u64;
-        if left.contains(&t) || right.contains(&t) {
+        if grip_of(grips, atoms.tag[i]) != 0 {
             atoms.force[i] = [0.0; 3];
         }
     }
@@ -255,16 +314,19 @@ fn measure_pull(
     // ── Diagnostics: where does the imposed strain actually go? ──
     // Gauge extension = right-grip mean z − left-grip mean z, vs its initial value.
     let nlocal = atoms.nlocal() as usize;
-    let (left, right) = grip_tags(&atoms);
+    let grips = grip_tags(&atoms);
     let (mut lz, mut ln, mut rz, mut rn) = (0.0_f64, 0u32, 0.0_f64, 0u32);
     for i in 0..nlocal {
-        let t = atoms.tag[i] as u64;
-        if left.contains(&t) {
-            lz += atoms.pos[i][2] as f64;
-            ln += 1;
-        } else if right.contains(&t) {
-            rz += atoms.pos[i][2] as f64;
-            rn += 1;
+        match grip_of(grips, atoms.tag[i]) {
+            1 => {
+                lz += atoms.pos[i][2] as f64;
+                ln += 1;
+            }
+            2 => {
+                rz += atoms.pos[i][2] as f64;
+                rn += 1;
+            }
+            _ => {}
         }
     }
     // Reduce grip sums across ranks (grip atoms may live on either rank).
@@ -278,19 +340,22 @@ fn measure_pull(
         0.0
     };
     // Mean/max axial bond strain (dist/r0 − 1), from BondStore + a tag→index map.
-    let mut tag_idx = std::collections::HashMap::with_capacity(nlocal);
-    for i in 0..nlocal {
-        tag_idx.insert(atoms.tag[i], i);
+    // Local atoms first so a local copy wins over a ghost image of the same tag;
+    // ghosts let bonds that straddle a rank boundary be counted too (by the rank
+    // owning the lower tag), so the mean is over the same bonds on any rank count.
+    let mut tag_idx = std::collections::HashMap::with_capacity(atoms.len());
+    for i in 0..atoms.len() {
+        tag_idx.entry(atoms.tag[i]).or_insert(i);
     }
     let (mut sum_eps, mut n_eps, mut max_eps) = (0.0_f64, 0u64, 0.0_f64);
     particles.with(|bonds| {
         for i in 0..nlocal.min(bonds.bonds.len()) {
             let pi = atoms.pos[i];
             for b in &bonds.bonds[i] {
+                if b.partner_tag <= atoms.tag[i] {
+                    continue; // count each bond once, from its lower tag
+                }
                 if let Some(&j) = tag_idx.get(&b.partner_tag) {
-                    if j <= i {
-                        continue; // count each bond once
-                    }
                     let pj = atoms.pos[j];
                     let dist = (((pi[0] - pj[0]).powi(2)
                         + (pi[1] - pj[1]).powi(2)

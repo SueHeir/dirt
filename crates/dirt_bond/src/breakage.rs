@@ -518,6 +518,10 @@ impl BreakageCriterion for GuoStrainWeibull {
         kin: &BondKinematics,
         thr: &BondThresholds,
     ) -> Option<BreakMode> {
+        // A bond whose draw never ran (threshold ~0) never breaks, as in LAMMPS.
+        if thr.t[0] < GUO_EPSILON || thr.t[1] < GUO_EPSILON {
+            return None;
+        }
         // ε = ε_axial + ε_bend (ε_axial NOT clamped, matching LAMMPS).
         let epsilon = kin.eps_axial + geom.r_b * kin.kappa_bend;
         if epsilon > thr.t[0] {
@@ -528,6 +532,157 @@ impl BreakageCriterion for GuoStrainWeibull {
             return Some(BreakMode::Shear);
         }
         None
+    }
+}
+
+/// `EPSILON` in `bond_bpm_guo.cpp`: Weibull thresholds below it are treated
+/// as "never sampled" and the bond does not break.
+pub const GUO_EPSILON: f64 = 1e-10;
+
+/// LAMMPS `bpm/guo` stresses: `σ = F_n/A + 2|M_b| r_b / J` (signed `F_n`) and
+/// `τ = |F_t|/A + |M_t| r_b / J`.
+fn guo_stresses(geom: &BondGeom, loads: &BondLoads) -> (f64, f64) {
+    let sigma = if geom.area > 0.0 && geom.jpol > 0.0 {
+        loads.f_n / geom.area + 2.0 * loads.m_bend_mag * geom.r_b / geom.jpol
+    } else {
+        0.0
+    };
+    let tau = if geom.area > 0.0 && geom.jpol > 0.0 {
+        loads.f_t_mag / geom.area + loads.m_tor_mag * geom.r_b / geom.jpol
+    } else {
+        0.0
+    };
+    (sigma, tau)
+}
+
+/// Exact port of LAMMPS `bond_style bpm/guo`'s `break_model guo sigma_max tau_max`.
+///
+/// Breaks when `σ > σ_max` or `τ > τ_max` (see [`guo_stresses`]), but only
+/// while the bond is not in compression (`ε_axial ≥ 0`), as in Guo's
+/// `demcfd.f90` and the EMS2026 LAMMPS change. `F_n` enters signed, so a
+/// plastically stretched bond pushed back below its offset lowers `σ`.
+#[derive(Clone, Debug)]
+pub struct GuoStress {
+    /// Tensile-stress limit `σ_max` (Pa).
+    pub sigma_max: f64,
+    /// Shear-stress limit `τ_max` (Pa).
+    pub tau_max: f64,
+}
+
+impl BreakageCriterion for GuoStress {
+    fn num_thresholds(&self) -> usize {
+        0
+    }
+    fn sample(&self, _: f64, _: [f64; 4]) -> BondThresholds {
+        BondThresholds::default()
+    }
+    fn check(
+        &self,
+        geom: &BondGeom,
+        loads: &BondLoads,
+        kin: &BondKinematics,
+        _thr: &BondThresholds,
+    ) -> Option<BreakMode> {
+        if kin.eps_axial < 0.0 {
+            return None;
+        }
+        let (sigma, tau) = guo_stresses(geom, loads);
+        if sigma > self.sigma_max {
+            Some(BreakMode::Tensile)
+        } else if tau > self.tau_max {
+            Some(BreakMode::Shear)
+        } else {
+            None
+        }
+    }
+}
+
+/// Exact port of LAMMPS `bond_style bpm/guo`'s
+/// `break_model guo_weibull sigma0 L_calib m rho_shear`.
+///
+/// Per bond, `σ_c = σ₀ (L_calib/r₀)^{1/m} (−ln(1−u))^{1/m}` with `u` from the
+/// LAMMPS hash ([`guo_weibull_u`]) and `τ_c = ρ_shear σ_c`. The check is
+/// [`GuoStress`]'s, against the per-bond limits, and likewise never breaks a
+/// bond in compression.
+#[derive(Clone, Debug)]
+pub struct GuoStressWeibull {
+    /// Characteristic stress `σ₀` (Pa).
+    pub sigma0: f64,
+    /// Weibull modulus `m`.
+    pub m: f64,
+    /// Calibration gauge length `L_calib` (bond-length units).
+    pub l_calib: f64,
+    /// Shear-to-normal limit ratio `ρ_shear`.
+    pub rho_shear: f64,
+}
+
+impl BreakageCriterion for GuoStressWeibull {
+    fn num_thresholds(&self) -> usize {
+        1
+    }
+    fn uses_guo_hash(&self) -> bool {
+        true
+    }
+    fn sample(&self, l_bond: f64, u: [f64; 4]) -> BondThresholds {
+        let sigma_c = guo_strain_weibull_threshold(self.sigma0, self.l_calib, l_bond, self.m, u[0]);
+        BondThresholds {
+            t: [sigma_c, sigma_c * self.rho_shear, 0.0, 0.0],
+        }
+    }
+    fn check(
+        &self,
+        geom: &BondGeom,
+        loads: &BondLoads,
+        kin: &BondKinematics,
+        thr: &BondThresholds,
+    ) -> Option<BreakMode> {
+        if kin.eps_axial < 0.0 {
+            return None;
+        }
+        let (sigma, tau) = guo_stresses(geom, loads);
+        if sigma > thr.t[0] {
+            Some(BreakMode::Tensile)
+        } else if tau > thr.t[1] {
+            Some(BreakMode::Shear)
+        } else {
+            None
+        }
+    }
+}
+
+/// Exact port of LAMMPS `bond_style bpm/guo`'s
+/// `break_model strain strain_limit strain_shear_limit`:
+/// `ε_axial + r_b κ_bend > ε_limit` or `γ_shear + r_b κ_tor > γ_limit`, with the
+/// axial strain signed (not clamped) as in `check_break_strain`.
+#[derive(Clone, Debug)]
+pub struct GuoStrain {
+    /// Normal strain limit.
+    pub strain_limit: f64,
+    /// Shear strain limit.
+    pub shear_limit: f64,
+}
+
+impl BreakageCriterion for GuoStrain {
+    fn num_thresholds(&self) -> usize {
+        0
+    }
+    fn sample(&self, _: f64, _: [f64; 4]) -> BondThresholds {
+        BondThresholds::default()
+    }
+    fn check(
+        &self,
+        geom: &BondGeom,
+        _loads: &BondLoads,
+        kin: &BondKinematics,
+        _thr: &BondThresholds,
+    ) -> Option<BreakMode> {
+        if kin.eps_axial + geom.r_b * kin.kappa_bend > self.strain_limit {
+            Some(BreakMode::Tensile)
+        } else if kin.gamma_shear + geom.r_b * kin.kappa_tor > self.shear_limit {
+            Some(BreakMode::Shear)
+        } else {
+            None
+        }
     }
 }
 
@@ -751,6 +906,33 @@ pub enum BreakageConfig {
         #[serde(default)]
         shear: Option<ThresholdDistribution>,
     },
+    /// See [`GuoStress`] — exact LAMMPS `bpm/guo` `break_model guo`.
+    Guo {
+        /// Tensile-stress limit `σ_max` (Pa).
+        sigma_max: f64,
+        /// Shear-stress limit `τ_max` (Pa).
+        tau_max: f64,
+    },
+    /// See [`GuoStressWeibull`] — exact LAMMPS `bpm/guo` `break_model guo_weibull`.
+    GuoWeibull {
+        /// Characteristic stress `σ₀` (Pa).
+        sigma0: f64,
+        /// Weibull modulus `m` (LAMMPS default 5).
+        #[serde(default = "default_guo_m")]
+        m: f64,
+        /// Calibration gauge length `L_calib` (bond-length units).
+        l_calib: f64,
+        /// Shear-to-normal limit ratio `ρ_shear` (LAMMPS default 0.5).
+        #[serde(default = "default_guo_rho_shear")]
+        rho_shear: f64,
+    },
+    /// See [`GuoStrain`] — exact LAMMPS `bpm/guo` `break_model strain`.
+    GuoStrain {
+        /// Normal strain limit.
+        strain_limit: f64,
+        /// Shear strain limit.
+        shear_limit: f64,
+    },
     /// See [`GuoStrainWeibull`] — exact LAMMPS `bpm/guo strain_weibull`.
     GuoStrainWeibull {
         /// Characteristic strain `σ₀` (dimensionless), used directly.
@@ -814,6 +996,14 @@ fn default_rho_shear() -> f64 {
     1.0
 }
 
+fn default_guo_m() -> f64 {
+    5.0
+}
+
+fn default_guo_rho_shear() -> f64 {
+    0.5
+}
+
 impl BreakageConfig {
     /// Construct the run-time criterion trait object.
     pub fn build(&self) -> Box<dyn BreakageCriterion> {
@@ -834,6 +1024,28 @@ impl BreakageConfig {
             Self::CombinedStress { tensile, shear } => Box::new(CombinedStress {
                 tensile: tensile.clone(),
                 shear: shear.clone(),
+            }),
+            Self::Guo { sigma_max, tau_max } => Box::new(GuoStress {
+                sigma_max: *sigma_max,
+                tau_max: *tau_max,
+            }),
+            Self::GuoWeibull {
+                sigma0,
+                m,
+                l_calib,
+                rho_shear,
+            } => Box::new(GuoStressWeibull {
+                sigma0: *sigma0,
+                m: *m,
+                l_calib: *l_calib,
+                rho_shear: *rho_shear,
+            }),
+            Self::GuoStrain {
+                strain_limit,
+                shear_limit,
+            } => Box::new(GuoStrain {
+                strain_limit: *strain_limit,
+                shear_limit: *shear_limit,
             }),
             Self::GuoStrainWeibull {
                 sigma0,
