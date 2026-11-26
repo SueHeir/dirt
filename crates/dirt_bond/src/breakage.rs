@@ -941,8 +941,8 @@ pub enum BreakageConfig {
         m: f64,
         /// Calibration gauge length `L_calib` (bond-length units).
         l_calib: f64,
-        /// Shear-to-normal strain-limit ratio `ρ_shear` (default 1.0).
-        #[serde(default = "default_rho_shear")]
+        /// Shear-to-normal strain-limit ratio `ρ_shear` (default 0.5, as LAMMPS).
+        #[serde(default = "default_guo_rho_shear")]
         rho_shear: f64,
     },
     /// See [`InteractionLinearForce`].
@@ -992,9 +992,6 @@ pub enum BreakageConfig {
     },
 }
 
-fn default_rho_shear() -> f64 {
-    1.0
-}
 
 fn default_guo_m() -> f64 {
     5.0

@@ -96,9 +96,12 @@ The LAMMPS break models map to these `[bonds.breakage]` kinds:
 | LAMMPS `break_model` | DIRT `kind` | fields |
 |---|---|---|
 | `guo σmax τmax` | `guo` | `sigma_max`, `tau_max` |
-| `guo_weibull σ0 m Lcalib ρ` | `guo_weibull` | `sigma0`, `m` (5), `l_calib`, `rho_shear` (0.5) |
+| `guo_weibull σ0 Lcalib m ρ` | `guo_weibull` | `sigma0`, `l_calib`, `m` (5), `rho_shear` (0.5) |
 | `strain εmax γmax` | `guo_strain` | `strain_limit`, `shear_limit` |
-| `strain_weibull σ0 m Lcalib ρ` | `guo_strain_weibull` | `sigma0`, `m`, `l_calib`, `rho_shear` (1.0) |
+| `strain_weibull σ0 Lcalib m ρ` | `guo_strain_weibull` | `sigma0`, `l_calib`, `m`, `rho_shear` (0.5) |
+
+Fields are named, so their order in TOML does not matter. LAMMPS's
+`heat Kh Fch CTE` keyword has no DIRT equivalent.
 
 Weibull thresholds use LAMMPS's tag-pair hash, so the same bonds break as
 in LAMMPS for the same seed. Stress-based Guo checks are skipped while the
