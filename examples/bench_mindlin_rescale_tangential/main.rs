@@ -88,9 +88,12 @@ fn build_system(
         dem.ang_mom.push([0.0; 3]);
         dem.torque.push([0.0; 3]);
         dem.body_id.push(0.0);
+        dem.molecule_id.push(0.0);
         hist.contacts.push(Vec::new());
     }
-    unsafe { atom.set_layout_unchecked(2, 0, 2) };
+    unsafe {
+        atom.set_layout_unchecked(2, atom.nghost(), 2);
+    }
 
     let mut nb = Neighbor::new();
     nb.newton = true;

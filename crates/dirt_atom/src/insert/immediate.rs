@@ -12,6 +12,10 @@ pub(super) struct DemParticle {
     pub(super) density: f64,
     pub(super) mat_idx: u32,
     pub(super) tag: u32,
+    /// Molecule ID for intra-molecule contact exclusion (0 = none). Only the
+    /// LAMMPS-data reader sets this from the file's molecule column; every other
+    /// insertion path leaves it 0.
+    pub(super) molecule: u32,
 }
 
 impl DemParticle {
@@ -53,6 +57,7 @@ impl DemParticle {
         dem.ang_mom[i] = [0.0; 3];
         dem.torque[i] = [0.0; 3];
         dem.body_id[i] = 0.0;
+        dem.molecule_id[i] = self.molecule as f64;
     }
 }
 

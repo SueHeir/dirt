@@ -201,6 +201,19 @@ use plasticity::{BondPlasticityModel, PlasticityConfig};
 
 /// Deserialized TOML `[bonds]` configuration section.
 ///
+/// A per-bond-type breakage override (`[[bonds.breakage_by_type]]`).
+///
+/// `breakage = None` (omit the field) makes bonds of this type **unbreakable**.
+#[derive(Deserialize, Clone)]
+#[serde(deny_unknown_fields)]
+pub struct BondTypeBreakage {
+    /// Bond type this override applies to (matches the data-file bond-type column).
+    pub bond_type: u32,
+    /// Criterion for this type; omit to make the type unbreakable.
+    #[serde(default)]
+    pub breakage: Option<BreakageConfig>,
+}
+
 /// See the [module-level docs](crate) for the full parameter reference.
 #[derive(Deserialize, Clone)]
 #[serde(deny_unknown_fields)]
@@ -230,6 +243,16 @@ pub struct BondConfig {
     /// Shear modulus *G* (Pa). If set, shear & twist stiffness derive from `G`.
     #[serde(default)]
     pub shear_modulus: Option<f64>,
+    /// Bending modulus (Pa) for `k_bend = E_bend · I / L`. Defaults to
+    /// `youngs_modulus` when unset. Set it separately to match a bond model whose
+    /// bending stiffness differs from its axial stiffness (e.g. LAMMPS `bpm/guo`
+    /// with `MNstiff ≠ Nstiff`).
+    #[serde(default)]
+    pub bending_modulus: Option<f64>,
+    /// Twist modulus (Pa) for `k_tor = G_tor · J / L`. Defaults to `shear_modulus`
+    /// when unset.
+    #[serde(default)]
+    pub twist_modulus: Option<f64>,
 
     // ── Direct stiffness overrides ──────────────────────────────────────────
     /// Direct normal stiffness (N/m). Used when `youngs_modulus` is not set.
@@ -274,10 +297,16 @@ pub struct BondConfig {
     pub bending_damping: Option<f64>,
 
     // ── Breakage ────────────────────────────────────────────────────────────
-    /// Breakage criterion configuration. See [`breakage::BreakageConfig`] for
-    /// the variant menu and TOML syntax. Default: `None` (bonds never break).
+    /// Breakage criterion configuration for all bond types without a specific
+    /// override. See [`breakage::BreakageConfig`]. Default: `None` (never breaks).
     #[serde(default)]
     pub breakage: Option<BreakageConfig>,
+    /// Per-bond-type breakage overrides. A bond whose `bond_type` matches an
+    /// entry uses that entry's criterion instead of the base `breakage`; a `None`
+    /// criterion makes that type unbreakable (e.g. LAMMPS grip bonds of type 2
+    /// that carry no `break_model`). Types without an entry use `breakage`.
+    #[serde(default)]
+    pub breakage_by_type: Vec<BondTypeBreakage>,
     /// Seed for the per-bond Weibull threshold RNG. Sampling is deterministic
     /// given the seed and the bond-creation order. Defaults to `0`.
     #[serde(default)]
@@ -427,8 +456,9 @@ pub struct RawBond {
 /// This is the panic-free replacement for the previous `.expect()`-based
 /// inline parse, and is what the config-robustness tests exercise directly.
 pub fn parse_bonds_section(lines: &[String]) -> Result<Option<Vec<RawBond>>, BondConfigError> {
-    const SECTION_HEADERS: [&str; 8] = [
+    const SECTION_HEADERS: [&str; 9] = [
         "Atoms",
+        "Capsules",
         "Velocities",
         "Bonds",
         "Angles",
@@ -513,6 +543,8 @@ impl Default for BondConfig {
             ghost_cutoff_multiplier: 2.5,
             youngs_modulus: None,
             shear_modulus: None,
+            bending_modulus: None,
+            twist_modulus: None,
             normal_stiffness: 0.0,
             shear_stiffness: 0.0,
             twist_stiffness: 0.0,
@@ -526,6 +558,7 @@ impl Default for BondConfig {
             twist_damping: None,
             bending_damping: None,
             breakage: None,
+            breakage_by_type: Vec::new(),
             seed: 0,
             plasticity: None,
             file: None,
@@ -697,19 +730,35 @@ impl AtomData for BondHistoryStore {
 /// — independent of which rank owns the bond, in which order bonds are
 /// visited, and how the simulation is decomposed across MPI processes.
 pub struct BondBreakage {
-    /// Run-time criterion trait object. `Unbreakable` when no `[bonds.breakage]`
-    /// section is present.
+    /// Base run-time criterion for bond types without an override. `Unbreakable`
+    /// when no `[bonds.breakage]` section is present.
     pub criterion: Box<dyn BreakageCriterion>,
+    /// Per-bond-type criterion overrides (from `[[bonds.breakage_by_type]]`).
+    /// A type present here uses its own criterion instead of `criterion`.
+    pub by_type: HashMap<u32, Box<dyn BreakageCriterion>>,
     /// Global seed for the per-bond threshold sampler. Two simulations with
     /// the same seed and the same bond topology produce identical per-bond
     /// thresholds even when run with different MPI decompositions.
     pub seed: u64,
 }
 
+impl BondBreakage {
+    /// The criterion governing bonds of `bond_type` — the per-type override if
+    /// one exists, otherwise the base criterion.
+    #[inline]
+    pub fn resolve(&self, bond_type: u32) -> &dyn BreakageCriterion {
+        match self.by_type.get(&bond_type) {
+            Some(c) => c.as_ref(),
+            None => self.criterion.as_ref(),
+        }
+    }
+}
+
 impl Default for BondBreakage {
     fn default() -> Self {
         BondBreakage {
             criterion: Box::new(Unbreakable),
+            by_type: HashMap::new(),
             seed: 0,
         }
     }
@@ -723,6 +772,14 @@ pub fn init_breakage(bond_config: Res<BondConfig>, mut breakage: ResMut<BondBrea
         Some(cfg) => cfg.build(),
         None => Box::new(Unbreakable),
     };
+    breakage.by_type.clear();
+    for entry in &bond_config.breakage_by_type {
+        let crit: Box<dyn BreakageCriterion> = match &entry.breakage {
+            Some(cfg) => cfg.build(),
+            None => Box::new(Unbreakable),
+        };
+        breakage.by_type.insert(entry.bond_type, crit);
+    }
     breakage.seed = bond_config.seed;
 }
 
@@ -892,6 +949,9 @@ impl Plugin for DemBondPlugin {
             ScheduleSetupSet::PostSetup,
         );
         app.add_update_system(zero_bond_metrics, ParticleSimScheduleSet::PreForce);
+        // Resolve deferred r0 for bonds spanning a rank boundary once the ghost
+        // halo exists (first force step); no-op afterward and in serial.
+        app.add_update_system(resolve_deferred_bond_r0, ParticleSimScheduleSet::PreForce);
         app.add_update_system(bond_force.label(BOND_FORCE), ParticleSimScheduleSet::Force);
         app.add_update_system(output_bond_metrics, ParticleSimScheduleSet::PostForce);
     }
@@ -1023,45 +1083,58 @@ pub fn load_bonds_from_file(
 
         let mut bond_count = 0u64;
 
+        let pflags = domain.periodic_flags();
+        let box_size = domain.size;
         for RawBond {
             bond_type,
             tag1,
             tag2,
         } in raw_bonds
         {
-            let idx1 = match tag_to_local.get(&tag1) {
-                Some(&i) => i,
-                None => continue,
-            };
-            let idx2 = match tag_to_local.get(&tag2) {
-                Some(&i) => i,
-                None => continue,
-            };
-
-            let mut d = [
-                atoms.pos[idx2][0] as f64 - atoms.pos[idx1][0] as f64,
-                atoms.pos[idx2][1] as f64 - atoms.pos[idx1][1] as f64,
-                atoms.pos[idx2][2] as f64 - atoms.pos[idx1][2] as f64,
-            ];
-            let pflags = domain.periodic_flags();
-            let box_size = domain.size;
-            for k in 0..3 {
-                if pflags[k] {
-                    d[k] -= box_size[k] * (d[k] / box_size[k]).round();
-                }
+            let local1 = tag_to_local.get(&tag1).copied();
+            let local2 = tag_to_local.get(&tag2).copied();
+            // Load the bond on whichever endpoint(s) are local. A bond spanning a
+            // rank boundary is owned by both ranks (each stores it on its local
+            // atom); previously it was dropped by both because it required *both*
+            // atoms local, silently severing the structure across the boundary.
+            if local1.is_none() && local2.is_none() {
+                continue;
             }
-            let r0 = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt();
-
-            bond_store.bonds[idx1].push(BondEntry {
-                partner_tag: tag2,
-                bond_type,
-                r0,
-            });
-            bond_store.bonds[idx2].push(BondEntry {
-                partner_tag: tag1,
-                bond_type,
-                r0,
-            });
+            // Reference length: when both endpoints are local, from their loaded
+            // positions. When the partner is on another rank it isn't present yet
+            // (ghosts aren't built at setup), so defer r0 (0.0 sentinel) — resolved
+            // at the first force step by `resolve_deferred_bond_r0`, which also
+            // seeds the (skipped) breakage threshold.
+            let r0 = match (local1, local2) {
+                (Some(i1), Some(i2)) => {
+                    let mut d = [
+                        atoms.pos[i2][0] as f64 - atoms.pos[i1][0] as f64,
+                        atoms.pos[i2][1] as f64 - atoms.pos[i1][1] as f64,
+                        atoms.pos[i2][2] as f64 - atoms.pos[i1][2] as f64,
+                    ];
+                    for k in 0..3 {
+                        if pflags[k] {
+                            d[k] -= box_size[k] * (d[k] / box_size[k]).round();
+                        }
+                    }
+                    (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt()
+                }
+                _ => 0.0, // deferred
+            };
+            if let Some(i1) = local1 {
+                bond_store.bonds[i1].push(BondEntry {
+                    partner_tag: tag2,
+                    bond_type,
+                    r0,
+                });
+            }
+            if let Some(i2) = local2 {
+                bond_store.bonds[i2].push(BondEntry {
+                    partner_tag: tag1,
+                    bond_type,
+                    r0,
+                });
+            }
             bond_count += 1;
         }
 
@@ -1188,16 +1261,110 @@ pub fn init_bond_history(
         for i in 0..bonds.bonds.len().min(nlocal) {
             let tag_a = atoms.tag[i];
             for bond in &bonds.bonds[i] {
+                // Skip deferred boundary bonds (r0 not yet known at setup, no
+                // ghosts); `resolve_deferred_bond_r0` seeds them at the first step.
+                if bond.r0 <= 0.0 {
+                    continue;
+                }
                 let has = history.history[i]
                     .iter()
                     .any(|h| h.partner_tag == bond.partner_tag);
                 if !has {
+                    let crit = breakage.resolve(bond.bond_type);
                     // MPI-stable: same (tag pair, seed) → same `u` on every rank.
-                    let u =
-                        breakage::per_bond_uniform_samples(tag_a, bond.partner_tag, breakage.seed);
-                    let thr = breakage.criterion.sample(bond.r0, u);
+                    // A GuoStrainWeibull criterion instead uses LAMMPS's exact hash
+                    // so breakage reproduces a reference LAMMPS run bond-for-bond.
+                    let u = if crit.uses_guo_hash() {
+                        [breakage::guo_weibull_u(tag_a, bond.partner_tag, breakage.seed); 4]
+                    } else {
+                        breakage::per_bond_uniform_samples(tag_a, bond.partner_tag, breakage.seed)
+                    };
+                    let thr = crit.sample(bond.r0, u);
                     history.history[i].push(BondHistoryEntry {
                         partner_tag: bond.partner_tag,
+                        delta_t: [0.0; 3],
+                        delta_theta: [0.0; 3],
+                        thresholds: thr.t,
+                        theta_p_bend: [0.0; 3],
+                        eps_p_axial: 0.0,
+                        theta_max_bend: 0.0,
+                        eps_max_axial: 0.0,
+                    });
+                }
+            }
+        }
+    });
+}
+
+/// Resolve deferred reference lengths for bonds that span an MPI rank boundary.
+///
+/// A boundary bond is loaded with `r0 = 0.0` because its partner is not present at
+/// setup (ghosts are not built yet). This runs at the first force step — once the
+/// ghost halo exists the partner is resolvable — computes `r0` from the reference
+/// positions, and seeds the breakage threshold that `init_bond_history` skipped.
+/// Self-terminates once no deferred bonds remain (a cheap per-step scan until
+/// then; a no-op afterward and in serial, where there are no boundary bonds).
+pub fn resolve_deferred_bond_r0(
+    atoms: Res<Atom>,
+    particles: ParticlesWith<'_, (Write<BondStore>, Write<BondHistoryStore>)>,
+    breakage: Res<BondBreakage>,
+    domain: Res<soil_core::Domain>,
+) {
+    particles.with(|(mut bonds, mut history)| {
+        let nlocal = atoms.nlocal() as usize;
+        let n = nlocal.min(bonds.bonds.len());
+        if !(0..n).any(|i| bonds.bonds[i].iter().any(|b| b.r0 <= 0.0)) {
+            return; // nothing deferred (serial, or already resolved)
+        }
+        while history.history.len() < bonds.bonds.len() {
+            history.history.push(Vec::new());
+        }
+        let mut tag_to_index: HashMap<u32, usize> = HashMap::with_capacity(atoms.len());
+        for idx in 0..atoms.len() {
+            tag_to_index.insert(atoms.tag[idx], idx);
+        }
+        let pflags = domain.periodic_flags();
+        let box_size = domain.size;
+        for i in 0..n {
+            let tag_a = atoms.tag[i];
+            for b_idx in 0..bonds.bonds[i].len() {
+                if bonds.bonds[i][b_idx].r0 > 0.0 {
+                    continue;
+                }
+                let partner_tag = bonds.bonds[i][b_idx].partner_tag;
+                let j = match tag_to_index.get(&partner_tag) {
+                    Some(&j) => j,
+                    None => continue, // partner still not a ghost (cutoff too small)
+                };
+                let mut d = [
+                    atoms.pos[j][0] as f64 - atoms.pos[i][0] as f64,
+                    atoms.pos[j][1] as f64 - atoms.pos[i][1] as f64,
+                    atoms.pos[j][2] as f64 - atoms.pos[i][2] as f64,
+                ];
+                for k in 0..3 {
+                    if pflags[k] {
+                        d[k] -= box_size[k] * (d[k] / box_size[k]).round();
+                    }
+                }
+                let r0 = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt();
+                if r0 <= 0.0 {
+                    continue;
+                }
+                let bond_type = bonds.bonds[i][b_idx].bond_type;
+                bonds.bonds[i][b_idx].r0 = r0;
+                if !history.history[i]
+                    .iter()
+                    .any(|h| h.partner_tag == partner_tag)
+                {
+                    let crit = breakage.resolve(bond_type);
+                    let u = if crit.uses_guo_hash() {
+                        [breakage::guo_weibull_u(tag_a, partner_tag, breakage.seed); 4]
+                    } else {
+                        breakage::per_bond_uniform_samples(tag_a, partner_tag, breakage.seed)
+                    };
+                    let thr = crit.sample(r0, u);
+                    history.history[i].push(BondHistoryEntry {
+                        partner_tag,
                         delta_t: [0.0; 3],
                         delta_theta: [0.0; 3],
                         thresholds: thr.t,
@@ -1232,6 +1399,26 @@ pub fn bond_force(
     mut virial: Option<ResMut<VirialStress>>,
     domain: Res<soil_core::Domain>,
 ) {
+    // Diagnostic step counter (bond_force runs once per step). Used only by the
+    // YARN_BREAK_LOG breakage trace below.
+    let dbg_step = {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static STEP: AtomicU64 = AtomicU64::new(0);
+        STEP.fetch_add(1, Ordering::Relaxed)
+    };
+    // Breakage suppressed until this step so a relaxation/settling phase (e.g. the
+    // capsule yarn's initial-overlap relief) can't damage bonds before loading
+    // begins. `BOND_BREAK_MIN_STEP` = the relax length; unset ⇒ 0 (break from step 0).
+    let break_min_step: u64 = {
+        static MIN: std::sync::OnceLock<u64> = std::sync::OnceLock::new();
+        *MIN.get_or_init(|| {
+            std::env::var("BOND_BREAK_MIN_STEP")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(0)
+        })
+    };
+    let breakage_active = dbg_step >= break_min_step;
     particles.with(|(mut dem, mut hist, bonds)| {
         let mut bonds = match bonds {
             Some(b) => b,
@@ -1261,6 +1448,10 @@ pub fn bond_force(
         // Material-mode (E, G) or direct stiffness fallback.
         let e_mod = bond_config.youngs_modulus;
         let g_mod = bond_config.shear_modulus;
+        // Bending / twist moduli default to the axial / shear moduli so existing
+        // single-modulus configs are unchanged; set them to decouple k_bend / k_tor.
+        let e_bend_mod = bond_config.bending_modulus.or(e_mod);
+        let g_tor_mod = bond_config.twist_modulus.or(g_mod);
         let k_n_direct = bond_config.normal_stiffness;
         let k_t_direct = bond_config.shear_stiffness;
         let k_tor_direct = bond_config.twist_stiffness;
@@ -1375,11 +1566,11 @@ pub fn bond_force(
                     Some(g) => g * area / len,
                     None => k_t_direct,
                 };
-                let k_tor = match g_mod {
+                let k_tor = match g_tor_mod {
                     Some(g) => g * jpol / len,
                     None => k_tor_direct,
                 };
-                let k_bend = match e_mod {
+                let k_bend = match e_bend_mod {
                     Some(e) => e * iben / len,
                     None => k_bend_direct,
                 };
@@ -1639,10 +1830,11 @@ pub fn bond_force(
                 let thr = breakage::BondThresholds {
                     t: hist.history[i][h_idx].thresholds,
                 };
-                if breakage
-                    .criterion
-                    .check(&geom, &loads, &kin, &thr)
-                    .is_some()
+                if breakage_active
+                    && breakage
+                        .resolve(bond.bond_type)
+                        .check(&geom, &loads, &kin, &thr)
+                        .is_some()
                 {
                     bonds_to_break.push((atoms.tag[i], bond.partner_tag));
                     continue;
@@ -1689,6 +1881,22 @@ pub fn bond_force(
         }
 
         if !bonds_to_break.is_empty() {
+            if std::env::var("YARN_BREAK_LOG").is_ok() {
+                for (ta, tb) in &bonds_to_break {
+                    let (mut za, mut zb) = (f64::NAN, f64::NAN);
+                    for idx in 0..atoms.len() {
+                        if atoms.tag[idx] == *ta {
+                            za = atoms.pos[idx][2] as f64;
+                        } else if atoms.tag[idx] == *tb {
+                            zb = atoms.pos[idx][2] as f64;
+                        }
+                    }
+                    eprintln!(
+                        "[break] step={dbg_step} a={ta} b={tb} zmid={:.1}",
+                        0.5 * (za + zb)
+                    );
+                }
+            }
             for (tag_a, tag_b) in &bonds_to_break {
                 for idx in 0..atoms.len() {
                     if atoms.tag[idx] == *tag_a || atoms.tag[idx] == *tag_b {
@@ -1760,22 +1968,46 @@ pub fn output_bond_metrics(
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    /// Core-only atoms with `n` rows, so a registry can be sized against them.
-    fn test_atoms(n: usize) -> soil_core::Atom {
-        let mut atom = soil_core::Atom::new();
-        for t in 0..n {
-            // SAFETY: core-only fixture; the layout is set right after.
-            unsafe { atom.push_test_atom(t as u32, [0.0; 3], 0.5, 1.0) };
-        }
-        unsafe { atom.set_layout_unchecked(n as u32, 0, n as u64) };
-        atom
-    }
     use dirt_atom::DemAtom;
     use dirt_test_utils::{push_dem_test_atom, ParticleFixture, ParticleSpec};
     use soil_core::{
         toml, Atom, AtomDataRegistry, BondEntry, BondStore, CommResource, SingleProcessComm,
     };
+
+    #[test]
+    fn per_type_breakage_resolves_base_and_override() {
+        // Base = guo_strain_weibull for all types; type 2 overridden to unbreakable
+        // (a `[[breakage_by_type]]` entry with no `breakage` = LAMMPS grip bonds).
+        let cfg: BondConfig = toml::from_str(
+            "youngs_modulus = 60.783840\n\
+             shear_modulus = 11.743428\n\
+             bending_modulus = 116.892\n\
+             seed = 1337\n\
+             [breakage]\n\
+             kind = \"guo_strain_weibull\"\n\
+             sigma0 = 0.0135\n\
+             m = 18.0\n\
+             l_calib = 10000.0\n\
+             [[breakage_by_type]]\n\
+             bond_type = 2\n",
+        )
+        .expect("config parses");
+        assert_eq!(cfg.bending_modulus, Some(116.892));
+
+        let mut br = BondBreakage::default();
+        br.criterion = cfg.breakage.as_ref().unwrap().build();
+        for e in &cfg.breakage_by_type {
+            let c: Box<dyn BreakageCriterion> = match &e.breakage {
+                Some(x) => x.build(),
+                None => Box::new(Unbreakable),
+            };
+            br.by_type.insert(e.bond_type, c);
+        }
+        // Type 1 (no override) → the guo criterion (uses the LAMMPS hash).
+        assert!(br.resolve(1).uses_guo_hash());
+        // Type 2 (overridden, no break_model) → unbreakable (0 thresholds).
+        assert_eq!(br.resolve(2).num_thresholds(), 0);
+    }
 
     fn make_bond_config() -> BondConfig {
         BondConfig {
@@ -2028,12 +2260,15 @@ Bonds
         let radius = 0.001;
         push_dem_test_atom(&mut atom, &mut dem, 1, [0.0, 0.0, 0.0], radius);
         push_dem_test_atom(&mut atom, &mut dem, 2, [0.002, 0.0, 0.0], radius);
-        // SAFETY: test fixture rows were pushed together with every extension row.
-        unsafe { atom.set_layout_unchecked(2, 0, 2) };
+        unsafe {
+            atom.set_layout_unchecked(2, atom.nghost(), 2);
+        }
 
         let mut registry = AtomDataRegistry::new();
         registry.register_for_atoms(dem, &atom).unwrap();
-        registry.register_for_atoms(BondStore::new(), &atom).unwrap();
+        registry
+            .register_for_atoms(BondStore::new(), &atom)
+            .unwrap();
         registry
             .register_for_atoms(BondHistoryStore::new(), &atom)
             .unwrap();
@@ -2070,12 +2305,15 @@ Bonds
         let radius = 0.001;
         push_dem_test_atom(&mut atom, &mut dem, 1, [0.0, 0.0, 0.0], radius);
         push_dem_test_atom(&mut atom, &mut dem, 2, [0.01, 0.0, 0.0], radius);
-        // SAFETY: test fixture rows were pushed together with every extension row.
-        unsafe { atom.set_layout_unchecked(2, 0, 2) };
+        unsafe {
+            atom.set_layout_unchecked(2, atom.nghost(), 2);
+        }
 
         let mut registry = AtomDataRegistry::new();
         registry.register_for_atoms(dem, &atom).unwrap();
-        registry.register_for_atoms(BondStore::new(), &atom).unwrap();
+        registry
+            .register_for_atoms(BondStore::new(), &atom)
+            .unwrap();
         registry
             .register_for_atoms(BondHistoryStore::new(), &atom)
             .unwrap();
@@ -2434,7 +2672,13 @@ format = "lammps_data"
 
         let mut registry = AtomDataRegistry::new();
         let atom_count = bond_store.len();
-        registry.register_for_atoms(bond_store, &test_atoms(atom_count)).unwrap();
+        let mut sizing_atom = Atom::new();
+        for k in 0..atom_count {
+            unsafe { sizing_atom.push_test_atom((k + 1) as u32, [0.0; 3], 1.0, 1.0) };
+        }
+        registry
+            .register_for_atoms(bond_store, &sizing_atom)
+            .unwrap();
 
         let mut domain = soil_core::Domain::new();
         domain.ghost_cutoff = 0.001; // deliberately too small
@@ -2472,7 +2716,13 @@ format = "lammps_data"
 
         let mut registry = AtomDataRegistry::new();
         let atom_count = bond_store.len();
-        registry.register_for_atoms(bond_store, &test_atoms(atom_count)).unwrap();
+        let mut sizing_atom = Atom::new();
+        for k in 0..atom_count {
+            unsafe { sizing_atom.push_test_atom((k + 1) as u32, [0.0; 3], 1.0, 1.0) };
+        }
+        registry
+            .register_for_atoms(bond_store, &sizing_atom)
+            .unwrap();
 
         let mut domain = soil_core::Domain::new();
         domain.ghost_cutoff = 0.001;
@@ -2505,7 +2755,13 @@ format = "lammps_data"
 
         let mut registry = AtomDataRegistry::new();
         let atom_count = bond_store.len();
-        registry.register_for_atoms(bond_store, &test_atoms(atom_count)).unwrap();
+        let mut sizing_atom = Atom::new();
+        for k in 0..atom_count {
+            unsafe { sizing_atom.push_test_atom((k + 1) as u32, [0.0; 3], 1.0, 1.0) };
+        }
+        registry
+            .register_for_atoms(bond_store, &sizing_atom)
+            .unwrap();
 
         let mut domain = soil_core::Domain::new();
         domain.ghost_cutoff = 0.05; // already larger than 0.002 × 2.5 = 0.005

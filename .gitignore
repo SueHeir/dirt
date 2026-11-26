@@ -1,5 +1,13 @@
 target/
 Cargo.lock
+.codex-tmp/
+.codex-*/
+.DS_Store
+presentation-output/
+/GRASS_SOIL_DIRT_LAMMPS_and_Library_Coupling/
+*.pptx
+*.key
+*.inspect.ndjson
 
 **/*.rs.bk
 .DS_Store
@@ -15,6 +23,7 @@ Cargo.lock
 !examples/bench_guo2018_fiber_shear_cell/data/
 !examples/bench_guo2018_fiber_shear_cell/data/non_equivalent_sensitivity_campaign.json
 **/out/
+**/output*/
 **/sweep/
 **/xval/
 *.csv
@@ -38,3 +47,13 @@ examples/run/hopper_discharge/
 
 # local knowledge-graph tooling output
 graphify-out/
+
+# yarn-pull large regenerable artifacts (trajectories + run logs); CSVs/configs/plots are kept
+examples/bench_yarn_pull_coarse19/calib/**/*.lammpstrj
+examples/bench_yarn_pull_coarse19/calib/**/*.log
+examples/bench_capsule_yarn_pull/calib/**/*.lammpstrj
+examples/bench_capsule_yarn_pull/calib/**/*.log
+examples/bench_capsule_yarn_pull/straighten/**/*.lammpstrj
+examples/bench_capsule_yarn_pull/straighten/**/*.log
+examples/bench_capsule_yarn_pull/ovito/*.lammpstrj
+examples/bench_yarn_pull_coarse19/ovito/*.lammpstrj

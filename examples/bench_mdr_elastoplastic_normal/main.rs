@@ -41,6 +41,7 @@ fn push_sphere(atom: &mut Atom, dem: &mut DemAtom, tag: u32, x: f64, radius: f64
     dem.ang_mom.push([0.0; 3]);
     dem.torque.push([0.0; 3]);
     dem.body_id.push(0.0);
+    dem.molecule_id.push(0.0);
 }
 
 fn main() {
@@ -53,7 +54,9 @@ fn main() {
 
     let mut atom = Atom::new();
     atom.dt = 1.0;
-    unsafe { atom.set_layout_unchecked(2, 0, 2) };
+    unsafe {
+        atom.set_layout_unchecked(2, atom.nghost(), 2);
+    }
     let mut dem = DemAtom::new();
     push_sphere(&mut atom, &mut dem, 1, 0.0, cfg.radius, cfg.density);
     push_sphere(

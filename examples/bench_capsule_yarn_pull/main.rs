@@ -1,0 +1,554 @@
+//! Coarse-19 yarn tensile pull, sphero-cylinder version. Each fibre (a chain of
+//! overlapping spheres in `bench_yarn_pull_coarse19`) is replaced by a chain of
+//! single-body capsules bonded COM-to-COM. Geometry from `make_capsule_yarn.py`
+//! (data/capsule_yarn_k{K}.txt). Material, bond law, CoR, neighbour cadence, dt
+//! and grips match the sphere yarn so the stress-strain curves compare directly.
+//!
+//! ```bash
+//! python3 examples/bench_capsule_yarn_pull/make_capsule_yarn.py 4
+//! cargo run --release --example bench_capsule_yarn_pull --no-default-features \
+//!     --features precision-double -- examples/bench_capsule_yarn_pull/config.toml
+//! ```
+
+use std::fs;
+use std::io::Write as _; // trait methods (writeln!) without shadowing the ECS `Write<T>`
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::OnceLock;
+
+use dirt_capsule::*;
+use dirt_core::dirt_atom::DemAtom;
+use dirt_core::prelude::*;
+use dirt_core::soil_core::{BondEntry, BondStore};
+
+const GAUGE_LENGTH: f64 = 9000.0;
+const ELONGATION_PER_STEP: f64 = 0.000216;
+const V_PULL: f64 = 0.057197935013997156;
+const LEFT_GRIP_ZMAX: f64 = 500.0;
+const RIGHT_GRIP_ZMIN: f64 = 9500.0;
+// Capsule density = the sphere yarn's `set density` value (mass only affects the
+// dynamic transient; the quasi-static curve is rate-controlled, density-independent).
+const DENSITY: f64 = 9.93245e-07;
+
+fn spec_path() -> String {
+    std::env::var("CAPSULE_YARN_SPEC")
+        .unwrap_or_else(|_| "examples/bench_capsule_yarn_pull/data/capsule_yarn_k4.txt".to_string())
+}
+
+/// Optional: limit to the first N fibres (env FIBRE_LIMIT) for a fast stability check.
+fn fibre_limit() -> u32 {
+    std::env::var("FIBRE_LIMIT")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(u32::MAX)
+}
+
+/// Relaxation steps before the pull begins: grips are held fixed so the coarse
+/// capsule packing can settle out its initial inter-fibre overlaps (the capsules
+/// are longer than the beads and start more overlapped, which otherwise offsets
+/// the stress-strain curve above the sphere yarn). Strain is counted from the end
+/// of relaxation. Overridable with CAPSULE_RELAX_STEPS.
+fn relax_steps() -> u64 {
+    std::env::var("CAPSULE_RELAX_STEPS")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(100_000)
+}
+
+/// Global viscous damping coefficient applied to every atom DURING relaxation only
+/// (F -= γv, τ -= γω), so the whole system bleeds the overlap energy and settles to
+/// a low-stress state instead of ringing. Overridable with CAPSULE_RELAX_DAMPING.
+fn relax_damping() -> f64 {
+    std::env::var("CAPSULE_RELAX_DAMPING")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(30.0)
+}
+
+/// Write an OVITO-viewable trajectory frame every N steps (env DUMP_EVERY; 0 = off).
+fn dump_every() -> u64 {
+    std::env::var("DUMP_EVERY")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(0)
+}
+
+fn main() {
+    let mut app = App::new();
+    app.add_plugins(CorePlugins)
+        .add_plugins(DemAtomPlugin)
+        .add_plugins(DemAtomInsertPlugin)
+        .add_plugins(dirt_core::soil_verlet::VelocityVerletPlugin::new())
+        .add_plugins(CapsuleContactPlugin)
+        .add_plugins(CapsulePlugin)
+        .add_plugins(DemBondPlugin);
+
+    // Build the capsule yarn (insert capsules + COM-to-COM bonds) at the insertion
+    // stage, before the bond history / ghost-cutoff setup runs at PostSetup.
+    app.add_setup_system(build_capsule_yarn, ScheduleSetupSet::Setup);
+
+    // Rigid z-end grips + stress-strain measurement (same as the sphere yarn).
+    app.add_update_system(
+        seed_straight_rest,
+        ParticleSimScheduleSet::PreInitialIntegration,
+    );
+    app.add_update_system(grip_control, ParticleSimScheduleSet::PreInitialIntegration);
+    app.add_update_system(relax_damping_system, ParticleSimScheduleSet::PostForce);
+    app.add_update_system(grip_zero_force, ParticleSimScheduleSet::PostForce);
+    app.add_update_system(measure_pull, ParticleSimScheduleSet::PostForce);
+    app.add_update_system(dump_traj, ParticleSimScheduleSet::PostFinalIntegration);
+
+    app.start();
+}
+
+/// One capsule read from the spec file.
+struct SpecCapsule {
+    com: [f64; 3],
+    quat: [f64; 4],
+    half_length: f64,
+    molecule: u32,
+}
+
+/// Insert the capsule yarn from the plain-text spec and bond consecutive capsules
+/// within each fibre (COM-to-COM, r0 = the COM distance).
+fn build_capsule_yarn(
+    comm: Res<CommResource>,
+    mut atoms: ResMut<Atom>,
+    registry: Res<AtomDataRegistry>,
+    scheduler_manager: Res<SchedulerManager>,
+) {
+    if scheduler_manager.index != 0 || comm.rank() != 0 {
+        return;
+    }
+    let text = fs::read_to_string(spec_path()).expect("read capsule yarn spec");
+    let mut lines = text.lines();
+    let hdr: Vec<f64> = lines
+        .next()
+        .unwrap()
+        .split_whitespace()
+        .map(|s| s.parse().unwrap())
+        .collect();
+    let (radius, n_cap, n_bond) = (hdr[0], hdr[2] as usize, hdr[3] as usize);
+
+    let limit = fibre_limit();
+    let mut caps: Vec<SpecCapsule> = Vec::with_capacity(n_cap);
+    for _ in 0..n_cap {
+        let f: Vec<&str> = lines.next().unwrap().split_whitespace().collect();
+        let mol: u32 = f[8].parse().unwrap();
+        if mol > limit {
+            continue;
+        }
+        caps.push(SpecCapsule {
+            com: [
+                f[0].parse().unwrap(),
+                f[1].parse().unwrap(),
+                f[2].parse().unwrap(),
+            ],
+            quat: [
+                f[3].parse().unwrap(),
+                f[4].parse().unwrap(),
+                f[5].parse().unwrap(),
+                f[6].parse().unwrap(),
+            ],
+            half_length: f[7].parse().unwrap(),
+            molecule: mol,
+        });
+    }
+    // Bonds reference original spec indices; keep a map old_index -> new_index so
+    // the FIBRE_LIMIT subset stays consistent.
+    let mut keep: std::collections::HashMap<usize, usize> = std::collections::HashMap::new();
+    let mut raw = text.lines();
+    raw.next(); // header
+    let mut new_i = 0usize;
+    for old_i in 0..n_cap {
+        let mol: u32 = raw
+            .next()
+            .unwrap()
+            .split_whitespace()
+            .nth(8)
+            .unwrap()
+            .parse()
+            .unwrap();
+        if mol <= limit {
+            keep.insert(old_i, new_i);
+            new_i += 1;
+        }
+    }
+
+    // ── insert capsules ──
+    for c in &caps {
+        let def = CapsuleDef {
+            name: "yarn_capsule".to_string(),
+            radius,
+            length: 2.0 * c.half_length,
+        };
+        // atom_type 0 = the single [[dem.materials]] entry (material table is 0-indexed).
+        insert_capsule(
+            &mut atoms, &registry, &def, c.com, [0.0; 3], c.quat, DENSITY, 0,
+        );
+    }
+    // molecule id (intra-fibre contact exclusion, mirrors the sphere yarn)
+    {
+        let mut dem = registry.expect_mut::<DemAtom>("build_capsule_yarn");
+        for (i, c) in caps.iter().enumerate() {
+            dem.molecule_id[i] = c.molecule as f64;
+        }
+    }
+    // bonds (COM-to-COM); r0 from the inserted positions
+    {
+        let mut bonds = registry.expect_mut::<BondStore>("build_capsule_yarn");
+        while bonds.bonds.len() < atoms.len() {
+            bonds.bonds.push(Vec::new());
+        }
+        for _ in 0..n_bond {
+            let f: Vec<usize> = lines
+                .next()
+                .unwrap()
+                .split_whitespace()
+                .map(|s| s.parse::<i64>().unwrap() as usize)
+                .collect();
+            let (oi, oj, bt) = (f[0], f[1], f[2] as u32);
+            let (i, j) = match (keep.get(&oi), keep.get(&oj)) {
+                (Some(&i), Some(&j)) => (i, j),
+                _ => continue,
+            };
+            let pi = atoms.pos[i];
+            let pj = atoms.pos[j];
+            let r0 = (((pi[0] - pj[0]).powi(2) + (pi[1] - pj[1]).powi(2) + (pi[2] - pj[2]).powi(2))
+                as f64)
+                .sqrt();
+            let (ti, tj) = (atoms.tag[i], atoms.tag[j]);
+            bonds.bonds[i].push(BondEntry {
+                partner_tag: tj,
+                bond_type: bt,
+                r0,
+            });
+            bonds.bonds[j].push(BondEntry {
+                partner_tag: ti,
+                bond_type: bt,
+                r0,
+            });
+        }
+    }
+    println!(
+        "build_capsule_yarn: inserted {} capsules, {} bonds (radius {:.2})",
+        caps.len(),
+        n_bond,
+        radius
+    );
+}
+
+/// Static grip membership captured once from initial z (like the sphere yarn).
+static GRIP_TAGS: OnceLock<(
+    std::collections::HashSet<u64>,
+    std::collections::HashSet<u64>,
+)> = OnceLock::new();
+
+fn grip_tags(
+    atoms: &Atom,
+) -> &'static (
+    std::collections::HashSet<u64>,
+    std::collections::HashSet<u64>,
+) {
+    GRIP_TAGS.get_or_init(|| {
+        let (mut left, mut right) = (
+            std::collections::HashSet::new(),
+            std::collections::HashSet::new(),
+        );
+        for i in 0..atoms.nlocal() as usize {
+            let z = atoms.pos[i][2] as f64;
+            if z < LEFT_GRIP_ZMAX {
+                left.insert(atoms.tag[i] as u64);
+            } else if z > RIGHT_GRIP_ZMIN {
+                right.insert(atoms.tag[i] as u64);
+            }
+        }
+        (left, right)
+    })
+}
+
+fn grip_control(mut atoms: ResMut<Atom>, run_state: Res<RunState>) {
+    // Capture initial grip membership (by initial z) even during relax.
+    let (left, right) = grip_tags(&atoms);
+    // Grips are FREE during relaxation so the yarn can move to relieve overlaps;
+    // only engage the constant-velocity pull afterwards.
+    if (run_state.total_cycle as u64) < relax_steps() {
+        return;
+    }
+    for i in 0..atoms.nlocal() as usize {
+        let t = atoms.tag[i] as u64;
+        if left.contains(&t) {
+            atoms.vel[i] = [0.0, 0.0, -V_PULL as Real];
+        } else if right.contains(&t) {
+            atoms.vel[i] = [0.0, 0.0, V_PULL as Real];
+        }
+    }
+}
+
+fn grip_zero_force(mut atoms: ResMut<Atom>, run_state: Res<RunState>) {
+    if (run_state.total_cycle as u64) < relax_steps() {
+        return; // grips free during relaxation
+    }
+    let (left, right) = grip_tags(&atoms);
+    for i in 0..atoms.nlocal() as usize {
+        let t = atoms.tag[i] as u64;
+        if left.contains(&t) || right.contains(&t) {
+            atoms.force[i] = [0.0; 3];
+        }
+    }
+}
+
+/// Global viscous damping on every atom during the relaxation phase only:
+/// F -= γv (translational) and τ -= γω (rotational), so the overlap energy is
+/// dissipated and the packing settles to a low-stress equilibrium.
+fn relax_damping_system(
+    mut atoms: ResMut<Atom>,
+    particles: ParticlesWith<'_, Write<DemAtom>>,
+    run_state: Res<RunState>,
+) {
+    if (run_state.total_cycle as u64) >= relax_steps() {
+        return;
+    }
+    let g = relax_damping();
+    let nlocal = atoms.nlocal() as usize;
+    for i in 0..nlocal {
+        let v = atoms.vel[i];
+        atoms.force[i][0] -= (g * v[0] as f64) as Accum;
+        atoms.force[i][1] -= (g * v[1] as f64) as Accum;
+        atoms.force[i][2] -= (g * v[2] as f64) as Accum;
+    }
+    particles.with(|mut dem| {
+        for i in 0..nlocal {
+            let w = dem.omega[i];
+            dem.torque[i][0] -= g * w[0];
+            dem.torque[i][1] -= g * w[1];
+            dem.torque[i][2] -= g * w[2];
+        }
+    });
+}
+
+/// Straight-rest bond test (env `STRAIGHT_REST=1`). By default every bond is
+/// created stress-free in the as-spun HELICAL shape (`delta_theta = 0`), so an
+/// isolated fibre sits motionless in its helix. Here we instead seed each bond's
+/// accumulated bending rotation with the as-built inter-capsule rotation, so the
+/// bond treats the STRAIGHT (aligned) configuration as its zero-force rest and
+/// exerts a moment that undoes the helix. A free fibre should then straighten.
+fn straight_rest_enabled() -> bool {
+    std::env::var("STRAIGHT_REST").ok().as_deref() == Some("1")
+}
+fn quat_conj(q: [f64; 4]) -> [f64; 4] {
+    [q[0], -q[1], -q[2], -q[3]]
+}
+fn quat_mul(a: [f64; 4], b: [f64; 4]) -> [f64; 4] {
+    [
+        a[0] * b[0] - a[1] * b[1] - a[2] * b[2] - a[3] * b[3],
+        a[0] * b[1] + a[1] * b[0] + a[2] * b[3] - a[3] * b[2],
+        a[0] * b[2] - a[1] * b[3] + a[2] * b[0] + a[3] * b[1],
+        a[0] * b[3] + a[1] * b[2] - a[2] * b[1] + a[3] * b[0],
+    ]
+}
+/// Rotation vector (axis·angle) of a unit quaternion `[w, x, y, z]`.
+fn quat_to_rotvec(q: [f64; 4]) -> [f64; 3] {
+    let vn = (q[1] * q[1] + q[2] * q[2] + q[3] * q[3]).sqrt();
+    if vn < 1e-12 {
+        return [0.0; 3];
+    }
+    let angle = 2.0 * vn.atan2(q[0]); // signed; handles either hemisphere
+    let s = angle / vn;
+    [q[1] * s, q[2] * s, q[3] * s]
+}
+fn seed_straight_rest(
+    atoms: Res<Atom>,
+    particles: ParticlesWith<'_, (Read<DemAtom>, Write<dirt_core::dirt_bond::BondHistoryStore>)>,
+) {
+    if !straight_rest_enabled() {
+        return;
+    }
+    static DONE: AtomicBool = AtomicBool::new(false);
+    if DONE.swap(true, Ordering::Relaxed) {
+        return;
+    }
+    let nlocal = atoms.nlocal() as usize;
+    let mut idx = std::collections::HashMap::with_capacity(nlocal);
+    for i in 0..nlocal {
+        idx.insert(atoms.tag[i], i);
+    }
+    let mut seeded = 0usize;
+    particles.with(|(dem, mut hist)| {
+        for i in 0..nlocal.min(hist.history.len()) {
+            let qi = dem.quaternion[i];
+            for e in hist.history[i].iter_mut() {
+                if let Some(&j) = idx.get(&e.partner_tag) {
+                    // relative rotation taking capsule i's frame to capsule j's
+                    let q_rel = quat_mul(dem.quaternion[j], quat_conj(qi));
+                    e.delta_theta = quat_to_rotvec(q_rel);
+                    seeded += 1;
+                }
+            }
+        }
+    });
+    println!("[straight_rest] seeded delta_theta on {seeded} bond history entries");
+}
+
+/// Append an OVITO/LAMMPS-dump trajectory frame (true sphero-cylinders).
+///
+/// In OVITO: import the .lammpstrj, map `qx qy qz qw` -> **Orientation** (X,Y,Z,W)
+/// and `shpx shpy shpz` -> **Aspherical Shape** (X,Y,Z), then set the Particles
+/// visual element's shape to **Spherocylinder**. shp = (r, r, L) — radius r and
+/// cylinder half-length L; the hemispherical caps (radius r) are added by the
+/// spherocylinder shape, so consecutive capsules' caps overlap and the fibre is
+/// continuous. (Rendering as an ellipsoid instead makes the tips pointed, which
+/// looks pinched/gapped at the joints — a display artifact, not the geometry.)
+fn dump_traj(
+    atoms: Res<Atom>,
+    particles: ParticlesWith<'_, (Read<DemAtom>, Read<CapsuleAtom>)>,
+    run_state: Res<RunState>,
+    input: Res<Input>,
+    comm: Res<CommResource>,
+) {
+    let every = dump_every();
+    if every == 0 || (run_state.total_cycle as u64) % every != 0 || comm.rank() != 0 {
+        return;
+    }
+    let step = run_state.total_cycle;
+    let nlocal = atoms.nlocal() as usize;
+    let out_dir = input
+        .output_dir
+        .as_deref()
+        .unwrap_or("examples/bench_capsule_yarn_pull")
+        .to_string();
+    let path = format!("{}/data/traj.lammpstrj", out_dir);
+    static INIT: OnceLock<()> = OnceLock::new();
+    let _ = INIT.get_or_init(|| {
+        fs::create_dir_all(format!("{}/data", out_dir)).ok();
+        fs::File::create(&path).ok(); // truncate at the first frame
+    });
+    let mut s = String::with_capacity(nlocal * 90);
+    s.push_str(&format!("ITEM: TIMESTEP\n{step}\n"));
+    s.push_str(&format!("ITEM: NUMBER OF ATOMS\n{nlocal}\n"));
+    s.push_str("ITEM: BOX BOUNDS ff ff ff\n-360 360\n-360 360\n-1500 11500\n");
+    s.push_str("ITEM: ATOMS id type x y z qx qy qz qw shpx shpy shpz\n");
+    particles.with(|(dem, caps)| {
+        for i in 0..nlocal {
+            let p = atoms.pos[i];
+            let q = dem.quaternion[i]; // [w, x, y, z]
+            let r = dem.radius[i];
+            let hl = caps.half_length[i];
+            // shp = (r, r, L+r): OVITO's Spherocylinder reads shpz as the tip half-
+            // extent (COM->tip), so it must include the cap radius; L alone leaves a
+            // ~one-bead gap between consecutive capsules (2L < COM spacing).
+            s.push_str(&format!(
+                "{} 1 {:.4} {:.4} {:.4} {:.5} {:.5} {:.5} {:.5} {:.3} {:.3} {:.3}\n",
+                atoms.tag[i],
+                p[0],
+                p[1],
+                p[2],
+                q[1],
+                q[2],
+                q[3],
+                q[0],
+                r,
+                r,
+                hl + r
+            ));
+        }
+    });
+    let mut f = fs::OpenOptions::new().append(true).open(&path).unwrap();
+    f.write_all(s.as_bytes()).unwrap();
+}
+
+/// Record strain, axial stress (virial), and surviving-bond count every `thermo`.
+fn measure_pull(
+    atoms: Res<Atom>,
+    run_state: Res<RunState>,
+    comm: Res<CommResource>,
+    input: Res<Input>,
+    virial: Option<Res<VirialStress>>,
+    metrics: Option<Res<dirt_core::dirt_bond::BondMetrics>>,
+    domain: Res<Domain>,
+) {
+    let step = run_state.total_cycle;
+    if comm.rank() != 0 {
+        return;
+    }
+    // Output cadence: coarse (every 20k) until the first bond breaks, then fine
+    // (every 1k) to resolve the failure. Latch the initial bond count on first sight.
+    let bonds = metrics.as_deref().map(|m| m.bond_count).unwrap_or(0);
+    static INIT_BONDS: AtomicU64 = AtomicU64::new(u64::MAX);
+    if bonds > 0 {
+        let _ = INIT_BONDS.compare_exchange(
+            u64::MAX,
+            bonds as u64,
+            Ordering::Relaxed,
+            Ordering::Relaxed,
+        );
+    }
+    let init = INIT_BONDS.load(Ordering::Relaxed);
+    let broken = init != u64::MAX && (bonds as u64) < init;
+    let cadence = if broken { 1000 } else { 20000 };
+    if step % cadence != 0 {
+        return;
+    }
+    // Strain counts from the end of the relaxation phase.
+    let pull_step = (step as u64).saturating_sub(relax_steps());
+    let strain = ELONGATION_PER_STEP * pull_step as f64 / GAUGE_LENGTH;
+
+    let nlocal = atoms.nlocal() as usize;
+    let (left, right) = grip_tags(&atoms);
+    let (mut lz, mut ln, mut rz, mut rn) = (0.0_f64, 0u32, 0.0_f64, 0u32);
+    let (mut fmax, mut fgt1) = (0.0_f64, 0u32);
+    for i in 0..nlocal {
+        let t = atoms.tag[i] as u64;
+        let z = atoms.pos[i][2] as f64;
+        if left.contains(&t) {
+            lz += z;
+            ln += 1;
+        } else if right.contains(&t) {
+            rz += z;
+            rn += 1;
+        }
+        let f = atoms.force[i];
+        let fm = ((f[0] * f[0] + f[1] * f[1] + f[2] * f[2]) as f64).sqrt();
+        if fm > fmax {
+            fmax = fm;
+        }
+        if fm > 1.0 {
+            fgt1 += 1;
+        }
+    }
+    let gauge = if ln > 0 && rn > 0 {
+        rz / rn as f64 - lz / ln as f64
+    } else {
+        0.0
+    };
+
+    let vol = domain.size[0] * domain.size[1] * domain.size[2];
+    let stress_zz = match virial.as_deref() {
+        Some(v) => -v.zz / vol,
+        None => 0.0,
+    };
+    let out_dir = input
+        .output_dir
+        .as_deref()
+        .unwrap_or("examples/bench_capsule_yarn_pull")
+        .to_string();
+    let path = format!("{}/data/stress_strain.csv", out_dir);
+    static INIT: OnceLock<()> = OnceLock::new();
+    let _ = INIT.get_or_init(|| {
+        fs::create_dir_all(format!("{}/data", out_dir)).ok();
+        let mut f = fs::File::create(&path).expect("create stress_strain.csv");
+        writeln!(f, "step,strain,stress_zz,bond_count,gauge").unwrap();
+    });
+    let mut f = fs::OpenOptions::new().append(true).open(&path).unwrap();
+    writeln!(
+        f,
+        "{},{:.8e},{:.8e},{},{:.6e}",
+        step, strain, stress_zz, bonds, gauge
+    )
+    .unwrap();
+
+    println!(
+        "[capsule_yarn] step={step} strain={:.3}% stress={stress_zz:.3e} bonds={bonds} \
+         gauge={gauge:.1} max|f|={fmax:.4} n(|f|>1)={fgt1}",
+        strain * 100.0
+    );
+}

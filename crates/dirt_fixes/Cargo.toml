@@ -8,7 +8,13 @@ description = "Atom manipulation fixes (addforce, setforce, freeze, move_linear,
 keywords = ["fix", "force", "freeze", "molecular-dynamics", "dem"]
 categories = ["simulation", "science"]
 
+[package.metadata.docs.rs]
+no-default-features = true
+features = ["precision-double"]
+targets = ["x86_64-unknown-linux-gnu"]
+
 [features]
+default = ["precision-double"]
 precision-double = ["soil_core/precision-double"]
 precision-mixed = ["soil_core/precision-mixed"]
 precision-single = ["soil_core/precision-single"]

@@ -1,0 +1,82 @@
+# Capsule-yarn tensile pull — sphero-cylinder version of bench_yarn_pull_coarse19.
+# Each coarse-19 fibre (chain of overlapping spheres) is replaced by a chain of
+# single-body sphero-cylinders (capsules) bonded COM-to-COM. Geometry comes from
+# make_capsule_yarn.py (data/capsule_yarn_k4.txt). Everything else (material, bond
+# law, CoR, neighbour cadence, grips, dt) matches the sphere yarn so the two
+# stress-strain curves are directly comparable.
+#
+#   cargo run --release --example bench_capsule_yarn_pull --no-default-features \
+#       --features precision-double -- examples/bench_capsule_yarn_pull/config.toml
+
+[comm]
+processors_x = 1
+processors_y = 1
+processors_z = 1
+
+[domain]
+x_low = -360.0
+x_high = 360.0
+y_low = -360.0
+y_high = 360.0
+z_low = -1500.0
+z_high = 11500.0
+boundary_x = "fixed"
+boundary_y = "fixed"
+boundary_z = "fixed"
+
+[neighbor]
+skin_fraction = 1.2
+bin_size = 200.0          # ~1.1 × capsule tip-to-tip reach (k=4 ≈ 183)
+every = 100
+
+# ── Capsule–capsule contact (reuses the hertz/material pair table) ────────────
+[dem]
+contact_model = "hertz"
+tangential_model = "linear_nohistory"
+
+[[dem.materials]]
+name = "composite"
+youngs_mod = 60.783840000000005
+poisson_ratio = 0.4868
+restitution = 0.48                # realizes CoR 0.60 at these params (matches sphere yarn)
+friction = 0.4
+
+# ── Bonds: Guo BPM beam between consecutive capsule COMs ──────────────────────
+# Built programmatically from the spec file by the example (auto_bond = false, no
+# file). r0 is the COM-to-COM distance, so K = E·A/r0 gives the same fibre axial
+# stiffness as the sphere yarn (k bonds-in-series of stiffness/k).
+[bonds]
+auto_bond = false
+bond_radius_ratio = 1.0
+youngs_modulus  = 68.211625
+shear_modulus  = 13.178475
+bending_modulus  = 131.176202
+twist_modulus  = 13.178475
+beta_normal  = 0.141
+beta_shear   = 0.141
+beta_twist   = 0.141
+beta_bending = 0.141
+seed = 1337
+
+# Deterministic Guo strain breakage (LAMMPS `break_model strain`): a single fixed
+# critical strain for every bond — no Weibull scatter, no (L_calib/r0) length scaling.
+# Identical limit for the sphere and capsule yarns, so any strength difference is
+# mechanics (rigid-segment bending / load path), not weakest-link statistics.
+[bonds.breakage]
+kind = "guo_strain_weibull"
+sigma0 = 0.0131
+m = 18.0
+l_calib = 10000.0
+rho_shear = 1.0
+
+
+[output]
+dir = "examples/bench_capsule_yarn_pull/calib/cc2"
+
+# steps = 875000 relax (free grips + global damping, CAPSULE_RELAX_STEPS)
+# + 560000 pull. Relaxation settles the initial capsule overlaps so the curve
+# sits on the sphere yarn instead of a locked-in stiffness offset.
+[run]
+steps = 875000
+thermo = 2000
+dt = 0.001888180053590586
