@@ -417,6 +417,17 @@ pub struct DemConfig {
     /// Pendular capillary bridge model: `"off"` (default) or `"willett2000"`.
     #[serde(default = "default_liquid_bridge_model")]
     pub liquid_bridge_model: String,
+    /// Abort when more than this many contacts in one step overlap by more
+    /// than 10 % of the radius sum (`distance / (r_i + r_j) < 0.9`). Default
+    /// `500`, which catches a timestep that is too large or a bad initial
+    /// packing. Set `0` to never abort, as LAMMPS does: a fibre or yarn whose
+    /// overlapping bonded beads break can legitimately pass this many.
+    #[serde(default = "default_deep_overlap_abort")]
+    pub deep_overlap_abort: usize,
+}
+
+fn default_deep_overlap_abort() -> usize {
+    500
 }
 
 impl Default for DemConfig {
@@ -431,6 +442,7 @@ impl Default for DemConfig {
             track_orientation: false,
             limit_damping: default_limit_damping(),
             liquid_bridge_model: default_liquid_bridge_model(),
+            deep_overlap_abort: default_deep_overlap_abort(),
         }
     }
 }
@@ -593,6 +605,9 @@ pub struct MaterialTable {
     pub kt_ij: Vec<Vec<f64>>,
     /// Contact model: "hertz" or "hooke".
     pub contact_model: String,
+    /// Deep-overlap count per step above which contact aborts; `0` never aborts.
+    /// See [`DemConfig::deep_overlap_abort`].
+    pub deep_overlap_abort: usize,
     /// Adhesion model: "jkr" (default) or "dmt".
     pub adhesion_model: String,
     /// Rolling resistance model: "constant" or "sds".
@@ -1136,6 +1151,7 @@ impl MaterialTable {
             kn_ij: Vec::new(),
             kt_ij: Vec::new(),
             contact_model: "hertz".to_string(),
+            deep_overlap_abort: 500,
             adhesion_model: "jkr".to_string(),
             rolling_model: "constant".to_string(),
             twisting_model: "constant".to_string(),
@@ -1633,6 +1649,7 @@ fn configure_dem_atom(app: &mut App) -> Result<(), AppError> {
     material_table.tangential_model = dem_config.tangential_model.clone();
     material_table.track_orientation = dem_config.track_orientation;
     material_table.limit_damping = dem_config.limit_damping;
+    material_table.deep_overlap_abort = dem_config.deep_overlap_abort;
     material_table.liquid_bridge_model = dem_config.liquid_bridge_model.clone();
 
     if let Some(ref materials) = dem_config.materials {

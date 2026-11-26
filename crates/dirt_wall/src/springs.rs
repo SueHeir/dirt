@@ -241,8 +241,7 @@ impl AtomData for WallSpringStore {
     }
 
     unsafe fn apply_permutation(&mut self, perm: &[usize], n: usize) {
-        let permuted: Vec<Vec<WallSpring>> =
-            perm.iter().map(|&p| self.rows[p].clone()).collect();
+        let permuted: Vec<Vec<WallSpring>> = perm.iter().map(|&p| self.rows[p].clone()).collect();
         self.rows[..n].clone_from_slice(&permuted);
     }
 

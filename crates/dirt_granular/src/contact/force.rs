@@ -335,11 +335,14 @@ pub fn contact_force_core_views(
                 atoms.tag[j],
                 distance / sum_r
             );
-            if overlap_warnings > MAX_OVERLAP_WARNINGS {
+            if material_table.deep_overlap_abort > 0
+                && overlap_warnings > material_table.deep_overlap_abort
+            {
                 panic!(
                     "Over {} excessive overlaps this step — aborting. \
-                     Check timestep or initial configuration.",
-                    MAX_OVERLAP_WARNINGS
+                     Check timestep or initial configuration, or set \
+                     [dem] deep_overlap_abort = 0 to keep running.",
+                    material_table.deep_overlap_abort
                 );
             }
             // Cap overlap at half the smaller radius to keep Hertz model valid,
@@ -983,10 +986,13 @@ pub fn hooke_contact_force(
 
             if distance / sum_r < LARGE_OVERLAP_WARN_THRESHOLD {
                 overlap_warnings += 1;
-                if overlap_warnings > MAX_OVERLAP_WARNINGS {
+                if material_table.deep_overlap_abort > 0
+                    && overlap_warnings > material_table.deep_overlap_abort
+                {
                     panic!(
-                        "Over {} excessive overlaps this step — aborting.",
-                        MAX_OVERLAP_WARNINGS
+                        "Over {} excessive overlaps this step — aborting. \
+                         Set [dem] deep_overlap_abort = 0 to keep running.",
+                        material_table.deep_overlap_abort
                     );
                 }
                 // Still compute force (don't skip) — removing repulsion causes runaway.

@@ -18,7 +18,7 @@ use soil_core::{
 };
 
 use crate::tangential::{ContactHistory, ContactHistoryStore, CONTACT_HISTORY_LEN};
-use crate::{LARGE_OVERLAP_WARN_THRESHOLD, MAX_OVERLAP_WARNINGS, SQRT_5_6, TANGENTIAL_EPSILON};
+use crate::{LARGE_OVERLAP_WARN_THRESHOLD, SQRT_5_6, TANGENTIAL_EPSILON};
 
 mod adhesion;
 mod force;

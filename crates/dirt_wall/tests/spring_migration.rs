@@ -175,12 +175,12 @@ fn a_loaded_wall_spring_crosses_a_rank_boundary_and_the_contact_continues() {
         assert_eq!(atoms.nlocal() as usize, before + 1);
         before
     };
-    assert_eq!(arrived_row, 1, "the migrant lands after the rank's own atom");
     assert_eq!(
-        receiver
-            .get_resource_ref::<Atom>()
-            .expect("Atom")
-            .tag[arrived_row],
+        arrived_row, 1,
+        "the migrant lands after the rank's own atom"
+    );
+    assert_eq!(
+        receiver.get_resource_ref::<Atom>().expect("Atom").tag[arrived_row],
         contact.0
     );
 
@@ -371,5 +371,8 @@ fn a_frictionless_wall_stores_nothing() {
     );
     // And it is still a live normal contact, so this is not vacuous.
     let atoms = app.get_resource_ref::<Atom>().expect("Atom");
-    assert!(atoms.force[0][2] > 0.0 as _, "the normal force must be live");
+    assert!(
+        atoms.force[0][2] > 0.0 as _,
+        "the normal force must be live"
+    );
 }

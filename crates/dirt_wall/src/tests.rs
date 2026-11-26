@@ -670,9 +670,9 @@ fn moving_wall_relative_velocity_affects_damping() {
 
         let mut registry = AtomDataRegistry::new();
         registry.register_for_atoms(dem, &atom).unwrap();
-    registry
-        .register_for_atoms(crate::springs::WallSpringStore::new(), &atom)
-        .unwrap();
+        registry
+            .register_for_atoms(crate::springs::WallSpringStore::new(), &atom)
+            .unwrap();
 
         let mut plane = make_wall_plane(0.0, 0.0, 0.0, 0.0, 0.0, 1.0);
         plane.velocity = wall_vel;
@@ -1139,9 +1139,9 @@ fn cylinder_force_always_points_radially_inward() {
 
         let mut registry = AtomDataRegistry::new();
         registry.register_for_atoms(dem, &atom).unwrap();
-    registry
-        .register_for_atoms(crate::springs::WallSpringStore::new(), &atom)
-        .unwrap();
+        registry
+            .register_for_atoms(crate::springs::WallSpringStore::new(), &atom)
+            .unwrap();
 
         let walls = make_walls_with_cylinder(WallCylinder {
             axis: 2,
@@ -1302,9 +1302,9 @@ fn sphere_force_points_toward_center_at_multiple_positions() {
 
         let mut registry = AtomDataRegistry::new();
         registry.register_for_atoms(dem, &atom).unwrap();
-    registry
-        .register_for_atoms(crate::springs::WallSpringStore::new(), &atom)
-        .unwrap();
+        registry
+            .register_for_atoms(crate::springs::WallSpringStore::new(), &atom)
+            .unwrap();
 
         let walls = make_walls_with_sphere(WallSphere {
             center: sph_center,
@@ -1409,9 +1409,9 @@ fn wall_hertz_force_scales_as_delta_three_halves() {
 
         let mut registry = AtomDataRegistry::new();
         registry.register_for_atoms(dem, &atom).unwrap();
-    registry
-        .register_for_atoms(crate::springs::WallSpringStore::new(), &atom)
-        .unwrap();
+        registry
+            .register_for_atoms(crate::springs::WallSpringStore::new(), &atom)
+            .unwrap();
 
         let walls = make_walls(vec![make_wall_plane(0.0, 0.0, 0.0, 0.0, 0.0, 1.0)]);
 
@@ -1671,9 +1671,9 @@ fn region_wall_force_matches_dedicated_sphere() {
         unsafe { atom.set_layout_unchecked(1, 0, 1) };
         let mut registry = AtomDataRegistry::new();
         registry.register_for_atoms(dem, &atom).unwrap();
-    registry
-        .register_for_atoms(crate::springs::WallSpringStore::new(), &atom)
-        .unwrap();
+        registry
+            .register_for_atoms(crate::springs::WallSpringStore::new(), &atom)
+            .unwrap();
         let walls = make_walls_with_sphere(WallSphere {
             center: sphere_center,
             radius: sphere_radius,
@@ -1704,9 +1704,9 @@ fn region_wall_force_matches_dedicated_sphere() {
         unsafe { atom.set_layout_unchecked(1, 0, 1) };
         let mut registry = AtomDataRegistry::new();
         registry.register_for_atoms(dem, &atom).unwrap();
-    registry
-        .register_for_atoms(crate::springs::WallSpringStore::new(), &atom)
-        .unwrap();
+        registry
+            .register_for_atoms(crate::springs::WallSpringStore::new(), &atom)
+            .unwrap();
         let walls = make_walls_with_region(WallRegion {
             region: Region::Sphere {
                 center: sphere_center,

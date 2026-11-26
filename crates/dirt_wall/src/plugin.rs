@@ -4,11 +4,11 @@ use crate::config::{curved_or_region_wall_surface_energy_warning, WallDef};
 use crate::contact::wall_contact_force;
 use crate::geometry::{WallCylinder, WallPlane, WallRegion, WallSphere, Walls};
 use crate::motion::{wall_move, wall_zero_force_accumulators, WallMotion};
+use crate::springs::WallSpringStore;
 use dirt_atom::MaterialTable;
 use dirt_schedule::WALL_CONTACT;
 use grass_app::prelude::*;
 use grass_scheduler::prelude::*;
-use crate::springs::WallSpringStore;
 use soil_core::{register_atom_data, Config, ParticleSimScheduleSet};
 
 // ── Plugin ──────────────────────────────────────────────────────────────────
