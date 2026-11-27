@@ -249,6 +249,7 @@ pub fn contact_force_core_views(
     let twisting_marshall = material_table.twisting_model == "marshall";
     let sds_twisting = material_table.twisting_model == "sds";
     let tangential_xt = material_table.tangential_damping_ratio;
+    let contact_point_lever = material_table.torque_lever == "contact_point";
     // With no JKR pull-off and no liquid bridges anywhere, the interaction
     // range is exactly r1 + r2, so a non-touching pair can be rejected before
     // any per-material lookup.
@@ -668,13 +669,21 @@ pub fn contact_force_core_views(
                 (sx, sy, sz)
             };
 
-        // Torques: τ_i = (r1 * n) × f_t, τ_j = (-r2 * n) × (-f_t) = (r2 * n) × f_t
-        let ti_x = r1n_y * ft_z - r1n_z * ft_y;
-        let ti_y = r1n_z * ft_x - r1n_x * ft_z;
-        let ti_z = r1n_x * ft_y - r1n_y * ft_x;
-        let tj_x = r2n_y * ft_z - r2n_z * ft_y;
-        let tj_y = r2n_z * ft_x - r2n_x * ft_z;
-        let tj_z = r2n_x * ft_y - r2n_y * ft_x;
+        // Torques: τ_i = (r1 * n) × f_t, τ_j = (-r2 * n) × (-f_t) = (r2 * n) × f_t.
+        // With `torque_lever = "contact_point"` the lever is r − δ/2 (LAMMPS
+        // pair granular) instead of the full radius.
+        let (lever_i, lever_j) = if contact_point_lever {
+            let d = sum_r - distance;
+            ((r1 - 0.5 * d) / r1, (r2 - 0.5 * d) / r2)
+        } else {
+            (1.0, 1.0)
+        };
+        let ti_x = lever_i * (r1n_y * ft_z - r1n_z * ft_y);
+        let ti_y = lever_i * (r1n_z * ft_x - r1n_x * ft_z);
+        let ti_z = lever_i * (r1n_x * ft_y - r1n_y * ft_x);
+        let tj_x = lever_j * (r2n_y * ft_z - r2n_z * ft_y);
+        let tj_y = lever_j * (r2n_z * ft_x - r2n_x * ft_z);
+        let tj_z = lever_j * (r2n_x * ft_y - r2n_y * ft_x);
 
         atoms.force[i][0] += ft_x as soil_core::Accum;
         atoms.force[i][1] += ft_y as soil_core::Accum;
@@ -1213,13 +1222,19 @@ pub fn hooke_contact_force(
                     (sx, sy, sz)
                 };
 
-            // Torques
-            let ti_x = r1n_y * ft_z - r1n_z * ft_y;
-            let ti_y = r1n_z * ft_x - r1n_x * ft_z;
-            let ti_z = r1n_x * ft_y - r1n_y * ft_x;
-            let tj_x = r2n_y * ft_z - r2n_z * ft_y;
-            let tj_y = r2n_z * ft_x - r2n_x * ft_z;
-            let tj_z = r2n_x * ft_y - r2n_y * ft_x;
+            // Torques (lever r − δ/2 with `torque_lever = "contact_point"`).
+            let (lever_i, lever_j) = if material_table.torque_lever == "contact_point" {
+                let d = sum_r - distance;
+                ((r1 - 0.5 * d) / r1, (r2 - 0.5 * d) / r2)
+            } else {
+                (1.0, 1.0)
+            };
+            let ti_x = lever_i * (r1n_y * ft_z - r1n_z * ft_y);
+            let ti_y = lever_i * (r1n_z * ft_x - r1n_x * ft_z);
+            let ti_z = lever_i * (r1n_x * ft_y - r1n_y * ft_x);
+            let tj_x = lever_j * (r2n_y * ft_z - r2n_z * ft_y);
+            let tj_y = lever_j * (r2n_z * ft_x - r2n_x * ft_z);
+            let tj_z = lever_j * (r2n_x * ft_y - r2n_y * ft_x);
 
             atoms.force[i][0] += ft_x as soil_core::Accum;
             atoms.force[i][1] += ft_y as soil_core::Accum;

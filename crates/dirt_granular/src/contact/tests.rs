@@ -2505,3 +2505,59 @@ fn realized_cor_at_yarn_params() {
         "realized COR {realized} outside expected band for nominal {nominal_cor}"
     );
 }
+
+/// `torque_lever = "contact_point"` scales the tangential-force torque by
+/// (r − δ/2)/r, as LAMMPS `pair granular` does; forces are unchanged.
+#[test]
+fn contact_point_torque_lever_scales_torque_only() {
+    let run = |lever: &str| {
+        let mut app = App::new();
+        let radius = 0.001;
+        let mut atom = Atom::new();
+        let mut dem = DemAtom::new();
+        let mut hist = ContactHistoryStore::new();
+        atom.dt = 1e-7;
+        push_test_atom_with_history(&mut atom, &mut dem, &mut hist, 0, [0.0, 0.0, 0.0], radius);
+        push_test_atom_with_history(
+            &mut atom,
+            &mut dem,
+            &mut hist,
+            1,
+            [0.0019, 0.0, 0.0],
+            radius,
+        );
+        atom.vel[1][1] = 0.1;
+        unsafe {
+            atom.set_layout_unchecked(2, atom.nghost(), 2);
+        }
+        let mut neighbor = Neighbor::new();
+        neighbor.neighbor_offsets = vec![0, 1, 1];
+        neighbor.neighbor_indices = vec![1];
+        let mut registry = AtomDataRegistry::new();
+        registry.register_for_atoms(dem, &atom).unwrap();
+        registry.register_for_atoms(hist, &atom).unwrap();
+        let mut mt = make_material_table();
+        mt.torque_lever = lever.to_string();
+        app.add_resource(atom);
+        app.add_resource(neighbor);
+        app.add_resource(registry);
+        app.add_resource(mt);
+        app.add_update_system(hertz_mindlin_contact_force, ParticleSimScheduleSet::Force);
+        app.organize_systems();
+        app.run();
+        let force = app.get_resource_ref::<Atom>().unwrap().force[0];
+        let registry = app.get_resource_ref::<AtomDataRegistry>().unwrap();
+        let torque = registry.expect::<DemAtom>("test").torque[0];
+        (force, torque)
+    };
+    let (f_r, t_r) = run("radius");
+    let (f_c, t_c) = run("contact_point");
+    let radius = 0.001;
+    let delta = 2.0 * radius - 0.0019;
+    let ratio = (radius - 0.5 * delta) / radius;
+    for k in 0..3 {
+        assert_eq!(f_r[k], f_c[k], "forces must not depend on the lever");
+        assert!((t_c[k] - ratio * t_r[k]).abs() <= 1e-12 * t_r[k].abs().max(1e-30));
+    }
+    assert!(t_r[2].abs() > 0.0);
+}

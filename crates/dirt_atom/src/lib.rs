@@ -349,6 +349,10 @@ fn default_damping_model() -> String {
     "tsuji".to_string()
 }
 
+fn default_torque_lever() -> String {
+    "radius".to_string()
+}
+
 fn default_liquid_bridge_model() -> String {
     "off".to_string()
 }
@@ -434,6 +438,11 @@ pub struct DemConfig {
     /// Unset (default) keeps DIRT's Mindlin form `γ_t = 2√(5/6) β √(k_t m*)`.
     #[serde(default)]
     pub tangential_damping_ratio: Option<f64>,
+    /// Lever arm for the tangential-force torque: `"radius"` (default, the
+    /// full particle radius) or `"contact_point"` (`r − δ/2`, as LAMMPS
+    /// `pair granular` does for particle pairs).
+    #[serde(default = "default_torque_lever")]
+    pub torque_lever: String,
     /// Pendular capillary bridge model: `"off"` (default) or `"willett2000"`.
     #[serde(default = "default_liquid_bridge_model")]
     pub liquid_bridge_model: String,
@@ -463,6 +472,7 @@ impl Default for DemConfig {
             limit_damping: default_limit_damping(),
             damping_model: default_damping_model(),
             tangential_damping_ratio: None,
+            torque_lever: default_torque_lever(),
             liquid_bridge_model: default_liquid_bridge_model(),
             deep_overlap_abort: default_deep_overlap_abort(),
         }
@@ -648,6 +658,8 @@ pub struct MaterialTable {
     pub damping_model: String,
     /// LAMMPS `linear_nohistory` `xt`. See [`DemConfig::tangential_damping_ratio`].
     pub tangential_damping_ratio: Option<f64>,
+    /// Contact torque lever. See [`DemConfig::torque_lever`].
+    pub torque_lever: String,
     /// Per-material rolling spring stiffness (SDS model).
     pub rolling_stiffness: Vec<f64>,
     /// Per-material rolling damping coefficient (SDS model).
@@ -1186,6 +1198,7 @@ impl MaterialTable {
             limit_damping: true,
             damping_model: "tsuji".to_string(),
             tangential_damping_ratio: None,
+            torque_lever: "radius".to_string(),
             rolling_stiffness: Vec::new(),
             rolling_damping: Vec::new(),
             twisting_stiffness: Vec::new(),
@@ -1697,6 +1710,12 @@ fn configure_dem_atom(app: &mut App) -> Result<(), AppError> {
     }
     material_table.damping_model = dem_config.damping_model.clone();
     material_table.tangential_damping_ratio = dem_config.tangential_damping_ratio;
+    assert!(
+        matches!(dem_config.torque_lever.as_str(), "radius" | "contact_point"),
+        "[dem] torque_lever must be \"radius\" or \"contact_point\", got {:?}",
+        dem_config.torque_lever
+    );
+    material_table.torque_lever = dem_config.torque_lever.clone();
     material_table.deep_overlap_abort = dem_config.deep_overlap_abort;
     material_table.liquid_bridge_model = dem_config.liquid_bridge_model.clone();
 

@@ -126,6 +126,9 @@ Other `[bonds]` keys useful for yarn runs:
 - `[dem] tangential_model = "linear_nohistory"` with
   `tangential_damping_ratio = xt` matches LAMMPS `tangential linear_nohistory
   xt mu` (tangential damping = xt × normal damping).
+- `[dem] torque_lever = "contact_point"` uses LAMMPS's `r − δ/2` lever for
+  contact torques (default `"radius"`), and `limit_damping = false` matches
+  pair_coeff without `limit_damping`.
 - Neighbor rebuilds: LAMMPS `neigh_modify every 1 check yes` is
   `[neighbor] every = 0` here (rebuild only when an atom has moved half the
   skin). `every = N > 0` forces a rebuild at least every N steps, so
