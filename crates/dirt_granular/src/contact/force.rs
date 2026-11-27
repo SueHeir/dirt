@@ -236,6 +236,28 @@ pub fn contact_force_core_views(
         }
     }
 
+    // Model selections are per run, not per pair: decide them once here
+    // instead of comparing strings inside the pair loop.
+    let use_dmt = material_table.adhesion_model == "dmt";
+    let liquid_bridge_active = material_table.liquid_bridge_model == "willett2000";
+    let use_mdr = material_table.contact_model == "mdr";
+    let tangential_model = material_table.tangential_model.as_str();
+    let nohistory = tangential_model == "linear_nohistory";
+    let mindlin_rescale = is_mindlin_rescale(tangential_model);
+    let mindlin_force_history = is_mindlin_force_history(tangential_model);
+    let sds_rolling = material_table.rolling_model == "sds";
+    let twisting_marshall = material_table.twisting_model == "marshall";
+    let sds_twisting = material_table.twisting_model == "sds";
+    // With no JKR pull-off and no liquid bridges anywhere, the interaction
+    // range is exactly r1 + r2, so a non-touching pair can be rejected before
+    // any per-material lookup.
+    let geometric_range_only = !liquid_bridge_active
+        && (use_dmt
+            || !material_table
+                .surface_energy_ij
+                .iter()
+                .flatten()
+                .any(|&g| g > 0.0));
     for (i, j) in neighbor.pairs(nlocal) {
         // Interior/boundary split (step 4): boundary pairs touch a ghost (j >= nlocal).
         let is_boundary_pair = j >= nlocal;
@@ -266,12 +288,13 @@ pub fn contact_force_core_views(
         let dz = atoms.pos[j][2] as f64 - atoms.pos[i][2] as f64;
         let dist_sq = dx * dx + dy * dy + dz * dz;
         let sum_r = r1 + r2;
+        if geometric_range_only && dist_sq >= sum_r * sum_r {
+            continue;
+        }
 
         let mat_i = atoms.atom_type[i] as usize;
         let mat_j = atoms.atom_type[j] as usize;
         let surface_energy = material_table.surface_energy_ij[mat_i][mat_j];
-
-        let use_dmt = material_table.adhesion_model == "dmt";
 
         // JKR: compute pull-off distance for extended interaction range
         // DMT: no extended range (particles separate at delta = 0)
@@ -279,7 +302,6 @@ pub fn contact_force_core_views(
         let r_eff = (r1 * r2) / sum_r;
         // Effective Young's modulus: 1/E* = (1-ν1²)/E1 + (1-ν2²)/E2
         let e_eff = material_table.e_eff_ij[mat_i][mat_j];
-        let liquid_bridge_active = material_table.liquid_bridge_model == "willett2000";
         let liquid_volume = material_table.liquid_bridge_volume_ij[mat_i][mat_j];
         let liquid_surface_tension = material_table.liquid_surface_tension_ij[mat_i][mat_j];
         let liquid_contact_angle = material_table.liquid_contact_angle_ij[mat_i][mat_j];
@@ -385,7 +407,6 @@ pub fn contact_force_core_views(
         let mu_r = material_table.rolling_friction_ij[mat_i][mat_j];
         let mu_tw = material_table.twisting_friction_ij[mat_i][mat_j];
         let cohesion_energy = material_table.cohesion_energy_ij[mat_i][mat_j];
-        let use_mdr = material_table.contact_model == "mdr";
 
         // JKR adhesion-only regime: gap exists but within pull-off distance
         // DMT has no adhesion-only regime (no force beyond contact)
@@ -454,9 +475,12 @@ pub fn contact_force_core_views(
 
         // Look up existing spring/history (single search, reused for write-back).
         let entry_idx = history.contacts[i].iter().position(|(t, _, _)| *t == tag_j);
-        let mut stored = match entry_idx {
-            Some(idx) => history.contacts[i][idx].1,
-            None => zero_contact_history(),
+        // Work on the stored entry in place (a contact's history is 184 bytes;
+        // copying it out and back costs more than the rest of the bookkeeping).
+        let mut fresh = zero_contact_history();
+        let stored: &mut ContactHistory = match entry_idx {
+            Some(idx) => &mut history.contacts[i][idx].1,
+            None => &mut fresh,
         };
 
         // ── Normal force ─────────────────────────────────────────────────
@@ -474,7 +498,7 @@ pub fn contact_force_core_views(
                 material_table.mdr_damping_ij[mat_i][mat_j],
                 m_r,
                 v_n,
-                &mut stored,
+                stored,
             );
             (f, kt_mdr)
         } else if surface_energy > 0.0 && use_dmt {
@@ -553,10 +577,6 @@ pub fn contact_force_core_views(
         // (LAMMPS pair_granular `tangential linear_nohistory`, and the classic
         // `pair gran/hooke`) — the force depends only on the instantaneous
         // relative tangential velocity, with NO accumulated displacement.
-        let tangential_model = material_table.tangential_model.as_str();
-        let nohistory = tangential_model == "linear_nohistory";
-        let mindlin_rescale = is_mindlin_rescale(tangential_model);
-        let mindlin_force_history = is_mindlin_force_history(tangential_model);
         let f_t_max = mu * f_n_mag.abs();
         let (sx, sy, sz) = if nohistory {
             (0.0, 0.0, 0.0)
@@ -684,7 +704,6 @@ pub fn contact_force_core_views(
 
         if mu_r > 0.0 {
             let roll_mag = (roll_x * roll_x + roll_y * roll_y + roll_z * roll_z).sqrt();
-            let sds_rolling = material_table.rolling_model == "sds";
             if sds_rolling {
                 // SDS rolling: spring-dashpot-slider model
                 let k_roll = material_table.rolling_stiffness_ij[mat_i][mat_j];
@@ -751,7 +770,7 @@ pub fn contact_force_core_views(
         //   "constant" / "sds"  — user-supplied coefficients (gated on μ_tw > 0);
         //   "marshall"           — coefficients DERIVED from the active tangential
         //                          (Mindlin) model, no separate twist inputs.
-        if material_table.twisting_model == "marshall" {
+        if twisting_marshall {
             // Marshall (2009) twisting, per LAMMPS pair_granular `twisting marshall`
             // (doc/src/pair_granular.rst §twisting, Marshall2009 eqs 32-33). The
             // twisting stiffness/damping/friction are expressed in terms of the
@@ -796,7 +815,6 @@ pub fn contact_force_core_views(
             }
         } else if mu_tw > 0.0 {
             let twist_vel = or_dot_n; // twisting component of relative angular velocity
-            let sds_twisting = material_table.twisting_model == "sds";
             if sds_twisting {
                 // SDS twisting: spring-dashpot-slider model
                 let k_twist = material_table.twisting_stiffness_ij[mat_i][mat_j];
@@ -859,7 +877,7 @@ pub fn contact_force_core_views(
         }
 
         // Store updated spring back (canonical form) and mark active
-        // Write the updated springs into `stored` in place (no second 184-byte copy).
+        // Write the updated springs into the stored entry.
         stored[0] = sign * sx;
         stored[1] = sign * sy;
         stored[2] = sign * sz;
@@ -869,11 +887,8 @@ pub fn contact_force_core_views(
         stored[6] = sign * twist_disp;
         stored[7] = contact_radius;
         match entry_idx {
-            Some(idx) => {
-                history.contacts[i][idx].1 = stored;
-                history.contacts[i][idx].2 = true;
-            }
-            None => history.contacts[i].push((tag_j, stored, true)),
+            Some(idx) => history.contacts[i][idx].2 = true,
+            None => history.contacts[i].push((tag_j, fresh, true)),
         }
     }
 
@@ -1097,9 +1112,12 @@ pub fn hooke_contact_force(
             let sign: f64 = if tag_i < tag_j { 1.0 } else { -1.0 };
 
             let entry_idx = history.contacts[i].iter().position(|(t, _, _)| *t == tag_j);
-            let mut stored = match entry_idx {
-                Some(idx) => history.contacts[i][idx].1,
-                None => zero_contact_history(),
+            // Work on the stored entry in place (a contact's history is 184 bytes;
+            // copying it out and back costs more than the rest of the bookkeeping).
+            let mut fresh = zero_contact_history();
+            let stored: &mut ContactHistory = match entry_idx {
+                Some(idx) => &mut history.contacts[i][idx].1,
+                None => &mut fresh,
             };
 
             // History-free `linear_nohistory` tangential model → zero spring (see the
@@ -1376,7 +1394,7 @@ pub fn hooke_contact_force(
                 }
             }
 
-            // Write the updated springs into `stored` in place (no second 184-byte copy).
+            // Write the updated springs into the stored entry.
             stored[0] = sign * sx;
             stored[1] = sign * sy;
             stored[2] = sign * sz;
@@ -1386,11 +1404,8 @@ pub fn hooke_contact_force(
             stored[6] = sign * twist_disp;
             stored[7] = contact_radius;
             match entry_idx {
-                Some(idx) => {
-                    history.contacts[i][idx].1 = stored;
-                    history.contacts[i][idx].2 = true;
-                }
-                None => history.contacts[i].push((tag_j, stored, true)),
+                Some(idx) => history.contacts[i][idx].2 = true,
+                None => history.contacts[i].push((tag_j, fresh, true)),
             }
         }
 
