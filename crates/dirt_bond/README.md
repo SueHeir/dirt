@@ -120,6 +120,12 @@ Other `[bonds]` keys useful for yarn runs:
   (relaxation).
 - `[dem] deep_overlap_abort = 0` keeps a run going through a break cascade
   instead of aborting after 500 deep overlaps in one step.
+- `[dem] damping_model = "coeff_restitution"` matches LAMMPS
+  `damping coeff_restitution` (the default `"tsuji"` matches `damping tsuji`;
+  at e = 0.6 Tsuji damps 0.71× as hard).
+- `[dem] tangential_model = "linear_nohistory"` with
+  `tangential_damping_ratio = xt` matches LAMMPS `tangential linear_nohistory
+  xt mu` (tangential damping = xt × normal damping).
 
 ## Key types
 

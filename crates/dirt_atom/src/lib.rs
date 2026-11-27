@@ -345,6 +345,10 @@ fn default_limit_damping() -> bool {
     true
 }
 
+fn default_damping_model() -> String {
+    "tsuji".to_string()
+}
+
 fn default_liquid_bridge_model() -> String {
     "off".to_string()
 }
@@ -414,6 +418,22 @@ pub struct DemConfig {
     /// away raises the realized COR by up to ~0.03. See `bench_hertz_rebound`.
     #[serde(default = "default_limit_damping")]
     pub limit_damping: bool,
+    /// How the Hertz normal damping coefficient follows from `restitution`
+    /// (LAMMPS `pair granular ... damping <model>`):
+    /// - **tsuji** (default): `β = α(e)/√5` with the Tsuji (1992) polynomial,
+    ///   identical to LAMMPS `damping tsuji`.
+    /// - **coeff_restitution**: `β = −ln e / √(π² + ln² e)`, identical to LAMMPS
+    ///   `damping coeff_restitution` (`η = √(3/2)·2√(5/6)·β·√(m* Fₙ/δ)`).
+    ///
+    /// Hooke contacts always use the `coeff_restitution` form.
+    #[serde(default = "default_damping_model")]
+    pub damping_model: String,
+    /// LAMMPS `tangential linear_nohistory xt mu`: with
+    /// `tangential_model = "linear_nohistory"`, set the tangential damping to
+    /// `xt` times the normal damping coefficient, `F_t = −min(μ|Fₙ|, xt·ηₙ|v_t|) t̂`.
+    /// Unset (default) keeps DIRT's Mindlin form `γ_t = 2√(5/6) β √(k_t m*)`.
+    #[serde(default)]
+    pub tangential_damping_ratio: Option<f64>,
     /// Pendular capillary bridge model: `"off"` (default) or `"willett2000"`.
     #[serde(default = "default_liquid_bridge_model")]
     pub liquid_bridge_model: String,
@@ -441,6 +461,8 @@ impl Default for DemConfig {
             tangential_model: default_tangential_model(),
             track_orientation: false,
             limit_damping: default_limit_damping(),
+            damping_model: default_damping_model(),
+            tangential_damping_ratio: None,
             liquid_bridge_model: default_liquid_bridge_model(),
             deep_overlap_abort: default_deep_overlap_abort(),
         }
@@ -622,6 +644,10 @@ pub struct MaterialTable {
     /// [`DemConfig::limit_damping`]. `false` reproduces LAMMPS's default
     /// (no tensile cutoff) for exact cross-code COR at low restitution.
     pub limit_damping: bool,
+    /// Hertz damping model. See [`DemConfig::damping_model`].
+    pub damping_model: String,
+    /// LAMMPS `linear_nohistory` `xt`. See [`DemConfig::tangential_damping_ratio`].
+    pub tangential_damping_ratio: Option<f64>,
     /// Per-material rolling spring stiffness (SDS model).
     pub rolling_stiffness: Vec<f64>,
     /// Per-material rolling damping coefficient (SDS model).
@@ -1158,6 +1184,8 @@ impl MaterialTable {
             tangential_model: "history".to_string(),
             track_orientation: false,
             limit_damping: true,
+            damping_model: "tsuji".to_string(),
+            tangential_damping_ratio: None,
             rolling_stiffness: Vec::new(),
             rolling_damping: Vec::new(),
             twisting_stiffness: Vec::new(),
@@ -1369,11 +1397,15 @@ impl MaterialTable {
                 //     cross-check). A previous exact-COR-inversion mapping made
                 //     realized COR = nominal e, but that DISAGREED with LAMMPS's
                 //     Tsuji model by up to 0.067 — the bug this reconciles.
-                self.beta_ij[i][j] = if self.contact_model == "hooke" {
-                    -log_e / (PI * PI + log_e * log_e).sqrt()
-                } else {
-                    hertz_beta_for_cor(e_ij)
-                };
+                self.beta_ij[i][j] =
+                    if self.contact_model == "hooke" || self.damping_model == "coeff_restitution" {
+                        // LAMMPS `damping coeff_restitution`: for Hertz its
+                        // η = √(3/2)·2√(5/6)·β·√(m* Fₙ/δ) equals DIRT's
+                        // 2√(5/6)·β·√(Sₙ m*) because Fₙ/δ = (2/3) Sₙ.
+                        -log_e / (PI * PI + log_e * log_e).sqrt()
+                    } else {
+                        hertz_beta_for_cor(e_ij)
+                    };
 
                 // Geometric mean mixing for friction
                 self.friction_ij[i][j] = (self.friction[i] * self.friction[j]).sqrt();
@@ -1649,6 +1681,22 @@ fn configure_dem_atom(app: &mut App) -> Result<(), AppError> {
     material_table.tangential_model = dem_config.tangential_model.clone();
     material_table.track_orientation = dem_config.track_orientation;
     material_table.limit_damping = dem_config.limit_damping;
+    assert!(
+        matches!(
+            dem_config.damping_model.as_str(),
+            "tsuji" | "coeff_restitution"
+        ),
+        "[dem] damping_model must be \"tsuji\" or \"coeff_restitution\", got {:?}",
+        dem_config.damping_model
+    );
+    if let Some(xt) = dem_config.tangential_damping_ratio {
+        assert!(
+            xt.is_finite() && xt >= 0.0,
+            "[dem] tangential_damping_ratio must be finite and >= 0, got {xt}"
+        );
+    }
+    material_table.damping_model = dem_config.damping_model.clone();
+    material_table.tangential_damping_ratio = dem_config.tangential_damping_ratio;
     material_table.deep_overlap_abort = dem_config.deep_overlap_abort;
     material_table.liquid_bridge_model = dem_config.liquid_bridge_model.clone();
 
@@ -1691,6 +1739,31 @@ mod tests {
         assert!(!same_molecule(&dem, 3, 4)); // both molecule 0 (unassigned)
         assert!(!same_molecule(&dem, 0, 3)); // one assigned, one not
         assert!(!same_molecule(&dem, 0, 99)); // out of range → false, no panic
+    }
+
+    #[test]
+    fn coeff_restitution_damping_matches_lammps_prefactor() {
+        let e = 0.6_f64;
+        let mut mt = MaterialTable::new();
+        mt.damping_model = "coeff_restitution".to_string();
+        mt.add(Material::new("fibre", Elastic::new(1.0e9, 0.3, e)))
+            .expect("valid material");
+        mt.build_pair_tables();
+        let log_e = e.ln();
+        let beta = -log_e / (PI * PI + log_e * log_e).sqrt();
+        assert!((mt.beta_ij[0][0] - beta).abs() < 1e-14);
+        // LAMMPS: η = √(3/2)·2√(5/6)·β·√(m* Fₙ/δ) with Fₙ/δ = (4/3)E*a.
+        // DIRT:   η = 2√(5/6)·β·√(Sₙ m*)    with Sₙ   = 2E*a.
+        let (e_star, a, m): (f64, f64, f64) = (3.0e8, 1.0e-4, 2.0e-6);
+        let lammps = 1.5_f64.sqrt()
+            * 2.0
+            * (5.0_f64 / 6.0).sqrt()
+            * beta
+            * (m * (4.0 / 3.0) * e_star * a).sqrt();
+        let dirt = 2.0 * (5.0_f64 / 6.0).sqrt() * mt.beta_ij[0][0] * (2.0 * e_star * a * m).sqrt();
+        assert!((lammps - dirt).abs() < 1e-12 * lammps.abs());
+        // Tsuji gives a weaker damping at this restitution.
+        assert!(hertz_beta_for_cor(e) < beta);
     }
 
     #[test]

@@ -248,6 +248,7 @@ pub fn contact_force_core_views(
     let sds_rolling = material_table.rolling_model == "sds";
     let twisting_marshall = material_table.twisting_model == "marshall";
     let sds_twisting = material_table.twisting_model == "sds";
+    let tangential_xt = material_table.tangential_damping_ratio;
     // With no JKR pull-off and no liquid bridges anywhere, the interaction
     // range is exactly r1 + r2, so a non-touching pair can be rejected before
     // any per-material lookup.
@@ -636,8 +637,13 @@ pub fn contact_force_core_views(
             (sx, sy, sz)
         };
 
-        // Tangential damping coefficient: γ_t = 2 β √(5/6) √(k_t m_r)
-        let gamma_t = 2.0 * SQRT_5_6 * beta * (k_t * m_r).sqrt();
+        // Tangential damping coefficient: γ_t = 2 β √(5/6) √(k_t m_r), or for
+        // LAMMPS `linear_nohistory xt mu`, xt times the normal damping
+        // coefficient ηₙ = 2 β √(5/6) √(Sₙ m_r).
+        let gamma_t = match tangential_xt {
+            Some(xt) if nohistory => xt * 2.0 * SQRT_5_6 * beta * (s_n * m_r).sqrt(),
+            _ => 2.0 * SQRT_5_6 * beta * (k_t * m_r).sqrt(),
+        };
         let mut ft_x = (if mindlin_force_history { sx } else { k_t * sx }) + gamma_t * vt_x;
         let mut ft_y = (if mindlin_force_history { sy } else { k_t * sy }) + gamma_t * vt_y;
         let mut ft_z = (if mindlin_force_history { sz } else { k_t * sz }) + gamma_t * vt_z;
@@ -1179,7 +1185,11 @@ pub fn hooke_contact_force(
                 (sx, sy, sz)
             };
 
-            let gamma_t = 2.0 * SQRT_5_6 * beta * (kt * m_r).sqrt();
+            // LAMMPS `linear_nohistory xt mu`: γ_t = xt · γ_n.
+            let gamma_t = match material_table.tangential_damping_ratio {
+                Some(xt) if nohistory => xt * gamma_n,
+                _ => 2.0 * SQRT_5_6 * beta * (kt * m_r).sqrt(),
+            };
             let mut ft_x = (if mindlin_force_history { sx } else { kt * sx }) + gamma_t * vt_x;
             let mut ft_y = (if mindlin_force_history { sy } else { kt * sy }) + gamma_t * vt_y;
             let mut ft_z = (if mindlin_force_history { sz } else { kt * sz }) + gamma_t * vt_z;
