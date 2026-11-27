@@ -910,6 +910,46 @@ impl Plugin for DemBondPlugin {
 
 // ── Setup systems ───────────────────────────────────────────────────────────
 
+/// Gather every rank's `local` records onto every rank with a ring of
+/// sendrecvs (serial: a copy). Setup-time only; never called per step.
+fn ring_all_gather_f64(comm: &CommResource, local: &[f64]) -> Vec<f64> {
+    let size = comm.size();
+    let mut all = local.to_vec();
+    if size <= 1 {
+        return all;
+    }
+    let rank = comm.rank();
+    let next = (rank + 1) % size;
+    let prev = (rank + size - 1) % size;
+    let mut passing = local.to_vec();
+    for _ in 1..size {
+        passing = comm.sendrecv_f64(next, &passing, prev);
+        all.extend_from_slice(&passing);
+    }
+    all
+}
+
+/// Minimum-image separation `b - a` on the periodic axes of `domain`.
+#[inline]
+fn min_image_delta(a: [f64; 3], b: [f64; 3], pflags: [bool; 3], box_size: [f64; 3]) -> [f64; 3] {
+    let mut d = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+    for k in 0..3 {
+        if pflags[k] {
+            d[k] -= box_size[k] * (d[k] / box_size[k]).round();
+        }
+    }
+    d
+}
+
+/// True when `p` lies within `reach` of a face of this rank's subdomain
+/// (only such particles can have a partner on another rank).
+#[inline]
+fn near_subdomain_face(p: [f64; 3], domain: &soil_core::Domain, reach: f64) -> bool {
+    (0..3).any(|k| {
+        p[k] - domain.sub_domain_low[k] <= reach || domain.sub_domain_high[k] - p[k] <= reach
+    })
+}
+
 /// Auto-bond initially touching particles at setup time. Uses periodic
 /// minimum-image distances on axes flagged periodic in `Domain`, so a
 /// single-rank periodic chain whose endpoints are within bond reach across
@@ -966,8 +1006,60 @@ pub fn auto_bond_touching(
             }
         }
 
+        // Pairs whose two ends start on different ranks. Each rank shares
+        // its particles near a subdomain face, then adds the bond entry for
+        // its own local end only; the partner's rank does the same, with the
+        // same (symmetric) distance arithmetic, so both ends agree on r0.
+        if comm.size() > 1 {
+            let local_max_r = dem.radius[..nlocal].iter().cloned().fold(0.0f64, f64::max);
+            let max_r = -comm.all_reduce_min_f64(-local_max_r);
+            let reach = 2.0 * max_r * tol;
+            let mut boundary: Vec<usize> = Vec::new();
+            let mut send: Vec<f64> = Vec::new();
+            for i in 0..nlocal {
+                let p = [
+                    atoms.pos[i][0] as f64,
+                    atoms.pos[i][1] as f64,
+                    atoms.pos[i][2] as f64,
+                ];
+                if near_subdomain_face(p, &domain, reach) {
+                    boundary.push(i);
+                    send.extend_from_slice(&[atoms.tag[i] as f64, p[0], p[1], p[2], dem.radius[i]]);
+                }
+            }
+            let gathered = ring_all_gather_f64(&comm, &send);
+            let local_tags: std::collections::HashSet<u32> =
+                atoms.tag[..nlocal].iter().copied().collect();
+            for &i in &boundary {
+                let pi = [
+                    atoms.pos[i][0] as f64,
+                    atoms.pos[i][1] as f64,
+                    atoms.pos[i][2] as f64,
+                ];
+                for rec in gathered.chunks_exact(5) {
+                    let tag_j = rec[0] as u32;
+                    if local_tags.contains(&tag_j) {
+                        continue;
+                    }
+                    let d = min_image_delta(pi, [rec[1], rec[2], rec[3]], pflags, box_size);
+                    let dist = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt();
+                    if dist <= (dem.radius[i] + rec[4]) * tol {
+                        bond_store.bonds[i].push(BondEntry {
+                            partner_tag: tag_j,
+                            bond_type: 0,
+                            r0: dist,
+                        });
+                        if atoms.tag[i] < tag_j {
+                            bond_count += 1;
+                        }
+                    }
+                }
+            }
+        }
+
+        let total = comm.all_reduce_sum_f64(bond_count as f64) as u64;
         if comm.rank() == 0 {
-            println!("DemBond: auto-bonded {} pairs", bond_count);
+            println!("DemBond: auto-bonded {} pairs", total);
         }
     });
 }
@@ -1022,6 +1114,34 @@ pub fn load_bonds_from_file(
         }
 
         let mut bond_count = 0u64;
+        let pflags = domain.periodic_flags();
+        let box_size = domain.size;
+
+        // Bonds whose two ends start on different ranks: share the position
+        // of every local end whose partner is not local, then let each rank
+        // add the entry for its own end. Serial runs skip this entirely.
+        let mut remote_pos: HashMap<u32, [f64; 3]> = HashMap::new();
+        if comm.size() > 1 {
+            let mut send: Vec<f64> = Vec::new();
+            let mut sent = std::collections::HashSet::new();
+            for b in &raw_bonds {
+                for (mine, other) in [(b.tag1, b.tag2), (b.tag2, b.tag1)] {
+                    if let Some(&i) = tag_to_local.get(&mine) {
+                        if !tag_to_local.contains_key(&other) && sent.insert(mine) {
+                            send.extend_from_slice(&[
+                                mine as f64,
+                                atoms.pos[i][0] as f64,
+                                atoms.pos[i][1] as f64,
+                                atoms.pos[i][2] as f64,
+                            ]);
+                        }
+                    }
+                }
+            }
+            for rec in ring_all_gather_f64(&comm, &send).chunks_exact(4) {
+                remote_pos.insert(rec[0] as u32, [rec[1], rec[2], rec[3]]);
+            }
+        }
 
         for RawBond {
             bond_type,
@@ -1029,13 +1149,40 @@ pub fn load_bonds_from_file(
             tag2,
         } in raw_bonds
         {
-            let idx1 = match tag_to_local.get(&tag1) {
-                Some(&i) => i,
-                None => continue,
-            };
-            let idx2 = match tag_to_local.get(&tag2) {
-                Some(&i) => i,
-                None => continue,
+            let (idx1, idx2) = match (tag_to_local.get(&tag1), tag_to_local.get(&tag2)) {
+                (Some(&i), Some(&j)) => (i, j),
+                (None, None) => continue,
+                (local, _) => {
+                    // Exactly one end is local: record that end only.
+                    let (mine, idx, partner) = match local {
+                        Some(&i) => (tag1, i, tag2),
+                        None => (tag2, tag_to_local[&tag2], tag1),
+                    };
+                    let Some(&pj) = remote_pos.get(&partner) else {
+                        continue; // partner not present on any rank
+                    };
+                    let pi = [
+                        atoms.pos[idx][0] as f64,
+                        atoms.pos[idx][1] as f64,
+                        atoms.pos[idx][2] as f64,
+                    ];
+                    // Same operand order as the local path (tag2 − tag1).
+                    let d = if mine == tag1 {
+                        min_image_delta(pi, pj, pflags, box_size)
+                    } else {
+                        min_image_delta(pj, pi, pflags, box_size)
+                    };
+                    let r0 = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt();
+                    bond_store.bonds[idx].push(BondEntry {
+                        partner_tag: partner,
+                        bond_type,
+                        r0,
+                    });
+                    if mine == tag1 {
+                        bond_count += 1;
+                    }
+                    continue;
+                }
             };
 
             let mut d = [
@@ -1043,8 +1190,6 @@ pub fn load_bonds_from_file(
                 atoms.pos[idx2][1] as f64 - atoms.pos[idx1][1] as f64,
                 atoms.pos[idx2][2] as f64 - atoms.pos[idx1][2] as f64,
             ];
-            let pflags = domain.periodic_flags();
-            let box_size = domain.size;
             for k in 0..3 {
                 if pflags[k] {
                     d[k] -= box_size[k] * (d[k] / box_size[k]).round();
@@ -1065,10 +1210,11 @@ pub fn load_bonds_from_file(
             bond_count += 1;
         }
 
+        let total = comm.all_reduce_sum_f64(bond_count as f64) as u64;
         if comm.rank() == 0 {
             println!(
                 "DemBond: loaded {} bonds from LAMMPS data file '{}'",
-                bond_count, file_path
+                total, file_path
             );
         }
     });
