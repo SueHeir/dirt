@@ -87,7 +87,7 @@ fn dump_deposit(app: &App) {
         .get_resource_ref::<AtomDataRegistry>()
         .expect("AtomDataRegistry must exist");
     let dem = registry.expect::<DemAtom>("dump_deposit");
-    let nlocal = atoms.nlocal as usize;
+    let nlocal = atoms.nlocal() as usize;
 
     let out_dir = app
         .get_resource_ref::<Input>()

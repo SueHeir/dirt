@@ -9,6 +9,7 @@ pub(super) fn read_csv_particles(
     domain: &Domain,
     max_tag: &mut u32,
 ) -> Result<(), InsertFileError> {
+    let mut pending: Vec<DemParticle> = Vec::new();
     let mat_name = insert
         .material
         .as_deref()
@@ -120,24 +121,22 @@ pub(super) fn read_csv_particles(
         // Tag advances for every file particle (keeps tags globally consistent
         // across ranks); the atom is only stored if it lies in this subdomain.
         if owns_position(domain, &[x, y, z]) {
-            insert_single_particle(
-                atom,
-                registry,
-                DemParticle {
-                    pos: [x, y, z],
-                    vel: [vx, vy, vz],
-                    radius,
-                    cutoff_padding,
-                    density,
-                    mat_idx: row_mat_idx,
-                    tag: *max_tag,
-                },
-            );
+            pending.push(DemParticle {
+                pos: [x, y, z],
+                vel: [vx, vy, vz],
+                radius,
+                cutoff_padding,
+                density,
+                mat_idx: row_mat_idx,
+                tag: *max_tag,
+                molecule: 0,
+            });
             count += 1;
         }
         *max_tag += 1;
     }
 
+    insert_particles(atom, registry, &pending);
     println!(
         "DemAtomInsert: loaded {} local particles from CSV '{}'",
         count, file_path
@@ -154,6 +153,7 @@ pub(super) fn read_lammps_dump_particles(
     domain: &Domain,
     max_tag: &mut u32,
 ) -> Result<(), InsertFileError> {
+    let mut pending: Vec<DemParticle> = Vec::new();
     let mat_name = insert
         .material
         .as_deref()
@@ -308,19 +308,16 @@ pub(super) fn read_lammps_dump_particles(
             let cutoff_padding = material_table.liquid_bridge_cutoff_padding(row_mat_idx);
 
             if owns_position(domain, &[x, y, z]) {
-                insert_single_particle(
-                    atom,
-                    registry,
-                    DemParticle {
-                        pos: [x, y, z],
-                        vel: [vx, vy, vz],
-                        radius,
-                        cutoff_padding,
-                        density,
-                        mat_idx: row_mat_idx,
-                        tag: *max_tag,
-                    },
-                );
+                pending.push(DemParticle {
+                    pos: [x, y, z],
+                    vel: [vx, vy, vz],
+                    radius,
+                    cutoff_padding,
+                    density,
+                    mat_idx: row_mat_idx,
+                    tag: *max_tag,
+                    molecule: 0,
+                });
                 count += 1;
             }
             *max_tag += 1;
@@ -328,6 +325,7 @@ pub(super) fn read_lammps_dump_particles(
     }
 
     let _ = n_atoms; // used for format validation if needed
+    insert_particles(atom, registry, &pending);
     println!(
         "DemAtomInsert: loaded {} local particles from LAMMPS dump '{}'",
         count, file_path
@@ -363,6 +361,7 @@ pub(super) fn read_lammps_data_particles(
     domain: &Domain,
     max_tag: &mut u32,
 ) -> Result<(), InsertFileError> {
+    let mut pending: Vec<DemParticle> = Vec::new();
     let mat_name = insert
         .material
         .as_deref()
@@ -445,10 +444,12 @@ pub(super) fn read_lammps_data_particles(
         pos: [f64; 3],
         radius: f64,
         density: f64,
+        molecule: u32,
     }
 
     let section_headers = [
         "Atoms",
+        "Capsules",
         "Velocities",
         "Bonds",
         "Angles",
@@ -512,9 +513,10 @@ pub(super) fn read_lammps_data_particles(
                     pos: [x, y, z],
                     radius,
                     density,
+                    molecule: 0,
                 });
             }
-            "sphere" | "bpm/sphere" => {
+            "sphere" => {
                 // id type diameter density x y z
                 if fields.len() < 7 {
                     return Err(InsertFileError::RowTooShort {
@@ -538,6 +540,53 @@ pub(super) fn read_lammps_data_particles(
                     pos: [x, y, z],
                     radius: diameter / 2.0,
                     density,
+                    molecule: 0,
+                });
+            }
+            "bpm/sphere" => {
+                // LAMMPS bpm/sphere is a molecular style:
+                //   id molecule type diameter density x y z  (8+ cols, real files)
+                // Tolerate a molecule-less 7-column row (molecule = 0) as well.
+                let has_molecule = fields.len() >= 8;
+                let need = if has_molecule { 8 } else { 7 };
+                if fields.len() < need {
+                    return Err(InsertFileError::RowTooShort {
+                        path: file_path.to_string(),
+                        line: i + 1,
+                        style: atom_style.clone(),
+                        expected: need,
+                        found: fields.len(),
+                    });
+                }
+                let mut c = 0;
+                let mut next = || {
+                    let f = fields[c];
+                    c += 1;
+                    f
+                };
+                let id: u32 = parse_field(next(), "atom id", i + 1, file_path)?;
+                let molecule: u32 = if has_molecule {
+                    parse_field(next(), "molecule id", i + 1, file_path)?
+                } else {
+                    0
+                };
+                let atype: u32 = parse_field(next(), "atom type", i + 1, file_path)?;
+                let diameter: f64 = parse_field(next(), "diameter", i + 1, file_path)?;
+                let file_density: f64 = parse_field(next(), "density", i + 1, file_path)?;
+                let x: f64 = parse_field(next(), "x coordinate", i + 1, file_path)?;
+                let y: f64 = parse_field(next(), "y coordinate", i + 1, file_path)?;
+                let z: f64 = parse_field(next(), "z coordinate", i + 1, file_path)?;
+                // A config `density` overrides the file column, mirroring a LAMMPS
+                // `set atom * density …` after read_data (the coarse-yarn file
+                // stores a placeholder density of 1).
+                let density = default_density.unwrap_or(file_density);
+                parsed_atoms.push(ParsedAtom {
+                    id,
+                    atom_type: atype,
+                    pos: [x, y, z],
+                    radius: diameter / 2.0,
+                    density,
+                    molecule,
                 });
             }
             other => {
@@ -581,24 +630,27 @@ pub(super) fn read_lammps_data_particles(
         let row_mat_idx = lookup_material_for_type(pa.atom_type, type_index_map.as_ref(), mat_idx);
         let cutoff_padding = material_table.liquid_bridge_cutoff_padding(row_mat_idx);
         if owns_position(domain, &pa.pos) {
-            insert_single_particle(
-                atom,
-                registry,
-                DemParticle {
-                    pos: pa.pos,
-                    vel,
-                    radius: pa.radius,
-                    cutoff_padding,
-                    density: pa.density,
-                    mat_idx: row_mat_idx,
-                    tag: *max_tag,
-                },
-            );
+            pending.push(DemParticle {
+                pos: pa.pos,
+                vel,
+                radius: pa.radius,
+                cutoff_padding,
+                density: pa.density,
+                mat_idx: row_mat_idx,
+                // Preserve the file's atom ID as the tag: the Bonds section
+                // references atom IDs, so tags must equal file IDs (they are
+                // not guaranteed to be listed in ID order) for bonds to match
+                // the correct atoms. Falls back to the running counter only
+                // for an id-less file (id 0).
+                tag: if pa.id > 0 { pa.id } else { *max_tag },
+                molecule: pa.molecule,
+            });
             count += 1;
         }
-        *max_tag += 1;
+        *max_tag = (*max_tag).max(pa.id) + 1;
     }
 
+    insert_particles(atom, registry, &pending);
     println!(
         "DemAtomInsert: loaded {} local particles from LAMMPS data file '{}' (style: {})",
         count, file_path, atom_style

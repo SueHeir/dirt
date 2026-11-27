@@ -110,6 +110,15 @@ pub enum BendingPlasticityConfig {
         /// Material yield stress σ_0 (Pa).
         yield_stress: f64,
     },
+    /// Piecewise-linear bending envelope with breakpoints in **bending angle**
+    /// (radians), the form LAMMPS `bpm/guo … plastic edl f1 pdl f2 ebal pbal`
+    /// uses: `breakpoint_angles = [ebal, pbal]`, `slope_multipliers = [0.5, 0.0]`.
+    AnglePiecewise {
+        /// Strictly ascending bending-angle breakpoints (rad).
+        breakpoint_angles: Vec<f64>,
+        /// Slope multipliers past each breakpoint, relative to `K_e`.
+        slope_multipliers: Vec<f64>,
+    },
     /// Piecewise-linear bending envelope.
     Piecewise {
         /// Breakpoints in **extreme-fibre strain** `ε = r_b · θ_bend / l_b`
@@ -150,6 +159,13 @@ pub enum BendingPlasticity {
         /// Material yield stress σ_0 (Pa).
         yield_stress: f64,
     },
+    /// Piecewise-linear bending envelope in bending-angle space (rad).
+    AnglePiecewise {
+        /// Strictly-ascending bending-angle breakpoints (rad).
+        breakpoint_angles: Vec<f64>,
+        /// Per-segment slope multipliers relative to the elastic stiffness `K_e`.
+        slope_multipliers: Vec<f64>,
+    },
     /// Piecewise-linear bending envelope in extreme-fibre-strain space.
     Piecewise {
         /// Strictly-ascending breakpoints in extreme-fibre strain
@@ -161,6 +177,45 @@ pub enum BendingPlasticity {
 }
 
 impl BendingPlasticity {
+    /// Slope multiplier for the LAMMPS-style incremental rule at bending angle
+    /// `theta` (rad): `1` below the first breakpoint, else the multiplier of the
+    /// last breakpoint with `theta ≥` it (LAMMPS compares the bend angle with
+    /// `>=`). `k_e`, `r_b`, `l_b` convert stress or strain breakpoints to angles.
+    pub fn slope_multiplier(&self, theta: f64, k_e: f64, r_b: f64, l_b: f64) -> f64 {
+        let pick = |breaks: &[f64], slopes: &[f64], scale: f64| {
+            let mut s = 1.0;
+            for (k, &b) in breaks.iter().enumerate() {
+                if theta >= b * scale {
+                    s = slopes[k];
+                } else {
+                    break;
+                }
+            }
+            s
+        };
+        match self {
+            Self::GuoBending { yield_stress } => {
+                let m_p = (4.0 / 3.0) * yield_stress * r_b.powi(3);
+                if k_e > 0.0 && theta >= m_p / k_e {
+                    0.0
+                } else {
+                    1.0
+                }
+            }
+            Self::AnglePiecewise {
+                breakpoint_angles,
+                slope_multipliers,
+            } => pick(breakpoint_angles, slope_multipliers, 1.0),
+            Self::Piecewise {
+                breakpoint_strains,
+                slope_multipliers,
+            } => {
+                let scale = if r_b > 0.0 { l_b / r_b } else { 0.0 };
+                pick(breakpoint_strains, slope_multipliers, scale)
+            }
+        }
+    }
+
     /// Evaluate the bending-moment envelope `|M_env|` at elastic-strain
     /// magnitude `|θ_e|`. `k_e = E_b·I/l_b` is the elastic bending stiffness
     /// for this bond; `r_b`, `l_b` are the bond geometry.
@@ -170,6 +225,10 @@ impl BendingPlasticity {
                 let m_p = (4.0 / 3.0) * yield_stress * r_b.powi(3);
                 (k_e * theta_e_mag).min(m_p)
             }
+            Self::AnglePiecewise {
+                breakpoint_angles,
+                slope_multipliers,
+            } => evaluate_piecewise(theta_e_mag, k_e, breakpoint_angles, slope_multipliers, 1.0),
             Self::Piecewise {
                 breakpoint_strains,
                 slope_multipliers,
@@ -204,6 +263,28 @@ pub enum AxialPlasticity {
 }
 
 impl AxialPlasticity {
+    /// Slope multiplier of the band containing tensile strain `eps`: the
+    /// multiplier after the last breakpoint that `eps` is strictly above, or
+    /// `1.0` (elastic) below the first breakpoint.
+    pub fn slope_multiplier(&self, eps: f64) -> f64 {
+        match self {
+            Self::Piecewise {
+                breakpoint_strains,
+                slope_multipliers,
+            } => {
+                let mut s = 1.0;
+                for (k, &b) in breakpoint_strains.iter().enumerate() {
+                    if eps > b {
+                        s = slope_multipliers[k];
+                    } else {
+                        break;
+                    }
+                }
+                s
+            }
+        }
+    }
+
     /// Evaluate the axial-force envelope `|F_env|` at elastic-axial-strain
     /// magnitude `|ε_e|`. `k_eff = K_n · L₀ = E_b · A` is the
     /// stiffness-per-strain for this bond.
@@ -285,6 +366,16 @@ impl BondPlasticityModel {
                 BendingPlasticity::Piecewise {
                     breakpoint_strains: vec![eps_e, eps_p],
                     slope_multipliers: vec![0.5, 0.0],
+                }
+            }
+            BendingPlasticityConfig::AnglePiecewise {
+                breakpoint_angles,
+                slope_multipliers,
+            } => {
+                validate_piecewise("bending", breakpoint_angles, slope_multipliers);
+                BendingPlasticity::AnglePiecewise {
+                    breakpoint_angles: breakpoint_angles.clone(),
+                    slope_multipliers: slope_multipliers.clone(),
                 }
             }
             BendingPlasticityConfig::Piecewise {
@@ -400,13 +491,27 @@ pub fn update_bending(
     }
 }
 
-/// Apply the axial-plasticity return-map.
+/// Apply axial plasticity the way LAMMPS `bond_style bpm/guo … plastic yes` does.
 ///
 /// `eps_axial = (L − L₀)/L₀` is the signed kinematic axial strain;
-/// `eps_p_axial` is the signed plastic anchor; `eps_max_axial ≥ 0` is the
-/// largest `|ε_axial|` ever reached on this bond. `k_n = E_b · A / L₀` is
-/// the elastic axial stiffness (N/m); `l0 = L₀` is the equilibrium bond
-/// length. The conservative axial force is `F = k_n · L₀ · ε_e = E_b·A · ε_e`.
+/// `eps_p_axial` is the plastic strain offset; `eps_max_axial ≥ 0` is the
+/// largest **tensile** strain this bond has reached. `k_n = E_b · A / L₀`
+/// is the elastic axial stiffness (N/m) and `l0 = L₀` the reference length.
+///
+/// The rule is tension-only and incremental:
+///
+/// * Plastic strain grows only when the bond is in tension (`ε > 0`) and at
+///   or beyond its previous tensile peak. The increment is
+///   `(1 − s) · (ε − ε_max)`, where `s` is the slope multiplier of the band
+///   that the *current* strain `ε` falls in (strictly above a breakpoint
+///   selects that band; below the first breakpoint `s = 1`, i.e. elastic).
+/// * Everywhere else, including all of compression, the force is linear
+///   about the fixed offset: `F = E_b·A · (ε − ε_p)`. There is no
+///   compressive yield, so a bond that yielded in tension stays elastic when
+///   pushed back.
+///
+/// This is `bondstore[n][19]` (peak extension) and `[20]` (plastic offset) in
+/// `bond_bpm_guo.cpp`, expressed in strain rather than length.
 ///
 /// Returns `(F_n, ε_p_new, ε_max_new)`.
 pub fn update_axial(
@@ -417,25 +522,15 @@ pub fn update_axial(
     l0: f64,
     model: &AxialPlasticity,
 ) -> (f64, f64, f64) {
-    let eps_max_new = eps_max_axial.max(eps_axial.abs());
-    let eps_e = eps_axial - eps_p_axial;
-    let eps_e_mag = eps_e.abs();
-    if eps_e_mag <= f64::MIN_POSITIVE {
-        return (0.0, eps_p_axial, eps_max_new);
+    let mut eps_p = eps_p_axial;
+    let mut eps_max = eps_max_axial;
+    if eps_axial > 0.0 && eps_axial >= eps_max {
+        let s = model.slope_multiplier(eps_axial);
+        eps_p += (1.0 - s) * (eps_axial - eps_max);
+        eps_max = eps_axial;
     }
     let k_eff = k_n * l0;
-    let f_trial_mag = k_eff * eps_e_mag;
-    let f_env_mag = model.envelope(eps_max_new, k_eff);
-
-    if f_trial_mag <= f_env_mag {
-        (k_eff * eps_e, eps_p_axial, eps_max_new)
-    } else {
-        let dir = eps_e.signum();
-        let f_n = f_env_mag * dir;
-        let elastic_offset = f_env_mag / k_eff;
-        let eps_p_new = eps_axial - elastic_offset * dir;
-        (f_n, eps_p_new, eps_max_new)
-    }
+    (k_eff * (eps_axial - eps_p), eps_p, eps_max)
 }
 
 /// Fully-plastic bending-moment cap `M^p = (4/3) σ_0 r_b³` (Guo Eq. 31).
@@ -704,6 +799,22 @@ mod tests {
         assert!((eps_max_new - 0.005).abs() < 1e-15);
     }
 
+    /// Drive `update_axial` along `path` in small strain steps, like the force
+    /// loop does, and return the final `(F, ε_p, ε_max)`.
+    fn drive(path: &[f64], k_n: f64, l0: f64, model: &AxialPlasticity) -> (f64, f64, f64) {
+        let (mut f, mut eps_p, mut eps_max) = (0.0, 0.0, 0.0);
+        let mut eps = 0.0_f64;
+        for &target in path {
+            let n = 20_000;
+            let start = eps;
+            for k in 1..=n {
+                eps = start + (target - start) * k as f64 / n as f64;
+                (f, eps_p, eps_max) = update_axial(eps, eps_p, eps_max, k_n, l0, model);
+            }
+        }
+        (f, eps_p, eps_max)
+    }
+
     #[test]
     fn axial_force_capped_at_envelope_when_yielded() {
         let (_r, _l, _, _, k_n, _) = fixture();
@@ -714,14 +825,18 @@ mod tests {
         };
         let k_eff = k_n * l0;
         let f_yield = k_eff * 0.01;
-        let (f, eps_p_new, eps_max_new) = update_axial(0.03, 0.0, 0.0, k_n, l0, &model);
-        assert!((f - f_yield).abs() / f_yield < 1e-12);
-        assert!((eps_p_new - 0.02).abs() / 0.02 < 1e-12);
-        assert!((eps_max_new - 0.03).abs() / 0.03 < 1e-12);
+        let (f, eps_p, eps_max) = drive(&[0.03], k_n, l0, &model);
+        assert!(
+            (f - f_yield).abs() / f_yield < 1e-3,
+            "f = {f}, cap {f_yield}"
+        );
+        assert!((eps_p - 0.02).abs() / 0.02 < 1e-3);
+        assert!((eps_max - 0.03).abs() / 0.03 < 1e-12);
     }
 
     #[test]
-    fn axial_compression_capped_symmetrically() {
+    fn axial_compression_never_yields() {
+        // LAMMPS bpm/guo accumulates plastic strain only in tension.
         let (_r, _l, _, _, k_n, _) = fixture();
         let l0 = 2.0e-3;
         let model = AxialPlasticity::Piecewise {
@@ -729,15 +844,17 @@ mod tests {
             slope_multipliers: vec![0.0],
         };
         let k_eff = k_n * l0;
-        let f_yield = k_eff * 0.01;
-        let (f, eps_p_new, eps_max_new) = update_axial(-0.03, 0.0, 0.0, k_n, l0, &model);
-        assert!((f - (-f_yield)).abs() / f_yield < 1e-12);
-        assert!((eps_p_new - (-0.02)).abs() / 0.02 < 1e-12);
-        assert!((eps_max_new - 0.03).abs() / 0.03 < 1e-12, "max tracks |ε|");
+        let (f, eps_p, eps_max) = drive(&[-0.03], k_n, l0, &model);
+        assert!((f - (-0.03 * k_eff)).abs() / (0.03 * k_eff) < 1e-12);
+        assert_eq!(eps_p, 0.0);
+        assert_eq!(eps_max, 0.0, "peak tracks tension only");
     }
 
     #[test]
-    fn axial_unload_elastic_then_reverse_kinematic_hardening() {
+    fn axial_unload_stays_elastic_through_compression() {
+        // Load past yield, then unload through zero into compression: the force
+        // is linear about the fixed plastic offset the whole way (no reverse
+        // yield, the N11 load–unload difference against LAMMPS).
         let (_r, _l, _, _, k_n, _) = fixture();
         let l0 = 2.0e-3;
         let model = AxialPlasticity::Piecewise {
@@ -745,17 +862,13 @@ mod tests {
             slope_multipliers: vec![0.0],
         };
         let k_eff = k_n * l0;
-        let f_yield = k_eff * 0.01;
-        let (_, eps_p_load, eps_max_load) = update_axial(0.03, 0.0, 0.0, k_n, l0, &model);
-        // Partial unload: ε = 0.025 → ε_e = 0.005 (elastic), F = 0.5·f_yield.
-        let (f_unload, eps_p_after, _) =
-            update_axial(0.025, eps_p_load, eps_max_load, k_n, l0, &model);
-        assert!((f_unload - 0.5 * f_yield).abs() / f_yield < 1e-12);
-        assert!((eps_p_after - eps_p_load).abs() < 1e-15);
-        // Continue all the way to ε = 0 → ε_e = −0.02 → F = −f_yield.
-        let (f_zero, eps_p_zero, _) = update_axial(0.0, eps_p_load, eps_max_load, k_n, l0, &model);
-        assert!((f_zero - (-f_yield)).abs() / f_yield < 1e-12);
-        assert!((eps_p_zero - 0.01).abs() / 0.01 < 1e-12);
+        let (_, eps_p_load, eps_max_load) = drive(&[0.03], k_n, l0, &model);
+        for eps in [0.025, 0.0, -0.02, -0.05] {
+            let (f, eps_p, eps_max) = update_axial(eps, eps_p_load, eps_max_load, k_n, l0, &model);
+            assert!((f - k_eff * (eps - eps_p_load)).abs() <= 1e-12 * k_eff);
+            assert_eq!(eps_p, eps_p_load);
+            assert_eq!(eps_max, eps_max_load);
+        }
     }
 
     #[test]
@@ -800,11 +913,10 @@ mod tests {
     }
 
     #[test]
-    fn axial_cycling_freezes_cap_at_eps_max() {
-        // After loading to ε_max = 0.02 (F_cap = 0.015·k_eff), unloading
-        // through zero and pushing into the negative side should yield at
-        // F = −0.015·k_eff (not at the larger F_env(|ε|) the monotonic curve
-        // would say in segment past first yield).
+    fn axial_reload_is_elastic_until_previous_peak() {
+        // Load to ε = 0.02 on the three-segment envelope, unload to 0, reload.
+        // Reloading is elastic about the offset until ε passes 0.02, then the
+        // envelope continues (third segment, slope 0.1).
         let (_r, _l, _, _, k_n, _) = fixture();
         let l0 = 2.0e-3;
         let model = AxialPlasticity::Piecewise {
@@ -812,22 +924,16 @@ mod tests {
             slope_multipliers: vec![0.5, 0.1, 0.0],
         };
         let k_eff = k_n * l0;
-        // Monotonic to 0.02 — cap should be 0.015·k_eff.
-        let (_, eps_p_load, eps_max_load) = update_axial(0.02, 0.0, 0.0, k_n, l0, &model);
-        let f_cap = 0.015 * k_eff;
-        // Go all the way to ε = -0.02 (symmetric extremum). Trial elastic
-        // force is way past the cap, so we yield on the negative side at the
-        // same |F| = f_cap (kinematic hardening — the cap doesn't grow until
-        // |ε| > 0.02).
-        let (f_rev, _eps_p_rev, eps_max_rev) =
-            update_axial(-0.02, eps_p_load, eps_max_load, k_n, l0, &model);
-        assert!((f_rev.abs() - f_cap).abs() / f_cap < 1e-12);
-        assert!(f_rev < 0.0);
-        // Now push to ε = -0.025 — past prior |ε_max| of 0.02. Cap grows.
-        let (f_grow, _, eps_max_grow) =
-            update_axial(-0.025, _eps_p_rev, eps_max_rev, k_n, l0, &model);
-        let expected_cap = 0.015 * k_eff + 0.1 * k_eff * 0.005; // segment 3 slope
-        assert!((f_grow.abs() - expected_cap).abs() / expected_cap < 1e-12);
-        assert!((eps_max_grow - 0.025).abs() / 0.025 < 1e-12);
+        let (_, eps_p_peak, eps_max_peak) = drive(&[0.02], k_n, l0, &model);
+        let (f_back, eps_p_back, _) = drive(&[0.02, 0.0, 0.02], k_n, l0, &model);
+        assert!((eps_p_back - eps_p_peak).abs() < 1e-15);
+        assert!((f_back - k_eff * (0.02 - eps_p_peak)).abs() / f_back < 1e-12);
+        let (f_on, _, eps_max_on) = drive(&[0.02, 0.0, 0.025], k_n, l0, &model);
+        let expected = 0.015 * k_eff + 0.1 * k_eff * 0.005;
+        assert!(
+            (f_on - expected).abs() / expected < 1e-3,
+            "{f_on} vs {expected}"
+        );
+        assert!(eps_max_on > eps_max_peak);
     }
 }

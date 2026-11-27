@@ -41,6 +41,7 @@ fn push_sphere(atom: &mut Atom, dem: &mut DemAtom, tag: u32, x: f64, radius: f64
     dem.ang_mom.push([0.0; 3]);
     dem.torque.push([0.0; 3]);
     dem.body_id.push(0.0);
+    dem.molecule_id.push(0.0);
 }
 
 fn main() {
@@ -53,8 +54,9 @@ fn main() {
 
     let mut atom = Atom::new();
     atom.dt = 1.0;
-    atom.nlocal = 2;
-    atom.natoms = 2;
+    unsafe {
+        atom.set_layout_unchecked(2, atom.nghost(), 2);
+    }
     let mut dem = DemAtom::new();
     push_sphere(&mut atom, &mut dem, 1, 0.0, cfg.radius, cfg.density);
     push_sphere(
@@ -70,8 +72,8 @@ fn main() {
     history.contacts.resize_with(2, Vec::new);
 
     let mut registry = AtomDataRegistry::new();
-    registry.try_register(dem, atom.len()).unwrap();
-    registry.try_register(history, atom.len()).unwrap();
+    registry.register_for_atoms(dem, &atom).unwrap();
+    registry.register_for_atoms(history, &atom).unwrap();
 
     let mut neighbor = Neighbor::new();
     neighbor.neighbor_offsets = vec![0, 1, 1];

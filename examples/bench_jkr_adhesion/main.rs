@@ -81,7 +81,7 @@ fn main() {
 }
 
 fn index_of_tag(atoms: &Atom, tag: u32) -> Option<usize> {
-    (0..atoms.nlocal as usize).find(|&i| atoms.tag[i] == tag)
+    (0..atoms.nlocal() as usize).find(|&i| atoms.tag[i] == tag)
 }
 
 fn track_pulloff(
@@ -91,7 +91,7 @@ fn track_pulloff(
     input: Res<Input>,
     mut tracker: ResMut<PulloffTracker>,
 ) {
-    if tracker.finished || atoms.nlocal < 2 {
+    if tracker.finished || atoms.nlocal() < 2 {
         return;
     }
     let dem = registry.expect::<DemAtom>("track_pulloff");
@@ -102,7 +102,7 @@ fn track_pulloff(
     if tracker.moving_tag.is_none() {
         let mut moving = None;
         let mut frozen = None;
-        for i in 0..atoms.nlocal as usize {
+        for i in 0..atoms.nlocal() as usize {
             let v = [
                 atoms.vel[i][0] as f64,
                 atoms.vel[i][1] as f64,

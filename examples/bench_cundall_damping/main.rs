@@ -95,7 +95,7 @@ fn set_initial_spin(
     registry: Res<AtomDataRegistry>,
     mut tracker: ResMut<CundallTracker>,
 ) {
-    if tracker.spin_set || atoms.nlocal < 1 {
+    if tracker.spin_set || atoms.nlocal() < 1 {
         return;
     }
     let mut dem = registry.expect_mut::<DemAtom>("set_initial_spin");
@@ -107,7 +107,7 @@ fn set_initial_spin(
 /// Apply the constant driving torque about z every step (Force phase), so the
 /// Cundall fix damps a non-zero torque and the angular decay is well-defined.
 fn apply_constant_torque(atoms: Res<Atom>, registry: Res<AtomDataRegistry>) {
-    if atoms.nlocal < 1 {
+    if atoms.nlocal() < 1 {
         return;
     }
     let mut dem = registry.expect_mut::<DemAtom>("apply_constant_torque");
@@ -125,7 +125,7 @@ fn record(
     fixes: Res<FixesRegistry>,
     mut tracker: ResMut<CundallTracker>,
 ) {
-    if tracker.written || atoms.nlocal == 0 {
+    if tracker.written || atoms.nlocal() == 0 {
         return;
     }
     let tag = match tracker.tag {
@@ -133,7 +133,7 @@ fn record(
         None => return,
     };
     let dem = registry.expect::<DemAtom>("record");
-    let i = match (0..atoms.nlocal as usize).find(|&k| atoms.tag[k] == tag) {
+    let i = match (0..atoms.nlocal() as usize).find(|&k| atoms.tag[k] == tag) {
         Some(k) => k,
         None => return,
     };

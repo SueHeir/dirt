@@ -1,0 +1,68 @@
+# Clump energy-conservation diagnostic
+# =====================================
+# Two identical sphere-7 clumps collide head-on. The SAME collision is run in the
+# box interior vs. straddling the periodic seam (a clump's sub-spheres become
+# periodic ghost images on the far side). Identical physics must dissipate an
+# identical amount of energy; any difference localizes the multisphere comm bug.
+#
+# Mode is selected by the CLUMP_ENERGY_MODE env var ("interior" | "boundary").
+#
+#   CLUMP_ENERGY_MODE=interior cargo run --release \
+#     --example bench_clump_energy_conservation --no-default-features \
+#     --features precision-double -- examples/bench_clump_energy_conservation/config.toml
+
+[comm]
+processors_x = 1
+processors_y = 1
+processors_z = 1
+
+[domain]
+x_low = 0.0
+x_high = 0.02
+y_low = 0.0
+y_high = 0.02
+z_low = 0.0
+z_high = 0.02
+boundary_x = "periodic"
+boundary_y = "periodic"
+boundary_z = "periodic"
+
+[neighbor]
+skin_fraction = 1.1
+bin_size = 0.004
+
+[dem]
+contact_model = "hertz"
+
+# Nearly elastic, frictionless: a head-on central collision of symmetric clumps
+# stays purely translational, so total body KE before ≈ after (minus the small,
+# mode-independent viscoelastic loss). Any interior-vs-boundary difference is the bug.
+[[dem.materials]]
+name = "glass"
+youngs_mod = 7.0e7
+poisson_ratio = 0.245
+restitution = 0.99
+friction = 0.16
+
+# Sphere-7 clump (central + 6 satellites), r_sub = 0.5 mm, eff radius ~1.1 mm.
+[[clump.definitions]]
+name = "sphere7"
+spheres = [
+    { offset = [-0.0018, 0.0, 0.0], radius = 0.0005 },
+    { offset = [-0.0012, 0.0, 0.0], radius = 0.0005 },
+    { offset = [-0.0006, 0.0, 0.0], radius = 0.0005 },
+    { offset = [ 0.0000, 0.0, 0.0], radius = 0.0005 },
+    { offset = [ 0.0006, 0.0, 0.0], radius = 0.0005 },
+    { offset = [ 0.0012, 0.0, 0.0], radius = 0.0005 },
+    { offset = [ 0.0018, 0.0, 0.0], radius = 0.0005 },
+]
+
+# NOTE: no [[clump.insert]] — the two clumps are placed deterministically by the
+# custom setup system in main.rs, so both modes get identical collision geometry.
+
+[output]
+dir = "examples/bench_clump_energy_conservation/data"
+
+[run]
+steps = 40000
+thermo = 5000

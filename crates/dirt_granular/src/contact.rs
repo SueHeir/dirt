@@ -18,7 +18,7 @@ use soil_core::{
 };
 
 use crate::tangential::{ContactHistory, ContactHistoryStore, CONTACT_HISTORY_LEN};
-use crate::{LARGE_OVERLAP_WARN_THRESHOLD, MAX_OVERLAP_WARNINGS, SQRT_5_6, TANGENTIAL_EPSILON};
+use crate::{LARGE_OVERLAP_WARN_THRESHOLD, SQRT_5_6, TANGENTIAL_EPSILON};
 
 mod adhesion;
 mod force;
@@ -33,7 +33,8 @@ use shared::{is_mindlin_force_history, is_mindlin_rescale, zero_contact_history}
 
 pub use adhesion::willett2000_liquid_bridge_force;
 pub use force::{
-    contact_force_core, hertz_mindlin_contact_force, hooke_contact_force, overlapped_contact_force,
+    contact_force_core, exclude_bonded_neighbors, hertz_mindlin_contact_force, hooke_contact_force,
+    overlapped_contact_force,
 };
 pub use plugin::HertzMindlinContactPlugin;
 pub use shared::ForcePass;

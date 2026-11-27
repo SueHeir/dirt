@@ -101,7 +101,7 @@ fn record_throughput(
         if step < warmup {
             return;
         }
-        let n_global = comm.all_reduce_sum_f64(atoms.nlocal as f64);
+        let n_global = comm.all_reduce_sum_f64(atoms.nlocal() as f64);
         comm.barrier();
         tracker.t0 = Some(Instant::now());
         tracker.step0 = step;
@@ -131,9 +131,9 @@ fn record_throughput(
     // Current global particle count — if it differs from the start count, the
     // domain-decomposition migration/halo path lost (or duplicated) atoms.
     // Total kinetic energy guards against a blow-up (NaN/inf) under MPI.
-    let n_now = comm.all_reduce_sum_f64(atoms.nlocal as f64);
+    let n_now = comm.all_reduce_sum_f64(atoms.nlocal() as f64);
     let mut ke_local = 0.0_f64;
-    for i in 0..atoms.nlocal as usize {
+    for i in 0..atoms.nlocal() as usize {
         let m = atoms.mass[i];
         let v = atoms.vel[i];
         ke_local += 0.5 * m * (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);

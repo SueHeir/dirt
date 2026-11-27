@@ -161,7 +161,8 @@ pub const TANGENTIAL_EPSILON: f64 = 1e-30;
 /// forces (capped at half the smaller radius) to prevent runaway penetration.
 pub const LARGE_OVERLAP_WARN_THRESHOLD: f64 = 0.90;
 
-/// Maximum overlap warnings per timestep before the simulation panics.
+/// Default for `[dem] deep_overlap_abort`: overlap warnings per timestep
+/// before the simulation panics (`0` in the config disables the abort).
 ///
 /// If more than this many pairs exceed [`LARGE_OVERLAP_WARN_THRESHOLD`],
 /// the simulation aborts with an actionable error message suggesting the

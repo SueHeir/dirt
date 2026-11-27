@@ -72,7 +72,7 @@ fn main() {
 /// Maximum particle speed (global, m/s). Unlike a mean, a single still-moving
 /// particle keeps this above the rest threshold.
 fn max_speed(atoms: &Atom, comm: &CommResource) -> f64 {
-    let nlocal = atoms.nlocal as usize;
+    let nlocal = atoms.nlocal() as usize;
     let local_max: f64 = (0..nlocal)
         .map(|i| {
             let v = atoms.vel[i];
@@ -186,7 +186,7 @@ fn record_when_settled(
     // Single material: every particle is a heap particle (no frozen bed to
     // filter out), so sweep.py fits θ_r on all recorded positions.
     writeln!(f, "x,y,z,radius").unwrap();
-    let nlocal = atoms.nlocal as usize;
+    let nlocal = atoms.nlocal() as usize;
     for i in 0..nlocal {
         writeln!(
             f,

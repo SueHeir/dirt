@@ -25,8 +25,55 @@ pub fn hertz_mindlin_contact_force(
             &material_table,
             virial.as_deref_mut(),
             ForcePass::All,
+            true, // list pre-filtered by exclude_bonded_neighbors (PreForce)
         );
     });
+}
+
+/// Drop same-body / same-molecule / bonded pairs from the neighbour CSR once per
+/// rebuild, so the per-step contact loop never iterates them (mirrors LAMMPS
+/// `neigh_modify exclude molecule/intra all`). For a densely-bonded strand ~30% of
+/// candidate pairs are intra-molecule; carrying them inflates the list every step.
+/// Gated on a fresh build (`steps_since_build == 0`); idempotent (a no-op scan) if
+/// it ever runs on an already-filtered list.
+pub fn exclude_bonded_neighbors(
+    mut neighbor: ResMut<Neighbor>,
+    atoms: Res<Atom>,
+    particles: ParticlesWith<'_, (Read<DemAtom>, Optional<Read<BondStore>>)>,
+) {
+    if neighbor.steps_since_build != 0 {
+        return;
+    }
+    let nlocal = atoms.nlocal() as usize;
+    if neighbor.neighbor_offsets.len() <= nlocal {
+        return;
+    }
+    let offsets = std::mem::take(&mut neighbor.neighbor_offsets);
+    let indices = std::mem::take(&mut neighbor.neighbor_indices);
+    let (new_offsets, new_indices) = particles.with(|(dem, bonds)| {
+        let mut new_indices: Vec<u32> = Vec::with_capacity(indices.len());
+        let mut new_offsets: Vec<u32> = Vec::with_capacity(offsets.len());
+        new_offsets.push(0);
+        for i in 0..nlocal {
+            let (start, end) = (offsets[i] as usize, offsets[i + 1] as usize);
+            for &jw in &indices[start..end] {
+                let j = jw as usize;
+                let excluded = dirt_atom::same_body(&dem, i, j)
+                    || dirt_atom::same_molecule(&dem, i, j)
+                    || bonds
+                        .as_ref()
+                        .map(|b| b.are_excluded(i, j, &atoms.tag))
+                        .unwrap_or(false);
+                if !excluded {
+                    new_indices.push(jw);
+                }
+            }
+            new_offsets.push(new_indices.len() as u32);
+        }
+        (new_offsets, new_indices)
+    });
+    neighbor.neighbor_offsets = new_offsets;
+    neighbor.neighbor_indices = new_indices;
 }
 
 /// Overlapped Hertz-Mindlin force (roadmap step 4): compute the interior pairs
@@ -65,6 +112,7 @@ pub fn overlapped_contact_force(
                 &material_table,
                 None,
                 ForcePass::Interior,
+                true,
             );
         };
         forward_comm_overlap(
@@ -85,6 +133,7 @@ pub fn overlapped_contact_force(
         &material_table,
         virial.as_deref_mut(),
         ForcePass::Boundary,
+        true,
     );
 }
 
@@ -111,6 +160,7 @@ pub fn contact_force_core(
         material_table,
         virial,
         pass,
+        false, // direct kernel callers (tests) are not pre-filtered
     );
 }
 
@@ -131,6 +181,7 @@ fn contact_force_core_particles(
     material_table: &MaterialTable,
     virial: Option<&mut VirialStress>,
     pass: ForcePass,
+    pre_filtered: bool,
 ) {
     particles.with(|(mut dem, mut history, bonds)| {
         contact_force_core_views(
@@ -142,6 +193,7 @@ fn contact_force_core_particles(
             material_table,
             virial,
             pass,
+            pre_filtered,
         );
     });
 }
@@ -157,6 +209,11 @@ pub fn contact_force_core_views(
     material_table: &MaterialTable,
     mut virial: Option<&mut VirialStress>,
     pass: ForcePass,
+    // When true the neighbour list has already had same-body / same-molecule /
+    // bonded pairs removed (by `exclude_bonded_neighbors` at PreForce), so the
+    // per-pair exclusion checks below are skipped. Direct kernel callers (tests)
+    // pass false and keep the checks.
+    pre_filtered: bool,
 ) {
     let newton = neighbor.newton;
     let dt = atoms.dt;
@@ -179,6 +236,30 @@ pub fn contact_force_core_views(
         }
     }
 
+    // Model selections are per run, not per pair: decide them once here
+    // instead of comparing strings inside the pair loop.
+    let use_dmt = material_table.adhesion_model == "dmt";
+    let liquid_bridge_active = material_table.liquid_bridge_model == "willett2000";
+    let use_mdr = material_table.contact_model == "mdr";
+    let tangential_model = material_table.tangential_model.as_str();
+    let nohistory = tangential_model == "linear_nohistory";
+    let mindlin_rescale = is_mindlin_rescale(tangential_model);
+    let mindlin_force_history = is_mindlin_force_history(tangential_model);
+    let sds_rolling = material_table.rolling_model == "sds";
+    let twisting_marshall = material_table.twisting_model == "marshall";
+    let sds_twisting = material_table.twisting_model == "sds";
+    let tangential_xt = material_table.tangential_damping_ratio;
+    let contact_point_lever = material_table.torque_lever == "contact_point";
+    // With no JKR pull-off and no liquid bridges anywhere, the interaction
+    // range is exactly r1 + r2, so a non-touching pair can be rejected before
+    // any per-material lookup.
+    let geometric_range_only = !liquid_bridge_active
+        && (use_dmt
+            || !material_table
+                .surface_energy_ij
+                .iter()
+                .flatten()
+                .any(|&g| g > 0.0));
     for (i, j) in neighbor.pairs(nlocal) {
         // Interior/boundary split (step 4): boundary pairs touch a ghost (j >= nlocal).
         let is_boundary_pair = j >= nlocal;
@@ -187,15 +268,18 @@ pub fn contact_force_core_views(
             ForcePass::Boundary if !is_boundary_pair => continue,
             _ => {}
         }
-        if let Some(ref bonds) = bond_store {
-            if bonds.are_excluded(i, j, &atoms.tag) {
+        // Same-body / same-molecule / bonded exclusions (skipped when the list was
+        // pre-filtered by exclude_bonded_neighbors). same_* are O(1); are_excluded
+        // (bond scan) runs only for pairs not already excluded by molecule.
+        if !pre_filtered {
+            if dirt_atom::same_body(&dem, i, j) || dirt_atom::same_molecule(&dem, i, j) {
                 continue;
             }
-        }
-
-        // Skip same-body pairs (sub-spheres of the same rigid body don't interact)
-        if dirt_atom::same_body(&dem, i, j) {
-            continue;
+            if let Some(ref bonds) = bond_store {
+                if bonds.are_excluded(i, j, &atoms.tag) {
+                    continue;
+                }
+            }
         }
 
         let r1 = dem.radius[i];
@@ -206,12 +290,13 @@ pub fn contact_force_core_views(
         let dz = atoms.pos[j][2] as f64 - atoms.pos[i][2] as f64;
         let dist_sq = dx * dx + dy * dy + dz * dz;
         let sum_r = r1 + r2;
+        if geometric_range_only && dist_sq >= sum_r * sum_r {
+            continue;
+        }
 
         let mat_i = atoms.atom_type[i] as usize;
         let mat_j = atoms.atom_type[j] as usize;
         let surface_energy = material_table.surface_energy_ij[mat_i][mat_j];
-
-        let use_dmt = material_table.adhesion_model == "dmt";
 
         // JKR: compute pull-off distance for extended interaction range
         // DMT: no extended range (particles separate at delta = 0)
@@ -219,7 +304,6 @@ pub fn contact_force_core_views(
         let r_eff = (r1 * r2) / sum_r;
         // Effective Young's modulus: 1/E* = (1-ν1²)/E1 + (1-ν2²)/E2
         let e_eff = material_table.e_eff_ij[mat_i][mat_j];
-        let liquid_bridge_active = material_table.liquid_bridge_model == "willett2000";
         let liquid_volume = material_table.liquid_bridge_volume_ij[mat_i][mat_j];
         let liquid_surface_tension = material_table.liquid_surface_tension_ij[mat_i][mat_j];
         let liquid_contact_angle = material_table.liquid_contact_angle_ij[mat_i][mat_j];
@@ -275,11 +359,14 @@ pub fn contact_force_core_views(
                 atoms.tag[j],
                 distance / sum_r
             );
-            if overlap_warnings > MAX_OVERLAP_WARNINGS {
+            if material_table.deep_overlap_abort > 0
+                && overlap_warnings > material_table.deep_overlap_abort
+            {
                 panic!(
                     "Over {} excessive overlaps this step — aborting. \
-                     Check timestep or initial configuration.",
-                    MAX_OVERLAP_WARNINGS
+                     Check timestep or initial configuration, or set \
+                     [dem] deep_overlap_abort = 0 to keep running.",
+                    material_table.deep_overlap_abort
                 );
             }
             // Cap overlap at half the smaller radius to keep Hertz model valid,
@@ -322,7 +409,6 @@ pub fn contact_force_core_views(
         let mu_r = material_table.rolling_friction_ij[mat_i][mat_j];
         let mu_tw = material_table.twisting_friction_ij[mat_i][mat_j];
         let cohesion_energy = material_table.cohesion_energy_ij[mat_i][mat_j];
-        let use_mdr = material_table.contact_model == "mdr";
 
         // JKR adhesion-only regime: gap exists but within pull-off distance
         // DMT has no adhesion-only regime (no force beyond contact)
@@ -391,9 +477,12 @@ pub fn contact_force_core_views(
 
         // Look up existing spring/history (single search, reused for write-back).
         let entry_idx = history.contacts[i].iter().position(|(t, _, _)| *t == tag_j);
-        let mut stored = match entry_idx {
-            Some(idx) => history.contacts[i][idx].1,
-            None => zero_contact_history(),
+        // Work on the stored entry in place (a contact's history is 184 bytes;
+        // copying it out and back costs more than the rest of the bookkeeping).
+        let mut fresh = zero_contact_history();
+        let stored: &mut ContactHistory = match entry_idx {
+            Some(idx) => &mut history.contacts[i][idx].1,
+            None => &mut fresh,
         };
 
         // ── Normal force ─────────────────────────────────────────────────
@@ -411,7 +500,7 @@ pub fn contact_force_core_views(
                 material_table.mdr_damping_ij[mat_i][mat_j],
                 m_r,
                 v_n,
-                &mut stored,
+                stored,
             );
             (f, kt_mdr)
         } else if surface_energy > 0.0 && use_dmt {
@@ -490,10 +579,6 @@ pub fn contact_force_core_views(
         // (LAMMPS pair_granular `tangential linear_nohistory`, and the classic
         // `pair gran/hooke`) — the force depends only on the instantaneous
         // relative tangential velocity, with NO accumulated displacement.
-        let tangential_model = material_table.tangential_model.as_str();
-        let nohistory = tangential_model == "linear_nohistory";
-        let mindlin_rescale = is_mindlin_rescale(tangential_model);
-        let mindlin_force_history = is_mindlin_force_history(tangential_model);
         let f_t_max = mu * f_n_mag.abs();
         let (sx, sy, sz) = if nohistory {
             (0.0, 0.0, 0.0)
@@ -553,8 +638,13 @@ pub fn contact_force_core_views(
             (sx, sy, sz)
         };
 
-        // Tangential damping coefficient: γ_t = 2 β √(5/6) √(k_t m_r)
-        let gamma_t = 2.0 * SQRT_5_6 * beta * (k_t * m_r).sqrt();
+        // Tangential damping coefficient: γ_t = 2 β √(5/6) √(k_t m_r), or for
+        // LAMMPS `linear_nohistory xt mu`, xt times the normal damping
+        // coefficient ηₙ = 2 β √(5/6) √(Sₙ m_r).
+        let gamma_t = match tangential_xt {
+            Some(xt) if nohistory => xt * 2.0 * SQRT_5_6 * beta * (s_n * m_r).sqrt(),
+            _ => 2.0 * SQRT_5_6 * beta * (k_t * m_r).sqrt(),
+        };
         let mut ft_x = (if mindlin_force_history { sx } else { k_t * sx }) + gamma_t * vt_x;
         let mut ft_y = (if mindlin_force_history { sy } else { k_t * sy }) + gamma_t * vt_y;
         let mut ft_z = (if mindlin_force_history { sz } else { k_t * sz }) + gamma_t * vt_z;
@@ -579,13 +669,21 @@ pub fn contact_force_core_views(
                 (sx, sy, sz)
             };
 
-        // Torques: τ_i = (r1 * n) × f_t, τ_j = (-r2 * n) × (-f_t) = (r2 * n) × f_t
-        let ti_x = r1n_y * ft_z - r1n_z * ft_y;
-        let ti_y = r1n_z * ft_x - r1n_x * ft_z;
-        let ti_z = r1n_x * ft_y - r1n_y * ft_x;
-        let tj_x = r2n_y * ft_z - r2n_z * ft_y;
-        let tj_y = r2n_z * ft_x - r2n_x * ft_z;
-        let tj_z = r2n_x * ft_y - r2n_y * ft_x;
+        // Torques: τ_i = (r1 * n) × f_t, τ_j = (-r2 * n) × (-f_t) = (r2 * n) × f_t.
+        // With `torque_lever = "contact_point"` the lever is r − δ/2 (LAMMPS
+        // pair granular) instead of the full radius.
+        let (lever_i, lever_j) = if contact_point_lever {
+            let d = sum_r - distance;
+            ((r1 - 0.5 * d) / r1, (r2 - 0.5 * d) / r2)
+        } else {
+            (1.0, 1.0)
+        };
+        let ti_x = lever_i * (r1n_y * ft_z - r1n_z * ft_y);
+        let ti_y = lever_i * (r1n_z * ft_x - r1n_x * ft_z);
+        let ti_z = lever_i * (r1n_x * ft_y - r1n_y * ft_x);
+        let tj_x = lever_j * (r2n_y * ft_z - r2n_z * ft_y);
+        let tj_y = lever_j * (r2n_z * ft_x - r2n_x * ft_z);
+        let tj_z = lever_j * (r2n_x * ft_y - r2n_y * ft_x);
 
         atoms.force[i][0] += ft_x as soil_core::Accum;
         atoms.force[i][1] += ft_y as soil_core::Accum;
@@ -621,7 +719,6 @@ pub fn contact_force_core_views(
 
         if mu_r > 0.0 {
             let roll_mag = (roll_x * roll_x + roll_y * roll_y + roll_z * roll_z).sqrt();
-            let sds_rolling = material_table.rolling_model == "sds";
             if sds_rolling {
                 // SDS rolling: spring-dashpot-slider model
                 let k_roll = material_table.rolling_stiffness_ij[mat_i][mat_j];
@@ -688,7 +785,7 @@ pub fn contact_force_core_views(
         //   "constant" / "sds"  — user-supplied coefficients (gated on μ_tw > 0);
         //   "marshall"           — coefficients DERIVED from the active tangential
         //                          (Mindlin) model, no separate twist inputs.
-        if material_table.twisting_model == "marshall" {
+        if twisting_marshall {
             // Marshall (2009) twisting, per LAMMPS pair_granular `twisting marshall`
             // (doc/src/pair_granular.rst §twisting, Marshall2009 eqs 32-33). The
             // twisting stiffness/damping/friction are expressed in terms of the
@@ -733,7 +830,6 @@ pub fn contact_force_core_views(
             }
         } else if mu_tw > 0.0 {
             let twist_vel = or_dot_n; // twisting component of relative angular velocity
-            let sds_twisting = material_table.twisting_model == "sds";
             if sds_twisting {
                 // SDS twisting: spring-dashpot-slider model
                 let k_twist = material_table.twisting_stiffness_ij[mat_i][mat_j];
@@ -796,21 +892,18 @@ pub fn contact_force_core_views(
         }
 
         // Store updated spring back (canonical form) and mark active
-        let mut new_spring = stored;
-        new_spring[0] = sign * sx;
-        new_spring[1] = sign * sy;
-        new_spring[2] = sign * sz;
-        new_spring[3] = sign * roll_disp_x;
-        new_spring[4] = sign * roll_disp_y;
-        new_spring[5] = sign * roll_disp_z;
-        new_spring[6] = sign * twist_disp;
-        new_spring[7] = contact_radius;
+        // Write the updated springs into the stored entry.
+        stored[0] = sign * sx;
+        stored[1] = sign * sy;
+        stored[2] = sign * sz;
+        stored[3] = sign * roll_disp_x;
+        stored[4] = sign * roll_disp_y;
+        stored[5] = sign * roll_disp_z;
+        stored[6] = sign * twist_disp;
+        stored[7] = contact_radius;
         match entry_idx {
-            Some(idx) => {
-                history.contacts[i][idx].1 = new_spring;
-                history.contacts[i][idx].2 = true;
-            }
-            None => history.contacts[i].push((tag_j, new_spring, true)),
+            Some(idx) => history.contacts[i][idx].2 = true,
+            None => history.contacts[i].push((tag_j, fresh, true)),
         }
     }
 
@@ -892,7 +985,8 @@ pub fn hooke_contact_force(
             }
 
             // Skip same-body pairs (sub-spheres of the same rigid body don't interact)
-            if dirt_atom::same_body(&dem, i, j) {
+            // and same-molecule pairs (bonded strand beads — LAMMPS molecule/intra).
+            if dirt_atom::same_body(&dem, i, j) || dirt_atom::same_molecule(&dem, i, j) {
                 continue;
             }
 
@@ -922,10 +1016,13 @@ pub fn hooke_contact_force(
 
             if distance / sum_r < LARGE_OVERLAP_WARN_THRESHOLD {
                 overlap_warnings += 1;
-                if overlap_warnings > MAX_OVERLAP_WARNINGS {
+                if material_table.deep_overlap_abort > 0
+                    && overlap_warnings > material_table.deep_overlap_abort
+                {
                     panic!(
-                        "Over {} excessive overlaps this step — aborting.",
-                        MAX_OVERLAP_WARNINGS
+                        "Over {} excessive overlaps this step — aborting. \
+                         Set [dem] deep_overlap_abort = 0 to keep running.",
+                        material_table.deep_overlap_abort
                     );
                 }
                 // Still compute force (don't skip) — removing repulsion causes runaway.
@@ -1030,9 +1127,12 @@ pub fn hooke_contact_force(
             let sign: f64 = if tag_i < tag_j { 1.0 } else { -1.0 };
 
             let entry_idx = history.contacts[i].iter().position(|(t, _, _)| *t == tag_j);
-            let stored = match entry_idx {
-                Some(idx) => history.contacts[i][idx].1,
-                None => zero_contact_history(),
+            // Work on the stored entry in place (a contact's history is 184 bytes;
+            // copying it out and back costs more than the rest of the bookkeeping).
+            let mut fresh = zero_contact_history();
+            let stored: &mut ContactHistory = match entry_idx {
+                Some(idx) => &mut history.contacts[i][idx].1,
+                None => &mut fresh,
             };
 
             // History-free `linear_nohistory` tangential model → zero spring (see the
@@ -1094,7 +1194,11 @@ pub fn hooke_contact_force(
                 (sx, sy, sz)
             };
 
-            let gamma_t = 2.0 * SQRT_5_6 * beta * (kt * m_r).sqrt();
+            // LAMMPS `linear_nohistory xt mu`: γ_t = xt · γ_n.
+            let gamma_t = match material_table.tangential_damping_ratio {
+                Some(xt) if nohistory => xt * gamma_n,
+                _ => 2.0 * SQRT_5_6 * beta * (kt * m_r).sqrt(),
+            };
             let mut ft_x = (if mindlin_force_history { sx } else { kt * sx }) + gamma_t * vt_x;
             let mut ft_y = (if mindlin_force_history { sy } else { kt * sy }) + gamma_t * vt_y;
             let mut ft_z = (if mindlin_force_history { sz } else { kt * sz }) + gamma_t * vt_z;
@@ -1118,13 +1222,19 @@ pub fn hooke_contact_force(
                     (sx, sy, sz)
                 };
 
-            // Torques
-            let ti_x = r1n_y * ft_z - r1n_z * ft_y;
-            let ti_y = r1n_z * ft_x - r1n_x * ft_z;
-            let ti_z = r1n_x * ft_y - r1n_y * ft_x;
-            let tj_x = r2n_y * ft_z - r2n_z * ft_y;
-            let tj_y = r2n_z * ft_x - r2n_x * ft_z;
-            let tj_z = r2n_x * ft_y - r2n_y * ft_x;
+            // Torques (lever r − δ/2 with `torque_lever = "contact_point"`).
+            let (lever_i, lever_j) = if material_table.torque_lever == "contact_point" {
+                let d = sum_r - distance;
+                ((r1 - 0.5 * d) / r1, (r2 - 0.5 * d) / r2)
+            } else {
+                (1.0, 1.0)
+            };
+            let ti_x = lever_i * (r1n_y * ft_z - r1n_z * ft_y);
+            let ti_y = lever_i * (r1n_z * ft_x - r1n_x * ft_z);
+            let ti_z = lever_i * (r1n_x * ft_y - r1n_y * ft_x);
+            let tj_x = lever_j * (r2n_y * ft_z - r2n_z * ft_y);
+            let tj_y = lever_j * (r2n_z * ft_x - r2n_x * ft_z);
+            let tj_z = lever_j * (r2n_x * ft_y - r2n_y * ft_x);
 
             atoms.force[i][0] += ft_x as soil_core::Accum;
             atoms.force[i][1] += ft_y as soil_core::Accum;
@@ -1309,21 +1419,18 @@ pub fn hooke_contact_force(
                 }
             }
 
-            let mut new_spring = stored;
-            new_spring[0] = sign * sx;
-            new_spring[1] = sign * sy;
-            new_spring[2] = sign * sz;
-            new_spring[3] = sign * roll_disp_x;
-            new_spring[4] = sign * roll_disp_y;
-            new_spring[5] = sign * roll_disp_z;
-            new_spring[6] = sign * twist_disp;
-            new_spring[7] = contact_radius;
+            // Write the updated springs into the stored entry.
+            stored[0] = sign * sx;
+            stored[1] = sign * sy;
+            stored[2] = sign * sz;
+            stored[3] = sign * roll_disp_x;
+            stored[4] = sign * roll_disp_y;
+            stored[5] = sign * roll_disp_z;
+            stored[6] = sign * twist_disp;
+            stored[7] = contact_radius;
             match entry_idx {
-                Some(idx) => {
-                    history.contacts[i][idx].1 = new_spring;
-                    history.contacts[i][idx].2 = true;
-                }
-                None => history.contacts[i].push((tag_j, new_spring, true)),
+                Some(idx) => history.contacts[i][idx].2 = true,
+                None => history.contacts[i].push((tag_j, fresh, true)),
             }
         }
 

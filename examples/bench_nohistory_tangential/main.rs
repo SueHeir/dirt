@@ -108,10 +108,12 @@ fn build_system(
         dem.ang_mom.push([0.0; 3]);
         dem.torque.push([0.0; 3]);
         dem.body_id.push(0.0);
+        dem.molecule_id.push(0.0);
         hist.contacts.push(Vec::new());
     }
-    atom.nlocal = 2;
-    atom.natoms = 2;
+    unsafe {
+        atom.set_layout_unchecked(2, atom.nghost(), 2);
+    }
 
     // Half neighbour list (newton on): atom 0 → {1}.
     let mut nb = Neighbor::new();
@@ -120,8 +122,8 @@ fn build_system(
     nb.neighbor_indices = vec![1];
 
     let mut reg = AtomDataRegistry::new();
-    reg.try_register(dem, atom.len()).unwrap();
-    reg.try_register(hist, atom.len()).unwrap();
+    reg.register_for_atoms(dem, &atom).unwrap();
+    reg.register_for_atoms(hist, &atom).unwrap();
 
     (atom, nb, reg, mt)
 }
