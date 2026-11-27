@@ -447,6 +447,8 @@ pub(super) fn read_lammps_data_particles(
         density: f64,
     }
 
+    // Every LAMMPS data-file section keyword that can follow `Atoms`. A
+    // section missing here would have its rows parsed as atoms.
     let section_headers = [
         "Atoms",
         "Velocities",
@@ -456,6 +458,16 @@ pub(super) fn read_lammps_data_particles(
         "Impropers",
         "Masses",
         "Pair Coeffs",
+        "PairIJ Coeffs",
+        "Bond Coeffs",
+        "Angle Coeffs",
+        "Dihedral Coeffs",
+        "Improper Coeffs",
+        "Ellipsoids",
+        "Lines",
+        "Triangles",
+        "Bodies",
+        "Capsules",
     ];
     let is_section_header = |line: &str| -> bool {
         let trimmed = line.trim();
@@ -515,23 +527,26 @@ pub(super) fn read_lammps_data_particles(
                 });
             }
             "sphere" | "bpm/sphere" => {
-                // id type diameter density x y z
-                if fields.len() < 7 {
+                // sphere:     id type diameter density x y z
+                // bpm/sphere: id type molecule diameter density x y z
+                // (LAMMPS atom_style bpm/sphere carries a molecule-ID column.)
+                let off = if atom_style == "bpm/sphere" { 1 } else { 0 };
+                if fields.len() < 7 + off {
                     return Err(InsertFileError::RowTooShort {
                         path: file_path.to_string(),
                         line: i + 1,
                         style: atom_style.clone(),
-                        expected: 7,
+                        expected: 7 + off,
                         found: fields.len(),
                     });
                 }
                 let id: u32 = parse_field(fields[0], "atom id", i + 1, file_path)?;
                 let atype: u32 = parse_field(fields[1], "atom type", i + 1, file_path)?;
-                let diameter: f64 = parse_field(fields[2], "diameter", i + 1, file_path)?;
-                let density: f64 = parse_field(fields[3], "density", i + 1, file_path)?;
-                let x: f64 = parse_field(fields[4], "x coordinate", i + 1, file_path)?;
-                let y: f64 = parse_field(fields[5], "y coordinate", i + 1, file_path)?;
-                let z: f64 = parse_field(fields[6], "z coordinate", i + 1, file_path)?;
+                let diameter: f64 = parse_field(fields[2 + off], "diameter", i + 1, file_path)?;
+                let density: f64 = parse_field(fields[3 + off], "density", i + 1, file_path)?;
+                let x: f64 = parse_field(fields[4 + off], "x coordinate", i + 1, file_path)?;
+                let y: f64 = parse_field(fields[5 + off], "y coordinate", i + 1, file_path)?;
+                let z: f64 = parse_field(fields[6 + off], "z coordinate", i + 1, file_path)?;
                 parsed_atoms.push(ParsedAtom {
                     id,
                     atom_type: atype,
@@ -574,9 +589,33 @@ pub(super) fn read_lammps_data_particles(
         }
     }
 
+    // Tags: keep the file's atom IDs so that a `Bonds` section (read by
+    // dirt_bond against `Atom::tag`) refers to the right particles. That is
+    // only possible when no earlier insert already used those tags; otherwise
+    // fall back to sequential tags and say so.
+    let min_id = parsed_atoms.iter().map(|pa| pa.id).min();
+    let max_id = parsed_atoms.iter().map(|pa| pa.id).max();
+    let used_max = if atom.tag.is_empty() {
+        None
+    } else {
+        Some(atom.get_max_tag())
+    };
+    let keep_file_ids = match min_id {
+        Some(lo) => lo >= *max_tag && used_max.is_none_or(|m| lo > m),
+        None => false,
+    };
+    if !keep_file_ids && !parsed_atoms.is_empty() {
+        println!(
+            "WARNING: DemAtomInsert: atom IDs in '{}' overlap tags already in use; \
+             renumbering from {}. A Bonds section in this file will not line up.",
+            file_path, *max_tag
+        );
+    }
+
     // Insert all parsed atoms (only those owned by this subdomain).
     let mut count = 0usize;
     for pa in parsed_atoms {
+        let tag = if keep_file_ids { pa.id } else { *max_tag };
         let vel = velocity_map.get(&pa.id).copied().unwrap_or([0.0; 3]);
         let row_mat_idx = lookup_material_for_type(pa.atom_type, type_index_map.as_ref(), mat_idx);
         let cutoff_padding = material_table.liquid_bridge_cutoff_padding(row_mat_idx);
@@ -591,12 +630,19 @@ pub(super) fn read_lammps_data_particles(
                     cutoff_padding,
                     density: pa.density,
                     mat_idx: row_mat_idx,
-                    tag: *max_tag,
+                    tag,
                 },
             );
             count += 1;
         }
-        *max_tag += 1;
+        if !keep_file_ids {
+            *max_tag += 1;
+        }
+    }
+    if keep_file_ids {
+        if let Some(hi) = max_id {
+            *max_tag = (*max_tag).max(hi + 1);
+        }
     }
 
     println!(
