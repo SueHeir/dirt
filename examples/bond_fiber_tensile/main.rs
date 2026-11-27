@@ -64,7 +64,7 @@ fn main() {
 
 /// Finds the local atom index for a given global tag. Returns `None` if not local.
 fn index_of_tag(atoms: &Atom, tag: u32) -> Option<usize> {
-    let nlocal = atoms.nlocal as usize;
+    let nlocal = atoms.nlocal() as usize;
     (0..nlocal).find(|&i| atoms.tag[i] == tag)
 }
 
